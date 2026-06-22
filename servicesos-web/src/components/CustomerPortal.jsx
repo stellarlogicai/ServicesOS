@@ -8,6 +8,7 @@ import {
   resolveCustomerPortalCustomer
 } from '../services/customerPortalIdentityService';
 import { buildCustomerPortalQuoteIntakeDraft } from '../services/customerPortalQuoteRequestMapper';
+import { submitCustomerPortalQuoteRequest } from '../services/customerPortalQuoteRequestService';
 import './CustomerPortal.css';
 
 const CUSTOMER_PORTAL_TABS = [
@@ -104,6 +105,12 @@ const getAddOnLabel = (fieldName) =>
 const getTenantIdFromContext = (tenantId, currentTenant) =>
   tenantId || (typeof currentTenant === 'string' ? currentTenant : currentTenant?.id) || null;
 
+const missingTenantQuoteRequestMessage =
+  'Your customer account is not linked to a business yet, so saved quote requests are not enabled.';
+
+const missingCustomerQuoteRequestMessage =
+  'Your customer profile needs to be linked before saved quote requests can be enabled.';
+
 function getStoredAppointments() {
   try {
     const stored = localStorage.getItem('customer_appointments');
@@ -125,6 +132,8 @@ export default function CustomerPortal() {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [quoteRequestForm, setQuoteRequestForm] = useState(DEFAULT_QUOTE_REQUEST_FORM);
   const [quoteRequestPreview, setQuoteRequestPreview] = useState(null);
+  const [quoteRequestSubmitting, setQuoteRequestSubmitting] = useState(false);
+  const [quoteRequestSubmittedLeadId, setQuoteRequestSubmittedLeadId] = useState(null);
   const [customerIdentity, setCustomerIdentity] = useState({
     status: 'idle',
     customer: null,
@@ -265,6 +274,7 @@ export default function CustomerPortal() {
       [field]: value
     }));
     setQuoteRequestPreview(null);
+    setQuoteRequestSubmittedLeadId(null);
   };
 
   const updateQuoteRequestAddOn = (field, checked) => {
@@ -276,6 +286,7 @@ export default function CustomerPortal() {
       }
     }));
     setQuoteRequestPreview(null);
+    setQuoteRequestSubmittedLeadId(null);
   };
 
   const handlePreviewQuoteRequest = (event) => {
@@ -296,7 +307,72 @@ export default function CustomerPortal() {
     });
 
     setQuoteRequestPreview(draft);
-    showMessage('success', 'Quote request preview created. This has not been saved yet.');
+    setQuoteRequestSubmittedLeadId(null);
+    showMessage('success', 'Quote request preview created. Review it before submitting.');
+  };
+
+  const customerIdentityIsLinked = customerIdentity.status === CUSTOMER_PORTAL_IDENTITY_STATUS.FOUND;
+
+  const getQuoteRequestSubmitBlockedReason = () => {
+    if (!resolvedTenantId) {
+      return missingTenantQuoteRequestMessage;
+    }
+
+    if (!userUid) {
+      return 'Sign in before saved quote requests can be enabled.';
+    }
+
+    if (customerIdentity.status === 'idle') {
+      return 'Customer profile link is still being checked.';
+    }
+
+    if (!customerIdentityIsLinked || !customerIdentity.customer?.id) {
+      return customerIdentity.message || missingCustomerQuoteRequestMessage;
+    }
+
+    if (!quoteRequestPreview) {
+      return 'Review the quote request draft before submitting.';
+    }
+
+    return '';
+  };
+
+  const quoteRequestSubmitBlockedReason = getQuoteRequestSubmitBlockedReason();
+  const canSubmitQuoteRequest = Boolean(
+    !quoteRequestSubmitting &&
+      !quoteRequestSubmittedLeadId &&
+      quoteRequestPreview &&
+      !quoteRequestSubmitBlockedReason
+  );
+
+  const handleSubmitQuoteRequest = async () => {
+    if (quoteRequestSubmitBlockedReason) {
+      showMessage('error', quoteRequestSubmitBlockedReason);
+      return;
+    }
+
+    setQuoteRequestSubmitting(true);
+
+    try {
+      const result = await submitCustomerPortalQuoteRequest({
+        tenantId: resolvedTenantId,
+        user: userUid ? { uid: userUid, email: userEmail } : null,
+        customer: customerIdentity.customer,
+        quoteIntakeDraft: quoteRequestPreview
+      });
+
+      if (result.success) {
+        setQuoteRequestSubmittedLeadId(result.leadId);
+        showMessage('success', 'Quote request submitted for owner review.');
+        return;
+      }
+
+      showMessage('error', result.error || 'Quote request could not be submitted. Please try again.');
+    } catch {
+      showMessage('error', 'Quote request could not be submitted. Please try again.');
+    } finally {
+      setQuoteRequestSubmitting(false);
+    }
   };
 
   const activePreviewAddOns = quoteRequestPreview
@@ -304,8 +380,6 @@ export default function CustomerPortal() {
       .filter(([, enabled]) => enabled)
       .map(([fieldName]) => getAddOnLabel(fieldName))
     : [];
-
-  const customerIdentityIsLinked = customerIdentity.status === CUSTOMER_PORTAL_IDENTITY_STATUS.FOUND;
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '24px' }}>
@@ -496,7 +570,7 @@ export default function CustomerPortal() {
               <h2>Request Quote</h2>
               <p>
                 Share the cleaning details the owner needs to review scope, timing, and quote fit.
-                This preview is in memory only and is not saved yet.
+                Preview the request first, then submit it for owner review.
               </p>
             </div>
             <div className="quote-request-status">Preview only</div>
@@ -737,9 +811,15 @@ export default function CustomerPortal() {
               <div className="quote-request-preview-header">
                 <div>
                   <h3 id="quote-preview-heading">Quote request preview</h3>
-                  <p>This is the normalized in-memory draft. It has not been sent or saved yet.</p>
+                  <p>Review these details before sending the quote request to the owner.</p>
                 </div>
-                <span>Not persisted</span>
+                <span>
+                  {quoteRequestSubmittedLeadId
+                    ? 'Submitted'
+                    : canSubmitQuoteRequest
+                      ? 'Ready to submit'
+                      : 'Submit blocked'}
+                </span>
               </div>
 
               <div className="quote-preview-grid">
@@ -798,6 +878,31 @@ export default function CustomerPortal() {
                     <dd>{quoteRequestPreview.quoteRequestDraft.requestSnapshot.specialRequests || 'None provided'}</dd>
                   </div>
                 </dl>
+              </div>
+
+              <div className="quote-request-submit-panel">
+                {quoteRequestSubmittedLeadId && (
+                  <p className="quote-request-submit-status quote-request-submit-status--success">
+                    Quote request submitted for owner review.
+                  </p>
+                )}
+                {!quoteRequestSubmittedLeadId && quoteRequestSubmitBlockedReason && (
+                  <p className="quote-request-submit-status quote-request-submit-status--blocked">
+                    {quoteRequestSubmitBlockedReason}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="quote-request-submit"
+                  disabled={!canSubmitQuoteRequest}
+                  onClick={handleSubmitQuoteRequest}
+                >
+                  {quoteRequestSubmittedLeadId
+                    ? 'Submitted for Owner Review'
+                    : quoteRequestSubmitting
+                      ? 'Submitting...'
+                      : 'Submit Quote Request for Owner Review'}
+                </button>
               </div>
             </section>
           )}
