@@ -1,0 +1,190 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isSuperAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
+    }
+    
+    function isTenantAdmin(tenantId) {
+      return isAuthenticated() && 
+             request.auth.uid in get(/databases/$(database)/documents/tenants/$(tenantId)).data.adminUsers;
+    }
+    
+    function isTenantUser(tenantId) {
+      return isAuthenticated() && 
+             request.auth.uid in get(/databases/$(database)/documents/tenants/$(tenantId)).data.users;
+    }
+    
+    function hasTenantAccess(tenantId) {
+      return isTenantAdmin(tenantId) || isTenantUser(tenantId);
+    }
+    
+    // Tenants collection - allow create for testing, will restrict later
+    match /tenants/{tenantId} {
+      allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || isTenantUser(tenantId);
+      allow create: if isAuthenticated(); // Temporary: allow any authenticated user to create
+      allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow delete: if isSuperAdmin();
+    }
+    
+    // Tenant usage - allow create for testing, will restrict later
+    match /tenant_usage/{tenantId} {
+      allow read, write: if isAuthenticated(); // Temporary: allow any authenticated user
+    }
+    
+    // Tenant billing - only tenant admin can read
+    match /tenant_billing/{billingId} {
+      allow read: if isTenantAdmin(resource.data.tenantId);
+      allow write: if false; // Only system can write via Stripe webhooks
+    }
+    
+    // Leads - isolated by tenant
+    match /tenants/{tenantId}/leads/{leadId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing lead CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // Quotes - isolated by tenant
+    match /tenants/{tenantId}/quotes/{quoteId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing quote CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // Bookings - isolated by tenant
+    match /tenants/{tenantId}/bookings/{bookingId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing shift CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // Payments - isolated by tenant
+    match /tenants/{tenantId}/payments/{paymentId} {
+      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow create: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow update: if isSuperAdmin() || false; // Only system can update via Stripe webhooks
+      allow delete: if isSuperAdmin() || false;
+    }
+    
+    // Jobs - isolated by tenant (for dataset collection)
+    match /tenants/{tenantId}/jobs/{jobId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing job CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // Properties - isolated by tenant (for dataset collection)
+    match /tenants/{tenantId}/properties/{propertyId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing property CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // Photos - isolated by tenant (before/after photos for dataset)
+    match /tenants/{tenantId}/photos/{photoId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing photo CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // AI Learning Data - isolated by tenant (for ML training)
+    match /tenants/{tenantId}/ai_learning_data/{learningId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing AI learning data CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // Customer Reviews - isolated by tenant
+    match /tenants/{tenantId}/customer_reviews/{reviewId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing customer review CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // Employees - isolated by tenant
+    match /tenants/{tenantId}/employees/{employeeId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing employee CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // Customers - isolated by tenant (CRM)
+    match /tenants/{tenantId}/customers/{customerId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing customer CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // Appointments - isolated by tenant (scheduling)
+    match /tenants/{tenantId}/appointments/{appointmentId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing appointment CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // White Label Domains - isolated by tenant
+    match /tenants/{tenantId}/white_label_domains/{domainId} {
+      allow read: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
+    }
+    
+    // Upsell Offers - isolated by tenant
+    match /tenants/{tenantId}/upsell_offers/{offerId} {
+      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
+    }
+    
+    // Upsell Impressions - isolated by tenant (analytics)
+    match /tenants/{tenantId}/upsell_impressions/{impressionId} {
+      allow read: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow create: if isSuperAdmin() || false; // System only
+      allow update: if isSuperAdmin() || false;
+      allow delete: if isSuperAdmin() || false;
+    }
+    
+    // Upsell Acceptances - isolated by tenant (analytics)
+    match /tenants/{tenantId}/upsell_acceptances/{acceptanceId} {
+      allow read: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow create: if isSuperAdmin() || false; // System only
+      allow update: if isSuperAdmin() || false;
+      allow delete: if isSuperAdmin() || false;
+    }
+    
+    // Time Clock - isolated by tenant (employee tracking)
+    match /tenants/{tenantId}/time_clock/{clockId} {
+      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing time clock CRUD
+      allow create: if isSuperAdmin() || isAuthenticated();
+      allow update: if isSuperAdmin() || isAuthenticated();
+      allow delete: if isSuperAdmin() || isAuthenticated();
+    }
+    
+    // Users collection - for user management
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+  }
+}

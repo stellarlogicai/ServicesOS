@@ -1,0 +1,2124 @@
+React Native Employee App Plan
+Phase 1: App Foundation
+
+Core setup:
+
+React Native / Expo
+Firebase Auth
+Firestore
+Cloud Functions
+Push Notifications
+Offline Support
+Role-Based Access
+
+Employee app users should only access:
+
+Their assigned jobs
+Their schedule
+Their checklists
+Their training
+Their messages
+Their time clock
+
+Not full business/admin data.
+
+Phase 2: Authentication
+
+Screens:
+
+Login
+Forgot Password
+Account Setup
+Company Join / Invite Code
+Profile Setup
+
+Employee profile should include:
+
+Name
+Phone
+Role
+Company ID
+Employee ID
+Certifications
+Allowed Services
+Availability
+Phase 3: Main Navigation
+
+Use bottom tabs:
+
+Today
+Jobs
+Training
+Messages
+Profile
+
+Optional later:
+
+Time Clock
+Inventory
+Reports
+Phase 4: Today Dashboard
+
+This is the home screen.
+
+Show:
+
+Today’s jobs
+Start time
+Job address
+Customer name
+Service type
+Checklist progress
+Route order
+Urgent notes
+
+Actions:
+
+Clock In
+Start Job
+Navigate
+View Checklist
+Message Office
+Report Issue
+Phase 5: Job Details
+
+Each job screen should show:
+
+Customer name
+Address
+Service type
+Estimated duration
+Assigned employees
+Arrival window
+Special instructions
+Pets
+Access notes
+Supplies needed
+Before photos
+Checklist
+Customer notes
+
+Buttons:
+
+Start Job
+Pause Job
+Complete Job
+Upload Photos
+Report Problem
+Message Manager
+Phase 6: Checklist System
+
+Checklist items:
+
+Room / area
+Task name
+Required or optional
+Photo required?
+Notes allowed?
+Completed by
+Completed time
+
+Example:
+
+Kitchen
+- Wipe counters
+- Clean sink
+- Sweep floor
+- Mop floor
+
+Support:
+
+Save progress
+Offline completion
+Sync when online
+Manager review
+Phase 7: Time Tracking
+
+Basic first version:
+
+Clock In
+Clock Out
+Start Break
+End Break
+Start Job
+End Job
+
+Track:
+
+Employee ID
+Company ID
+Timestamp
+GPS optional later
+Job ID
+Break type
+Manual adjustment flag
+
+Avoid overcomplicating payroll at first.
+
+Phase 8: Photos & Proof of Work
+
+Allow:
+
+Before photos
+After photos
+Damage photos
+Issue photos
+Supply photos
+
+Photo metadata:
+
+Job ID
+Employee ID
+Timestamp
+Category
+Notes
+
+This is useful for:
+
+Quality control
+Customer disputes
+Training
+Proof of completion
+Phase 9: Messaging
+
+Start simple.
+
+Types:
+
+Employee ↔ Office
+Employee ↔ Manager
+Job-specific thread
+
+Later add:
+
+Team chat
+AI summaries
+Urgent alerts
+Phase 10: Training
+
+Employee can access:
+
+Assigned modules
+SOPs
+Videos/slides
+Quizzes
+Certifications
+Completion status
+
+Training should connect to job permissions later:
+
+Not certified for deep clean
+↓
+Cannot be assigned deep clean job
+Phase 11: Issue Reporting
+
+Employee can report:
+
+Customer not home
+Locked out
+Pet issue
+Unsafe condition
+Damage found
+Missing supplies
+Job taking longer
+Customer complaint
+Vehicle issue
+
+Each report goes to admin dashboard.
+
+Phase 12: Offline Mode
+
+Very important.
+
+Support offline for:
+
+Viewing assigned jobs
+Completing checklists
+Adding notes
+Taking photos
+Clock events
+
+Then sync when online.
+
+Phase 13: Push Notifications
+
+Send alerts for:
+
+New job assigned
+Schedule changed
+Manager message
+Job canceled
+Training assigned
+Urgent announcement
+Suggested MVP Scope
+
+For first employee app version, build only:
+
+Login
+Today dashboard
+Job details
+Checklist completion
+Start/complete job
+Photo upload
+Basic messaging
+Training view
+Push notifications
+
+Save these for later:
+
+Payroll
+Advanced route optimization
+AI coaching
+Inventory scanning
+Performance dashboards
+Employee suggestions
+Full offline conflict handling
+Build Order
+1. Firebase auth + employee role access
+2. Today dashboard
+3. Job detail screen
+4. Checklist system
+5. Job status updates
+6. Photo upload
+7. Basic messaging
+8. Training access
+9. Push notifications
+10. Offline sync
+11. Testing
+12. Beta with your wife’s business
+
+The employee app should answer one question first:
+
+Can a cleaner complete their day without calling the office repeatedly?
+
+If yes, the MVP is doing its job.
+
+and im just reusing my current framework just connecting it to it correct? and can i get a more detail of each step with code examples so i can feed it to my coding assistant 
+Thought for 5s
+
+Yes — you are not building a separate backend.
+
+You are building a React Native employee-facing client that connects to your existing ServicesOS backend/framework:
+
+Existing ServicesOS Web App
+        ↓
+Existing Firebase/Auth/Firestore/Cloud Functions/Stripe
+        ↓
+New React Native Employee App
+
+The RN app should reuse:
+
+companyId
+employeeId
+job records
+schedule records
+training records
+checklists
+messages
+notifications
+role permissions
+
+Here is the implementation plan you can feed to your coding assistant.
+
+React Native Employee App Build Plan
+1. Create the App
+
+Use Expo unless you have a reason not to.
+
+npx create-expo-app ServicesOS-EmployeeApp
+cd ServicesOS-EmployeeApp
+npm install firebase
+npm install @react-navigation/native
+npm install @react-navigation/bottom-tabs
+npm install @react-navigation/native-stack
+npx expo install react-native-screens react-native-safe-area-context
+npx expo install expo-image-picker expo-notifications expo-location
+2. Folder Structure
+/src
+  /api
+    firebase.js
+    auth.js
+    jobs.js
+    checklists.js
+    training.js
+    messages.js
+    uploads.js
+
+  /context
+    AuthContext.jsx
+
+  /navigation
+    AppNavigator.jsx
+
+  /screens
+    LoginScreen.jsx
+    TodayScreen.jsx
+    JobDetailsScreen.jsx
+    ChecklistScreen.jsx
+    TrainingScreen.jsx
+    MessagesScreen.jsx
+    ProfileScreen.jsx
+
+  /components
+    JobCard.jsx
+    ChecklistItem.jsx
+    Loading.jsx
+
+  /utils
+    permissions.js
+    dates.js
+3. Connect Firebase
+
+src/api/firebase.js
+
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
+
+const firebaseConfig = {
+  apiKey: "YOUR_KEY",
+  authDomain: "YOUR_DOMAIN",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_BUCKET",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID",
+};
+
+const app = initializeApp(firebaseConfig);
+
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const storage = getStorage(app);
+4. Auth Context
+
+This keeps the employee logged in and loads their profile.
+
+src/context/AuthContext.jsx
+
+import React, { createContext, useEffect, useState } from "react";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../api/firebase";
+
+export const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [employeeProfile, setEmployeeProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  async function loadEmployeeProfile(firebaseUser) {
+    const ref = doc(db, "employees", firebaseUser.uid);
+    const snap = await getDoc(ref);
+
+    if (!snap.exists()) {
+      throw new Error("Employee profile not found.");
+    }
+
+    setEmployeeProfile({
+      id: snap.id,
+      ...snap.data(),
+    });
+  }
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      try {
+        setUser(firebaseUser);
+
+        if (firebaseUser) {
+          await loadEmployeeProfile(firebaseUser);
+        } else {
+          setEmployeeProfile(null);
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  async function login(email, password) {
+    await signInWithEmailAndPassword(auth, email, password);
+  }
+
+  async function logout() {
+    await signOut(auth);
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, employeeProfile, loading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+5. Navigation
+
+src/navigation/AppNavigator.jsx
+
+import React, { useContext } from "react";
+import { AuthContext } from "../context/AuthContext";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+
+import LoginScreen from "../screens/LoginScreen";
+import TodayScreen from "../screens/TodayScreen";
+import JobDetailsScreen from "../screens/JobDetailsScreen";
+import TrainingScreen from "../screens/TrainingScreen";
+import MessagesScreen from "../screens/MessagesScreen";
+import ProfileScreen from "../screens/ProfileScreen";
+
+const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
+
+function JobsStack() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="Today" component={TodayScreen} />
+      <Stack.Screen name="JobDetails" component={JobDetailsScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function EmployeeTabs() {
+  return (
+    <Tab.Navigator>
+      <Tab.Screen name="Jobs" component={JobsStack} />
+      <Tab.Screen name="Training" component={TrainingScreen} />
+      <Tab.Screen name="Messages" component={MessagesScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
+
+export default function AppNavigator() {
+  const { user } = useContext(AuthContext);
+
+  return user ? <EmployeeTabs /> : <LoginScreen />;
+}
+
+App.js
+
+import React from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { AuthProvider } from "./src/context/AuthContext";
+import AppNavigator from "./src/navigation/AppNavigator";
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <NavigationContainer>
+        <AppNavigator />
+      </NavigationContainer>
+    </AuthProvider>
+  );
+}
+6. Login Screen
+
+src/screens/LoginScreen.jsx
+
+import React, { useContext, useState } from "react";
+import { View, TextInput, Button, Text } from "react-native";
+import { AuthContext } from "../context/AuthContext";
+
+export default function LoginScreen() {
+  const { login } = useContext(AuthContext);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  async function handleLogin() {
+    try {
+      setError("");
+      await login(email.trim(), password);
+    } catch {
+      setError("Invalid login. Please try again.");
+    }
+  }
+
+  return (
+    <View style={{ padding: 20 }}>
+      <Text>ServicesOS Employee Login</Text>
+
+      <TextInput
+        placeholder="Email"
+        autoCapitalize="none"
+        value={email}
+        onChangeText={setEmail}
+        style={{ borderWidth: 1, marginVertical: 8, padding: 10 }}
+      />
+
+      <TextInput
+        placeholder="Password"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+        style={{ borderWidth: 1, marginVertical: 8, padding: 10 }}
+      />
+
+      {error ? <Text style={{ color: "red" }}>{error}</Text> : null}
+
+      <Button title="Login" onPress={handleLogin} />
+    </View>
+  );
+}
+7. Load Today’s Assigned Jobs
+
+Assuming jobs are stored like:
+
+jobs/{jobId}
+  companyId
+  customerId
+  assignedEmployeeIds: []
+  scheduledDate
+  status
+  serviceType
+  address
+
+src/api/jobs.js
+
+import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "./firebase";
+
+export async function getTodayJobs(companyId, employeeId, todayDateString) {
+  const jobsRef = collection(db, "jobs");
+
+  const q = query(
+    jobsRef,
+    where("companyId", "==", companyId),
+    where("assignedEmployeeIds", "array-contains", employeeId),
+    where("scheduledDate", "==", todayDateString)
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...docSnap.data(),
+  }));
+}
+
+export async function updateJobStatus(jobId, status) {
+  const ref = doc(db, "jobs", jobId);
+
+  await updateDoc(ref, {
+    status,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+src/screens/TodayScreen.jsx
+
+import React, { useContext, useEffect, useState } from "react";
+import { View, Text, Button, FlatList } from "react-native";
+import { AuthContext } from "../context/AuthContext";
+import { getTodayJobs } from "../api/jobs";
+
+function todayString() {
+  return new Date().toISOString().split("T")[0];
+}
+
+export default function TodayScreen({ navigation }) {
+  const { employeeProfile } = useContext(AuthContext);
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  async function loadJobs() {
+    try {
+      const data = await getTodayJobs(
+        employeeProfile.companyId,
+        employeeProfile.id,
+        todayString()
+      );
+
+      setJobs(data);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (employeeProfile) {
+      loadJobs();
+    }
+  }, [employeeProfile]);
+
+  if (loading) {
+    return <Text>Loading jobs...</Text>;
+  }
+
+  return (
+    <View style={{ padding: 16 }}>
+      <Text style={{ fontSize: 22, fontWeight: "bold" }}>Today</Text>
+
+      <FlatList
+        data={jobs}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={{ borderWidth: 1, padding: 12, marginVertical: 8 }}>
+            <Text>{item.serviceType}</Text>
+            <Text>{item.address}</Text>
+            <Text>Status: {item.status}</Text>
+
+            <Button
+              title="View Job"
+              onPress={() => navigation.navigate("JobDetails", { jobId: item.id })}
+            />
+          </View>
+        )}
+      />
+    </View>
+  );
+}
+8. Job Details Screen
+import React, { useEffect, useState } from "react";
+import { View, Text, Button } from "react-native";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../api/firebase";
+import { updateJobStatus } from "../api/jobs";
+
+export default function JobDetailsScreen({ route, navigation }) {
+  const { jobId } = route.params;
+  const [job, setJob] = useState(null);
+
+  async function loadJob() {
+    const ref = doc(db, "jobs", jobId);
+    const snap = await getDoc(ref);
+
+    if (snap.exists()) {
+      setJob({ id: snap.id, ...snap.data() });
+    }
+  }
+
+  async function startJob() {
+    await updateJobStatus(jobId, "in_progress");
+    await loadJob();
+  }
+
+  async function completeJob() {
+    await updateJobStatus(jobId, "completed");
+    await loadJob();
+  }
+
+  useEffect(() => {
+    loadJob();
+  }, [jobId]);
+
+  if (!job) return <Text>Loading job...</Text>;
+
+  return (
+    <View style={{ padding: 16 }}>
+      <Text style={{ fontSize: 22 }}>{job.serviceType}</Text>
+      <Text>{job.address}</Text>
+      <Text>Status: {job.status}</Text>
+      <Text>Notes: {job.notes || "None"}</Text>
+
+      <Button title="Start Job" onPress={startJob} />
+      <Button title="Checklist" onPress={() => navigation.navigate("Checklist", { jobId })} />
+      <Button title="Complete Job" onPress={completeJob} />
+    </View>
+  );
+}
+
+You would need to add ChecklistScreen to the stack navigator.
+
+9. Checklist API
+
+Suggested Firestore structure:
+
+jobs/{jobId}/checklistItems/{itemId}
+  title
+  area
+  required
+  completed
+  completedBy
+  completedAt
+  notes
+
+src/api/checklists.js
+
+import {
+  collection,
+  getDocs,
+  doc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "./firebase";
+
+export async function getChecklistItems(jobId) {
+  const ref = collection(db, "jobs", jobId, "checklistItems");
+  const snap = await getDocs(ref);
+
+  return snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...docSnap.data(),
+  }));
+}
+
+export async function toggleChecklistItem(jobId, itemId, employeeId, completed) {
+  const ref = doc(db, "jobs", jobId, "checklistItems", itemId);
+
+  await updateDoc(ref, {
+    completed,
+    completedBy: completed ? employeeId : null,
+    completedAt: completed ? serverTimestamp() : null,
+  });
+}
+
+src/screens/ChecklistScreen.jsx
+
+import React, { useContext, useEffect, useState } from "react";
+import { View, Text, FlatList, Button } from "react-native";
+import { AuthContext } from "../context/AuthContext";
+import { getChecklistItems, toggleChecklistItem } from "../api/checklists";
+
+export default function ChecklistScreen({ route }) {
+  const { jobId } = route.params;
+  const { employeeProfile } = useContext(AuthContext);
+  const [items, setItems] = useState([]);
+
+  async function loadItems() {
+    const data = await getChecklistItems(jobId);
+    setItems(data);
+  }
+
+  async function handleToggle(item) {
+    await toggleChecklistItem(
+      jobId,
+      item.id,
+      employeeProfile.id,
+      !item.completed
+    );
+
+    await loadItems();
+  }
+
+  useEffect(() => {
+    loadItems();
+  }, [jobId]);
+
+  return (
+    <View style={{ padding: 16 }}>
+      <Text style={{ fontSize: 22 }}>Checklist</Text>
+
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={{ padding: 12, borderBottomWidth: 1 }}>
+            <Text>{item.area}: {item.title}</Text>
+            <Text>{item.completed ? "Completed" : "Pending"}</Text>
+            <Button
+              title={item.completed ? "Undo" : "Complete"}
+              onPress={() => handleToggle(item)}
+            />
+          </View>
+        )}
+      />
+    </View>
+  );
+}
+10. Photo Upload
+import * as ImagePicker from "expo-image-picker";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { storage, db } from "./firebase";
+
+export async function pickAndUploadJobPhoto(jobId, employeeId, category) {
+  const result = await ImagePicker.launchCameraAsync({
+    quality: 0.7,
+    allowsEditing: false,
+  });
+
+  if (result.canceled) return null;
+
+  const asset = result.assets[0];
+  const response = await fetch(asset.uri);
+  const blob = await response.blob();
+
+  const filePath = `jobPhotos/${jobId}/${Date.now()}.jpg`;
+  const fileRef = ref(storage, filePath);
+
+  await uploadBytes(fileRef, blob);
+
+  const downloadUrl = await getDownloadURL(fileRef);
+
+  await addDoc(collection(db, "jobs", jobId, "photos"), {
+    employeeId,
+    category,
+    url: downloadUrl,
+    createdAt: serverTimestamp(),
+  });
+
+  return downloadUrl;
+}
+
+Use it on the job screen:
+
+<Button
+  title="Upload Before Photo"
+  onPress={() => pickAndUploadJobPhoto(job.id, employeeProfile.id, "before")}
+/>
+11. Training Screen
+
+Suggested structure:
+
+trainingAssignments/{assignmentId}
+  companyId
+  employeeId
+  moduleId
+  status
+  assignedAt
+  completedAt
+
+src/api/training.js
+
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "./firebase";
+
+export async function getEmployeeTraining(companyId, employeeId) {
+  const ref = collection(db, "trainingAssignments");
+
+  const q = query(
+    ref,
+    where("companyId", "==", companyId),
+    where("employeeId", "==", employeeId)
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...docSnap.data(),
+  }));
+}
+
+src/screens/TrainingScreen.jsx
+
+import React, { useContext, useEffect, useState } from "react";
+import { View, Text, FlatList } from "react-native";
+import { AuthContext } from "../context/AuthContext";
+import { getEmployeeTraining } from "../api/training";
+
+export default function TrainingScreen() {
+  const { employeeProfile } = useContext(AuthContext);
+  const [assignments, setAssignments] = useState([]);
+
+  async function loadTraining() {
+    const data = await getEmployeeTraining(
+      employeeProfile.companyId,
+      employeeProfile.id
+    );
+
+    setAssignments(data);
+  }
+
+  useEffect(() => {
+    if (employeeProfile) {
+      loadTraining();
+    }
+  }, [employeeProfile]);
+
+  return (
+    <View style={{ padding: 16 }}>
+      <Text style={{ fontSize: 22 }}>Training</Text>
+
+      <FlatList
+        data={assignments}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={{ padding: 12, borderBottomWidth: 1 }}>
+            <Text>Module: {item.moduleTitle || item.moduleId}</Text>
+            <Text>Status: {item.status}</Text>
+          </View>
+        )}
+      />
+    </View>
+  );
+}
+12. Messages
+
+Start simple with job-specific messages.
+
+Firestore:
+
+jobMessages/{messageId}
+  companyId
+  jobId
+  senderId
+  senderRole
+  body
+  createdAt
+import { collection, addDoc, query, where, orderBy, getDocs, serverTimestamp } from "firebase/firestore";
+import { db } from "./firebase";
+
+export async function sendJobMessage(companyId, jobId, senderId, senderRole, body) {
+  await addDoc(collection(db, "jobMessages"), {
+    companyId,
+    jobId,
+    senderId,
+    senderRole,
+    body,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function getJobMessages(companyId, jobId) {
+  const ref = collection(db, "jobMessages");
+
+  const q = query(
+    ref,
+    where("companyId", "==", companyId),
+    where("jobId", "==", jobId),
+    orderBy("createdAt", "asc")
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((docSnap) => ({
+    id: docSnap.id,
+    ...docSnap.data(),
+  }));
+}
+13. Security Rules Concept
+
+Very important.
+
+Employees should only access their company and assigned data.
+
+Example Firestore rule concept:
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function employeeDoc() {
+      return get(/databases/$(database)/documents/employees/$(request.auth.uid));
+    }
+
+    function employeeCompanyId() {
+      return employeeDoc().data.companyId;
+    }
+
+    match /employees/{employeeId} {
+      allow read: if isSignedIn()
+        && request.auth.uid == employeeId;
+
+      allow update: if isSignedIn()
+        && request.auth.uid == employeeId;
+    }
+
+    match /jobs/{jobId} {
+      allow read: if isSignedIn()
+        && resource.data.companyId == employeeCompanyId()
+        && request.auth.uid in resource.data.assignedEmployeeIds;
+
+      allow update: if isSignedIn()
+        && resource.data.companyId == employeeCompanyId()
+        && request.auth.uid in resource.data.assignedEmployeeIds;
+    }
+  }
+}
+
+Do not launch without tightening security rules.
+
+14. MVP Build Order For Coding Assistant
+
+Feed this order directly:
+
+1. Create Expo React Native app.
+2. Install Firebase and React Navigation.
+3. Configure Firebase connection.
+4. Build AuthContext.
+5. Build LoginScreen.
+6. Build tab navigation.
+7. Build TodayScreen to load assigned jobs.
+8. Build JobDetailsScreen.
+9. Add job status update buttons.
+10. Build ChecklistScreen.
+11. Add checklist completion updates.
+12. Add photo capture/upload.
+13. Build TrainingScreen.
+14. Build basic MessagesScreen.
+15. Add push notifications.
+16. Add offline read support.
+17. Add Firestore security rules.
+18. Test with one employee account.
+19. Test with wife’s cleaning business workflow.
+20. Fix issues before expanding.
+15. What Not To Build Yet
+
+Do not build these in MVP:
+
+Payroll automation
+Advanced AI routing
+Full employee performance scoring
+Inventory scanning
+Customer chat
+Complex offline conflict resolution
+Multi-language support
+Advanced analytics
+SLAI OS integration
+
+Those come later.
+
+The Main Rule
+
+The employee app should do this first:
+
+Employee logs in
+↓
+Sees today’s jobs
+↓
+Opens job
+↓
+Completes checklist
+↓
+Uploads photos
+↓
+Marks job complete
+↓
+Office sees progress
+
+That is your MVP.
+
+Yes. Keep it in a separate folder/app, connected to the same backend.
+
+ServicesOS/
+├── web-app/
+├── employee-app/        ← React Native app lives here
+├── shared/
+├── cloud-functions/
+├── firestore.rules
+└── firestore.indexes.json
+
+Use Expo + Firebase + Stripe Terminal. Expo supports Firebase integration paths, and Stripe’s React Native Terminal SDK supports Tap to Pay on iPhone/Android through Stripe Terminal.
+
+Below is the detailed coding-assistant prompt.
+
+ServicesOS Employee App Build Scope
+
+Build a React Native Expo app in /employee-app that connects to the existing ServicesOS Firebase backend.
+
+The employee app must support:
+
+Login
+Today’s Jobs
+Job Details
+Checklist Completion
+Photo Upload
+Job Status Updates
+Basic Messaging
+Training Access
+Time Tracking
+Tap to Pay with Stripe
+Offline-safe local queue later
+
+Do not build full payroll, advanced AI routing, employee scoring, complex customer chat, advanced inventory, or full offline conflict resolution yet.
+
+1. App Setup
+cd ServicesOS
+npx create-expo-app employee-app
+cd employee-app
+
+npm install firebase
+npm install @react-navigation/native @react-navigation/bottom-tabs @react-navigation/native-stack
+npx expo install react-native-screens react-native-safe-area-context
+npx expo install expo-image-picker expo-notifications expo-location
+npx expo install @stripe/stripe-terminal-react-native
+
+Stripe Terminal React Native requires native configuration and a backend connection-token endpoint.
+
+2. Folder Structure
+employee-app/src/
+├── api/
+│   ├── firebase.js
+│   ├── auth.js
+│   ├── jobs.js
+│   ├── checklists.js
+│   ├── photos.js
+│   ├── training.js
+│   ├── messages.js
+│   ├── timeClock.js
+│   └── payments.js
+│
+├── context/
+│   └── AuthContext.jsx
+│
+├── navigation/
+│   └── AppNavigator.jsx
+│
+├── screens/
+│   ├── LoginScreen.jsx
+│   ├── TodayScreen.jsx
+│   ├── JobDetailsScreen.jsx
+│   ├── ChecklistScreen.jsx
+│   ├── TrainingScreen.jsx
+│   ├── MessagesScreen.jsx
+│   ├── TimeClockScreen.jsx
+│   └── ProfileScreen.jsx
+│
+├── components/
+│   ├── JobCard.jsx
+│   ├── ChecklistItem.jsx
+│   ├── PaymentButton.jsx
+│   └── Loading.jsx
+│
+└── utils/
+    ├── dates.js
+    └── permissions.js
+3. Firebase Connection
+
+src/api/firebase.js
+
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
+import { getFunctions } from "firebase/functions";
+
+const firebaseConfig = {
+  apiKey: "REPLACE",
+  authDomain: "REPLACE",
+  projectId: "REPLACE",
+  storageBucket: "REPLACE",
+  messagingSenderId: "REPLACE",
+  appId: "REPLACE",
+};
+
+const app = initializeApp(firebaseConfig);
+
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const storage = getStorage(app);
+export const functions = getFunctions(app);
+4. Auth Context
+
+Employee must only load their own employee profile.
+
+import React, { createContext, useEffect, useState } from "react";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "../api/firebase";
+
+export const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [employee, setEmployee] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  async function loadEmployee(firebaseUser) {
+    const employeeRef = doc(db, "employees", firebaseUser.uid);
+    const employeeSnap = await getDoc(employeeRef);
+
+    if (!employeeSnap.exists()) {
+      throw new Error("Employee profile not found.");
+    }
+
+    const data = employeeSnap.data();
+
+    if (data.status !== "active") {
+      throw new Error("Employee account is inactive.");
+    }
+
+    setEmployee({
+      id: employeeSnap.id,
+      ...data,
+    });
+  }
+
+  useEffect(() => {
+    return onAuthStateChanged(auth, async (firebaseUser) => {
+      try {
+        setUser(firebaseUser);
+
+        if (firebaseUser) {
+          await loadEmployee(firebaseUser);
+        } else {
+          setEmployee(null);
+        }
+      } catch (err) {
+        console.error("Auth error:", err);
+        setEmployee(null);
+      } finally {
+        setLoading(false);
+      }
+    });
+  }, []);
+
+  async function login(email, password) {
+    await signInWithEmailAndPassword(auth, email.trim(), password);
+  }
+
+  async function logout() {
+    await signOut(auth);
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, employee, loading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+5. Navigation
+
+Bottom tabs:
+
+Today
+Training
+Messages
+Profile
+
+Job screens are stacked under Today.
+
+import React, { useContext } from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { AuthContext } from "../context/AuthContext";
+
+import LoginScreen from "../screens/LoginScreen";
+import TodayScreen from "../screens/TodayScreen";
+import JobDetailsScreen from "../screens/JobDetailsScreen";
+import ChecklistScreen from "../screens/ChecklistScreen";
+import TrainingScreen from "../screens/TrainingScreen";
+import MessagesScreen from "../screens/MessagesScreen";
+import ProfileScreen from "../screens/ProfileScreen";
+import Loading from "../components/Loading";
+
+const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
+
+function JobsStack() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="Today" component={TodayScreen} />
+      <Stack.Screen name="JobDetails" component={JobDetailsScreen} />
+      <Stack.Screen name="Checklist" component={ChecklistScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function EmployeeTabs() {
+  return (
+    <Tab.Navigator>
+      <Tab.Screen name="Jobs" component={JobsStack} />
+      <Tab.Screen name="Training" component={TrainingScreen} />
+      <Tab.Screen name="Messages" component={MessagesScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
+
+export default function AppNavigator() {
+  const { user, loading } = useContext(AuthContext);
+
+  if (loading) return <Loading />;
+
+  return (
+    <NavigationContainer>
+      {user ? <EmployeeTabs /> : <LoginScreen />}
+    </NavigationContainer>
+  );
+}
+6. Today’s Jobs
+
+Firestore job shape:
+
+jobs/{jobId} = {
+  companyId,
+  customerId,
+  customerName,
+  address,
+  serviceType,
+  assignedEmployeeIds: [],
+  scheduledDate: "2026-06-14",
+  startTime: "09:00",
+  estimatedDurationMinutes: 180,
+  status: "scheduled",
+  balanceDue: 12500,
+  currency: "usd",
+  notes,
+  accessNotes,
+  petNotes
+}
+
+src/api/jobs.js
+
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "./firebase";
+
+export async function getTodayJobs(companyId, employeeId, dateString) {
+  const jobsRef = collection(db, "jobs");
+
+  const q = query(
+    jobsRef,
+    where("companyId", "==", companyId),
+    where("assignedEmployeeIds", "array-contains", employeeId),
+    where("scheduledDate", "==", dateString)
+  );
+
+  const snap = await getDocs(q);
+
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function getJob(jobId) {
+  const ref = doc(db, "jobs", jobId);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) throw new Error("Job not found.");
+
+  return { id: snap.id, ...snap.data() };
+}
+
+export async function updateJobStatus(jobId, status, employeeId) {
+  const ref = doc(db, "jobs", jobId);
+
+  await updateDoc(ref, {
+    status,
+    lastUpdatedBy: employeeId,
+    updatedAt: serverTimestamp(),
+  });
+}
+7. Job Details
+import React, { useContext, useEffect, useState } from "react";
+import { View, Text, Button, ScrollView } from "react-native";
+import { AuthContext } from "../context/AuthContext";
+import { getJob, updateJobStatus } from "../api/jobs";
+import PaymentButton from "../components/PaymentButton";
+
+export default function JobDetailsScreen({ route, navigation }) {
+  const { jobId } = route.params;
+  const { employee } = useContext(AuthContext);
+  const [job, setJob] = useState(null);
+
+  async function refresh() {
+    const data = await getJob(jobId);
+    setJob(data);
+  }
+
+  async function handleStart() {
+    await updateJobStatus(jobId, "in_progress", employee.id);
+    await refresh();
+  }
+
+  async function handleComplete() {
+    await updateJobStatus(jobId, "completed", employee.id);
+    await refresh();
+  }
+
+  useEffect(() => {
+    refresh();
+  }, [jobId]);
+
+  if (!job) return <Text>Loading...</Text>;
+
+  return (
+    <ScrollView style={{ padding: 16 }}>
+      <Text style={{ fontSize: 24, fontWeight: "bold" }}>{job.serviceType}</Text>
+      <Text>{job.customerName}</Text>
+      <Text>{job.address}</Text>
+      <Text>Status: {job.status}</Text>
+      <Text>Access Notes: {job.accessNotes || "None"}</Text>
+      <Text>Pets: {job.petNotes || "None"}</Text>
+      <Text>Balance Due: ${(job.balanceDue || 0) / 100}</Text>
+
+      <Button title="Start Job" onPress={handleStart} />
+
+      <Button
+        title="Open Checklist"
+        onPress={() => navigation.navigate("Checklist", { jobId })}
+      />
+
+      <PaymentButton job={job} employee={employee} onPaid={refresh} />
+
+      <Button title="Complete Job" onPress={handleComplete} />
+    </ScrollView>
+  );
+}
+8. Checklist System
+
+Subcollection:
+
+jobs/{jobId}/checklistItems/{itemId}
+
+Item:
+
+{
+  area: "Kitchen",
+  title: "Wipe counters",
+  required: true,
+  completed: false,
+  completedBy: null,
+  completedAt: null,
+  notes: ""
+}
+import {
+  collection,
+  getDocs,
+  doc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "./firebase";
+
+export async function getChecklistItems(jobId) {
+  const ref = collection(db, "jobs", jobId, "checklistItems");
+  const snap = await getDocs(ref);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function setChecklistComplete(jobId, itemId, employeeId, completed) {
+  const ref = doc(db, "jobs", jobId, "checklistItems", itemId);
+
+  await updateDoc(ref, {
+    completed,
+    completedBy: completed ? employeeId : null,
+    completedAt: completed ? serverTimestamp() : null,
+  });
+}
+9. Photos
+
+Use photos for proof of work and disputes.
+
+import * as ImagePicker from "expo-image-picker";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { storage, db } from "./firebase";
+
+export async function captureAndUploadJobPhoto({
+  companyId,
+  jobId,
+  employeeId,
+  category,
+}) {
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
+
+  if (!permission.granted) {
+    throw new Error("Camera permission denied.");
+  }
+
+  const result = await ImagePicker.launchCameraAsync({
+    quality: 0.7,
+    allowsEditing: false,
+  });
+
+  if (result.canceled) return null;
+
+  const asset = result.assets[0];
+  const response = await fetch(asset.uri);
+  const blob = await response.blob();
+
+  const path = `companies/${companyId}/jobs/${jobId}/photos/${Date.now()}.jpg`;
+  const fileRef = ref(storage, path);
+
+  await uploadBytes(fileRef, blob);
+
+  const url = await getDownloadURL(fileRef);
+
+  await addDoc(collection(db, "jobs", jobId, "photos"), {
+    companyId,
+    employeeId,
+    category,
+    url,
+    storagePath: path,
+    createdAt: serverTimestamp(),
+  });
+
+  return url;
+}
+10. Time Tracking
+
+Build this before payroll.
+
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "./firebase";
+
+export async function createTimeEvent({
+  companyId,
+  employeeId,
+  jobId = null,
+  type,
+}) {
+  await addDoc(collection(db, "timeEvents"), {
+    companyId,
+    employeeId,
+    jobId,
+    type, // clock_in, clock_out, break_start, break_end, job_start, job_end
+    createdAt: serverTimestamp(),
+    source: "employee_app",
+  });
+}
+
+Screen buttons:
+
+<Button title="Clock In" onPress={() => createTimeEvent({ companyId, employeeId, type: "clock_in" })} />
+<Button title="Start Break" onPress={() => createTimeEvent({ companyId, employeeId, type: "break_start" })} />
+<Button title="End Break" onPress={() => createTimeEvent({ companyId, employeeId, type: "break_end" })} />
+<Button title="Clock Out" onPress={() => createTimeEvent({ companyId, employeeId, type: "clock_out" })} />
+
+Do not build tax/payroll automation yet. Export time events later.
+
+11. Basic Messaging
+
+Start with job-specific messages only.
+
+import {
+  collection,
+  addDoc,
+  query,
+  where,
+  orderBy,
+  getDocs,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "./firebase";
+
+export async function sendJobMessage({
+  companyId,
+  jobId,
+  senderId,
+  senderRole,
+  body,
+}) {
+  if (!body.trim()) return;
+
+  await addDoc(collection(db, "jobMessages"), {
+    companyId,
+    jobId,
+    senderId,
+    senderRole,
+    body: body.trim(),
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function getJobMessages(companyId, jobId) {
+  const q = query(
+    collection(db, "jobMessages"),
+    where("companyId", "==", companyId),
+    where("jobId", "==", jobId),
+    orderBy("createdAt", "asc")
+  );
+
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+Do not build full customer chat yet.
+
+12. Training
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "./firebase";
+
+export async function getEmployeeTraining(companyId, employeeId) {
+  const q = query(
+    collection(db, "trainingAssignments"),
+    where("companyId", "==", companyId),
+    where("employeeId", "==", employeeId)
+  );
+
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+Training assignment shape:
+
+{
+  companyId,
+  employeeId,
+  moduleId,
+  moduleTitle,
+  status: "assigned", // assigned, in_progress, completed
+  quizScore,
+  completedAt
+}
+
+Later this connects to assignment permissions:
+
+Employee not certified for deep clean
+↓
+Cannot be assigned deep clean job
+13. Tap to Pay With Stripe Terminal
+
+Stripe Terminal Tap to Pay uses a Terminal payment flow: connection token, connect reader, create PaymentIntent, collect payment method, process payment. Stripe documents this as a retryable PaymentIntent-based flow.
+
+Backend Cloud Functions Needed
+
+You need:
+
+createTerminalConnectionToken
+createTerminalPaymentIntent
+captureTerminalPaymentResult / webhook handling
+Cloud Function: Connection Token
+const functions = require("firebase-functions");
+const admin = require("firebase-admin");
+const Stripe = require("stripe");
+
+admin.initializeApp();
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+exports.createTerminalConnectionToken = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Login required.");
+  }
+
+  const { companyId } = data;
+
+  const companySnap = await admin.firestore()
+    .collection("companies")
+    .doc(companyId)
+    .get();
+
+  if (!companySnap.exists) {
+    throw new functions.https.HttpsError("not-found", "Company not found.");
+  }
+
+  const company = companySnap.data();
+
+  if (!company.stripeAccountId) {
+    throw new functions.https.HttpsError("failed-precondition", "Company has no Stripe account.");
+  }
+
+  const token = await stripe.terminal.connectionTokens.create(
+    {},
+    {
+      stripeAccount: company.stripeAccountId,
+    }
+  );
+
+  return { secret: token.secret };
+});
+Cloud Function: Create Terminal PaymentIntent
+
+This uses Stripe Connect and your platform fee.
+
+exports.createTerminalPaymentIntent = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Login required.");
+  }
+
+  const { companyId, jobId, amount, currency = "usd" } = data;
+
+  if (!amount || amount < 50) {
+    throw new functions.https.HttpsError("invalid-argument", "Invalid payment amount.");
+  }
+
+  const db = admin.firestore();
+
+  const [companySnap, jobSnap] = await Promise.all([
+    db.collection("companies").doc(companyId).get(),
+    db.collection("jobs").doc(jobId).get(),
+  ]);
+
+  if (!companySnap.exists || !jobSnap.exists) {
+    throw new functions.https.HttpsError("not-found", "Company or job not found.");
+  }
+
+  const company = companySnap.data();
+  const job = jobSnap.data();
+
+  if (job.companyId !== companyId) {
+    throw new functions.https.HttpsError("permission-denied", "Job does not belong to company.");
+  }
+
+  const platformFee = Math.round(amount * 0.05);
+
+  const paymentIntent = await stripe.paymentIntents.create(
+    {
+      amount,
+      currency,
+      payment_method_types: ["card_present"],
+      capture_method: "automatic",
+      application_fee_amount: platformFee,
+      metadata: {
+        companyId,
+        jobId,
+        source: "ServicesOS_employee_app_tap_to_pay",
+      },
+    },
+    {
+      stripeAccount: company.stripeAccountId,
+    }
+  );
+
+  await db.collection("payments").add({
+    companyId,
+    jobId,
+    amount,
+    currency,
+    platformFee,
+    status: "created",
+    stripePaymentIntentId: paymentIntent.id,
+    source: "tap_to_pay",
+    createdBy: context.auth.uid,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return {
+    clientSecret: paymentIntent.client_secret,
+    paymentIntentId: paymentIntent.id,
+  };
+});
+React Native Stripe Terminal Provider
+
+App.js
+
+import React from "react";
+import { StripeTerminalProvider } from "@stripe/stripe-terminal-react-native";
+import { AuthProvider } from "./src/context/AuthContext";
+import AppNavigator from "./src/navigation/AppNavigator";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { functions } from "./src/api/firebase";
+
+async function fetchTokenProvider() {
+  // companyId may need to come from secure state after login.
+  // For better structure, pass companyId through a payment service once employee is loaded.
+  const callable = httpsCallable(functions, "createTerminalConnectionToken");
+  const result = await callable({ companyId: global.currentCompanyId });
+  return result.data.secret;
+}
+
+export default function App() {
+  return (
+    <StripeTerminalProvider
+      logLevel="verbose"
+      tokenProvider={fetchTokenProvider}
+    >
+      <AuthProvider>
+        <AppNavigator />
+      </AuthProvider>
+    </StripeTerminalProvider>
+  );
+}
+
+You may prefer initializing the provider only after employee/company context is available.
+
+Payment Button Component
+
+Exact Terminal SDK method names can vary by version, so have your coding assistant verify against installed package docs. The conceptual flow is official: connect Tap to Pay reader, create PaymentIntent, collect, process.
+
+src/components/PaymentButton.jsx
+
+import React, { useState } from "react";
+import { Button, Text, View } from "react-native";
+import { httpsCallable } from "firebase/functions";
+import {
+  useStripeTerminal,
+} from "@stripe/stripe-terminal-react-native";
+import { functions } from "../api/firebase";
+
+export default function PaymentButton({ job, employee, onPaid }) {
+  const [status, setStatus] = useState("");
+
+  const {
+    initialize,
+    discoverReaders,
+    connectReader,
+    collectPaymentMethod,
+    processPayment,
+  } = useStripeTerminal();
+
+  async function handleTapToPay() {
+    try {
+      setStatus("Initializing payment terminal...");
+      await initialize();
+
+      setStatus("Finding Tap to Pay reader...");
+      const discoverResult = await discoverReaders({
+        discoveryMethod: "tapToPay",
+        simulated: false,
+      });
+
+      if (discoverResult.error) {
+        throw new Error(discoverResult.error.message);
+      }
+
+      const reader = discoverResult.discoveredReaders?.[0];
+
+      if (!reader) {
+        throw new Error("No Tap to Pay reader found.");
+      }
+
+      setStatus("Connecting reader...");
+      const connectResult = await connectReader({
+        reader,
+        locationId: job.stripeLocationId,
+      });
+
+      if (connectResult.error) {
+        throw new Error(connectResult.error.message);
+      }
+
+      setStatus("Creating payment...");
+      const createIntent = httpsCallable(functions, "createTerminalPaymentIntent");
+      const intentResult = await createIntent({
+        companyId: employee.companyId,
+        jobId: job.id,
+        amount: job.balanceDue,
+        currency: "usd",
+      });
+
+      const { clientSecret } = intentResult.data;
+
+      setStatus("Collecting card...");
+      const collectResult = await collectPaymentMethod({
+        paymentIntent: clientSecret,
+      });
+
+      if (collectResult.error) {
+        throw new Error(collectResult.error.message);
+      }
+
+      setStatus("Processing payment...");
+      const processResult = await processPayment({
+        paymentIntent: collectResult.paymentIntent,
+      });
+
+      if (processResult.error) {
+        throw new Error(processResult.error.message);
+      }
+
+      setStatus("Payment complete.");
+      await onPaid?.();
+    } catch (err) {
+      console.error(err);
+      setStatus(err.message || "Payment failed.");
+    }
+  }
+
+  if (!job.balanceDue || job.balanceDue <= 0) {
+    return null;
+  }
+
+  return (
+    <View style={{ marginVertical: 12 }}>
+      <Button title={`Collect $${(job.balanceDue / 100).toFixed(2)}`} onPress={handleTapToPay} />
+      {status ? <Text>{status}</Text> : null}
+    </View>
+  );
+}
+14. What NOT To Build Yet — Detailed
+A. Payroll Automation
+
+Do not build:
+
+Tax calculations
+W-2/1099
+Benefits
+Garnishments
+Workers comp
+State labor compliance
+Automatic payroll submission
+
+Build only:
+
+Time events
+Manual adjustments
+Manager approval
+CSV export
+QuickBooks/Gusto export later
+
+Reason: payroll is compliance-heavy and risky.
+
+B. Advanced AI Route Optimization
+
+Do not build automatic route optimization yet.
+
+Build:
+
+Route order number
+Job sequence
+Manual drag/drop in admin web app
+Employee sees ordered jobs
+
+Later AI can suggest route changes.
+
+C. Employee Performance Scores
+
+Do not show a single score like:
+
+Employee Score: 82%
+
+Build employee history instead:
+
+Jobs completed
+Training completed
+Customer feedback
+Late arrivals
+Checklist completion
+Photos uploaded
+Suggestions submitted
+Helped teammates
+
+Later AI can summarize leadership potential.
+
+D. Inventory Scanning
+
+Do not build barcode scanning, purchase orders, auto-restock yet.
+
+Build:
+
+Supplies needed on job
+Employee reports low supply
+Admin sees supply request
+E. Customer Chat
+
+Do not build direct employee-customer chat yet.
+
+Build:
+
+Employee → Office
+Office → Customer
+
+Reason: keeps communication controlled and professional.
+
+F. Complex Offline Conflict Resolution
+
+Do not build full conflict merging yet.
+
+Build:
+
+App can read today’s jobs before going offline
+Checklist updates can queue locally
+Photos queue locally
+Sync retries when online
+
+Later handle conflicts.
+
+15. Firestore Security Rules
+
+Critical before launch.
+
+Employees should only see:
+
+Their profile
+Their assigned jobs
+Their assigned training
+Messages for their jobs/company
+
+Rule concept:
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function employee() {
+      return get(/databases/$(database)/documents/employees/$(request.auth.uid));
+    }
+
+    function employeeCompanyId() {
+      return employee().data.companyId;
+    }
+
+    match /employees/{employeeId} {
+      allow read: if signedIn() && request.auth.uid == employeeId;
+      allow update: if signedIn() && request.auth.uid == employeeId;
+    }
+
+    match /jobs/{jobId} {
+      allow read: if signedIn()
+        && resource.data.companyId == employeeCompanyId()
+        && request.auth.uid in resource.data.assignedEmployeeIds;
+
+      allow update: if signedIn()
+        && resource.data.companyId == employeeCompanyId()
+        && request.auth.uid in resource.data.assignedEmployeeIds;
+    }
+
+    match /jobs/{jobId}/checklistItems/{itemId} {
+      allow read, update: if signedIn()
+        && get(/databases/$(database)/documents/jobs/$(jobId)).data.companyId == employeeCompanyId()
+        && request.auth.uid in get(/databases/$(database)/documents/jobs/$(jobId)).data.assignedEmployeeIds;
+    }
+
+    match /jobMessages/{messageId} {
+      allow read, create: if signedIn()
+        && request.resource.data.companyId == employeeCompanyId();
+    }
+
+    match /trainingAssignments/{assignmentId} {
+      allow read: if signedIn()
+        && resource.data.companyId == employeeCompanyId()
+        && resource.data.employeeId == request.auth.uid;
+    }
+
+    match /timeEvents/{eventId} {
+      allow create: if signedIn()
+        && request.resource.data.companyId == employeeCompanyId()
+        && request.resource.data.employeeId == request.auth.uid;
+    }
+  }
+}
+16. Final Build Order
+
+Give your coding assistant this exact order:
+
+1. Create employee-app folder with Expo.
+2. Install Firebase, navigation, image picker, notifications, Stripe Terminal.
+3. Connect Firebase.
+4. Build AuthContext.
+5. Build LoginScreen.
+6. Build navigation.
+7. Build TodayScreen.
+8. Build JobDetailsScreen.
+9. Build checklist API and ChecklistScreen.
+10. Add job status updates.
+11. Add photo capture/upload.
+12. Add time tracking events.
+13. Add basic job messages.
+14. Add TrainingScreen.
+15. Add Stripe Terminal backend functions.
+16. Add Tap to Pay button.
+17. Add Firestore security rules.
+18. Test with one company.
+19. Test with one employee.
+20. Test assigned job workflow.
+21. Test Tap to Pay in Stripe test mode/sandbox.
+22. Fix bugs.
+23. Do wife’s business beta.
+
+Your employee app MVP is successful when:
+
+Employee logs in
+↓
+Sees today’s jobs
+↓
+Starts job
+↓
+Completes checklist
+↓
+Uploads photos
+↓
+Collects payment if needed
+↓
+Marks complete
+↓
+Office sees everything
