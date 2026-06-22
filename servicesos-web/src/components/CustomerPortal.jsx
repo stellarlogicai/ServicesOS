@@ -2,7 +2,99 @@
 import { useState, useEffect } from 'react';
 import { getQuotes } from '../services/crmService';
 import { downloadQuotePDF } from '../services/pdfService';
+import { buildCustomerPortalQuoteIntakeDraft } from '../services/customerPortalQuoteRequestMapper';
 import './CustomerPortal.css';
+
+const CUSTOMER_PORTAL_TABS = [
+  { id: 'quotes', label: 'Quotes' },
+  { id: 'request-quote', label: 'Request Quote' },
+  { id: 'booking', label: 'Booking' },
+  { id: 'appointments', label: 'Appointments' }
+];
+
+const DEFAULT_QUOTE_REQUEST_FORM = {
+  cleaningType: 'standard',
+  bedrooms: 3,
+  bathrooms: 2,
+  kitchenCount: 1,
+  livingRoomCount: 1,
+  diningRoomCount: 0,
+  officeCount: 0,
+  closetCount: 0,
+  squareFootage: '',
+  garage: false,
+  basement: false,
+  stairs: false,
+  petCount: 0,
+  petHairLevel: 'none',
+  clutterLevel: 'normal',
+  lastCleaned: '',
+  serviceScope: {
+    oven: false,
+    fridge: false,
+    windows: false,
+    baseboards: false,
+    cabinetsInside: false,
+    laundryRoomCleaning: false
+  },
+  surfaceNotes: '',
+  accessInstructions: '',
+  preferredDate: '',
+  preferredTime: '09:00',
+  customerNotes: ''
+};
+
+const SERVICE_TYPE_OPTIONS = [
+  { value: 'standard', label: 'Standard clean' },
+  { value: 'deep', label: 'Deep clean' },
+  { value: 'move-out', label: 'Move-out clean' },
+  { value: 'recurring', label: 'Recurring clean' }
+];
+
+const PET_HAIR_OPTIONS = [
+  { value: 'none', label: 'None' },
+  { value: 'light', label: 'Light' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'heavy', label: 'Heavy' }
+];
+
+const CLUTTER_OPTIONS = [
+  { value: 'light', label: 'Light' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'moderate', label: 'Moderate' },
+  { value: 'high', label: 'High' }
+];
+
+const LAST_CLEANED_OPTIONS = [
+  { value: '', label: 'Select last cleaned' },
+  { value: 'this-week', label: 'This week' },
+  { value: 'within-month', label: 'Within the last month' },
+  { value: 'one-to-three-months', label: '1-3 months ago' },
+  { value: 'three-plus-months', label: '3+ months ago' },
+  { value: 'unknown', label: 'Not sure' }
+];
+
+const ROOM_FIELDS = [
+  { name: 'bedrooms', label: 'Bedrooms' },
+  { name: 'bathrooms', label: 'Bathrooms' },
+  { name: 'kitchenCount', label: 'Kitchens' },
+  { name: 'livingRoomCount', label: 'Living rooms' },
+  { name: 'diningRoomCount', label: 'Dining rooms' },
+  { name: 'officeCount', label: 'Offices' },
+  { name: 'closetCount', label: 'Closets' }
+];
+
+const ADD_ON_FIELDS = [
+  { name: 'oven', label: 'Inside oven' },
+  { name: 'fridge', label: 'Inside fridge' },
+  { name: 'windows', label: 'Windows' },
+  { name: 'baseboards', label: 'Baseboards' },
+  { name: 'cabinetsInside', label: 'Inside cabinets' },
+  { name: 'laundryRoomCleaning', label: 'Laundry room' }
+];
+
+const getAddOnLabel = (fieldName) =>
+  ADD_ON_FIELDS.find((field) => field.name === fieldName)?.label || fieldName;
 
 function getStoredAppointments() {
   try {
@@ -19,6 +111,8 @@ export default function CustomerPortal() {
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [appointments, setAppointments] = useState(() => getStoredAppointments());
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [quoteRequestForm, setQuoteRequestForm] = useState(DEFAULT_QUOTE_REQUEST_FORM);
+  const [quoteRequestPreview, setQuoteRequestPreview] = useState(null);
 
   // Booking form state
   const [bookingForm, setBookingForm] = useState({
@@ -126,6 +220,48 @@ export default function CustomerPortal() {
     setActiveTab('booking');
   };
 
+  const updateQuoteRequestField = (field, value) => {
+    setQuoteRequestForm((currentForm) => ({
+      ...currentForm,
+      [field]: value
+    }));
+    setQuoteRequestPreview(null);
+  };
+
+  const updateQuoteRequestAddOn = (field, checked) => {
+    setQuoteRequestForm((currentForm) => ({
+      ...currentForm,
+      serviceScope: {
+        ...currentForm.serviceScope,
+        [field]: checked
+      }
+    }));
+    setQuoteRequestPreview(null);
+  };
+
+  const handlePreviewQuoteRequest = (event) => {
+    event.preventDefault();
+
+    const draft = buildCustomerPortalQuoteIntakeDraft({
+      formData: {
+        ...quoteRequestForm,
+        pets: Number(quoteRequestForm.petCount) > 0,
+        specialRequests: quoteRequestForm.customerNotes
+      },
+      sourceFormat: 'intake-form',
+      submittedAt: new Date().toISOString()
+    });
+
+    setQuoteRequestPreview(draft);
+    showMessage('success', 'Quote request preview created. This has not been saved yet.');
+  };
+
+  const activePreviewAddOns = quoteRequestPreview
+    ? Object.entries(quoteRequestPreview.quoteRequestDraft.requestSnapshot.serviceScope || {})
+      .filter(([, enabled]) => enabled)
+      .map(([fieldName]) => getAddOnLabel(fieldName))
+    : [];
+
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '24px' }}>
       <div style={{ marginBottom: 32 }}>
@@ -152,25 +288,25 @@ export default function CustomerPortal() {
       )}
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '2px solid #e2e8f0' }}>
-        {['quotes', 'booking', 'appointments'].map(tab => (
+      <div className="customer-portal-tabs" style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '2px solid #e2e8f0' }}>
+        {CUSTOMER_PORTAL_TABS.map(tab => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
             style={{
               padding: '12px 24px',
-              background: activeTab === tab ? 'white' : 'transparent',
-              color: activeTab === tab ? '#3b82f6' : '#64748b',
-              border: activeTab === tab ? '2px solid #3b82f6' : '2px solid transparent',
-              borderBottom: activeTab === tab ? '2px solid white' : '2px solid #e2e8f0',
+              background: activeTab === tab.id ? 'white' : 'transparent',
+              color: activeTab === tab.id ? '#3b82f6' : '#64748b',
+              border: activeTab === tab.id ? '2px solid #3b82f6' : '2px solid transparent',
+              borderBottom: activeTab === tab.id ? '2px solid white' : '2px solid #e2e8f0',
               borderRadius: '8px 8px 0 0',
               fontSize: 14,
               fontWeight: 600,
               cursor: 'pointer',
-              marginBottom: activeTab === tab ? -2 : 0
+              marginBottom: activeTab === tab.id ? -2 : 0
             }}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
+            {tab.label}
           </button>
         ))}
       </div>
@@ -191,7 +327,23 @@ export default function CustomerPortal() {
               <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
                 <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
                 <p>No quotes yet</p>
-                <p style={{ fontSize: 14 }}>Complete the intake form to receive your first quote</p>
+                <p style={{ fontSize: 14 }}>Start a quote request so the owner can review the cleaning details.</p>
+                <button
+                  onClick={() => setActiveTab('request-quote')}
+                  style={{
+                    marginTop: 16,
+                    padding: '12px 24px',
+                    background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 8,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Request Quote
+                </button>
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 16 }}>
@@ -259,6 +411,322 @@ export default function CustomerPortal() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Request Quote Tab */}
+      {activeTab === 'request-quote' && (
+        <div className="customer-portal-card">
+          <div className="quote-request-header">
+            <div>
+              <h2>Request Quote</h2>
+              <p>
+                Share the cleaning details the owner needs to review scope, timing, and quote fit.
+                This preview is in memory only and is not saved yet.
+              </p>
+            </div>
+            <div className="quote-request-status">Preview only</div>
+          </div>
+
+          <div className="quote-request-note">
+            <strong>Saved property profiles are planned.</strong> Returning customers should be able to reuse
+            saved home details later and only update what changed. For now, this shell prepares the draft
+            structure without storing it.
+          </div>
+
+          <form onSubmit={handlePreviewQuoteRequest} className="quote-request-form">
+            <section className="quote-request-section" aria-labelledby="service-details-heading">
+              <h3 id="service-details-heading">Service details</h3>
+              <div className="quote-request-grid">
+                <div>
+                  <label htmlFor="quoteCleaningType">Service type</label>
+                  <select
+                    id="quoteCleaningType"
+                    className="customer-portal-field"
+                    value={quoteRequestForm.cleaningType}
+                    onChange={(event) => updateQuoteRequestField('cleaningType', event.target.value)}
+                  >
+                    {SERVICE_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="quoteSquareFootage">Approx square footage</label>
+                  <input
+                    id="quoteSquareFootage"
+                    className="customer-portal-field"
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    value={quoteRequestForm.squareFootage}
+                    onChange={(event) => updateQuoteRequestField('squareFootage', event.target.value)}
+                    placeholder="Example: 1600"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="quoteLastCleaned">Last cleaned</label>
+                  <select
+                    id="quoteLastCleaned"
+                    className="customer-portal-field"
+                    value={quoteRequestForm.lastCleaned}
+                    onChange={(event) => updateQuoteRequestField('lastCleaned', event.target.value)}
+                  >
+                    {LAST_CLEANED_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="quoteClutterLevel">Clutter level</label>
+                  <select
+                    id="quoteClutterLevel"
+                    className="customer-portal-field"
+                    value={quoteRequestForm.clutterLevel}
+                    onChange={(event) => updateQuoteRequestField('clutterLevel', event.target.value)}
+                  >
+                    {CLUTTER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </section>
+
+            <section className="quote-request-section" aria-labelledby="property-details-heading">
+              <h3 id="property-details-heading">Property details</h3>
+              <div className="quote-request-grid quote-request-grid--compact">
+                {ROOM_FIELDS.map((field) => (
+                  <div key={field.name}>
+                    <label htmlFor={`quote-${field.name}`}>{field.label}</label>
+                    <input
+                      id={`quote-${field.name}`}
+                      className="customer-portal-field"
+                      type="number"
+                      min="0"
+                      inputMode="numeric"
+                      value={quoteRequestForm[field.name]}
+                      onChange={(event) => updateQuoteRequestField(field.name, event.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="quote-request-checkbox-row" aria-label="Additional property areas">
+                {[
+                  { name: 'garage', label: 'Garage' },
+                  { name: 'basement', label: 'Basement' },
+                  { name: 'stairs', label: 'Stairs' }
+                ].map((field) => (
+                  <label key={field.name} className="quote-request-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={quoteRequestForm[field.name]}
+                      onChange={(event) => updateQuoteRequestField(field.name, event.target.checked)}
+                    />
+                    <span>{field.label}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            <section className="quote-request-section" aria-labelledby="pets-addons-heading">
+              <h3 id="pets-addons-heading">Pets and add-ons</h3>
+              <div className="quote-request-grid">
+                <div>
+                  <label htmlFor="quotePetCount">Pets</label>
+                  <input
+                    id="quotePetCount"
+                    className="customer-portal-field"
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    value={quoteRequestForm.petCount}
+                    onChange={(event) => updateQuoteRequestField('petCount', event.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="quotePetHairLevel">Pet hair level</label>
+                  <select
+                    id="quotePetHairLevel"
+                    className="customer-portal-field"
+                    value={quoteRequestForm.petHairLevel}
+                    onChange={(event) => updateQuoteRequestField('petHairLevel', event.target.value)}
+                  >
+                    {PET_HAIR_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="quote-request-checkbox-row quote-request-checkbox-row--addons" aria-label="Requested add-ons">
+                {ADD_ON_FIELDS.map((field) => (
+                  <label key={field.name} className="quote-request-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={quoteRequestForm.serviceScope[field.name]}
+                      onChange={(event) => updateQuoteRequestAddOn(field.name, event.target.checked)}
+                    />
+                    <span>{field.label}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            <section className="quote-request-section" aria-labelledby="notes-schedule-heading">
+              <h3 id="notes-schedule-heading">Notes and preferred timing</h3>
+              <div className="quote-request-grid">
+                <div>
+                  <label htmlFor="quotePreferredDate">Preferred date</label>
+                  <input
+                    id="quotePreferredDate"
+                    className="customer-portal-field"
+                    type="date"
+                    value={quoteRequestForm.preferredDate}
+                    onChange={(event) => updateQuoteRequestField('preferredDate', event.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="quotePreferredTime">Preferred time</label>
+                  <select
+                    id="quotePreferredTime"
+                    className="customer-portal-field"
+                    value={quoteRequestForm.preferredTime}
+                    onChange={(event) => updateQuoteRequestField('preferredTime', event.target.value)}
+                  >
+                    <option value="08:00">8:00 AM</option>
+                    <option value="09:00">9:00 AM</option>
+                    <option value="10:00">10:00 AM</option>
+                    <option value="11:00">11:00 AM</option>
+                    <option value="12:00">12:00 PM</option>
+                    <option value="13:00">1:00 PM</option>
+                    <option value="14:00">2:00 PM</option>
+                    <option value="15:00">3:00 PM</option>
+                    <option value="16:00">4:00 PM</option>
+                    <option value="17:00">5:00 PM</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="quote-request-stack">
+                <div>
+                  <label htmlFor="quoteSurfaceNotes">Special surfaces/materials</label>
+                  <textarea
+                    id="quoteSurfaceNotes"
+                    className="customer-portal-field customer-portal-field--textarea"
+                    rows={3}
+                    value={quoteRequestForm.surfaceNotes}
+                    onChange={(event) => updateQuoteRequestField('surfaceNotes', event.target.value)}
+                    placeholder="Example: marble counter, hardwood floors, antique furniture"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="quoteAccessInstructions">Access notes</label>
+                  <textarea
+                    id="quoteAccessInstructions"
+                    className="customer-portal-field customer-portal-field--textarea"
+                    rows={3}
+                    value={quoteRequestForm.accessInstructions}
+                    onChange={(event) => updateQuoteRequestField('accessInstructions', event.target.value)}
+                    placeholder="Gate code, parking, pets in a room, or entry instructions"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="quoteCustomerNotes">Customer notes</label>
+                  <textarea
+                    id="quoteCustomerNotes"
+                    className="customer-portal-field customer-portal-field--textarea"
+                    rows={4}
+                    value={quoteRequestForm.customerNotes}
+                    onChange={(event) => updateQuoteRequestField('customerNotes', event.target.value)}
+                    placeholder="Anything the owner should know before preparing the quote"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <button type="submit" className="quote-request-submit">
+              Review Quote Request Draft
+            </button>
+          </form>
+
+          {quoteRequestPreview && (
+            <section className="quote-request-preview" aria-labelledby="quote-preview-heading">
+              <div className="quote-request-preview-header">
+                <div>
+                  <h3 id="quote-preview-heading">Quote request preview</h3>
+                  <p>This is the normalized in-memory draft. It has not been sent or saved yet.</p>
+                </div>
+                <span>Not persisted</span>
+              </div>
+
+              <div className="quote-preview-grid">
+                <div>
+                  <strong>Service</strong>
+                  <p>{quoteRequestPreview.quoteRequestDraft.requestSnapshot.cleaningType}</p>
+                </div>
+                <div>
+                  <strong>Rooms</strong>
+                  <p>
+                    {quoteRequestPreview.quoteRequestDraft.propertySnapshot.bedrooms} bed,{' '}
+                    {quoteRequestPreview.quoteRequestDraft.propertySnapshot.bathrooms} bath,{' '}
+                    {quoteRequestPreview.quoteRequestDraft.propertySnapshot.roomCounts.kitchens} kitchen
+                  </p>
+                </div>
+                <div>
+                  <strong>Condition</strong>
+                  <p>
+                    {quoteRequestPreview.quoteRequestDraft.requestSnapshot.clutterLevel} clutter, last cleaned{' '}
+                    {quoteRequestPreview.quoteRequestDraft.requestSnapshot.lastCleaned || 'not specified'}
+                  </p>
+                </div>
+                <div>
+                  <strong>Pets</strong>
+                  <p>
+                    {quoteRequestPreview.quoteRequestDraft.propertySnapshot.household.petCount} pet(s), pet hair{' '}
+                    {quoteRequestPreview.quoteRequestDraft.propertySnapshot.household.petHairLevel}
+                  </p>
+                </div>
+                <div>
+                  <strong>Preferred timing</strong>
+                  <p>
+                    {quoteRequestPreview.quoteRequestDraft.appointmentRequest.preferredDate || 'No date'} at{' '}
+                    {quoteRequestPreview.quoteRequestDraft.appointmentRequest.preferredTime || 'no time'}
+                  </p>
+                </div>
+                <div>
+                  <strong>Add-ons</strong>
+                  <p>{activePreviewAddOns.length ? activePreviewAddOns.join(', ') : 'None selected'}</p>
+                </div>
+              </div>
+
+              <div className="quote-preview-notes">
+                <strong>Notes preserved for later review</strong>
+                <dl>
+                  <div>
+                    <dt>Special surfaces/materials</dt>
+                    <dd>{quoteRequestPreview.quoteRequestDraft.requestSnapshot.rawInput.surfaceNotes || 'None provided'}</dd>
+                  </div>
+                  <div>
+                    <dt>Access notes</dt>
+                    <dd>{quoteRequestPreview.quoteRequestDraft.requestSnapshot.rawInput.accessInstructions || 'None provided'}</dd>
+                  </div>
+                  <div>
+                    <dt>Customer notes</dt>
+                    <dd>{quoteRequestPreview.quoteRequestDraft.requestSnapshot.specialRequests || 'None provided'}</dd>
+                  </div>
+                </dl>
+              </div>
+            </section>
+          )}
         </div>
       )}
 

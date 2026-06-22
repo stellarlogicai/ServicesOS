@@ -115,6 +115,7 @@ describe('Customer Portal quote request mapper', () => {
       livingRoomCount: 2,
       diningRoomCount: 1,
       officeCount: 1,
+      closetCount: 4,
       basementCount: 1,
       stairs: true,
       stairsCount: 2,
@@ -157,6 +158,7 @@ describe('Customer Portal quote request mapper', () => {
       livingRooms: 2,
       diningRooms: 1,
       offices: 1,
+      closets: 4,
       basements: 1
     });
     expect(normalized.household).toMatchObject({
@@ -329,14 +331,19 @@ describe('Customer Portal quote request mapper', () => {
         blindCleaning: true,
         wallSpotCleaning: true
       },
-      notes: 'Customer prefers text before arrival.'
+      surfaceNotes: 'Hardwood floors and stone counters.',
+      accessInstructions: 'Use the side gate and park in the driveway.',
+      customerNotes: 'Customer prefers text before arrival.'
     });
 
     expect(normalized.household.petHairLevel).toBe('medium');
     expect(normalized.requestDetails).toMatchObject({
       clutterLevel: 'moderate',
       lastCleaned: 'two months ago',
-      specialRequests: 'Customer prefers text before arrival.'
+      specialRequests: 'Customer prefers text before arrival.',
+      customerNotes: 'Customer prefers text before arrival.',
+      surfaceNotes: 'Hardwood floors and stone counters.',
+      accessInstructions: 'Use the side gate and park in the driveway.'
     });
     expect(normalized.requestDetails.serviceScope).toMatchObject({
       baseboards: true,

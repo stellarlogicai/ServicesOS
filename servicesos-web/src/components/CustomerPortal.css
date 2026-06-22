@@ -1,9 +1,14 @@
 .customer-portal-field {
   box-sizing: border-box;
+  width: 100%;
   background-color: #ffffff;
   color: #0f172a;
   caret-color: #0f172a;
   color-scheme: light;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  padding: 12px;
 }
 
 .customer-portal-field::placeholder {
@@ -19,4 +24,233 @@
 
 .customer-portal-field--textarea {
   resize: vertical;
+}
+
+.customer-portal-tabs {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.customer-portal-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 28px;
+}
+
+.quote-request-header,
+.quote-request-preview-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.quote-request-header h2,
+.quote-request-preview-header h3 {
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.quote-request-header p,
+.quote-request-preview-header p {
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 680px;
+}
+
+.quote-request-status,
+.quote-request-preview-header span {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1e40af;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  text-transform: uppercase;
+}
+
+.quote-request-note {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 24px;
+  padding: 16px;
+}
+
+.quote-request-note strong {
+  color: #0f172a;
+}
+
+.quote-request-form {
+  display: grid;
+  gap: 20px;
+}
+
+.quote-request-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.quote-request-section h3 {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 16px;
+}
+
+.quote-request-section label {
+  color: #374151;
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.quote-request-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.quote-request-grid--compact {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+
+.quote-request-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.quote-request-checkbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.quote-request-checkbox-row--addons {
+  margin-top: 18px;
+}
+
+.quote-request-checkbox {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  color: #334155;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 12px;
+}
+
+.quote-request-checkbox input {
+  accent-color: #2563eb;
+}
+
+.quote-request-submit {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  border: none;
+  border-radius: 8px;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 14px 24px;
+}
+
+.quote-request-submit:focus-visible,
+.quote-request-checkbox:focus-within {
+  outline: 3px solid rgba(59, 130, 246, 0.24);
+  outline-offset: 2px;
+}
+
+.quote-request-preview {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  margin-top: 24px;
+  padding: 24px;
+}
+
+.quote-preview-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.quote-preview-grid div,
+.quote-preview-notes {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.quote-preview-grid strong,
+.quote-preview-notes strong,
+.quote-preview-notes dt {
+  color: #0f172a;
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.quote-preview-grid p,
+.quote-preview-notes dd {
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.quote-preview-notes {
+  margin-top: 14px;
+}
+
+.quote-preview-notes dl {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 0;
+}
+
+@media (max-width: 640px) {
+  .customer-portal-card {
+    padding: 20px;
+  }
+
+  .quote-request-header,
+  .quote-request-preview-header {
+    display: grid;
+  }
+
+  .quote-request-section,
+  .quote-request-preview {
+    padding: 16px;
+  }
+
+  .quote-request-grid,
+  .quote-request-grid--compact,
+  .quote-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-request-checkbox {
+    border-radius: 8px;
+    width: 100%;
+  }
 }

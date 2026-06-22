@@ -144,6 +144,7 @@ const normalizeRoomCounts = (input) => ({
   livingRooms: numberValue(input.livingRoomCount),
   diningRooms: numberValue(input.diningRoomCount),
   offices: numberValue(input.officeCount),
+  closets: numberValue(valueOrDefault(input.closets, input.closetCount)),
   basements: numberValue(input.basementCount)
 });
 
@@ -214,6 +215,9 @@ const normalizeCommonIntakeData = (input, sourceFormat) => {
       specialRequests: stringValue(
         valueOrDefault(input.specialRequests, valueOrDefault(input.notes, input.customerNotes))
       ),
+      customerNotes: stringValue(input.customerNotes),
+      surfaceNotes: stringValue(input.surfaceNotes),
+      accessInstructions: stringValue(input.accessInstructions),
       marketType: stringValue(input.marketType),
       addOnLevels: objectValue(input.levels)
     }
@@ -316,6 +320,10 @@ export function buildPropertyProfileDraft({
       'diningRoomCount'
     ]),
     offices: mergeField(property.roomCounts.offices, savedRoomCounts.offices, 0, ['officeCount']),
+    closets: mergeField(property.roomCounts.closets, savedRoomCounts.closets, 0, [
+      'closets',
+      'closetCount'
+    ]),
     basements: mergeField(property.roomCounts.basements, savedRoomCounts.basements, 0, [
       'basementCount'
     ])
@@ -367,7 +375,15 @@ export function buildPropertyProfileDraft({
     stairsCount: mergeField(property.stairsCount, saved.stairsCount, 0, ['stairsCount']),
     roomCounts: mergedRoomCounts,
     household: mergedHousehold,
-    access: objectValue(saved.access),
+    access: {
+      ...objectValue(saved.access),
+      accessInstructions: mergeField(
+        data.requestDetails.accessInstructions,
+        objectValue(saved.access).accessInstructions,
+        '',
+        ['accessInstructions']
+      )
+    },
     cleaningDefaults: {
       ...savedCleaningDefaults,
       preferredFrequency: valueOrDefault(
@@ -378,7 +394,10 @@ export function buildPropertyProfileDraft({
       priorityAreas: hasAnyRawField(rawInput, ['priorityAreas'])
         ? data.requestDetails.priorityAreas
         : valueOrDefault(savedCleaningDefaults.priorityAreas, []),
-      surfaceNotes: valueOrDefault(savedCleaningDefaults.surfaceNotes, ''),
+      surfaceNotes: valueOrDefault(
+        data.requestDetails.surfaceNotes,
+        valueOrDefault(savedCleaningDefaults.surfaceNotes, '')
+      ),
       specialInstructions: valueOrDefault(
         data.requestDetails.specialRequests,
         valueOrDefault(savedCleaningDefaults.specialInstructions, '')
