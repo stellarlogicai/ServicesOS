@@ -1,7 +1,12 @@
 // src/components/CustomerPortal.jsx
 import { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { getQuotes } from '../services/crmService';
 import { downloadQuotePDF } from '../services/pdfService';
+import {
+  CUSTOMER_PORTAL_IDENTITY_STATUS,
+  resolveCustomerPortalCustomer
+} from '../services/customerPortalIdentityService';
 import { buildCustomerPortalQuoteIntakeDraft } from '../services/customerPortalQuoteRequestMapper';
 import './CustomerPortal.css';
 
@@ -96,6 +101,9 @@ const ADD_ON_FIELDS = [
 const getAddOnLabel = (fieldName) =>
   ADD_ON_FIELDS.find((field) => field.name === fieldName)?.label || fieldName;
 
+const getTenantIdFromContext = (tenantId, currentTenant) =>
+  tenantId || (typeof currentTenant === 'string' ? currentTenant : currentTenant?.id) || null;
+
 function getStoredAppointments() {
   try {
     const stored = localStorage.getItem('customer_appointments');
@@ -106,6 +114,10 @@ function getStoredAppointments() {
 }
 
 export default function CustomerPortal() {
+  const { user, userProfile, tenantId, currentTenant } = useAuth();
+  const resolvedTenantId = getTenantIdFromContext(tenantId, currentTenant);
+  const userUid = user?.uid || null;
+  const userEmail = user?.email || null;
   const [activeTab, setActiveTab] = useState('quotes');
   const [quotes, setQuotes] = useState([]);
   const [selectedQuote, setSelectedQuote] = useState(null);
@@ -113,6 +125,12 @@ export default function CustomerPortal() {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [quoteRequestForm, setQuoteRequestForm] = useState(DEFAULT_QUOTE_REQUEST_FORM);
   const [quoteRequestPreview, setQuoteRequestPreview] = useState(null);
+  const [customerIdentity, setCustomerIdentity] = useState({
+    status: 'idle',
+    customer: null,
+    matchMethod: null,
+    message: ''
+  });
 
   // Booking form state
   const [bookingForm, setBookingForm] = useState({
@@ -139,6 +157,27 @@ export default function CustomerPortal() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    Promise.resolve().then(async () => {
+      if (!isActive) return;
+
+      const result = await resolveCustomerPortalCustomer({
+        tenantId: resolvedTenantId,
+        user: userUid ? { uid: userUid, email: userEmail } : null
+      });
+
+      if (isActive) {
+        setCustomerIdentity(result);
+      }
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, [resolvedTenantId, userUid, userEmail]);
 
   const showMessage = (type, text) => {
     setMessage({ type, text });
@@ -249,6 +288,10 @@ export default function CustomerPortal() {
         specialRequests: quoteRequestForm.customerNotes
       },
       sourceFormat: 'intake-form',
+      tenantId: resolvedTenantId,
+      customerId: customerIdentity.customer?.id || null,
+      authUid: userUid,
+      existingCustomer: customerIdentity.customer || {},
       submittedAt: new Date().toISOString()
     });
 
@@ -261,6 +304,8 @@ export default function CustomerPortal() {
       .filter(([, enabled]) => enabled)
       .map(([fieldName]) => getAddOnLabel(fieldName))
     : [];
+
+  const customerIdentityIsLinked = customerIdentity.status === CUSTOMER_PORTAL_IDENTITY_STATUS.FOUND;
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '24px' }}>
@@ -284,6 +329,35 @@ export default function CustomerPortal() {
           color: message.type === 'success' ? '#166534' : '#991b1b'
         }}>
           {message.text}
+        </div>
+      )}
+
+      {customerIdentity.message && (
+        <div
+          className={`customer-identity-banner ${
+            customerIdentityIsLinked ? 'customer-identity-banner--ready' : 'customer-identity-banner--blocked'
+          }`}
+        >
+          <div>
+            <strong>
+              {customerIdentityIsLinked ? 'Customer identity resolved' : 'Saved quote requests not enabled'}
+            </strong>
+            <p>{customerIdentity.message}</p>
+          </div>
+          <dl>
+            <div>
+              <dt>Signed in as</dt>
+              <dd>{userEmail || userProfile?.email || 'Unknown'}</dd>
+            </div>
+            <div>
+              <dt>Business</dt>
+              <dd>{currentTenant?.businessName || resolvedTenantId || 'Not linked'}</dd>
+            </div>
+            <div>
+              <dt>Customer match</dt>
+              <dd>{customerIdentity.matchMethod || 'Not linked'}</dd>
+            </div>
+          </dl>
         </div>
       )}
 
