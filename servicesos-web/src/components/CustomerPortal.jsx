@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { getQuotes } from '../services/crmService';
 import { downloadQuotePDF } from '../services/pdfService';
+import './CustomerPortal.css';
 
 function getStoredAppointments() {
   try {
@@ -436,6 +437,7 @@ export default function CustomerPortal() {
                 </label>
                 <input
                   id="preferredDate"
+                  className="customer-portal-field"
                   name="preferredDate"
                   type="date"
                   value={bookingForm.preferredDate}
@@ -457,6 +459,7 @@ export default function CustomerPortal() {
                 </label>
                 <select
                   id="preferredTime"
+                  className="customer-portal-field"
                   name="preferredTime"
                   value={bookingForm.preferredTime}
                   onChange={(e) => setBookingForm({ ...bookingForm, preferredTime: e.target.value })}
@@ -487,6 +490,7 @@ export default function CustomerPortal() {
                 </label>
                 <textarea
                   id="notes"
+                  className="customer-portal-field customer-portal-field--textarea"
                   name="notes"
                   value={bookingForm.notes}
                   onChange={(e) => setBookingForm({ ...bookingForm, notes: e.target.value })}

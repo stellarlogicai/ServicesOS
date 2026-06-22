@@ -1,0 +1,22 @@
+.customer-portal-field {
+  box-sizing: border-box;
+  background-color: #ffffff;
+  color: #0f172a;
+  caret-color: #0f172a;
+  color-scheme: light;
+}
+
+.customer-portal-field::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
+.customer-portal-field:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.24);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35);
+}
+
+.customer-portal-field--textarea {
+  resize: vertical;
+}
