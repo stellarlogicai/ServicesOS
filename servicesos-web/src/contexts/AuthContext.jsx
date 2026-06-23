@@ -315,7 +315,7 @@ export function AuthProvider({ children }) {
 
       // Tenant actions
       switchTenant,        // super-admin only
-      reloadTenant: () => loadTenant(userProfile?.tenantId),
+      reloadTenant: () => loadTenant(userProfile?.tenantId, userProfile?.role),
 
       // Role helpers
       role,
