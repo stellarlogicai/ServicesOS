@@ -156,16 +156,23 @@ export default function CustomerPortal() {
   useEffect(() => {
     let isMounted = true;
 
-    getQuotes().then((quotes) => {
-      if (isMounted) {
-        setQuotes(quotes || []);
-      }
-    });
+    if (resolvedTenantId) {
+      getQuotes(resolvedTenantId).then((quotes) => {
+        if (isMounted) {
+          setQuotes(quotes || []);
+        }
+      }).catch((error) => {
+        console.error('[Customer Portal] Error loading quotes:', error);
+        if (isMounted) {
+          setQuotes([]);
+        }
+      });
+    }
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [resolvedTenantId]);
 
   useEffect(() => {
     let isActive = true;
@@ -510,16 +517,16 @@ export default function CustomerPortal() {
                   >
                     <div>
                       <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>
-                        {quote.formData.fullName || 'Customer'}
+                        {quote.formData?.fullName || quote.customerSnapshot?.fullName || quote.customerSnapshot?.displayName || quote.email || 'Customer'}
                       </div>
                       <div style={{ fontSize: 14, color: '#64748b', marginBottom: 4 }}>
-                        {quote.formData.cleaningType || 'Standard'} Cleaning · {quote.formData.bedrooms || 0} bed, {quote.formData.bathrooms || 0} bath
+                        {quote.formData?._cleaningType || quote.requestSnapshot?.cleaningType || quote.formData?.cleaningType || 'Standard'} Cleaning · {quote.formData?.bedrooms || quote.requestSnapshot?.bedrooms || 0} bed, {quote.formData?.bathrooms || quote.requestSnapshot?.bathrooms || 0} bath
                       </div>
                       <div style={{ fontSize: 18, fontWeight: 700, color: '#3b82f6' }}>
                         ${quote.estimate?.priceLow || 0} - ${quote.estimate?.priceHigh || 0}
                       </div>
                       <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
-                        Created: {new Date(quote.createdAt).toLocaleDateString()}
+                        Created: {quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : 'Unknown'}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>

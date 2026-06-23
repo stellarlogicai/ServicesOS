@@ -64,15 +64,40 @@ export async function createTenant(tenantData) {
  */
 export async function getTenant(tenantId) {
   try {
+    // Dev-safe diagnostics (DEV mode only)
+    if (import.meta.env.DEV) {
+      const maskedProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID?.substring(0, 4) + '...' + import.meta.env.VITE_FIREBASE_PROJECT_ID?.substring(import.meta.env.VITE_FIREBASE_PROJECT_ID.length - 4);
+      console.log('[Tenant Service] DEV DIAGNOSTICS:', {
+        maskedProjectId,
+        tenantId,
+        tenantPath: `${TENANTS_COLLECTION}/${tenantId}`,
+        tenantIdType: typeof tenantId,
+        tenantIdLength: tenantId?.length
+      });
+    }
+
     const tenantDoc = await getDoc(doc(db, TENANTS_COLLECTION, tenantId));
     
     if (!tenantDoc.exists()) {
+      if (import.meta.env.DEV) {
+        console.error('[Tenant Service] DEV DIAGNOSTICS: Document does not exist', {
+          tenantId,
+          tenantPath: `${TENANTS_COLLECTION}/${tenantId}`
+        });
+      }
       throw new Error('Tenant not found');
     }
     
     return { id: tenantDoc.id, ...tenantDoc.data() };
   } catch (error) {
     console.error('[Tenant Service] Error getting tenant:', error);
+    if (import.meta.env.DEV) {
+      console.error('[Tenant Service] DEV DIAGNOSTICS: Full error details', {
+        message: error.message,
+        code: error.code,
+        name: error.name
+      });
+    }
     throw error;
   }
 }
