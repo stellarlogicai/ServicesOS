@@ -84,7 +84,7 @@ export function AuthProvider({ children }) {
   const [tenantLoading, setTenantLoading] = useState(false);
 
   // ── Load tenant helper ────────────────────────────────────────────────────
-  const loadTenant = useCallback(async (tenantId) => {
+  const loadTenant = useCallback(async (tenantId, userRole) => {
     if (!tenantId) {
       setCurrentTenant(null);
       clearCurrentTenantId();
@@ -93,10 +93,17 @@ export function AuthProvider({ children }) {
 
     setTenantLoading(true);
     try {
-      const tenant = await getTenant(tenantId);
-      setCurrentTenant(tenant);
-      // Wire into multiTenantService so all data calls are scoped automatically
-      setCurrentTenantId(tenantId);
+      // Customers only need tenantId for scoping, not the full tenant document
+      // This avoids permission errors since customers are not in tenants/{tenantId}.users
+      if (userRole === 'customer') {
+        setCurrentTenantId(tenantId);
+        setCurrentTenant(null); // Customers don't need full tenant object
+      } else {
+        const tenant = await getTenant(tenantId);
+        setCurrentTenant(tenant);
+        // Wire into multiTenantService so all data calls are scoped automatically
+        setCurrentTenantId(tenantId);
+      }
     } catch (err) {
       console.error('[Auth] Failed to load tenant:', err);
       setCurrentTenant(null);
@@ -132,7 +139,7 @@ export function AuthProvider({ children }) {
           }
 
           // Load their tenant (super-admins may have tenantId = null)
-          await loadTenant(profile.tenantId || null);
+          await loadTenant(profile.tenantId || null, profile.role);
         } else {
           // User doc doesn't exist yet (e.g. first Google sign-in)
           setUserProfile({ uid: firebaseUser.uid, role: 'customer', tenantId: null });
