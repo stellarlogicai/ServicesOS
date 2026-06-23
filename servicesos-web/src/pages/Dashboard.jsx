@@ -4,13 +4,20 @@ import { checkInsuranceExpiration } from "../services/insuranceService";
 import { useAuth } from "../contexts/AuthContext";
 import { getRemainingCredits } from "../services/aiUsageEngineService";
 import { getLeads, bookLead, setLeadStatus, deleteLead } from "../services/crmService";
+import {
+  getQuoteLeadDisplayData,
+  getQuoteLeadPriceDisplay,
+  getRoomSummary,
+  isPendingOwnerReview
+} from "../services/quoteLeadDisplay";
 
 // Helper function to safely access form data from both old and new structures
 function getFormData(lead) {
-  // New structure: lead.formData
-  if (lead.formData) return lead.formData;
-  // Old structure: direct on lead object
-  return lead;
+  return {
+    ...lead,
+    ...(lead.formData || {}),
+    ...getQuoteLeadDisplayData(lead)
+  };
 }
 
 // ─── Tiny status badge ────────────────────────────────────────────────────────
@@ -153,6 +160,8 @@ function SMSPreviewPanel({ lead, onClose }) {
 function LeadDrawer({ lead, onClose, onBook, onStatusChange, onSMSPreview }) {
   const fd = getFormData(lead);
   const es = lead.estimate;
+  const priceDisplay = getQuoteLeadPriceDisplay(lead);
+  const pendingOwnerReview = isPendingOwnerReview(lead);
 
   const serviceLabels = { standard: "Standard Clean", deep: "Deep Clean", moveout: "Move-In/Out", construction: "Post-Construction" };
   const freqLabels    = { "one-time": "One-time", weekly: "Weekly", "bi-weekly": "Bi-weekly", monthly: "Monthly" };
@@ -199,16 +208,16 @@ function LeadDrawer({ lead, onClose, onBook, onStatusChange, onSMSPreview }) {
           {/* Price */}
           <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 12, padding: "20px 24px", marginBottom: 24, textAlign: "center" }}>
             <div style={{ fontSize: 13, color: "#1d4ed8", marginBottom: 6, fontWeight: 500 }}>
-              {lead.booking ? "Agreed price" : "Estimate range"}
+              {priceDisplay.label}
             </div>
             <div style={{ fontSize: 32, fontWeight: 700, color: "#1d4ed8" }}>
-              {lead.booking
-                ? `$${lead.booking.agreedPrice.toLocaleString()}`
-                : `$${es.priceLow.toLocaleString()} – $${es.priceHigh.toLocaleString()}`}
+              {priceDisplay.text}
             </div>
-            <div style={{ fontSize: 13, color: "#3b82f6", marginTop: 4 }}>
-              {es.laborHours} labor hrs · ~{es.appointmentDuration} hr appointment
-            </div>
+            {!pendingOwnerReview && (
+              <div style={{ fontSize: 13, color: "#3b82f6", marginTop: 4 }}>
+                {es.laborHours} labor hrs · ~{es.appointmentDuration} hr appointment
+              </div>
+            )}
           </div>
 
           {/* Booking info if booked */}
@@ -221,6 +230,16 @@ function LeadDrawer({ lead, onClose, onBook, onStatusChange, onSMSPreview }) {
                 {new Date(lead.booking.scheduledAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
               </div>
               {lead.booking.notes && <div style={{ fontSize: 13, color: "#166534" }}>📝 {lead.booking.notes}</div>}
+            </div>
+          )}
+          {!lead.booking && lead.appointmentRequest && (
+            <div style={{ background: "#fefce8", border: "1px solid #fde68a", borderRadius: 12, padding: 16, marginBottom: 24 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#a16207", marginBottom: 6 }}>
+                Appointment preference
+              </div>
+              <div style={{ fontSize: 14, color: "#854d0e" }}>
+                Requested for owner review, not a confirmed booking.
+              </div>
             </div>
           )}
 
@@ -363,7 +382,7 @@ export default function Dashboard() {
   const revenue       = bookedLeads.reduce((s, l) => s + (l.booking?.agreedPrice || 0), 0);
   const pipeline      = leads
     .filter(l => l.status !== "lost")
-    .reduce((s, l) => s + ((l.estimate.priceLow + l.estimate.priceHigh) / 2), 0);
+    .reduce((s, l) => s + (((l.estimate?.priceLow || 0) + (l.estimate?.priceHigh || 0)) / 2), 0);
   const conversionRate = totalLeads > 0 ? Math.round((bookedLeads.length / totalLeads) * 100) : 0;
 
   // Filter
@@ -372,7 +391,10 @@ export default function Dashboard() {
     .filter(l => {
       if (!search) return true;
       const q = search.toLowerCase();
-      return l.formData.fullName.toLowerCase().includes(q) || l.formData.address.toLowerCase().includes(q) || l.formData.phone.includes(q);
+      const display = getFormData(l);
+      return display.fullName.toLowerCase().includes(q) ||
+        display.address.toLowerCase().includes(q) ||
+        display.phone.includes(q);
     })
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
@@ -593,14 +615,22 @@ export default function Dashboard() {
                       <div style={{ fontSize: 12, color: "#9ca3af", textTransform: "capitalize" }}>{getFormData(lead).frequency}</div>
                     </td>
                     <td style={{ padding: "14px 16px", fontSize: 13, color: "#374151" }}>
-                      <div>{getFormData(lead).bedrooms}bd / {getFormData(lead).bathrooms}ba</div>
-                      <div style={{ fontSize: 12, color: "#9ca3af" }}>{Number(getFormData(lead).squareFootage).toLocaleString()} sq ft</div>
+                      <div>{getRoomSummary(getFormData(lead))}</div>
+                      <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                        {getFormData(lead).squareFootage !== null
+                          ? `${getFormData(lead).squareFootage.toLocaleString()} sq ft`
+                          : "Square footage pending"}
+                      </div>
                     </td>
                     <td style={{ padding: "14px 16px", fontSize: 14, fontWeight: 500, color: "#111827" }}>
-                      {lead.booking
-                        ? <span style={{ color: "#059669" }}>${lead.booking.agreedPrice.toLocaleString()}</span>
-                        : `$${lead.estimate.priceLow}–$${lead.estimate.priceHigh}`}
-                      <div style={{ fontSize: 12, color: "#9ca3af" }}>{lead.estimate.laborHours} hrs labor</div>
+                      <span style={{ color: lead.booking ? "#059669" : "#111827" }}>
+                        {getQuoteLeadPriceDisplay(lead).text}
+                      </span>
+                      {!isPendingOwnerReview(lead) && (
+                        <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                          {lead.estimate?.laborHours || 0} hrs labor
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: "14px 16px" }}><Badge status={lead.status} /></td>
                     <td style={{ padding: "14px 16px", fontSize: 13, color: "#9ca3af" }}>

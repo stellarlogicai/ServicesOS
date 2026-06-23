@@ -15,6 +15,9 @@ const missingTenantMessage =
 const missingCustomerMessage =
   'Your customer profile needs to be linked before saved quote requests can be enabled.';
 
+const linkedCustomerMessage =
+  'Customer profile linked. You can submit quote requests for owner review.';
+
 const findCustomerByField = async (tenantId, fieldName, value) => {
   if (!value) {
     return null;
@@ -62,7 +65,7 @@ export async function resolveCustomerPortalCustomer({ tenantId, user } = {}) {
         status: CUSTOMER_PORTAL_IDENTITY_STATUS.FOUND,
         customer: customerByAuthUid,
         matchMethod: 'authUid',
-        message: 'Customer profile linked. Saved quote request persistence is still disabled.'
+        message: linkedCustomerMessage
       };
     }
 
@@ -73,7 +76,7 @@ export async function resolveCustomerPortalCustomer({ tenantId, user } = {}) {
         status: CUSTOMER_PORTAL_IDENTITY_STATUS.FOUND,
         customer: customerByEmail,
         matchMethod: 'email',
-        message: 'Customer profile linked by email. Saved quote request persistence is still disabled.'
+        message: linkedCustomerMessage
       };
     }
 
@@ -93,4 +96,3 @@ export async function resolveCustomerPortalCustomer({ tenantId, user } = {}) {
     };
   }
 }
-

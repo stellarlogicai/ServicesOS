@@ -55,7 +55,7 @@ function setLinkedCustomerIdentity() {
     status: 'found',
     customer: linkedCustomer,
     matchMethod: 'authUid',
-    message: 'Customer profile linked. Saved quote request persistence is still disabled.'
+    message: 'Customer profile linked. You can submit quote requests for owner review.'
   });
 }
 
@@ -160,6 +160,54 @@ describe('CustomerPortal quote request submit wiring', () => {
     await waitFor(() => {
       expect(screen.getAllByText('Quote request submitted for owner review.').length).toBeGreaterThan(0);
     });
+  });
+
+  it('renders a pending quote request from snapshots without booking or zero-value placeholders', async () => {
+    customerPortalMocks.getQuotes.mockResolvedValue([
+      {
+        id: 'lead-snapshot',
+        type: 'quote_request',
+        status: 'new',
+        customerSnapshot: {
+          name: 'Snapshot Customer'
+        },
+        propertySnapshot: {
+          bedrooms: 3,
+          bathrooms: 2
+        },
+        requestSnapshot: {
+          cleaningType: 'deep'
+        },
+        formData: {
+          fullName: 'Legacy Customer',
+          bedrooms: 0,
+          bathrooms: 0,
+          cleaningType: 'standard'
+        },
+        estimate: {
+          priceLow: 0,
+          priceHigh: 0,
+          requiresReview: true,
+          status: 'pending_owner_review'
+        },
+        review: {
+          requiresOwnerReview: true
+        },
+        appointmentRequest: {
+          status: 'pending_review'
+        },
+        booking: null,
+        createdAt: '2026-06-22T12:00:00.000Z'
+      }
+    ]);
+
+    render(<CustomerPortal />);
+
+    expect(await screen.findByText('Snapshot Customer')).toBeInTheDocument();
+    expect(screen.getByText('deep Cleaning · 3 bed, 2 bath')).toBeInTheDocument();
+    expect(screen.getByText('Pending owner review.')).toBeInTheDocument();
+    expect(screen.queryByText('$0 - $0')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Book Now' })).not.toBeInTheDocument();
   });
 
   it('shows an error message when persistence fails', async () => {

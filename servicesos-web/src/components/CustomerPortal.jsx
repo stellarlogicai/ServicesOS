@@ -9,6 +9,12 @@ import {
 } from '../services/customerPortalIdentityService';
 import { buildCustomerPortalQuoteIntakeDraft } from '../services/customerPortalQuoteRequestMapper';
 import { submitCustomerPortalQuoteRequest } from '../services/customerPortalQuoteRequestService';
+import {
+  getQuoteLeadDisplayData,
+  getQuoteLeadPriceDisplay,
+  getRoomSummary,
+  isPendingOwnerReview
+} from '../services/quoteLeadDisplay';
 import './CustomerPortal.css';
 
 const CUSTOMER_PORTAL_TABS = [
@@ -223,21 +229,22 @@ export default function CustomerPortal() {
       showMessage('error', 'Quote not found');
       return;
     }
+    const quoteDisplay = getQuoteLeadDisplayData(quote);
 
     const appointment = {
       id: `apt_${Date.now()}`,
       quoteId: bookingForm.quoteId,
-      customerName: quote.formData.fullName || 'Customer',
-      customerEmail: quote.formData.email || '',
-      customerPhone: quote.formData.phone || '',
-      customerAddress: quote.formData.address || '',
-      serviceType: quote.formData.cleaningType || 'Standard',
-      bedrooms: quote.formData.bedrooms || 0,
-      bathrooms: quote.formData.bathrooms || 0,
+      customerName: quoteDisplay.fullName,
+      customerEmail: quoteDisplay.email,
+      customerPhone: quoteDisplay.phone,
+      customerAddress: quoteDisplay.address,
+      serviceType: quoteDisplay.cleaningType || 'Standard',
+      bedrooms: quoteDisplay.bedrooms || 0,
+      bathrooms: quoteDisplay.bathrooms || 0,
       preferredDate: bookingForm.preferredDate,
       preferredTime: bookingForm.preferredTime,
       notes: bookingForm.notes,
-      frequency: quote.formData.frequency || 'one-time',
+      frequency: quoteDisplay.frequency,
       priceLow: quote.estimate?.priceLow || 0,
       priceHigh: quote.estimate?.priceHigh || 0,
       status: 'pending',
@@ -502,67 +509,75 @@ export default function CustomerPortal() {
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 16 }}>
-                {quotes.map(quote => (
-                  <div
-                    key={quote.id}
-                    style={{
-                      padding: '20px',
-                      background: '#f8fafc',
-                      borderRadius: 12,
-                      border: '1px solid #e2e8f0',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>
-                        {quote.formData?.fullName || quote.customerSnapshot?.fullName || quote.customerSnapshot?.displayName || quote.email || 'Customer'}
+                {quotes.map(quote => {
+                  const quoteDisplay = getQuoteLeadDisplayData(quote);
+                  const priceDisplay = getQuoteLeadPriceDisplay(quote);
+                  const pendingOwnerReview = isPendingOwnerReview(quote);
+
+                  return (
+                    <div
+                      key={quote.id}
+                      style={{
+                        padding: '20px',
+                        background: '#f8fafc',
+                        borderRadius: 12,
+                        border: '1px solid #e2e8f0',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>
+                          {quoteDisplay.fullName}
+                        </div>
+                        <div style={{ fontSize: 14, color: '#64748b', marginBottom: 4 }}>
+                          {quoteDisplay.cleaningType} Cleaning · {getRoomSummary(quoteDisplay)}
+                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#3b82f6' }}>
+                          {priceDisplay.text}
+                        </div>
+                        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
+                          Created: {quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : 'Unknown'}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 14, color: '#64748b', marginBottom: 4 }}>
-                        {quote.formData?._cleaningType || quote.requestSnapshot?.cleaningType || quote.formData?.cleaningType || 'Standard'} Cleaning · {quote.formData?.bedrooms || quote.requestSnapshot?.bedrooms || 0} bed, {quote.formData?.bathrooms || quote.requestSnapshot?.bathrooms || 0} bath
-                      </div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: '#3b82f6' }}>
-                        ${quote.estimate?.priceLow || 0} - ${quote.estimate?.priceHigh || 0}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
-                        Created: {quote.createdAt ? new Date(quote.createdAt).toLocaleDateString() : 'Unknown'}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => handleViewQuote(quote)}
+                          style={{
+                            padding: '10px 20px',
+                            background: 'white',
+                            color: '#0f172a',
+                            border: '1px solid #d1d5db',
+                            borderRadius: 8,
+                            fontSize: 14,
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          View Details
+                        </button>
+                        {!pendingOwnerReview && (
+                          <button
+                            onClick={() => handleScheduleQuote(quote)}
+                            style={{
+                              padding: '10px 20px',
+                              background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: 8,
+                              fontSize: 14,
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Book Now
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        onClick={() => handleViewQuote(quote)}
-                        style={{
-                          padding: '10px 20px',
-                          background: 'white',
-                          color: '#0f172a',
-                          border: '1px solid #d1d5db',
-                          borderRadius: 8,
-                          fontSize: 14,
-                          fontWeight: 600,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        View Details
-                      </button>
-                      <button
-                        onClick={() => handleScheduleQuote(quote)}
-                        style={{
-                          padding: '10px 20px',
-                          background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: 8,
-                          fontSize: 14,
-                          fontWeight: 600,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Book Now
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -957,10 +972,10 @@ export default function CustomerPortal() {
                 Customer Information
               </h3>
               <div style={{ display: 'grid', gap: 8, fontSize: 14, color: '#64748b' }}>
-                <div><strong>Name:</strong> {selectedQuote.formData.fullName || 'N/A'}</div>
-                <div><strong>Email:</strong> {selectedQuote.formData.email || 'N/A'}</div>
-                <div><strong>Phone:</strong> {selectedQuote.formData.phone || 'N/A'}</div>
-                <div><strong>Address:</strong> {selectedQuote.formData.address || 'N/A'}</div>
+                <div><strong>Name:</strong> {getQuoteLeadDisplayData(selectedQuote).fullName}</div>
+                <div><strong>Email:</strong> {getQuoteLeadDisplayData(selectedQuote).email || 'N/A'}</div>
+                <div><strong>Phone:</strong> {getQuoteLeadDisplayData(selectedQuote).phone || 'N/A'}</div>
+                <div><strong>Address:</strong> {getQuoteLeadDisplayData(selectedQuote).address || 'N/A'}</div>
               </div>
             </div>
 
@@ -970,11 +985,11 @@ export default function CustomerPortal() {
                 Service Details
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, fontSize: 14, color: '#64748b' }}>
-                <div><strong>Type:</strong> {selectedQuote.formData.cleaningType || 'Standard'}</div>
-                <div><strong>Bedrooms:</strong> {selectedQuote.formData.bedrooms || 0}</div>
-                <div><strong>Bathrooms:</strong> {selectedQuote.formData.bathrooms || 0}</div>
-                <div><strong>Square Feet:</strong> {selectedQuote.formData.squareFootage || 'N/A'}</div>
-                <div><strong>Frequency:</strong> {selectedQuote.formData.frequency || 'One-time'}</div>
+                <div><strong>Type:</strong> {getQuoteLeadDisplayData(selectedQuote).cleaningType}</div>
+                <div><strong>Bedrooms:</strong> {getQuoteLeadDisplayData(selectedQuote).bedrooms ?? 'N/A'}</div>
+                <div><strong>Bathrooms:</strong> {getQuoteLeadDisplayData(selectedQuote).bathrooms ?? 'N/A'}</div>
+                <div><strong>Square Feet:</strong> {getQuoteLeadDisplayData(selectedQuote).squareFootage ?? 'N/A'}</div>
+                <div><strong>Frequency:</strong> {getQuoteLeadDisplayData(selectedQuote).frequency}</div>
               </div>
             </div>
 
@@ -1007,45 +1022,51 @@ export default function CustomerPortal() {
                 Estimated Price
               </h3>
               <div style={{ fontSize: 32, fontWeight: 700, color: '#1e40af' }}>
-                ${selectedQuote.estimate?.priceLow || 0} - ${selectedQuote.estimate?.priceHigh || 0}
+                {getQuoteLeadPriceDisplay(selectedQuote).text}
               </div>
-              <div style={{ fontSize: 14, color: '#1e40af', marginTop: 8 }}>
-                Estimated Duration: {selectedQuote.estimate?.duration || 'N/A'}
-              </div>
+              {!isPendingOwnerReview(selectedQuote) && (
+                <div style={{ fontSize: 14, color: '#1e40af', marginTop: 8 }}>
+                  Estimated Duration: {selectedQuote.estimate?.duration || 'N/A'}
+                </div>
+              )}
             </div>
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: 12 }}>
-              <button
-                onClick={handleDownloadPDF}
-                style={{
-                  padding: '12px 24px',
-                  background: 'white',
-                  color: '#0f172a',
-                  border: '1px solid #d1d5db',
-                  borderRadius: 8,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                Download PDF
-              </button>
-              <button
-                onClick={() => handleScheduleQuote(selectedQuote)}
-                style={{
-                  padding: '12px 24px',
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: 8,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                Book Appointment
-              </button>
+              {!isPendingOwnerReview(selectedQuote) && (
+                <button
+                  onClick={handleDownloadPDF}
+                  style={{
+                    padding: '12px 24px',
+                    background: 'white',
+                    color: '#0f172a',
+                    border: '1px solid #d1d5db',
+                    borderRadius: 8,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Download PDF
+                </button>
+              )}
+              {!isPendingOwnerReview(selectedQuote) && (
+                <button
+                  onClick={() => handleScheduleQuote(selectedQuote)}
+                  style={{
+                    padding: '12px 24px',
+                    background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 8,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Book Appointment
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -1,96 +1,70 @@
 # Customer Portal Tenant Permission Fix Progress
 
-## Crash Root Cause
+## Diagnosis
 
-**CustomerPortal.jsx line 520** attempted to access `quote.formData.fullName` without checking if `quote.formData` exists. When quotes/leads have malformed or legacy data structures, `formData` may be undefined, causing:
+The denied tenant read originates from this call chain:
 
-```
-Uncaught TypeError: Cannot read properties of undefined (reading 'fullName')
-```
+1. `src/contexts/AuthContext.jsx`
+2. `loadTenant(tenantId, userRole)`
+3. `src/services/tenantService.js`
+4. `getTenant(tenantId)`
+5. Firestore `getDoc(doc(db, "tenants", tenantId))`
 
-## Crash Fix
+Deployed tenant rules reject that full tenant-document read for a customer who is not listed in the tenant document's admin/user membership arrays.
 
-**File:** `src/components/CustomerPortal.jsx`
+## Cause Classification
 
-**Changes:**
-- Added optional chaining (`?.`) to all quote data access
-- Added fallback values for missing fields:
-  - Customer name: `quote.formData?.fullName || quote.customerSnapshot?.fullName || quote.customerSnapshot?.displayName || quote.email || 'Customer'`
-  - Service type: `quote.formData?._cleaningType || quote.requestSnapshot?.cleaningType || quote.formData?.cleaningType || 'Standard'`
-  - Bedrooms/bathrooms: Fallback to `requestSnapshot` values or 0
-  - Created date: Check if `quote.createdAt` exists before formatting
-- Preserves valid data when present
-- Does not change quote persistence or appointment behavior
+The Customer Portal does not need the full `tenants/{tenantId}` document. It only needs the tenant ID from `users/{uid}.tenantId` to scope customer and quote-request access.
 
-## Tenant Read Permission Root Cause
+This matches cause 3: AuthContext loading full tenant data unnecessarily for customer users.
 
-**FirebaseError: Missing or insufficient permissions** when reading `tenants/tenant_1781642309523`
+The active `src/contexts/AuthContext.jsx` now has the minimal guard:
 
-**Rules file:** `cloud-functions/firestore.rules` (deployed per `firebase.json` line 21)
-
-**Blocking rule:** Line 30-35
 ```javascript
-match /tenants/{tenantId} {
-  allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || isTenantUser(tenantId);
-  // ...
+if (userRole === 'customer') {
+  setCurrentTenantId(tenantId);
+  setCurrentTenant(null);
+} else {
+  const tenant = await getTenant(tenantId);
+  setCurrentTenant(tenant);
+  setCurrentTenantId(tenantId);
 }
 ```
 
-**Helper functions:**
-- `isTenantUser(tenantId)` (lines 20-23): Checks if `request.auth.uid in tenants/{tenantId}.data.users`
-- `isTenantAdmin(tenantId)` (lines 15-18): Checks if `request.auth.uid in tenants/{tenantId}.data.adminUsers`
+The app entry point imports this active context from `src/contexts/AuthContext.jsx`.
 
-**Issue:** The signed-in customer UID is not in the tenant's `users` array, so `isTenantUser()` returns false. The user is not a super-admin, so tenant read is denied.
+## Security Impact
 
-## Tenant Document Fields Expected by Rules
+- No Firebase rules were loosened.
+- Customers are not allowed to read all tenant documents.
+- Tenant isolation remains based on `users/{uid}.tenantId`.
+- Customer Portal continues to query only tenant-scoped customer and lead data.
+- No broad tenant membership data change is required merely to render Customer Portal.
 
-The rules expect the tenant document to have:
-- `users`: Array of UIDs allowed to read the tenant
-- `adminUsers`: Array of UIDs with admin access to the tenant
+## Console Error Status
 
-## Recommended Minimal Safe Fix
+The code path causing the `tenantService` permission denial is guarded for customer-role users. A fresh build/sign-in should no longer call `tenantService.getTenant` during customer auth loading.
 
-**Data fix (not rules change):** Add the customer's Firebase Auth UID to the tenant's `users` array in Firestore:
+If the same log appears after deploying this build, verify:
 
-1. Open Firebase Console → Firestore → `tenants/tenant_1781642309523`
-2. Add the customer's UID to the `users` array
-3. If the customer should have admin access, add to `adminUsers` instead
+1. The browser is running the current bundle rather than a stale cached build.
+2. `users/{uid}.role` is exactly `customer`.
+3. The app is using `src/contexts/AuthContext.jsx`, not the unused legacy `src/contexts/auth/AuthContext.jsx`.
+4. The stack trace still points to `tenantService.getTenant`.
 
-**Why this is safe:**
-- Rules already support the `users` array pattern
-- This is the intended mechanism for tenant membership
-- No rules deployment needed
-- Follows existing security model
+Do not change Firestore rules unless a new stack trace proves a separate tenant read is required.
 
-## Alternative Rules Change (Not Recommended)
+## Rules Recommendation
 
-A rules change could allow customers to read their tenant if they have a customer record under that tenant, but this is more complex and could have security implications. The data fix is simpler and follows the existing pattern.
+No rules change is recommended for this cleanup.
 
-## Rules Changed
+If a future customer feature truly requires tenant branding fields, add a narrowly scoped public/customer-safe tenant profile document or an explicit rule limited to the authenticated user's linked tenant. Do not allow all authenticated users to read all tenants.
 
-**No** - rules were not changed. The issue is a data problem, not a rules problem.
+## Manual Retest
 
-## Rules Deployment Needed
-
-**No** - rules deployment is not needed. The fix is to add the customer UID to the tenant's `users` array in Firestore.
-
-## Manual Retest Steps
-
-1. **Add customer UID to tenant:**
-   - Open Firebase Console → Firestore → `tenants/tenant_1781642309523`
-   - Add the signed-in customer's UID to the `users` array
-
-2. **Restart Vite dev server** (if needed)
-
-3. **Sign out and sign back in** to reload AuthContext
-
-4. **Open Customer Portal** and verify:
-   - Business field shows tenant name or tenant ID
-   - Customer Match shows `authUid` or `email`
-   - No permission errors in console
-   - No crash when rendering quotes
-
-5. **Test quote rendering** with malformed data:
-   - Create a test quote with missing `formData`
-   - Verify Customer Portal renders it with fallback values
-   - Verify no crash occurs
+1. Sign out and sign back in as a linked customer.
+2. Open Customer Portal.
+3. Confirm no `tenantService` permission-denied stack appears.
+4. Confirm `tenantId` is still available for customer/customer-quote queries.
+5. Confirm customer identity resolves.
+6. Submit a quote request and confirm it appears in owner/admin leads.
