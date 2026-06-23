@@ -1,5 +1,6 @@
 // src/App.jsx
 import { useState, useEffect } from "react";
+import { BrowserRouter } from "react-router-dom";
 import AIPhotoEstimateSystem  from "./AIPhotoEstimateSystem.jsx";
 import Dashboard              from "./pages/Dashboard.jsx";
 import LoginForm              from "./components/LoginForm.jsx";
@@ -373,9 +374,11 @@ function AccessDenied() {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 
