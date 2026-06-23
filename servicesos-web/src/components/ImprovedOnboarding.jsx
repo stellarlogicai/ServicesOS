@@ -1,5 +1,4 @@
 import { useState, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContextValue';
 
 const STEPS = [
@@ -67,9 +66,8 @@ const IMPORT_OPTIONS = [
   { id: 'csv', name: 'CSV Import', icon: '📄' },
 ];
 
-export default function ImprovedOnboarding() {
-  const navigate = useNavigate();
-  const { signup } = useContext(AuthContext);
+export default function ImprovedOnboarding({ onComplete }) {
+  const { completeOnboarding } = useContext(AuthContext);
   
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -111,7 +109,6 @@ export default function ImprovedOnboarding() {
   
   // Step 5: Services
   const [selectedTemplate, setSelectedTemplate] = useState('');
-  const [customServices] = useState([]);
   
   // Step 6: Employees
   const [employees, setEmployees] = useState([]);
@@ -126,29 +123,21 @@ export default function ImprovedOnboarding() {
     employees: false,
   });
   
-  // Admin account (collected at end)
-  const [adminAccount, setAdminAccount] = useState({
-    displayName: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-  });
-
   const handleNext = () => {
-    if (currentStep < 7) {
-      setCurrentStep(currentStep + 1);
+    if (currentStep < STEPS.length) {
+      setCurrentStep(step => step + 1);
     }
   };
 
   const handleBack = () => {
     if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
+      setCurrentStep(step => step - 1);
     }
   };
 
   const handleSkip = () => {
-    if (currentStep < 7) {
-      setCurrentStep(currentStep + 1);
+    if (currentStep < STEPS.length) {
+      setCurrentStep(step => step + 1);
     }
   };
 
@@ -157,34 +146,8 @@ export default function ImprovedOnboarding() {
     setError('');
     
     try {
-      // Create tenant with all collected data
-      const tenantData = {
-        businessName: companyInfo.businessName,
-        businessType: companyInfo.businessType,
-        businessPhone: companyInfo.businessPhone,
-        businessEmail: companyInfo.businessEmail,
-        timezone: companyInfo.timezone,
-        address: companySettings.address,
-        serviceRadius: companySettings.serviceRadius,
-        businessHours: companySettings.businessHours,
-        branding: branding,
-        services: selectedTemplate ? SERVICE_TEMPLATES.find(t => t.id === selectedTemplate).services : customServices,
-        employees: employees,
-        paymentConnected: paymentChoice !== 'skip',
-        setupCompleted: true,
-        onboardingProgress: 100,
-      };
-      void tenantData;
-      void signup;
-      
-      // Create tenant (you'll need to implement this)
-      // const tenant = await createTenant(tenantData);
-      
-      // Create admin account
-      // const signupResult = await signup(adminAccount.email, adminAccount.password, tenant.id, 'admin');
-      
-      // Navigate to dashboard with first action
-      navigate('/dashboard', { state: { showFirstEstimate: true } });
+      await completeOnboarding();
+      onComplete?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -665,113 +628,24 @@ export default function ImprovedOnboarding() {
     </div>
   );
 
-  const renderCompletion = () => (
-    <div className="space-y-6 text-center">
-      <div className="text-6xl mb-4">🎉</div>
-      <h2 className="text-3xl font-bold text-gray-900">Your Business Is Ready!</h2>
-      <p className="text-gray-600">You're all set to start managing your cleaning business</p>
-      
-      <div className="bg-green-50 border border-green-200 rounded-lg p-6 max-w-md mx-auto">
-        <div className="space-y-2 text-left">
-          <div className="flex items-center gap-2">
-            <span className="text-green-600">✓</span>
-            <span>Company Setup</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-green-600">✓</span>
-            <span>Payments {paymentChoice !== 'skip' ? 'Connected' : 'Skipped'}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-green-600">✓</span>
-            <span>Services Created</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-green-600">✓</span>
-            <span>Branding Added</span>
-          </div>
-        </div>
-      </div>
-      
-      <div className="space-y-4">
-        <div>
-          <p className="text-sm text-gray-600 mb-2">Next Recommended Step:</p>
-          <button
-            onClick={() => navigate('/dashboard', { state: { showFirstEstimate: true } })}
-            className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
-          >
-            Create Your First Estimate
-          </button>
-        </div>
-        
-        <button
-          onClick={() => navigate('/dashboard')}
-          className="w-full px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
-        >
-          Go to Dashboard
-        </button>
-      </div>
-      
-      {/* Admin account creation */}
-      <div className="border-t pt-6 mt-6">
-        <h3 className="font-semibold mb-4">Create Your Admin Account</h3>
-        <div className="space-y-3 max-w-md mx-auto">
-          <input
-            type="text"
-            placeholder="Your full name"
-            value={adminAccount.displayName}
-            onChange={(e) => setAdminAccount({ ...adminAccount, displayName: e.target.value })}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-          />
-          <input
-            type="email"
-            placeholder="Admin email"
-            value={adminAccount.email}
-            onChange={(e) => setAdminAccount({ ...adminAccount, email: e.target.value })}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={adminAccount.password}
-            onChange={(e) => setAdminAccount({ ...adminAccount, password: e.target.value })}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-          />
-          <input
-            type="password"
-            placeholder="Confirm password"
-            value={adminAccount.confirmPassword}
-            onChange={(e) => setAdminAccount({ ...adminAccount, confirmPassword: e.target.value })}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-          />
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold disabled:bg-gray-400"
-          >
-            {loading ? 'Creating Account...' : 'Complete Setup'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  const safeCurrentStep = Math.min(Math.max(currentStep, 1), STEPS.length);
+  const progressPercent = Math.round((safeCurrentStep / STEPS.length) * 100);
+  const currentStepData = STEPS[safeCurrentStep - 1];
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
       <div className="w-full max-w-2xl">
         {/* Progress indicator */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
+          <div className="mb-2">
             <span className="text-sm font-medium text-gray-600">
-              Step {currentStep} of {STEPS.length}
-            </span>
-            <span className="text-sm text-gray-500">
-              {Math.round((currentStep / STEPS.length) * 100)}% Complete
+              Step {safeCurrentStep} of {STEPS.length} • {progressPercent}% Complete
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className="bg-blue-600 h-2 rounded-full transition-all"
-              style={{ width: `${(currentStep / STEPS.length) * 100}%` }}
+              style={{ width: `${progressPercent}%` }}
             />
           </div>
         </div>
@@ -781,17 +655,16 @@ export default function ImprovedOnboarding() {
           {/* Step header */}
           <div className="mb-6">
             <h2 className="text-xl font-bold text-gray-900">
-              {STEPS[currentStep - 1].title}
+              {currentStepData.title}
             </h2>
-            <p className="text-gray-600">{STEPS[currentStep - 1].subtitle}</p>
+            <p className="text-gray-600">{currentStepData.subtitle}</p>
           </div>
 
           {/* Step content */}
-          {currentStep <= 7 ? renderStep() : renderCompletion()}
+          {renderStep()}
 
           {/* Navigation buttons */}
-          {currentStep <= 7 && (
-            <div className="flex gap-3 mt-8">
+          <div className="flex gap-3 mt-8">
               <button
                 onClick={handleBack}
                 disabled={currentStep === 1}
@@ -800,7 +673,7 @@ export default function ImprovedOnboarding() {
                 ← Back
               </button>
               
-              {currentStep < 7 && (
+              {currentStep < STEPS.length && (
                 <>
                   <button
                     onClick={handleSkip}
@@ -817,16 +690,16 @@ export default function ImprovedOnboarding() {
                 </>
               )}
               
-              {currentStep === 7 && (
+              {currentStep === STEPS.length && (
                 <button
-                  onClick={() => setCurrentStep(8)}
+                  onClick={handleSubmit}
+                  disabled={loading}
                   className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
-                  Complete Setup →
+                  {loading ? 'Completing Setup...' : 'Complete Setup →'}
                 </button>
               )}
-            </div>
-          )}
+          </div>
 
           {error && (
             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">

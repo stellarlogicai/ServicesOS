@@ -30,6 +30,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../firebase';
 import { setCurrentTenantId, clearCurrentTenantId } from '../services/multiTenantService';
 import { getTenant } from '../services/tenantService';
+import { completeUserOnboarding } from '../services/onboardingService';
 import { AuthContext } from './AuthContextValue';
 
 // ─── Permission map ───────────────────────────────────────────────────────────
@@ -238,6 +239,19 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const completeOnboarding = async () => {
+    if (!user?.uid) {
+      throw new Error('Authenticated user is unavailable.');
+    }
+
+    await completeUserOnboarding(user.uid);
+    setUserProfile(profile => ({
+      ...profile,
+      onboardingCompleted: true,
+      onboardingProgress: 100
+    }));
+  };
+
   // ── Tenant switching (super-admin only) ───────────────────────────────────
 
   /**
@@ -312,6 +326,7 @@ export function AuthProvider({ children }) {
       loginWithGoogle,
       logout,
       resetPassword,
+      completeOnboarding,
 
       // Tenant actions
       switchTenant,        // super-admin only

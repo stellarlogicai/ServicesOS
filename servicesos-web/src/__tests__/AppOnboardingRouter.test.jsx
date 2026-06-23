@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext } from '../contexts/AuthContextValue';
 
 const authState = {
   user: { uid: 'admin-test', email: 'admin@example.com' },
+  userProfile: { uid: 'admin-test', onboardingCompleted: false },
   role: 'admin',
   currentTenant: {
     id: 'tenant-test',
@@ -27,10 +28,28 @@ vi.mock('../contexts/AuthContext', () => ({
 import App from '../App';
 
 describe('App onboarding router context', () => {
+  beforeEach(() => {
+    authState.currentTenant = {
+      id: 'tenant-test',
+      businessName: 'Test Cleaning Co.',
+      onboardingCompleted: false
+    };
+    authState.userProfile = { uid: 'admin-test', onboardingCompleted: false };
+  });
+
   it('renders admin onboarding inside the app router', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { name: 'Welcome to CleanOps' })).toBeInTheDocument();
-    expect(screen.getByText('Step 1 of 7')).toBeInTheDocument();
+    expect(screen.getByText('Step 1 of 7 • 14% Complete')).toBeInTheDocument();
+  });
+
+  it('skips onboarding for an admin whose tenant is complete', () => {
+    authState.userProfile = { uid: 'admin-test', onboardingCompleted: true };
+
+    render(<App />);
+
+    expect(screen.queryByRole('heading', { name: 'Welcome to CleanOps' })).not.toBeInTheDocument();
+    expect(screen.getByText('Dashboard')).toBeInTheDocument();
   });
 });

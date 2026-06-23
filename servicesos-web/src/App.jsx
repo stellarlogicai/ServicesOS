@@ -178,7 +178,7 @@ function TenantSwitcher() {
 
 // ─── Authenticated shell ──────────────────────────────────────────────────────
 function AuthenticatedApp() {
-  const { user, role, logout, currentTenant, isSuperAdmin } = useAuth();
+  const { user, userProfile, role, logout, currentTenant, isSuperAdmin } = useAuth();
   const { width } = useWindowSize();
   const isMobile  = width < 768;
   const canView   = useCanView();
@@ -210,8 +210,11 @@ function AuthenticatedApp() {
   }, [role]); // eslint-disable-line
 
   // Show onboarding if tenant hasn't completed it
-  if (currentTenant && !currentTenant.onboardingCompleted && role === 'admin') {
-    return <ImprovedOnboarding />;
+  const onboardingCompleted =
+    currentTenant?.onboardingCompleted || userProfile?.onboardingCompleted;
+
+  if (currentTenant && !onboardingCompleted && role === 'admin') {
+    return <ImprovedOnboarding onComplete={() => setPage("dashboard")} />;
   }
 
   const navigate = (id) => {
