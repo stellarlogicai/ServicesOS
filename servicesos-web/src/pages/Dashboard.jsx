@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { checkInsuranceExpiration } from "../services/insuranceService";
 import { useAuth } from "../contexts/AuthContext";
 import { getRemainingCredits } from "../services/aiUsageEngineService";
-import { getLeads, bookLead, setLeadStatus, deleteLead } from "../services/crmService";
+import { getLeads, setLeadStatus, deleteLead } from "../services/crmService";
+import { approveQuoteRequestAndCreateBooking } from "../services/quoteBookingConversionService";
 import {
   getQuoteLeadDisplayData,
   getQuoteLeadPriceDisplay,
@@ -21,14 +22,17 @@ function getFormData(lead) {
 
 // ─── Tiny status badge ────────────────────────────────────────────────────────
 const STATUS_STYLES = {
+  pending_review: { bg: "#fefce8", color: "#a16207", label: "Pending owner review" },
   new:    { bg: "#eff6ff", color: "#1d4ed8", label: "New" },
   quoted: { bg: "#fefce8", color: "#a16207", label: "Quoted" },
   booked: { bg: "#f0fdf4", color: "#15803d", label: "Booked" },
   lost:   { bg: "#fef2f2", color: "#b91c1c", label: "Lost" },
 };
 
-function Badge({ status }) {
-  const s = STATUS_STYLES[status] || STATUS_STYLES.new;
+function Badge({ status, pendingOwnerReview = false }) {
+  const s = pendingOwnerReview
+    ? STATUS_STYLES.pending_review
+    : STATUS_STYLES[status] || STATUS_STYLES.new;
   return (
     <span style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: s.bg, color: s.color }}>
       {s.label}
@@ -49,13 +53,18 @@ function StatCard({ label, value, sub, accent }) {
 
 // ─── Book modal ───────────────────────────────────────────────────────────────
 function BookModal({ lead, onClose, onSave }) {
-  const [date, setDate]   = useState("");
-  const [time, setTime]   = useState("09:00");
-  const [price, setPrice] = useState(String(lead.estimate.priceLow));
+  const display = getFormData(lead);
+  const pendingOwnerReview = isPendingOwnerReview(lead);
+  const [date, setDate]   = useState(display.preferredDate || "");
+  const [time, setTime]   = useState(display.preferredTime || "09:00");
+  const [price, setPrice] = useState(
+    pendingOwnerReview ? "" : String(lead.estimate?.priceLow || "")
+  );
   const [notes, setNotes] = useState("");
+  const validPrice = Number(price) > 0;
 
   const handleSave = () => {
-    if (!date) return;
+    if (!date || !validPrice) return;
     const scheduledAt = new Date(`${date}T${time}`).toISOString();
     onSave({ scheduledAt, agreedPrice: Number(price), notes });
   };
@@ -68,8 +77,10 @@ function BookModal({ lead, onClose, onSave }) {
   return (
     <div style={overlay} onClick={onClose}>
       <div style={box} onClick={e => e.stopPropagation()}>
-        <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 600 }}>Convert to booked job</h2>
-        <p style={{ margin: "0 0 24px", fontSize: 14, color: "#6b7280" }}>{getFormData(lead).fullName} · {getFormData(lead).address}</p>
+        <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 600 }}>
+          {pendingOwnerReview ? "Approve quote and create booking" : "Create booking"}
+        </h2>
+        <p style={{ margin: "0 0 24px", fontSize: 14, color: "#6b7280" }}>{display.fullName} · {display.address}</p>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
           <div>
@@ -83,11 +94,17 @@ function BookModal({ lead, onClose, onSave }) {
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <div style={label}>Agreed price ($)</div>
-          <input type="number" value={price} onChange={e => setPrice(e.target.value)} style={field} />
-          <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
-            Estimate range: ${lead.estimate.priceLow}–${lead.estimate.priceHigh}
-          </div>
+          <div style={label}>Approved price ($) *</div>
+          <input type="number" min="0.01" step="0.01" value={price} onChange={e => setPrice(e.target.value)} style={field} />
+          {pendingOwnerReview ? (
+            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
+              Enter the price approved during owner review.
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
+              Estimate range: ${lead.estimate?.priceLow || 0}–${lead.estimate?.priceHigh || 0}
+            </div>
+          )}
         </div>
 
         <div style={{ marginBottom: 24 }}>
@@ -99,8 +116,8 @@ function BookModal({ lead, onClose, onSave }) {
           <button onClick={onClose} style={{ flex: 1, padding: "12px", background: "transparent", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, cursor: "pointer" }}>
             Cancel
           </button>
-          <button onClick={handleSave} disabled={!date} style={{ flex: 2, padding: "12px", background: date ? "#059669" : "#e5e7eb", color: date ? "#fff" : "#9ca3af", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: date ? "pointer" : "not-allowed" }}>
-            Confirm booking
+          <button onClick={handleSave} disabled={!date || !validPrice} style={{ flex: 2, padding: "12px", background: date && validPrice ? "#059669" : "#e5e7eb", color: date && validPrice ? "#fff" : "#9ca3af", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: date && validPrice ? "pointer" : "not-allowed" }}>
+            {pendingOwnerReview ? "Approve / Create Booking" : "Confirm booking"}
           </button>
         </div>
       </div>
@@ -141,13 +158,13 @@ function LeadDrawer({ lead, onClose, onBook, onStatusChange }) {
         <div style={{ padding: 24 }}>
           {/* Status + actions row */}
           <div style={{ display: "flex", gap: 10, marginBottom: 24, flexWrap: "wrap" }}>
-            <Badge status={lead.status} />
+            <Badge status={lead.status} pendingOwnerReview={pendingOwnerReview} />
             {lead.status !== "booked" && (
               <button onClick={onBook} style={{ padding: "6px 14px", background: "#059669", color: "#fff", border: "none", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                + Convert to booked job
+                {pendingOwnerReview ? "Approve / Create Booking" : "Create Booking"}
               </button>
             )}
-            {["new", "quoted", "booked", "lost"].map(s => s !== lead.status && (
+            {["new", "quoted", "lost"].map(s => s !== lead.status && (
               <button key={s} onClick={() => onStatusChange(s)} style={{ padding: "6px 14px", background: "#f9fafb", color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 20, fontSize: 12, cursor: "pointer" }}>
                 Mark {s}
               </button>
@@ -162,7 +179,7 @@ function LeadDrawer({ lead, onClose, onBook, onStatusChange }) {
             <div style={{ fontSize: 32, fontWeight: 700, color: "#1d4ed8" }}>
               {priceDisplay.text}
             </div>
-            {!pendingOwnerReview && (
+            {!pendingOwnerReview && es?.laborHours > 0 && es?.appointmentDuration > 0 && (
               <div style={{ fontSize: 13, color: "#3b82f6", marginTop: 4 }}>
                 {es.laborHours} labor hrs · ~{es.appointmentDuration} hr appointment
               </div>
@@ -203,7 +220,12 @@ function LeadDrawer({ lead, onClose, onBook, onStatusChange }) {
           <Section title="Property">
             <Row label="Bedrooms"    value={fd.bedrooms} />
             <Row label="Bathrooms"   value={`${fd.bathrooms}${fd.halfBaths ? ` + ${fd.halfBaths} half` : ""}`} />
-            <Row label="Sq footage"  value={`${Number(fd.squareFootage).toLocaleString()} sq ft`} />
+            <Row
+              label="Sq footage"
+              value={fd.squareFootage !== null
+                ? `${fd.squareFootage.toLocaleString()} sq ft`
+                : "Property details pending"}
+            />
             <Row label="Condition"   value={<span style={{ textTransform: "capitalize" }}>{fd.condition}</span>} />
             <Row label="Pets"        value={fd.pets ? `Yes (${fd.petCount})` : "No"} />
             <Row label="Children"    value={fd.children ? "Yes" : "No"} />
@@ -291,7 +313,8 @@ function RevenueChart({ leads }) {
 
 // ─── Main Dashboard component ─────────────────────────────────────────────────
 export default function Dashboard() {
-  const { currentTenant } = useAuth();
+  const { currentTenant, user } = useAuth();
+  const reviewerUid = user?.uid;
   const [leads, setLeads]             = useState([]);
   const [selectedLead, setSelected]   = useState(null);
   const [bookingLead, setBookingLead] = useState(null);
@@ -348,18 +371,23 @@ export default function Dashboard() {
 
   const handleBook = useCallback(async (lead, bookingData) => {
     try {
-      await bookLead(currentTenant?.id, lead.id, bookingData);
+      const conversion = await approveQuoteRequestAndCreateBooking({
+        tenantId: currentTenant?.id,
+        lead,
+        bookingData,
+        reviewedBy: reviewerUid
+      });
       // Refresh leads after booking
       const updatedLeads = await getLeads(currentTenant?.id);
       setLeads(updatedLeads);
       setBookingLead(null);
-      setSelected(l => l?.id === lead.id ? { ...l, status: "booked", booking: bookingData } : l);
+      setSelected(l => l?.id === lead.id ? { ...l, ...conversion.leadPatch } : l);
       alert(`${getFormData(lead).fullName} booked.`);
     } catch (error) {
       console.error('Error booking lead:', error);
       alert('Failed to book lead. Please try again.');
     }
-  }, [currentTenant]);
+  }, [currentTenant, reviewerUid]);
 
   const handleStatusChange = useCallback(async (lead, status) => {
     try {
@@ -574,13 +602,15 @@ export default function Dashboard() {
                       <span style={{ color: lead.booking ? "#059669" : "#111827" }}>
                         {getQuoteLeadPriceDisplay(lead).text}
                       </span>
-                      {!isPendingOwnerReview(lead) && (
+                      {!isPendingOwnerReview(lead) && lead.estimate?.laborHours > 0 && (
                         <div style={{ fontSize: 12, color: "#9ca3af" }}>
                           {lead.estimate?.laborHours || 0} hrs labor
                         </div>
                       )}
                     </td>
-                    <td style={{ padding: "14px 16px" }}><Badge status={lead.status} /></td>
+                    <td style={{ padding: "14px 16px" }}>
+                      <Badge status={lead.status} pendingOwnerReview={isPendingOwnerReview(lead)} />
+                    </td>
                     <td style={{ padding: "14px 16px", fontSize: 13, color: "#9ca3af" }}>
                       {new Date(lead.createdAt).toLocaleDateString()}
                     </td>
@@ -591,7 +621,7 @@ export default function Dashboard() {
                             onClick={e => { e.stopPropagation(); setBookingLead(lead); }}
                             style={{ padding: "6px 12px", background: "#059669", color: "#fff", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
                           >
-                            Book
+                            {isPendingOwnerReview(lead) ? "Approve / Create Booking" : "Create Booking"}
                           </button>
                         )}
                         <button
