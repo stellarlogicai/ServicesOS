@@ -50,6 +50,23 @@ describe('App onboarding router context', () => {
     render(<App />);
 
     expect(screen.queryByRole('heading', { name: 'Welcome to CleanOps' })).not.toBeInTheDocument();
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    [
+      'New quote',
+      'Dashboard',
+      'Customers',
+      'Customer portal',
+      'Staff scheduling',
+      'Route optimization',
+      'Calendar',
+      'Payment links',
+      'Insurance',
+      'Data export',
+      'Backup',
+      'Settings'
+    ].forEach(label => {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Tenant management')).not.toBeInTheDocument();
+    expect(screen.queryByText('AI training')).not.toBeInTheDocument();
   });
 });
