@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { checkInsuranceExpiration } from "../services/insuranceService";
 import { useAuth } from "../contexts/AuthContext";
-import { getRemainingCredits } from "../services/aiUsageEngineService";
 import { getLeads, setLeadStatus, deleteLead } from "../services/crmService";
 import { approveQuoteRequestAndCreateBooking } from "../services/quoteBookingConversionService";
 import {
@@ -320,8 +318,6 @@ export default function Dashboard() {
   const [bookingLead, setBookingLead] = useState(null);
   const [filter, setFilter]           = useState("all");
   const [search, setSearch]           = useState("");
-  const [insuranceStatus, setInsuranceStatus] = useState(null);
-  const [credits, setCredits]         = useState(null);
 
   // Load leads from Firebase
   useEffect(() => {
@@ -329,20 +325,6 @@ export default function Dashboard() {
       getLeads(currentTenant.id)
         .then(setLeads)
         .catch(err => console.error('Error loading leads:', err));
-    }
-  }, [currentTenant?.id]);
-
-  // Load insurance status
-  useEffect(() => {
-    if (currentTenant?.id) {
-      checkInsuranceExpiration(currentTenant.id)
-        .then(setInsuranceStatus)
-        .catch(err => console.error('Error checking insurance:', err));
-      
-      // Load AI credits
-      getRemainingCredits(currentTenant.id)
-        .then(setCredits)
-        .catch(err => console.error('Error loading credits:', err));
     }
   }, [currentTenant?.id]);
 
@@ -448,55 +430,6 @@ export default function Dashboard() {
 
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
 
-        {/* Insurance warning banner */}
-        {insuranceStatus && (insuranceStatus.isExpiring || insuranceStatus.isExpired) && (
-          <div style={{
-            padding: '16px 20px',
-            borderRadius: 12,
-            marginBottom: 32,
-            background: insuranceStatus.isExpired ? '#fef2f2' : '#fef3c7',
-            border: insuranceStatus.isExpired ? '1px solid #ef4444' : '1px solid #f59e0b',
-            color: insuranceStatus.isExpired ? '#991b1b' : '#92400e',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
-          }}>
-            <span style={{ fontSize: 28 }}>
-              {insuranceStatus.isExpired ? '⚠️' : '📅'}
-            </span>
-            <div style={{ flex: 1 }}>
-              <strong style={{ display: 'block', marginBottom: 4, fontSize: 15 }}>
-                {insuranceStatus.isExpired 
-                  ? 'Insurance Expired!' 
-                  : `Insurance Expiring in ${insuranceStatus.daysUntilExpiration} Days`
-                }
-              </strong>
-              <span style={{ fontSize: 13 }}>
-                {insuranceStatus.isExpired 
-                  ? 'Please renew your insurance immediately to maintain coverage.' 
-                  : 'Please renew your insurance before it expires to maintain coverage.'
-                }
-              </span>
-            </div>
-            <button
-              onClick={() => window.location.hash = '#insurance'}
-              style={{
-                padding: '8px 16px',
-                background: insuranceStatus.isExpired ? '#ef4444' : '#f59e0b',
-                color: 'white',
-                border: 'none',
-                borderRadius: 6,
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              Update Insurance
-            </button>
-          </div>
-        )}
-
         {/* Stats row */}
         <div style={{ display: "flex", gap: 16, marginBottom: 32, flexWrap: "wrap" }}>
           <StatCard label="Total leads"   value={totalLeads}             sub="All time" />
@@ -504,14 +437,6 @@ export default function Dashboard() {
           <StatCard label="Booked jobs"   value={bookedLeads.length}     sub={`${conversionRate}% conversion`} />
           <StatCard label="Confirmed revenue" value={`$${revenue.toLocaleString()}`} sub="From booked jobs" accent />
           <StatCard label="Pipeline value"    value={`$${Math.round(pipeline).toLocaleString()}`} sub="Avg of all ranges" />
-          {credits && (
-            <StatCard 
-              label="AI Credits" 
-              value={credits.creditsRemaining} 
-              sub={`${credits.totalCreditsUsed} used this month`}
-              accent={credits.creditsRemaining < 10}
-            />
-          )}
         </div>
 
         {/* Revenue chart */}

@@ -86,10 +86,34 @@ const pendingQuoteRequest = {
   createdAt: '2026-06-23T12:00:00.000Z'
 };
 
+const bookedLead = {
+  ...pendingQuoteRequest,
+  id: 'booked-lead',
+  type: 'lead',
+  source: 'admin',
+  status: 'booked',
+  customerSnapshot: { ...pendingQuoteRequest.customerSnapshot, fullName: 'Booked Customer' },
+  review: { requiresOwnerReview: false, status: 'approved' },
+  estimate: {
+    priceLow: 245,
+    priceHigh: 245,
+    appointmentDuration: 3,
+    requiresReview: false,
+    status: 'approved'
+  },
+  appointmentRequest: null,
+  booking: {
+    bookingId: 'booking-existing',
+    scheduledAt: '2026-07-15T15:30:00.000Z',
+    agreedPrice: 245,
+    status: 'scheduled'
+  }
+};
+
 describe('Dashboard pending quote review', () => {
   beforeEach(() => {
     Object.values(dashboardMocks).forEach(mock => mock.mockReset());
-    dashboardMocks.getLeads.mockResolvedValue([pendingQuoteRequest]);
+    dashboardMocks.getLeads.mockResolvedValue([pendingQuoteRequest, bookedLead]);
     dashboardMocks.checkInsuranceExpiration.mockResolvedValue(null);
     dashboardMocks.getRemainingCredits.mockResolvedValue(null);
     dashboardMocks.approveQuoteRequestAndCreateBooking.mockResolvedValue({
@@ -110,11 +134,16 @@ describe('Dashboard pending quote review', () => {
     const { container } = render(<Dashboard />);
 
     expect(await screen.findByText('Snapshot Customer')).toBeInTheDocument();
-    expect(screen.getByText('3 bed, 2 bath')).toBeInTheDocument();
+    expect(screen.getAllByText('3 bed, 2 bath')).toHaveLength(2);
     expect(screen.getByText('Pending owner review.')).toBeInTheDocument();
     expect(screen.queryByText('$0 - $0')).not.toBeInTheDocument();
     expect(screen.queryByText('0 hrs labor')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve / Create Booking' })).toBeInTheDocument();
+    expect(screen.getByText('Total leads').nextElementSibling).toHaveTextContent('2');
+    expect(screen.getByText('Booked jobs').nextElementSibling).toHaveTextContent('1');
+    expect(screen.getAllByText('$245').length).toBeGreaterThan(0);
+    expect(dashboardMocks.checkInsuranceExpiration).not.toHaveBeenCalled();
+    expect(dashboardMocks.getRemainingCredits).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByText('Snapshot Customer'));
     expect(screen.getAllByText('Pending owner review').length).toBeGreaterThan(0);
