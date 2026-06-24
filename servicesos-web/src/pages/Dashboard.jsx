@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { previewMessages }         from "../services/smsService";
 import { checkInsuranceExpiration } from "../services/insuranceService";
 import { useAuth } from "../contexts/AuthContext";
 import { getRemainingCredits } from "../services/aiUsageEngineService";
@@ -101,54 +100,7 @@ function BookModal({ lead, onClose, onSave }) {
             Cancel
           </button>
           <button onClick={handleSave} disabled={!date} style={{ flex: 2, padding: "12px", background: date ? "#059669" : "#e5e7eb", color: date ? "#fff" : "#9ca3af", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: date ? "pointer" : "not-allowed" }}>
-            ✅ Confirm booking &amp; send SMS
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── SMS preview panel ────────────────────────────────────────────────────────
-function SMSPreviewPanel({ lead, onClose }) {
-  const msgs = previewMessages(getFormData(lead), lead.estimate, lead.booking || undefined);
-  const [active, setActive] = useState("quote");
-
-  const tabs = [
-    { key: "quote",        label: "Quote SMS" },
-    { key: "confirmation", label: "Confirmation" },
-    { key: "reminder",     label: "Reminder" },
-  ];
-
-  const bubble = { background: "#1d4ed8", color: "#fff", padding: "12px 16px", borderRadius: "18px 18px 4px 18px", fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap", maxWidth: "80%", marginLeft: "auto" };
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 400, overflow: "hidden", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }} onClick={e => e.stopPropagation()}>
-        
-        <div style={{ padding: "20px 24px", borderBottom: "1px solid #f3f4f6", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>SMS Preview</div>
-            <div style={{ fontSize: 13, color: "#6b7280" }}>{getFormData(lead).phone}</div>
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#9ca3af" }}>✕</button>
-        </div>
-
-        <div style={{ display: "flex", borderBottom: "1px solid #f3f4f6" }}>
-          {tabs.map(t => (
-            <button key={t.key} onClick={() => setActive(t.key)} style={{ flex: 1, padding: "12px 8px", background: active === t.key ? "#eff6ff" : "transparent", color: active === t.key ? "#1d4ed8" : "#6b7280", border: "none", borderBottom: active === t.key ? "2px solid #1d4ed8" : "2px solid transparent", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ padding: 24, background: "#f3f4f6", minHeight: 200 }}>
-          <div style={bubble}>{msgs[active]}</div>
-        </div>
-
-        <div style={{ padding: "16px 24px", borderTop: "1px solid #f3f4f6" }}>
-          <button onClick={() => { alert("In production this calls your /api/send-sms endpoint"); onClose(); }} style={{ width: "100%", padding: "12px", background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-            Send this SMS
+            Confirm booking
           </button>
         </div>
       </div>
@@ -157,7 +109,7 @@ function SMSPreviewPanel({ lead, onClose }) {
 }
 
 // ─── Lead detail drawer ───────────────────────────────────────────────────────
-function LeadDrawer({ lead, onClose, onBook, onStatusChange, onSMSPreview }) {
+function LeadDrawer({ lead, onClose, onBook, onStatusChange }) {
   const fd = getFormData(lead);
   const es = lead.estimate;
   const priceDisplay = getQuoteLeadPriceDisplay(lead);
@@ -195,9 +147,6 @@ function LeadDrawer({ lead, onClose, onBook, onStatusChange, onSMSPreview }) {
                 + Convert to booked job
               </button>
             )}
-            <button onClick={onSMSPreview} style={{ padding: "6px 14px", background: "#eff6ff", color: "#1d4ed8", border: "none", borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-              📱 SMS preview
-            </button>
             {["new", "quoted", "booked", "lost"].map(s => s !== lead.status && (
               <button key={s} onClick={() => onStatusChange(s)} style={{ padding: "6px 14px", background: "#f9fafb", color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 20, fontSize: 12, cursor: "pointer" }}>
                 Mark {s}
@@ -346,7 +295,6 @@ export default function Dashboard() {
   const [leads, setLeads]             = useState([]);
   const [selectedLead, setSelected]   = useState(null);
   const [bookingLead, setBookingLead] = useState(null);
-  const [smsLead, setSmsLead]         = useState(null);
   const [filter, setFilter]           = useState("all");
   const [search, setSearch]           = useState("");
   const [insuranceStatus, setInsuranceStatus] = useState(null);
@@ -406,7 +354,7 @@ export default function Dashboard() {
       setLeads(updatedLeads);
       setBookingLead(null);
       setSelected(l => l?.id === lead.id ? { ...l, status: "booked", booking: bookingData } : l);
-      alert(`✅ ${getFormData(lead).fullName} booked!\n\nIn production: SMS + email confirmation sent automatically.`);
+      alert(`${getFormData(lead).fullName} booked.`);
     } catch (error) {
       console.error('Error booking lead:', error);
       alert('Failed to book lead. Please try again.');
@@ -524,7 +472,7 @@ export default function Dashboard() {
         {/* Stats row */}
         <div style={{ display: "flex", gap: 16, marginBottom: 32, flexWrap: "wrap" }}>
           <StatCard label="Total leads"   value={totalLeads}             sub="All time" />
-          <StatCard label="New today"     value={newLeads}               sub="Need follow-up" />
+          <StatCard label="New leads"     value={newLeads}               sub="Need follow-up" />
           <StatCard label="Booked jobs"   value={bookedLeads.length}     sub={`${conversionRate}% conversion`} />
           <StatCard label="Confirmed revenue" value={`$${revenue.toLocaleString()}`} sub="From booked jobs" accent />
           <StatCard label="Pipeline value"    value={`$${Math.round(pipeline).toLocaleString()}`} sub="Avg of all ranges" />
@@ -652,12 +600,6 @@ export default function Dashboard() {
                         >
                           Delete
                         </button>
-                        <button
-                          onClick={e => { e.stopPropagation(); setSmsLead(lead); }}
-                          style={{ padding: "6px 12px", background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: 6, fontSize: 12, cursor: "pointer" }}
-                        >
-                          SMS
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -675,7 +617,6 @@ export default function Dashboard() {
           onClose={() => setSelected(null)}
           onBook={() => setBookingLead(selectedLead)}
           onStatusChange={status => handleStatusChange(selectedLead, status)}
-          onSMSPreview={() => setSmsLead(selectedLead)}
         />
       )}
 
@@ -684,13 +625,6 @@ export default function Dashboard() {
           lead={bookingLead}
           onClose={() => setBookingLead(null)}
           onSave={data => handleBook(bookingLead, data)}
-        />
-      )}
-
-      {smsLead && (
-        <SMSPreviewPanel
-          lead={smsLead}
-          onClose={() => setSmsLead(null)}
         />
       )}
     </div>

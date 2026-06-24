@@ -2,6 +2,34 @@
 
 Date: June 23, 2026
 
+## Wife-Beta Navigation Hardening Status
+
+Implemented after the audit.
+
+Visible to business admins:
+
+1. Dashboard
+2. Create estimate
+
+Dashboard is now the default admin landing page and remains the combined leads/quote-request review surface.
+
+Hidden from business-admin navigation without deleting route files:
+
+- Customers: the page renders, but CRUD has not passed a manual test against the required `adminUsers` membership contract.
+- Customer Portal: customer-only language and identity requirements are inappropriate for an admin tool.
+- Staff Scheduling: the page renders, but employee/job writes are not manually verified for wife beta.
+- Route Optimization: depends on employee, booking, coordinate, and route-write behavior that is not beta-ready.
+- Calendar: was mounted without its required tenant ID and displayed a misleading empty calendar.
+- Payment Links: was mounted without tenant ID and invokes unverified payment behavior.
+- Insurance: currently fails to load under the tested rules/data contract.
+- Data Export: was mounted without tenant ID and exposes broad unfinished import/operations tooling.
+- Backup: only handles browser localStorage and does not represent Firestore business data.
+- Settings: exposes broad unverified configuration, integration, Stripe Connect, booking, and payment surfaces.
+
+The components remain available for focused future hardening. Customer-role access to Customer Portal is unchanged.
+
+The Dashboard's fake SMS preview/send controls were removed. Booking behavior was not changed. `New today` was renamed to `New leads` because the value counts all records with `status === "new"`. The Create Estimate result keeps its existing payment implementation but hides the payment entry point for the wife-beta admin surface.
+
 ## Scope And Method
 
 This audit covers the business admin/owner experience in `servicesos-web`.
@@ -154,7 +182,7 @@ These are narrow, low-risk candidates for the next implementation pass:
 - Settings decomposition into verified operational sections.
 - Role-name migration from `admin` to another term, if ever desired.
 
-## Recommended Wife-Beta Sidebar
+## Original Recommended Wife-Beta Sidebar
 
 Recommended initial sidebar:
 
@@ -178,6 +206,8 @@ Hide for wife beta:
 - Unverified Settings tabs
 
 The current app combines Dashboard and Leads. For the smallest beta change, keep one `Dashboard` item and make lead review its primary content instead of adding a new route.
+
+The implemented sidebar is narrower than this original recommendation. Customers, Scheduling, Calendar, and Settings remain hidden until their tenant wiring, permission contract, and manual workflows pass.
 
 ## Required Firestore Test Admin Fields
 
@@ -261,17 +291,17 @@ Additional current rule gaps:
 - No explicit rules were found for `insurance`, `branding`, or `payment_links` subcollections.
 - The two checked rules files differ in permissiveness, so deployed-rule identity must be confirmed before relying on either one.
 
-## Recommended First Actual Fix
+## Completed First Actual Fix
 
-Perform a narrow wife-beta admin navigation and terminology pass:
+The narrow wife-beta admin navigation and terminology pass is complete:
 
-1. Make Dashboard the default admin page.
-2. Hide Customer Portal and unverified/deferred tools from admin navigation.
-3. Keep customer-role access to Customer Portal unchanged.
-4. Rename the owner intake item consistently.
-5. Add a focused test for the approved admin sidebar.
+1. Dashboard is the default admin page.
+2. Customer Portal and unverified/deferred tools are hidden from admin navigation.
+3. Customer-role access to Customer Portal is unchanged.
+4. The owner intake item is labeled `Create estimate`.
+5. Focused tests protect the approved admin sidebar and Dashboard landing page.
 
-This is safer than fixing each hidden module independently and immediately removes the largest source of confusion without touching payments, backend code, rules, tenant loading, or customer quote submission.
+No payment service, backend, rule, tenant-loading, or customer quote-submission behavior was changed.
 
 ## Recommended Next Codex Fix Prompt
 
@@ -280,17 +310,14 @@ You are working in ServicesOS.
 
 Use docs/servicesos-beta/ADMIN_SIDE_DEBUG_AUDIT.md as the source of truth.
 
-Implement only the wife-beta admin navigation cleanup:
-- Make Dashboard the default page for role "admin".
-- Keep Customer Portal visible only to role "customer".
-- Hide Route Optimization, Payment Links, Insurance, Data Export, and Backup from admin navigation.
-- Do not delete their components.
-- Keep Customers and Staff Scheduling visible.
-- Keep Calendar visible only if tenantId is passed correctly and its existing behavior is otherwise unchanged.
-- Keep Settings visible, but do not modify Stripe, Stripe Connect, payments, backend, Firebase rules, or settings internals.
-- Rename "New quote" to an agreed owner-facing label consistently without changing quote persistence.
-- Preserve super-admin behavior unless directly affected by shared navigation definitions.
-- Add focused navigation/role tests.
+Perform only the wife-beta Dashboard and quote-request review hardening:
+- Verify the test admin UID exists in both tenants/{tenantId}.users and adminUsers.
+- Do not change Firebase rules.
+- Manually test lead status updates and booking conversion with fake data.
+- Make pending quote-request review actions explicit and distinct from confirmed booking actions.
+- Preserve Customer Portal quote submission.
+- Do not touch Stripe, payments, backend functions, hidden routes, or customer linking.
+- Add focused tests for pending quote review and approved booking conversion behavior.
 
 Run lint, tests, and build. Commit only if all pass.
 ```

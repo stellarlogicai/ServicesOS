@@ -11,7 +11,7 @@ import { compressImages } from "./services/imageCompressionService";
 import { formatAmount } from "./services/stripeService";
 import { useAuth } from "./contexts/AuthContext";
 
-export default function AIPhotoEstimateSystem() {
+export default function AIPhotoEstimateSystem({ enablePayments = true }) {
   const { currentTenant } = useAuth();
   const [step, setStep] = useState("intake");
   const [formData, setFormData] = useState({
@@ -188,7 +188,7 @@ export default function AIPhotoEstimateSystem() {
     return (
       <div style={{ padding: "24px", maxWidth: 800, margin: "0 auto" }}>
         <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24 }}>
-          New Quote Request
+          Create Estimate
         </h2>
 
         <div style={{ marginBottom: 24 }}>
@@ -917,21 +917,23 @@ export default function AIPhotoEstimateSystem() {
           >
             Download PDF
           </button>
-          <button
-            onClick={goToPayment}
-            style={{
-              padding: "12px 24px",
-              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-              color: "white",
-              border: "none",
-              borderRadius: 8,
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: "pointer"
-            }}
-          >
-            Proceed to Payment
-          </button>
+          {enablePayments && (
+            <button
+              onClick={goToPayment}
+              style={{
+                padding: "12px 24px",
+                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                color: "white",
+                border: "none",
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer"
+              }}
+            >
+              Proceed to Payment
+            </button>
+          )}
           <button
             onClick={() => {
               setStep("intake");
@@ -952,7 +954,7 @@ export default function AIPhotoEstimateSystem() {
               cursor: "pointer"
             }}
           >
-            New Quote
+            Create Another Estimate
           </button>
         </div>
       </div>
@@ -1013,7 +1015,7 @@ export default function AIPhotoEstimateSystem() {
             cursor: "pointer"
           }}
         >
-          Create New Quote
+          Create Another Estimate
         </button>
       </div>
     );

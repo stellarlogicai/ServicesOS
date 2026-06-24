@@ -40,12 +40,6 @@ function useWindowSize() {
 // `permission` — optional fine-grained check (matches ROLE_PERMISSIONS keys)
 const NAV_ITEMS = [
   {
-    id: "intake",
-    icon: "📋",
-    label: "New quote",
-    roles: ["admin", "super-admin"],
-  },
-  {
     id: "dashboard",
     icon: "📊",
     label: "Dashboard",
@@ -53,55 +47,61 @@ const NAV_ITEMS = [
     permission: "view_all_leads",
   },
   {
+    id: "intake",
+    icon: "📋",
+    label: "Create estimate",
+    roles: ["admin", "super-admin"],
+  },
+  {
     id: "customers",
     icon: "👥",
     label: "Customers",
-    roles: ["admin", "super-admin"],
+    roles: ["super-admin"],
   },
   {
     id: "customer-portal",
     icon: "👤",
     label: "Customer portal",
-    roles: ["customer", "admin", "super-admin"],
+    roles: ["customer"],
   },
   {
     id: "staff-scheduling",
     icon: "👥",
     label: "Staff scheduling",
-    roles: ["admin", "super-admin"],
+    roles: ["super-admin"],
     permission: "manage_staff",
   },
   {
     id: "route-optimization",
     icon: "🗺️",
     label: "Route optimization",
-    roles: ["admin", "super-admin"],
+    roles: ["super-admin"],
     permission: "manage_staff",
   },
   {
     id: "calendar",
     icon: "📅",
     label: "Calendar",
-    roles: ["admin", "super-admin"],
+    roles: ["super-admin"],
     permission: "manage_staff",
   },
   {
     id: "payment-links",
     icon: "💳",
     label: "Payment links",
-    roles: ["admin", "super-admin"],
+    roles: ["super-admin"],
   },
   {
     id: "insurance",
     icon: "🛡️",
     label: "Insurance",
-    roles: ["admin", "super-admin"],
+    roles: ["super-admin"],
   },
   {
     id: "data-export",
     icon: "📤",
     label: "Data export",
-    roles: ["admin", "super-admin"],
+    roles: ["super-admin"],
   },
   {
     id: "tenant-management",
@@ -119,13 +119,13 @@ const NAV_ITEMS = [
     id: "backup",
     icon: "💾",
     label: "Backup",
-    roles: ["admin", "super-admin"],
+    roles: ["super-admin"],
   },
   {
     id: "settings",
     icon: "⚙️",
     label: "Settings",
-    roles: ["admin", "super-admin"],
+    roles: ["super-admin"],
     permission: "manage_settings",
   },
 ];
@@ -144,7 +144,7 @@ function useCanView() {
 function defaultPage(role) {
   if (role === "customer")    return "customer-portal";
   if (role === "super-admin") return "tenant-management";
-  return "intake";
+  return "dashboard";
 }
 
 // ─── Tenant switcher (super-admin only) ──────────────────────────────────────
@@ -318,7 +318,7 @@ function AuthenticatedApp() {
     const tenantId = typeof currentTenant === 'string' ? currentTenant : currentTenant?.id;
 
     switch (page) {
-      case "intake":            return <div style={{ maxWidth: 680, margin: "0 auto" }}><AIPhotoEstimateSystem onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
+      case "intake":            return <div style={{ maxWidth: 680, margin: "0 auto" }}><AIPhotoEstimateSystem enablePayments={false} onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
       case "dashboard":         return <Dashboard />;
       case "customers":         return <CustomerManagement />;
       case "staff-scheduling":  return <StaffScheduling tenantId={tenantId} />;

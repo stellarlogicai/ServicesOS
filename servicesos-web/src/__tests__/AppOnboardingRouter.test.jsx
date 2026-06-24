@@ -1,7 +1,20 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext } from '../contexts/AuthContextValue';
+
+vi.mock('../pages/Dashboard', () => ({
+  default: () => <h1>Wife Beta Dashboard</h1>
+}));
+
+vi.mock('../AIPhotoEstimateSystem', () => ({
+  default: ({ enablePayments }) => (
+    <>
+      <h1>Create Estimate Screen</h1>
+      {enablePayments && <button>Proceed to Payment</button>}
+    </>
+  )
+}));
 
 const authState = {
   user: { uid: 'admin-test', email: 'admin@example.com' },
@@ -50,9 +63,10 @@ describe('App onboarding router context', () => {
     render(<App />);
 
     expect(screen.queryByRole('heading', { name: 'Welcome to CleanOps' })).not.toBeInTheDocument();
+    ['Dashboard', 'Create estimate'].forEach(label => {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    });
     [
-      'New quote',
-      'Dashboard',
       'Customers',
       'Customer portal',
       'Staff scheduling',
@@ -62,11 +76,17 @@ describe('App onboarding router context', () => {
       'Insurance',
       'Data export',
       'Backup',
-      'Settings'
+      'Settings',
+      'Tenant management',
+      'AI training'
     ].forEach(label => {
-      expect(screen.getByText(label)).toBeInTheDocument();
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
     });
-    expect(screen.queryByText('Tenant management')).not.toBeInTheDocument();
-    expect(screen.queryByText('AI training')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Wife Beta Dashboard' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Create estimate'));
+
+    expect(screen.getByRole('heading', { name: 'Create Estimate Screen' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Proceed to Payment' })).not.toBeInTheDocument();
   });
 });
