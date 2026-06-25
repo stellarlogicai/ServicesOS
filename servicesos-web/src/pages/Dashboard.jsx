@@ -234,7 +234,7 @@ function LeadDrawer({ lead, onClose, onBook, onStatusChange }) {
             <Row label="Type"      value={serviceLabels[fd.cleaningType]} />
             <Row label="Frequency" value={freqLabels[fd.frequency]} />
             {fd.preferredDays?.length > 0 && <Row label="Preferred days" value={fd.preferredDays.join(", ")} />}
-            {es.aiEnhanced && <Row label="AI analysis" value={<span style={{ color: "#7c3aed" }}>✨ AI-enhanced</span>} />}
+            {es?.aiEnhanced && <Row label="AI analysis" value={<span style={{ color: "#7c3aed" }}>✨ AI-enhanced</span>} />}
           </Section>
         </div>
       </div>
@@ -273,8 +273,8 @@ function RevenueChart({ leads }) {
 
   const buckets = days.map(dayStr => {
     const total = booked
-      .filter(l => new Date(l.booking.scheduledAt).toDateString() === dayStr)
-      .reduce((sum, l) => sum + l.booking.agreedPrice, 0);
+      .filter(l => l.booking?.scheduledAt && new Date(l.booking.scheduledAt).toDateString() === dayStr)
+      .reduce((sum, l) => sum + (l.booking?.agreedPrice || 0), 0);
     return { label: new Date(dayStr).toLocaleDateString("en-US", { month: "short", day: "numeric" }), total };
   });
 
@@ -512,8 +512,8 @@ export default function Dashboard() {
                       </div>
                     </td>
                     <td style={{ padding: "14px 16px", fontSize: 13, color: "#374151" }}>
-                      <div>{serviceLabel[getFormData(lead).cleaningType] || getFormData(lead).cleaningType}</div>
-                      <div style={{ fontSize: 12, color: "#9ca3af", textTransform: "capitalize" }}>{getFormData(lead).frequency}</div>
+                      <div>{serviceLabel[getFormData(lead).cleaningType] || getFormData(lead).cleaningType || "Unknown"}</div>
+                      <div style={{ fontSize: 12, color: "#9ca3af", textTransform: "capitalize" }}>{getFormData(lead).frequency || "N/A"}</div>
                     </td>
                     <td style={{ padding: "14px 16px", fontSize: 13, color: "#374151" }}>
                       <div>{getRoomSummary(getFormData(lead))}</div>
