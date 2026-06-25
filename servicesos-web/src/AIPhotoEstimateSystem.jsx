@@ -11,7 +11,10 @@ import { compressImages } from "./services/imageCompressionService";
 import { formatAmount } from "./services/stripeService";
 import { useAuth } from "./contexts/AuthContext";
 
-export default function AIPhotoEstimateSystem({ enablePayments = true }) {
+export default function AIPhotoEstimateSystem({
+  enablePayments = true,
+  onLeadSaved = saveQuote
+}) {
   const { currentTenant } = useAuth();
   const [step, setStep] = useState("intake");
   const [formData, setFormData] = useState({
@@ -68,6 +71,9 @@ export default function AIPhotoEstimateSystem({ enablePayments = true }) {
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [estimate, setEstimate] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [aiMessage, setAiMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [compressing, setCompressing] = useState(false);
   const [paymentResult, setPaymentResult] = useState(null);
 
@@ -133,28 +139,50 @@ export default function AIPhotoEstimateSystem({ enablePayments = true }) {
 
   const runAI = async () => {
     setAnalyzing(true);
-    const result = await analyzePhotos(photoFiles);
-    setAiAnalysis(result);
-    setAnalyzing(false);
+    setAiMessage("");
+
+    try {
+      const result = await analyzePhotos(photoFiles);
+      if (!result || result.error) {
+        throw new Error(result?.error || "AI analysis is unavailable");
+      }
+      setAiAnalysis(result);
+    } catch (error) {
+      console.error("AI analysis failed:", error);
+      setAiAnalysis(null);
+      setAiMessage("AI photo analysis is unavailable. You can still save a manual estimate.");
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   const generate = async () => {
-    const result = calculateEstimate(formData, aiAnalysis);
-    setEstimate(result);
+    setSaving(true);
+    setSaveError("");
 
-    // Extract tenant ID safely
-    const tenantId = typeof currentTenant === 'string' ? currentTenant : currentTenant?.id;
-    
-    await saveQuote(tenantId, formData, result, aiAnalysis);
+    try {
+      const result = calculateEstimate(formData, aiAnalysis);
+      const tenantId = typeof currentTenant === "string" ? currentTenant : currentTenant?.id;
 
-    sendQuoteEmail(formData, result);
+      await onLeadSaved(tenantId, formData, result, aiAnalysis);
+      setEstimate(result);
+      setStep("results");
 
-    sendSMS({
-      to: formData.phone,
-      message: `Your estimate is $${result.priceLow} - $${result.priceHigh}`
-    });
-
-    setStep("results");
+      void sendQuoteEmail(formData, result);
+      try {
+        sendSMS({
+          to: formData.phone,
+          message: `Your estimate is $${result.priceLow} - $${result.priceHigh}`
+        });
+      } catch (notificationError) {
+        console.error("Estimate SMS notification failed:", notificationError);
+      }
+    } catch (error) {
+      console.error("Estimate save failed:", error);
+      setSaveError("We couldn't save this estimate. Check your connection and try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const downloadPDF = () => {
@@ -665,7 +693,7 @@ export default function AIPhotoEstimateSystem({ enablePayments = true }) {
             Photos (Optional)
           </h3>
           <p style={{ fontSize: 14, color: "#64748b", marginBottom: 12 }}>
-            Upload up to 5 photos for AI-powered analysis. {compressing && "Compressing images..."}
+            Upload up to 5 photos for optional AI-powered analysis. Manual estimates do not require photos or AI. {compressing && "Compressing images..."}
           </p>
           <input
             type="file"
@@ -805,7 +833,7 @@ export default function AIPhotoEstimateSystem({ enablePayments = true }) {
           </button>
           <button
             onClick={runAI}
-            disabled={analyzing}
+            disabled={analyzing || photoFiles.length === 0}
             style={{
               padding: "12px 24px",
               background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
@@ -814,30 +842,45 @@ export default function AIPhotoEstimateSystem({ enablePayments = true }) {
               borderRadius: 8,
               fontSize: 14,
               fontWeight: 600,
-              cursor: analyzing ? "not-allowed" : "pointer",
-              opacity: analyzing ? 0.5 : 1
+              cursor: analyzing || photoFiles.length === 0 ? "not-allowed" : "pointer",
+              opacity: analyzing || photoFiles.length === 0 ? 0.5 : 1
             }}
           >
             {analyzing ? "Analyzing..." : "Run AI Analysis"}
           </button>
-          {aiAnalysis && (
-            <button
-              onClick={generate}
-              style={{
-                padding: "12px 24px",
-                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                color: "white",
-                border: "none",
-                borderRadius: 8,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: "pointer"
-              }}
-            >
-              Generate Estimate
-            </button>
-          )}
+          <button
+            onClick={generate}
+            disabled={saving}
+            style={{
+              padding: "12px 24px",
+              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: saving ? "not-allowed" : "pointer",
+              opacity: saving ? 0.5 : 1
+            }}
+          >
+            {saving ? "Saving Estimate..." : aiAnalysis ? "Save AI-Enhanced Estimate" : "Save Manual Estimate"}
+          </button>
         </div>
+        {photoFiles.length === 0 && (
+          <p style={{ marginTop: 12, fontSize: 14, color: "#64748b" }}>
+            Add photos to use AI analysis, or save the estimate manually.
+          </p>
+        )}
+        {aiMessage && (
+          <div role="status" style={{ marginTop: 12, padding: 12, borderRadius: 8, background: "#fff7ed", color: "#9a3412" }}>
+            {aiMessage}
+          </div>
+        )}
+        {saveError && (
+          <div role="alert" style={{ marginTop: 12, padding: 12, borderRadius: 8, background: "#fef2f2", color: "#b91c1c" }}>
+            {saveError}
+          </div>
+        )}
       </div>
     );
   }

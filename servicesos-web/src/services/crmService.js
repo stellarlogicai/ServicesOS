@@ -33,10 +33,26 @@ export async function saveLead(tenantId, formData, estimate, aiAnalysis = null) 
     throw new Error('Tenant ID is required');
   }
 
+  const normalizedFormData = {
+    ...formData,
+    fullName: formData.fullName ||
+      [formData.firstName, formData.lastName].filter(Boolean).join(' ').trim(),
+    bedrooms: formData.bedrooms ?? formData.bedroomCount ?? null,
+    bathrooms: formData.bathrooms ?? formData.bathroomCount ?? null,
+    condition: formData.condition || formData.clutterLevel || '',
+  };
+  const normalizedEstimate = {
+    ...estimate,
+    aiEnhanced: !!(aiAnalysis && !aiAnalysis.error)
+  };
   const leadData = {
-    formData,
+    type: 'lead',
+    source: 'admin',
+    formData: normalizedFormData,
+    estimate: normalizedEstimate,
     estimate: { ...estimate, aiEnhanced: !!(aiAnalysis && !aiAnalysis.error) },
     aiAnalysis: aiAnalysis || null,
+    booking: null,
   };
 
   const result = await createLeadFirestore(tenantId, leadData);
@@ -47,8 +63,10 @@ export async function saveLead(tenantId, formData, estimate, aiAnalysis = null) 
       createdAt: result.data.createdAt,
       updatedAt: result.data.updatedAt,
       status: result.data.status,
-      formData,
-      estimate: { ...estimate, aiEnhanced: !!(aiAnalysis && !aiAnalysis.error) },
+      type: 'lead',
+      source: 'admin',
+      formData: normalizedFormData,
+      estimate: normalizedEstimate,
       booking: null,
       aiAnalysis: aiAnalysis || null,
     };
