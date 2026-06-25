@@ -50,7 +50,6 @@ export async function saveLead(tenantId, formData, estimate, aiAnalysis = null) 
     source: 'admin',
     formData: normalizedFormData,
     estimate: normalizedEstimate,
-    estimate: { ...estimate, aiEnhanced: !!(aiAnalysis && !aiAnalysis.error) },
     aiAnalysis: aiAnalysis || null,
     booking: null,
   };

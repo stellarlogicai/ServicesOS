@@ -170,3 +170,143 @@ describe('Dashboard pending quote review', () => {
     });
   });
 });
+
+describe('Dashboard null-safety', () => {
+  beforeEach(() => {
+    Object.values(dashboardMocks).forEach(mock => mock.mockReset());
+    vi.spyOn(window, 'alert').mockImplementation(() => {});
+  });
+
+  it('renders when a lead is missing estimate', async () => {
+    const leadWithoutEstimate = {
+      id: 'lead-no-estimate',
+      tenantId: 'tenant-test',
+      status: 'new',
+      customerSnapshot: {
+        fullName: 'No Estimate Customer',
+        email: 'noestimate@example.com',
+        phone: '555-0101'
+      },
+      propertySnapshot: {
+        address: '456 No Estimate St',
+        bedrooms: 2,
+        bathrooms: 1
+      },
+      formData: {
+        fullName: 'No Estimate Customer',
+        address: '456 No Estimate St',
+        bedrooms: 2,
+        bathrooms: 1
+      },
+      estimate: null,
+      booking: null,
+      createdAt: '2026-06-23T12:00:00.000Z'
+    };
+
+    dashboardMocks.getLeads.mockResolvedValue([leadWithoutEstimate]);
+
+    render(<Dashboard />);
+
+    expect(await screen.findByText('No Estimate Customer')).toBeInTheDocument();
+    expect(screen.getByText('Total leads').nextElementSibling).toHaveTextContent('1');
+    expect(screen.getByText('Pipeline value').nextElementSibling).toHaveTextContent('$0');
+  });
+
+  it('renders when a lead is missing formData', async () => {
+    const leadWithoutFormData = {
+      id: 'lead-no-formdata',
+      tenantId: 'tenant-test',
+      status: 'new',
+      customerSnapshot: {
+        fullName: 'No FormData Customer',
+        email: 'noformdata@example.com',
+        phone: '555-0102'
+      },
+      propertySnapshot: {
+        address: '789 No FormData Ave',
+        bedrooms: 3,
+        bathrooms: 2
+      },
+      estimate: {
+        priceLow: 200,
+        priceHigh: 250,
+        appointmentDuration: 2
+      },
+      booking: null,
+      createdAt: '2026-06-23T12:00:00.000Z'
+    };
+
+    dashboardMocks.getLeads.mockResolvedValue([leadWithoutFormData]);
+
+    render(<Dashboard />);
+
+    expect(await screen.findByText('No FormData Customer')).toBeInTheDocument();
+    expect(screen.getByText('Total leads').nextElementSibling).toHaveTextContent('1');
+  });
+
+  it('search/filter does not crash when lead is missing formData', async () => {
+    const leadWithoutFormData = {
+      id: 'lead-no-formdata',
+      tenantId: 'tenant-test',
+      status: 'new',
+      customerSnapshot: {
+        fullName: 'Search Test Customer',
+        email: 'search@example.com',
+        phone: '555-0103'
+      },
+      propertySnapshot: {
+        address: '999 Search Blvd',
+        bedrooms: 2,
+        bathrooms: 1
+      },
+      estimate: null,
+      booking: null,
+      createdAt: '2026-06-23T12:00:00.000Z'
+    };
+
+    dashboardMocks.getLeads.mockResolvedValue([leadWithoutFormData]);
+
+    render(<Dashboard />);
+
+    expect(await screen.findByText('Search Test Customer')).toBeInTheDocument();
+
+    const searchInput = screen.getByPlaceholderText('Search name, address, phone…');
+    fireEvent.change(searchInput, { target: { value: 'Search' } });
+
+    expect(screen.getByText('Search Test Customer')).toBeInTheDocument();
+  });
+
+  it('renders when booking is missing scheduledAt', async () => {
+    const leadWithPartialBooking = {
+      id: 'lead-partial-booking',
+      tenantId: 'tenant-test',
+      status: 'booked',
+      customerSnapshot: {
+        fullName: 'Partial Booking Customer',
+        email: 'partial@example.com',
+        phone: '555-0104'
+      },
+      propertySnapshot: {
+        address: '111 Partial Way',
+        bedrooms: 2,
+        bathrooms: 1
+      },
+      estimate: {
+        priceLow: 150,
+        priceHigh: 200,
+        appointmentDuration: 2
+      },
+      booking: {
+        agreedPrice: 175
+      },
+      createdAt: '2026-06-23T12:00:00.000Z'
+    };
+
+    dashboardMocks.getLeads.mockResolvedValue([leadWithPartialBooking]);
+
+    render(<Dashboard />);
+
+    expect(await screen.findByText('Partial Booking Customer')).toBeInTheDocument();
+    expect(screen.getByText('Booked jobs').nextElementSibling).toHaveTextContent('1');
+  });
+});
