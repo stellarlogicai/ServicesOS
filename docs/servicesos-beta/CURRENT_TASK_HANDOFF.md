@@ -79,9 +79,63 @@ Begin the separately scoped Customers restoration gate: add focused tenant-path 
 
 - Customers remains intentionally hidden from normal admins (`roles: ["super-admin"]`) while its renderer still exists.
 - Primary CRUD path is `tenants/{tenantId}/customers/{customerId}` through `core/customers/customerService.js`.
-- The component is tenant-scoped and has list/add/edit/delete/search behavior, but permission/load failures are rendered as an empty list rather than an explicit error state.
-- Editing submits only the visible form fields and can discard linkage metadata such as `authUid`.
-- Delete has no linked lead/booking/property/Portal identity guard.
-- No focused `CustomerManagement` or core customer-service tests currently exist.
-- Existing restoration plan remains correct: test tenant paths and error states, preserve metadata, decide a safe delete policy, manually verify list/add/edit, rerun Customer Portal regressions, and only then expose Customers to normal admins.
-- No Customers code or navigation was changed in this pass.
+- The component is tenant-scoped and has list/add/edit/delete/search behavior.
+- Customers remains hidden from normal admins while the restoration gate is validated.
+
+### Customers Restoration Safety Gate — June 27, 2026
+
+**Status:** Automated safety gate implemented; live list/add/edit verification is still required before navigation restoration.
+
+#### Confirmed data path
+
+- Customer collection: `tenants/{tenantId}/customers`
+- Customer document: `tenants/{tenantId}/customers/{customerId}`
+- Reads, creates, and updates are tested against those tenant-scoped paths.
+
+#### Metadata preservation
+
+Updates merge visible form edits over the existing customer document before writing. This preserves non-form fields including:
+
+- `authUid`
+- customer profile/link identifiers
+- `propertyId` / `propertyIds`
+- `leadId` / `leadIds`
+- `bookingId` / `bookingIds`
+- `createdAt`
+- schema version and other existing linkage metadata
+
+#### Safe delete policy
+
+Hard delete is disabled for the first restoration version. The current schema cannot reliably prove that a customer has no linked leads, bookings, properties, or Customer Portal identity. Delete therefore returns `CUSTOMER_DELETE_BLOCKED`, performs no Firestore mutation, and shows a clear admin message. No cascade delete or soft-delete schema was introduced.
+
+#### Beta blockers fixed
+
+- Permission/load failures now render an explicit `Customers could not be loaded` alert with retry instead of a misleading empty directory.
+- Editing no longer risks dropping hidden Portal/relationship metadata.
+- Customer hard deletion cannot orphan linked operational records.
+
+#### Beta blockers remaining
+
+- Normal admins must not see Customers until list/add/edit pass manually with the wife-beta tenant and deployed permission contract.
+- The component still needs a live tenant test proving create/update persistence and refresh behavior.
+- Cross-tenant isolation must be verified before restoration; Firebase rules remain unchanged in this pass.
+
+#### Beta annoyances / future polish
+
+- Form labels are not consistently associated with controls.
+- The table is not optimized for narrow/mobile layouts.
+- Duplicate email/phone detection, linked-status display, and a future archive/soft-delete workflow are deferred.
+- Invitations, customer impersonation, bulk import, analytics, rewards, reviews, and automated lead-to-customer conversion remain deferred.
+
+#### Tests added
+
+- Tenant-scoped customer collection/document paths.
+- Metadata-preserving edit writes.
+- Hard-delete blocking with no Firestore delete.
+- Explicit component permission/load error state.
+- Component edit submission and blocked-delete messaging.
+- Customer Portal identity/quote submission plus Dashboard/Create Estimate regressions.
+
+#### Exact next step
+
+Run Customer list/add/edit manually against the wife-beta tenant while Customers remains hidden from normal navigation. Verify refresh persistence and deployed permissions, then add an explicit admin navigation test before changing the Customers role gate.

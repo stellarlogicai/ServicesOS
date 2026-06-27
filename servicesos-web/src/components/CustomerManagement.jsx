@@ -7,6 +7,7 @@ export default function CustomerManagement() {
   const { currentTenant } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,15 +31,19 @@ export default function CustomerManagement() {
     }
     
     setLoading(true);
+    setLoadError('');
     try {
       const result = await getCustomers(currentTenant.id);
       if (result.success) {
         setCustomers(result.data);
       } else {
-        console.error('Error loading customers:', result.message);
+        setCustomers([]);
+        setLoadError(result.message || 'Unable to load customers.');
       }
     } catch (error) {
       console.error('Error loading customers:', error);
+      setCustomers([]);
+      setLoadError('Unable to load customers. Check your access and try again.');
     } finally {
       setLoading(false);
     }
@@ -114,8 +119,6 @@ export default function CustomerManagement() {
   };
 
   const handleDelete = async (customerId) => {
-    if (!confirm('Are you sure you want to delete this customer?')) return;
-    
     if (!currentTenant?.id) return;
 
     try {
@@ -123,7 +126,7 @@ export default function CustomerManagement() {
       if (result.success) {
         loadCustomers();
       } else {
-        alert('Error deleting customer: ' + result.message);
+        alert(result.message || 'Customer deletion is currently unavailable.');
       }
     } catch (error) {
       console.error('Error deleting customer:', error);
@@ -175,6 +178,21 @@ export default function CustomerManagement() {
             Go to Tenant Management to select a tenant, or switch to an admin account.
           </p>
         </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div role="alert" style={{ maxWidth: '720px', margin: '48px auto', padding: '24px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px' }}>
+        <h2 style={{ margin: '0 0 8px', fontSize: '20px', color: '#991b1b' }}>Customers could not be loaded</h2>
+        <p style={{ margin: '0 0 16px', color: '#7f1d1d' }}>{loadError}</p>
+        <button
+          onClick={loadCustomers}
+          style={{ padding: '10px 16px', background: '#b91c1c', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}
+        >
+          Try Again
+        </button>
       </div>
     );
   }

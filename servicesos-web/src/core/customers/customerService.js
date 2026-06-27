@@ -7,7 +7,7 @@
  * Core features should never depend on vertical-specific logic.
  */
 
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, getDoc, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, getDoc, query, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { addSchemaVersion, getSchemaVersion } from '../../shared/schemas/schemaVersioning';
 import { successResponse, errorResponse } from '../../shared/api/apiResponseStandard';
@@ -141,6 +141,7 @@ export async function updateCustomer(tenantId, customerId, customerData) {
     if (existingDoc.exists()) {
       const existingData = existingDoc.data();
       customerWithVersion = {
+        ...existingData,
         ...customerData,
         schemaVersion: existingData.schemaVersion || getSchemaVersion(SCHEMA_TYPE)
       };
@@ -174,26 +175,14 @@ export async function updateCustomer(tenantId, customerId, customerData) {
  * @returns {Promise<object>} - Standardized API response
  */
 export async function deleteCustomer(tenantId, customerId) {
-  try {
-    if (!tenantId || !customerId) {
-      return errorResponse('Tenant ID and Customer ID are required', 'VALIDATION_ERROR');
-    }
-
-    const customerRef = doc(db, 'tenants', tenantId, COLLECTION_NAME, customerId);
-    await deleteDoc(customerRef);
-
-    return successResponse({ id: customerId }, 'Customer deleted successfully');
-  } catch (error) {
-    logError({
-      message: 'Failed to delete customer',
-      module: 'core',
-      feature: 'customers',
-      severity: SEVERITY.HIGH,
-      tenantId,
-      error
-    });
-    return errorResponse('Failed to delete customer', ERROR_CODES.FIRESTORE_ERROR, error);
+  if (!tenantId || !customerId) {
+    return errorResponse('Tenant ID and Customer ID are required', 'VALIDATION_ERROR');
   }
+
+  return errorResponse(
+    'Customer deletion is disabled until linked leads, bookings, properties, and portal identity can be verified.',
+    'CUSTOMER_DELETE_BLOCKED'
+  );
 }
 
 /**
