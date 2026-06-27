@@ -1,0 +1,110 @@
+// @vitest-environment jsdom
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  auth: { name: 'test-auth' },
+  authStateChanged: null,
+  clearCurrentTenantId: vi.fn(),
+  firebaseSignOut: vi.fn(),
+  getDoc: vi.fn(),
+  getTenant: vi.fn(),
+  setCurrentTenantId: vi.fn(),
+}));
+
+vi.mock('firebase/auth', () => ({
+  createUserWithEmailAndPassword: vi.fn(),
+  onAuthStateChanged: vi.fn((_auth, callback) => {
+    mocks.authStateChanged = callback;
+    return vi.fn();
+  }),
+  sendPasswordResetEmail: vi.fn(),
+  signInWithEmailAndPassword: vi.fn(),
+  signInWithPopup: vi.fn(),
+  signOut: mocks.firebaseSignOut,
+}));
+
+vi.mock('firebase/firestore', () => ({
+  doc: vi.fn((...parts) => parts.join('/')),
+  getDoc: mocks.getDoc,
+  serverTimestamp: vi.fn(),
+  setDoc: vi.fn(),
+}));
+
+vi.mock('../firebase', () => ({
+  auth: mocks.auth,
+  db: { name: 'test-db' },
+  googleProvider: {},
+}));
+
+vi.mock('../services/multiTenantService', () => ({
+  clearCurrentTenantId: mocks.clearCurrentTenantId,
+  setCurrentTenantId: mocks.setCurrentTenantId,
+}));
+
+vi.mock('../services/tenantService', () => ({
+  getTenant: mocks.getTenant,
+}));
+
+vi.mock('../services/onboardingService', () => ({
+  completeUserOnboarding: vi.fn(),
+}));
+
+import { AuthProvider, useAuth } from '../contexts/AuthContext';
+
+function AuthStateProbe() {
+  const { currentTenant, loading, logout, user } = useAuth();
+
+  if (loading) return <div>Loading auth</div>;
+  if (!user) return <div>Login state</div>;
+
+  return (
+    <div>
+      <div>Tenant dashboard: {currentTenant?.businessName}</div>
+      <button onClick={logout}>Sign out</button>
+    </div>
+  );
+}
+
+describe('AuthContext logout', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.authStateChanged = null;
+    mocks.firebaseSignOut.mockResolvedValue(undefined);
+    mocks.getDoc.mockResolvedValue({
+      data: () => ({
+        onboardingCompleted: true,
+        role: 'admin',
+        status: 'active',
+        tenantId: 'tenant-a',
+      }),
+      exists: () => true,
+    });
+    mocks.getTenant.mockResolvedValue({
+      businessName: 'Tenant A',
+      id: 'tenant-a',
+      onboardingCompleted: true,
+    });
+  });
+
+  it('clears the authenticated tenant immediately after Firebase sign-out resolves', async () => {
+    render(
+      <AuthProvider>
+        <AuthStateProbe />
+      </AuthProvider>
+    );
+
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'owner@example.com', uid: 'admin-a' });
+    });
+
+    expect(await screen.findByText('Tenant dashboard: Tenant A')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => expect(mocks.firebaseSignOut).toHaveBeenCalledWith(mocks.auth));
+    expect(await screen.findByText('Login state')).toBeInTheDocument();
+    expect(screen.queryByText('Tenant dashboard: Tenant A')).not.toBeInTheDocument();
+    expect(mocks.clearCurrentTenantId).toHaveBeenCalled();
+  });
+});

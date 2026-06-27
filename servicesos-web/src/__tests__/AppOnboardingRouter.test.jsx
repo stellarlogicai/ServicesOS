@@ -46,6 +46,8 @@ import App from '../App';
 
 describe('App onboarding router context', () => {
   beforeEach(() => {
+    authState.logout.mockReset();
+    authState.logout.mockResolvedValue({ success: true });
     authState.currentTenant = {
       id: 'tenant-test',
       businessName: 'Test Cleaning Co.',
@@ -95,5 +97,9 @@ describe('App onboarding router context', () => {
 
     expect(screen.getByRole('heading', { name: 'Create Estimate Screen' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Proceed to Payment' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    expect(authState.logout).toHaveBeenCalledTimes(1);
   });
 });

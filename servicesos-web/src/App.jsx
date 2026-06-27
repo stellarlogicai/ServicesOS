@@ -300,7 +300,9 @@ function AuthenticatedApp() {
       <div style={{ marginTop: "auto", padding: "16px 20px", borderTop: "1px solid #1e293b" }}>
         <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>{user?.email}</div>
         <button
-          onClick={logout}
+          onClick={async () => {
+            await logout();
+          }}
           style={{ width: "100%", padding: "8px", background: "transparent", border: "1px solid #334155", color: "#94a3b8", borderRadius: 6, fontSize: 12, cursor: "pointer" }}
         >
           Sign out

@@ -223,7 +223,12 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try {
       await firebaseSignOut(auth);
+      setUser(null);
+      setUserProfile(null);
+      setCurrentTenant(null);
+      setTenantLoading(false);
       clearCurrentTenantId();
+      setLoading(false);
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
