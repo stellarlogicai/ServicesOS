@@ -56,7 +56,7 @@ const NAV_ITEMS = [
     id: "customers",
     icon: "👥",
     label: "Customers",
-    roles: ["super-admin"],
+    roles: ["admin", "super-admin"],
   },
   {
     id: "customer-portal",
