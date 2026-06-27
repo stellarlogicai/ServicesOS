@@ -13,7 +13,7 @@ import { useAuth } from "./contexts/AuthContext";
 
 export default function AIPhotoEstimateSystem({
   enablePayments = true,
-  onLeadSaved = saveQuote
+  onLeadSaved = null
 }) {
   const { currentTenant } = useAuth();
   const [step, setStep] = useState("intake");
@@ -164,7 +164,11 @@ export default function AIPhotoEstimateSystem({
       const result = calculateEstimate(formData, aiAnalysis);
       const tenantId = typeof currentTenant === "string" ? currentTenant : currentTenant?.id;
 
-      await onLeadSaved(tenantId, formData, result, aiAnalysis);
+      if (onLeadSaved) {
+        await onLeadSaved(formData, result, aiAnalysis);
+      } else {
+        await saveQuote(tenantId, formData, result, aiAnalysis);
+      }
       setEstimate(result);
       setStep("results");
 
@@ -225,48 +229,56 @@ export default function AIPhotoEstimateSystem({
           </h3>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                First Name
+              <label htmlFor="estimate-first-name" style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
+                First Name *
               </label>
               <input
+                id="estimate-first-name"
                 type="text"
                 name="firstName"
+                required
                 value={formData.firstName}
                 onChange={handleInputChange}
                 style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Last Name
+              <label htmlFor="estimate-last-name" style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
+                Last Name *
               </label>
               <input
+                id="estimate-last-name"
                 type="text"
                 name="lastName"
+                required
                 value={formData.lastName}
                 onChange={handleInputChange}
                 style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Email
+              <label htmlFor="estimate-email" style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
+                Email *
               </label>
               <input
+                id="estimate-email"
                 type="email"
                 name="email"
+                required
                 value={formData.email}
                 onChange={handleInputChange}
                 style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Phone
+              <label htmlFor="estimate-phone" style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
+                Phone *
               </label>
               <input
+                id="estimate-phone"
                 type="tel"
                 name="phone"
+                required
                 value={formData.phone}
                 onChange={handleInputChange}
                 style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
@@ -697,6 +709,7 @@ export default function AIPhotoEstimateSystem({
           </p>
           <input
             type="file"
+            aria-label="Upload estimate photos"
             multiple
             accept="image/*"
             onChange={handleUpload}

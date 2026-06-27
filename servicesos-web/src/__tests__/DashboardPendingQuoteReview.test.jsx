@@ -212,6 +212,40 @@ describe('Dashboard null-safety', () => {
     expect(screen.getByText('Pipeline value').nextElementSibling).toHaveTextContent('$0');
   });
 
+  it('renders a saved admin manual estimate without treating it as booked', async () => {
+    dashboardMocks.getLeads.mockResolvedValue([{
+      id: 'lead-manual',
+      type: 'lead',
+      source: 'admin',
+      status: 'new',
+      formData: {
+        fullName: 'Manual Estimate Customer',
+        phone: '555-0199',
+        address: '27 Beta Lane',
+        bedrooms: 3,
+        bathrooms: 2,
+        cleaningType: 'standard',
+        frequency: 'one-time'
+      },
+      estimate: {
+        laborHours: 3,
+        appointmentDuration: 3,
+        priceLow: 120,
+        priceHigh: 150,
+        aiEnhanced: false
+      },
+      booking: null,
+      createdAt: '2026-06-27T12:00:00.000Z'
+    }]);
+
+    render(<Dashboard />);
+
+    expect(await screen.findByText('Manual Estimate Customer')).toBeInTheDocument();
+    expect(screen.getByText('$120 - $150')).toBeInTheDocument();
+    expect(screen.getByText('Booked jobs').nextElementSibling).toHaveTextContent('0');
+    expect(screen.getByRole('button', { name: 'Create Booking' })).toBeInTheDocument();
+  });
+
   it('renders when a lead is missing formData', async () => {
     const leadWithoutFormData = {
       id: 'lead-no-formdata',

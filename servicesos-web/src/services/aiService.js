@@ -1,10 +1,8 @@
 // services/aiService.js
 
 export async function analyzePhotos(photoFiles) {
-  // Use simulated data for testing (avoids CORS issues)
-  // Remove this check when you have a backend proxy for Anthropic API
   if (!import.meta.env.VITE_ANTHROPIC_API_KEY || import.meta.env.VITE_ANTHROPIC_API_KEY === 'your_anthropic_api_key_here') {
-    return simulateAIAnalysis(photoFiles.length);
+    throw new Error('AI photo analysis is not configured');
   }
 
   const base64Images = await Promise.all(
@@ -70,27 +68,7 @@ Return STRICT JSON ONLY:
     if (!jsonMatch) throw new Error("No JSON found in response");
     return JSON.parse(jsonMatch[0]);
   } catch (error) {
-    console.error('AI API call failed, using simulated data:', error);
-    return simulateAIAnalysis(photoFiles.length);
+    console.error('AI API call failed:', error);
+    throw new Error('AI photo analysis is unavailable', { cause: error });
   }
-}
-
-// Simulated AI analysis for testing
-function simulateAIAnalysis() {
-  return {
-    overallCondition: "moderate",
-    rooms: {
-      kitchen: { damageScore: 45, condition: "moderate" },
-      bathroom: { damageScore: 60, condition: "moderate" },
-      livingArea: { damageScore: 35, condition: "light" },
-      floors: { damageScore: 50, condition: "moderate" }
-    },
-    estimatedAddTime: 1,
-    confidence: 85,
-    recommendations: [
-      "Deep clean bathroom tiles",
-      "Polish hardwood floors",
-      "Clean kitchen appliances"
-    ]
-  };
 }
