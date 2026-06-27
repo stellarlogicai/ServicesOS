@@ -9,60 +9,60 @@
 import { describe, it, expect } from 'vitest';
 
 describe('Smoke Tests', () => {
-  it('should verify core services can be imported', () => {
+  it('should verify core services can be imported', async () => {
     // Verify core services can be imported without errors
-    expect(() => {
-      import('../core/customers/customerService');
-      import('../core/employees/employeeService');
-      import('../core/scheduling/schedulingService');
-      import('../core/contracts/contractService');
-      import('../core/photos/photoService');
-      import('../core/reviews/reviewService');
-      import('../core/training/trainingService');
-      import('../core/messaging/messagingService');
-      import('../core/time-tracking/timeTrackingService');
-      import('../core/notifications/notificationService');
-      import('../core/dashboard/dashboardService');
-      import('../core/permissions/permissionService');
-    }).not.toThrow();
+    await Promise.all([
+      import('../core/customers/customerService'),
+      import('../core/employees/employeeService'),
+      import('../core/scheduling/schedulingService'),
+      import('../core/contracts/contractService'),
+      import('../core/photos/photoService'),
+      import('../core/reviews/reviewService'),
+      import('../core/training/trainingService'),
+      import('../core/messaging/messagingService'),
+      import('../core/time-tracking/timeTrackingService'),
+      import('../core/notifications/notificationService'),
+      import('../core/dashboard/dashboardService'),
+      import('../core/permissions/permissionService'),
+    ]);
   });
 
-  it('should verify cleaning module services can be imported', () => {
+  it('should verify cleaning module services can be imported', async () => {
     // Verify cleaning module services can be imported without errors
-    expect(() => {
-      import('../modules/cleaning/roomTemplates/roomTemplateService');
-      import('../modules/cleaning/petProfiles/petProfileService');
-      import('../modules/cleaning/checklists/checklistService');
-      import('../modules/cleaning/supplies/supplyService');
-      import('../modules/cleaning/services/cleaningServiceService');
-    }).not.toThrow();
+    await Promise.all([
+      import('../modules/cleaning/roomTemplates/roomTemplateService'),
+      import('../modules/cleaning/petProfiles/petProfileService'),
+      import('../modules/cleaning/checklists/checklistService'),
+      import('../modules/cleaning/supplies/supplyService'),
+      import('../modules/cleaning/services/cleaningServiceService'),
+    ]);
   });
 
-  it('should verify shared utilities can be imported', () => {
+  it('should verify shared utilities can be imported', async () => {
     // Verify shared utilities can be imported without errors
-    expect(() => {
-      import('../shared/logging/errorLoggingStandard');
-      import('../shared/api/apiResponseStandard');
-      import('../shared/features/featureRegistry');
-      import('../shared/events/eventBus');
-    }).not.toThrow();
+    await Promise.all([
+      import('../shared/logging/errorLoggingStandard'),
+      import('../shared/api/apiResponseStandard'),
+      import('../shared/features/featureRegistry'),
+      import('../shared/events/eventBus'),
+    ]);
   });
 
-  it('should verify migration system can be imported', () => {
+  it('should verify migration system can be imported', async () => {
     // Verify migration system can be imported without errors
-    expect(() => {
-      import('../core/migrations/migrationRunner');
-      import('../core/migrations/moduleIsolationTests');
-    }).not.toThrow();
+    await Promise.all([
+      import('../core/migrations/migrationRunner'),
+      import('../core/migrations/moduleIsolationTests'),
+    ]);
   });
 
-  it('should verify React components can be imported', () => {
+  it('should verify React components can be imported', async () => {
     // Verify key React components can be imported without errors
-    expect(() => {
-      import('../components/CustomerManagement');
-      import('../components/StaffScheduling');
-      import('../components/EmployeeManagement');
-    }).not.toThrow();
+    await Promise.all([
+      import('../components/CustomerManagement'),
+      import('../components/StaffScheduling'),
+      import('../components/EmployeeManagement'),
+    ]);
   });
 
   it('should verify schema version constants are defined', async () => {

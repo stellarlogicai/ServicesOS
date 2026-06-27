@@ -154,3 +154,48 @@ Run a second-tenant read-isolation check when a safe second beta tenant/account 
 - Customer Portal identity and quote-request behavior were not mutated; focused regressions remain required in validation.
 - Customers navigation now permits `admin` and `super-admin`. Other deferred navigation remains unchanged.
 - `AppOnboardingRouter.test.jsx` explicitly proves Customers is visible for the completed admin while Customer Portal, Scheduling, Calendar, payments, Settings, and other deferred modules remain hidden.
+
+### Customers Second-Tenant Isolation Verification — June 27, 2026
+
+**Status:** Manually blocked because no working second tenant admin account is available.
+
+#### What was verified
+
+- Local `master` matched `origin/master` at `d46cec7` and the worktree was clean before this documentation update.
+- Tenant A (`Test Cleaning Services`) loaded Customers successfully and showed only its expected persisted customer, `Beta Customer 0627 Edited`.
+- The tenant-A customer remained intact with its expected email, phone, and Bolivar address.
+- Existing focused service coverage proves customer reads, creates, and updates receive the active tenant ID and use `tenants/{tenantId}/customers/{customerId}` paths.
+- No Firebase rules, auth/profile code, tenant/security logic, backend functions, or customer behavior was changed.
+
+#### What remains blocked
+
+- The only repository-documented candidate second admin (`admin@example.com`, intended for `test_tenant_001`) is not a working configured beta account; its documented login was previously rejected. No other safe tenant-B admin was found.
+- The current browser session's Sign out control did not transition away from tenant A during this attempt. Because auth/profile work is explicitly out of scope, this was not modified. It should be rechecked in a fresh browser session when tenant B is provisioned.
+- Therefore tenant-B list/add/edit/reload and the final return-to-tenant-A leakage check could not be completed live. No live cross-tenant leakage conclusion is claimed.
+
+#### Exact tenant-B setup required
+
+1. Create a non-production Firebase Auth user with a unique tenant-B admin email.
+2. Create `tenants/{tenantBId}` with the minimum valid ServicesOS tenant fields and add the new UID to the tenant's `users` and `adminUsers` membership arrays used by the deployed rules.
+3. Create `users/{tenantBAdminUid}` with `role: admin`, `status: active`, `onboardingCompleted: true`, and `tenantId: tenantBId`.
+4. Seed one uniquely named customer at `tenants/{tenantBId}/customers/{customerId}`. Do not use a super-admin or a tenant-null profile for this check.
+5. In a fresh browser session, run the complete A → B → A walkthrough: verify each tenant's initial list, add/edit/reload a tenant-B customer, confirm tenant A never appears in B, and confirm the new B customer never appears in A.
+6. Capture current-session console output and recheck Dashboard and Create Estimate under both tenant admins.
+
+#### Beta annoyances / future polish
+
+- Test-account provisioning and ownership are not documented in one authoritative beta-operations location.
+- A repeatable two-tenant smoke-test fixture would make deployment verification less dependent on manually maintained credentials. This remains future test infrastructure, not a product feature.
+- Bookings, Schedule, Settings, payments, and all other deferred modules remain untouched.
+
+#### Exact next step
+
+Provision the narrowly scoped tenant-B admin fixture above and rerun the Customers A → B → A isolation walkthrough. Only after that check passes should a separately scoped Bookings admin-list audit begin; do not implement Bookings as part of this Customers pass.
+
+#### Validation for this pass
+
+- Focused Customers, Customer Portal, Dashboard, Create Estimate, and admin-router coverage: 21/21 passed across 6 files.
+- Full ESLint: passed.
+- Production build: passed with the existing ineffective dynamic-import and large-chunk warnings.
+- The legacy smoke test now awaits every dynamic import. This preserves its module-load coverage and prevents imports from continuing after jsdom teardown.
+- Full Vitest: 103/103 passed across 19 files with exit code 0. The existing local-storage path warning remains non-blocking.
