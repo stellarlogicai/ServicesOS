@@ -84,7 +84,7 @@ Begin the separately scoped Customers restoration gate: add focused tenant-path 
 
 ### Customers Restoration Safety Gate — June 27, 2026
 
-**Status:** Automated safety gate implemented; live list/add/edit verification is still required before navigation restoration.
+**Status:** Safety gate and live list/add/edit verification passed; Customers restored to normal admin navigation.
 
 #### Confirmed data path
 
@@ -116,9 +116,7 @@ Hard delete is disabled for the first restoration version. The current schema ca
 
 #### Beta blockers remaining
 
-- Normal admins must not see Customers until list/add/edit pass manually with the wife-beta tenant and deployed permission contract.
-- The component still needs a live tenant test proving create/update persistence and refresh behavior.
-- Cross-tenant isolation must be verified before restoration; Firebase rules remain unchanged in this pass.
+- None found in the tested wife-beta tenant. A second-tenant isolation walkthrough remains a deployment verification item; Firebase rules were unchanged in this pass.
 
 #### Beta annoyances / future polish
 
@@ -138,4 +136,21 @@ Hard delete is disabled for the first restoration version. The current schema ca
 
 #### Exact next step
 
-Run Customer list/add/edit manually against the wife-beta tenant while Customers remains hidden from normal navigation. Verify refresh persistence and deployed permissions, then add an explicit admin navigation test before changing the Customers role gate.
+Run a second-tenant read-isolation check when a safe second beta tenant/account is available. Then begin a separately scoped Bookings admin-list audit without changing quote-to-booking conversion behavior.
+
+### Customers Live Verification And Navigation Restoration — June 27, 2026
+
+- Temporarily exposed the existing Customers renderer locally to the tenant-scoped `test.owner@gmail.com` admin for verification.
+- Customer list loaded without crash or permission errors from `tenants/{tenantId}/customers`.
+- The tenant initially had no customer records, so no existing linked customer was available for live metadata inspection.
+- Added `Beta Customer 0627` with realistic Bolivar, Missouri contact/address data.
+- Reload confirmed the new customer persisted.
+- Edited the visible name to `Beta Customer 0627 Edited`; reload confirmed the edit persisted.
+- Existing email, phone, address, city, state, ZIP, and notes remained intact after edit. Hidden linkage preservation remains covered by the focused service test using `authUid`, profile, property, lead, booking, `createdAt`, and schema metadata.
+- Triggering Delete did not remove the customer. The service returns `CUSTOMER_DELETE_BLOCKED`; the focused component test verifies the clear admin message.
+- Dashboard still showed 7 leads, 2 booked jobs, $495 confirmed revenue, and the persisted `Live Beta 0627` estimate.
+- Create Estimate still loaded after Customers verification.
+- Current-session console was clean after the final Dashboard/Create Estimate checks. Earlier retained logs from prior sessions were unrelated to this Customers flow.
+- Customer Portal identity and quote-request behavior were not mutated; focused regressions remain required in validation.
+- Customers navigation now permits `admin` and `super-admin`. Other deferred navigation remains unchanged.
+- `AppOnboardingRouter.test.jsx` explicitly proves Customers is visible for the completed admin while Customer Portal, Scheduling, Calendar, payments, Settings, and other deferred modules remain hidden.

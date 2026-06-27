@@ -16,6 +16,10 @@ vi.mock('../AIPhotoEstimateSystem', () => ({
   )
 }));
 
+vi.mock('../components/CustomerManagement', () => ({
+  default: () => <h1>Customers Screen</h1>
+}));
+
 const authState = {
   user: { uid: 'admin-test', email: 'admin@example.com' },
   userProfile: { uid: 'admin-test', onboardingCompleted: false },
@@ -63,11 +67,10 @@ describe('App onboarding router context', () => {
     render(<App />);
 
     expect(screen.queryByRole('heading', { name: 'Welcome to CleanOps' })).not.toBeInTheDocument();
-    ['Dashboard', 'Create estimate'].forEach(label => {
+    ['Dashboard', 'Create estimate', 'Customers'].forEach(label => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
     [
-      'Customers',
       'Customer portal',
       'Staff scheduling',
       'Route optimization',
@@ -83,6 +86,10 @@ describe('App onboarding router context', () => {
       expect(screen.queryByText(label)).not.toBeInTheDocument();
     });
     expect(screen.getByRole('heading', { name: 'Wife Beta Dashboard' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Customers'));
+
+    expect(screen.getByRole('heading', { name: 'Customers Screen' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Create estimate'));
 

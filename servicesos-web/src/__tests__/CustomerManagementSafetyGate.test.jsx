@@ -84,7 +84,8 @@ describe('CustomerManagement restoration safety gate', () => {
     render(<CustomerManagement />);
 
     expect(await screen.findByText('Linked Customer')).toBeInTheDocument();
-    const loadCallsBeforeDelete = customerMocks.getCustomers.mock.calls.length;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    customerMocks.getCustomers.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
@@ -93,6 +94,6 @@ describe('CustomerManagement restoration safety gate', () => {
     expect(window.alert).toHaveBeenCalledWith(
       'Customer deletion is disabled until linked records can be verified.'
     );
-    expect(customerMocks.getCustomers).toHaveBeenCalledTimes(loadCallsBeforeDelete);
+    expect(customerMocks.getCustomers).not.toHaveBeenCalled();
   });
 });
