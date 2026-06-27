@@ -170,7 +170,7 @@ Run a second-tenant read-isolation check when a safe second beta tenant/account 
 #### What remains blocked
 
 - The only repository-documented candidate second admin (`admin@example.com`, intended for `test_tenant_001`) is not a working configured beta account; its documented login was previously rejected. No other safe tenant-B admin was found.
-- The current browser session's Sign out control did not transition away from tenant A during this attempt. Because auth/profile work is explicitly out of scope, this was not modified. It should be rechecked in a fresh browser session when tenant B is provisioned.
+- Sign out did not transition away from tenant A in either the original session or a newly opened browser tab. The fresh tab otherwise loaded the tenant-A Dashboard correctly and produced no console warnings or errors. Because auth/profile work is explicitly out of scope, sign-out was not modified; it should be diagnosed as a separately scoped blocker before or alongside provisioning tenant B.
 - Therefore tenant-B list/add/edit/reload and the final return-to-tenant-A leakage check could not be completed live. No live cross-tenant leakage conclusion is claimed.
 
 #### Exact tenant-B setup required
@@ -190,7 +190,7 @@ Run a second-tenant read-isolation check when a safe second beta tenant/account 
 
 #### Exact next step
 
-Provision the narrowly scoped tenant-B admin fixture above and rerun the Customers A → B → A isolation walkthrough. Only after that check passes should a separately scoped Bookings admin-list audit begin; do not implement Bookings as part of this Customers pass.
+Diagnose the reproducible sign-out transition failure in a separately scoped auth task, provision the narrowly scoped tenant-B admin fixture above, and rerun the Customers A → B → A isolation walkthrough. Only after that check passes should a separately scoped Bookings admin-list audit begin; do not implement Bookings as part of this Customers pass.
 
 #### Validation for this pass
 
