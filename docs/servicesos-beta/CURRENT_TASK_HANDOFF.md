@@ -28,13 +28,12 @@
 
 ### Beta Blockers Remaining
 
-- None found in the code/tested Create Estimate path.
-- A final authenticated browser walkthrough against the configured Firebase beta tenant is still required to prove live Firestore permissions, Dashboard refresh behavior, and console health in the deployed environment.
+- None found in the tested Create Estimate path.
 
 ### Beta Annoyances
 
 - The form is long and uses dense inline styling; this is usable but not optimized for mobile or rapid owner entry.
-- Estimate save triggers existing quote email/SMS notification helpers automatically. These are non-blocking, but a future workflow should make notification intent clearer before sending.
+- Estimate save triggers existing quote email/SMS notification helpers automatically. During the live walkthrough, the estimate persisted but the email request logged `[EMAIL] sendQuoteEmail failed: Failed to fetch`. This is non-blocking for estimate creation, but notification status is not visible to the admin and should be addressed before relying on automatic delivery.
 - Address and appointment preference are optional, so a saved estimate may have limited operational detail.
 
 ### Future Polish / Deferred Features
@@ -51,7 +50,7 @@
 
 ### Exact Next Recommended Step
 
-Run the authenticated wife-beta browser walkthrough: create one manual estimate in the beta tenant, confirm the success result and clean console, return to Dashboard, verify the new lead and estimate range, and confirm no booking/payment record was created. If that passes, begin a separately scoped Customers beta-blocker audit.
+Begin the separately scoped Customers restoration gate: add focused tenant-path and component error-state tests, preserve non-form linkage metadata on edit, and define a safe delete policy. Keep Customers hidden from normal admins until list/add/edit pass against the wife-beta tenant and Customer Portal regressions remain green.
 
 ### Validation Results
 
@@ -61,4 +60,28 @@ Run the authenticated wife-beta browser walkthrough: create one manual estimate 
 - Production build: passed.
 - Full `npm run lint`: passed. The tenant migration was preserved as the Node-only script `scripts/migrations/migrate-add-tenant-ids.cjs`; byte-identical duplicate copies were removed.
 - Known unrelated warnings: Vitest local-storage path warning; existing Vite ineffective dynamic-import and large-chunk warnings.
-- In-app browser QA: blocked because the listed Browser skill cache path was unavailable. Authenticated live-Firebase verification remains the next manual step.
+- In-app browser QA completed against the tenant-scoped `test.owner@gmail.com` admin account.
+
+### Live Walkthrough Attempt — June 27, 2026
+
+- Local URL loaded successfully with no framework error overlay.
+- Signed in as the tenant-scoped admin for `Test Cleaning Services`.
+- Dashboard loaded 6 leads, 2 booked jobs, and $495 confirmed revenue.
+- Created a no-photo/no-AI manual estimate for `Live Beta 0627` using realistic Bolivar, Missouri contact/address data and the default 3-bedroom/2-bath standard-clean inputs.
+- Save succeeded with a calculated range of `$180 - $225` and 4.5 labor hours.
+- Dashboard then showed 7 leads and the new record as `New`, with `$180 - $225` and an explicit `Create Booking` action.
+- Booked jobs remained 2 and confirmed revenue remained $495, so the estimate was not converted into a booking.
+- The Create Estimate save path and focused persistence tests contain no booking or payment write; no payment UI/action was exposed. Direct collection inspection was not available in the browser session.
+- Reload preserved the exact lead row and estimate range.
+- No new page, Firestore-permission, or framework errors occurred under the tenant admin. One non-blocking email delivery error occurred after save: `[EMAIL] sendQuoteEmail failed: Failed to fetch`.
+
+### Customers Audit Started — June 27, 2026
+
+- Customers remains intentionally hidden from normal admins (`roles: ["super-admin"]`) while its renderer still exists.
+- Primary CRUD path is `tenants/{tenantId}/customers/{customerId}` through `core/customers/customerService.js`.
+- The component is tenant-scoped and has list/add/edit/delete/search behavior, but permission/load failures are rendered as an empty list rather than an explicit error state.
+- Editing submits only the visible form fields and can discard linkage metadata such as `authUid`.
+- Delete has no linked lead/booking/property/Portal identity guard.
+- No focused `CustomerManagement` or core customer-service tests currently exist.
+- Existing restoration plan remains correct: test tenant paths and error states, preserve metadata, decide a safe delete policy, manually verify list/add/edit, rerun Customer Portal regressions, and only then expose Customers to normal admins.
+- No Customers code or navigation was changed in this pass.
