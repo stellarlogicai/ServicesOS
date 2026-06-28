@@ -238,3 +238,34 @@ Diagnose the reproducible sign-out transition failure in a separately scoped aut
 #### Next recommended step
 
 Provision the external tenant-B fixture and complete Customers isolation before claiming tenant isolation passed. Because the external blocker is now explicit and no product defect was found, a separately scoped Bookings admin-list audit may begin if prioritized, but Bookings implementation remains out of scope for this pass.
+
+### Bookings Admin-List Audit — June 28, 2026
+
+**Status:** Hidden and not beta-ready; no dedicated Bookings admin list exists.
+
+#### Current architecture
+
+- There is no Bookings route, navigation item, or standalone admin-list component.
+- Normal admins continue to see only Dashboard, Create Estimate, and Customers. Existing router coverage keeps Staff Scheduling, Calendar, payments, Settings, and other deferred modules hidden.
+- `core/scheduling/schedulingService.js#getJobs(tenantId)` is the reusable list-read boundary. It validates tenant presence and reads only `tenants/{tenantId}/bookings`, ordered by `date` descending.
+- Quote-to-booking writes remain in `quoteBookingConversionService.js` and target `tenants/{tenantId}/bookings/{bookingId}`. That conversion behavior was reviewed but not changed.
+- The closest list UI is the hidden super-admin Calendar. It directly reads the tenant booking collection but is mounted without a `tenantId`, has no loading/error UI, assumes calendar-specific date/time fields, and also loads employees. It is a deferred scheduling surface, not a wife-beta Bookings list.
+- Hidden Staff Scheduling also reads bookings as jobs, but combines booking creation/status changes with employee management and assignment. It remains outside the Bookings admin-list scope.
+
+#### Audit result
+
+- Tenant-scoped service reads, empty results, missing tenant rejection, load failures, and minimally populated booking documents now have focused audit coverage.
+- No global/shared booking collection read was found in the audited list boundary.
+- The service does not require payment or Stripe fields and does not mutate records while listing.
+- Missing-field display resilience cannot be claimed because no dedicated Bookings list renderer exists. Calendar and Staff Scheduling are not suitable for exposure without broader scheduling/employee work that is explicitly deferred.
+- No product behavior, navigation, Firebase rules, payments, Customer Portal, Dashboard conversion, Create Estimate, Customers, scheduling, or employee assignment code was changed.
+
+#### Beta blockers remaining
+
+1. No dedicated authenticated owner/admin Bookings list route or component exists.
+2. No Bookings list loading, empty, permission/error, or defensive missing-field display states exist.
+3. Existing candidate UIs are coupled to Calendar or Staff Scheduling and are intentionally hidden.
+
+#### Recommendation
+
+Keep Bookings hidden. Revisit it as a separately scoped minimal read-only owner/admin list using `getJobs(tenantId)` after product approval. That future pass must add explicit loading/empty/error states and safe fallbacks for customer, service, address, schedule, status, price, timestamps, assignment, lead, and customer identifiers before navigation exposure.
