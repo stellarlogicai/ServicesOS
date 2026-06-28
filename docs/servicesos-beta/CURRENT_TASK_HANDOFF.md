@@ -269,3 +269,42 @@ Provision the external tenant-B fixture and complete Customers isolation before 
 #### Recommendation
 
 Keep Bookings hidden. Revisit it as a separately scoped minimal read-only owner/admin list using `getJobs(tenantId)` after product approval. That future pass must add explicit loading/empty/error states and safe fallbacks for customer, service, address, schedule, status, price, timestamps, assignment, lead, and customer identifiers before navigation exposure.
+
+### Minimal Read-Only Bookings Admin List — June 28, 2026
+
+**Status:** Wife-beta ready as a read-only list. This is not a full Bookings implementation.
+
+- Added `components/BookingsList.jsx` and exposed a single `Bookings` navigation item to completed normal admins and super-admins with `manage_bookings` permission.
+- The list uses `useAuth().tenantId` and calls `core/scheduling/schedulingService.js#getJobs(tenantId)`, which reads only `tenants/{tenantId}/bookings`.
+- Displayed fields are customer name, service type, status, scheduled date/time, address, and price.
+- Safe fallbacks are `Unknown customer`, `Service not specified`, `Booked`, `Not scheduled`, `Address not provided`, and `Price not set`.
+- The page includes explicit loading, empty, tenant-unavailable, and retryable load-error states.
+- The page is read-only. It exposes no create, edit, delete, payment, employee assignment, reschedule, calendar, or scheduling controls and performs no booking mutations.
+- Dashboard quote-to-booking conversion remains unchanged and continues writing the same tenant-scoped booking records.
+- Customer Portal, Schedule, Calendar, payments, Settings, and all other deferred modules remain hidden for normal admins.
+
+#### Focused coverage
+
+- Completed-admin route and navigation visibility, while deferred modules stay hidden.
+- Active tenant ID passed to `getJobs`.
+- Loading, empty, retryable error, complete record, and missing-field fallback states.
+- No create/edit/delete/payment/assignment/reschedule controls.
+- Existing tenant-scoped service-read and quote-to-booking conversion regressions.
+- Final validation: ESLint passed; full Vitest passed 112/112 across 22 files with exit code 0; production build passed with the existing ineffective dynamic-import and large-chunk warnings.
+
+#### Manual tenant-A verification
+
+- Dashboard, Create Estimate, and Customers loaded successfully.
+- Bookings loaded without a crash and displayed the existing scheduled `$245.00` booking. The record lacks customer/address data, so the intended `Unknown customer` and `Address not provided` fallbacks were shown.
+- No mutation, payment, assignment, or scheduling controls appeared.
+- Sign out showed Login and removed tenant data. Re-login restored the Bookings page and record.
+- Console warnings/errors: none.
+
+#### Remaining deferred work
+
+- Booking creation, editing, deletion, rescheduling, recurring jobs, assignment, calendar integration, customer booking requests, notifications, status automation, routing, and payment collection remain explicitly deferred.
+- Tenant-B Customers isolation remains externally blocked and is not changed by this Bookings list.
+
+#### Next recommended step
+
+Continue wife-beta verification of the read-only Bookings list with realistic complete and incomplete booking data. Separately provision tenant B and complete Customers A → B → A isolation when Firebase Admin access is available. Do not expand Bookings into scheduling or payment workflows.

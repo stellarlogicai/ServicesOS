@@ -20,6 +20,10 @@ vi.mock('../components/CustomerManagement', () => ({
   default: () => <h1>Customers Screen</h1>
 }));
 
+vi.mock('../components/BookingsList', () => ({
+  default: () => <h1>Bookings Screen</h1>
+}));
+
 const authState = {
   user: { uid: 'admin-test', email: 'admin@example.com' },
   userProfile: { uid: 'admin-test', onboardingCompleted: false },
@@ -69,7 +73,7 @@ describe('App onboarding router context', () => {
     render(<App />);
 
     expect(screen.queryByRole('heading', { name: 'Welcome to CleanOps' })).not.toBeInTheDocument();
-    ['Dashboard', 'Create estimate', 'Customers'].forEach(label => {
+    ['Dashboard', 'Create estimate', 'Customers', 'Bookings'].forEach(label => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
     [
@@ -97,6 +101,10 @@ describe('App onboarding router context', () => {
 
     expect(screen.getByRole('heading', { name: 'Create Estimate Screen' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Proceed to Payment' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Bookings'));
+
+    expect(screen.getByRole('heading', { name: 'Bookings Screen' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 

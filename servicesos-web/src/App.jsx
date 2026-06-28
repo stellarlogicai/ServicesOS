@@ -9,6 +9,7 @@ import CompanySettings        from "./components/CompanySettings.jsx";
 import StaffScheduling        from "./components/StaffScheduling.jsx";
 import CustomerPortal         from "./components/CustomerPortal.jsx";
 import CustomerManagement     from "./components/CustomerManagement.jsx";
+import BookingsList           from "./components/BookingsList.jsx";
 import TenantManagement       from "./components/TenantManagement.jsx";
 import AIModelTraining        from "./components/AIModelTraining.jsx";
 import CalendarView           from "./components/CalendarView.jsx";
@@ -57,6 +58,13 @@ const NAV_ITEMS = [
     icon: "👥",
     label: "Customers",
     roles: ["admin", "super-admin"],
+  },
+  {
+    id: "bookings",
+    icon: "📅",
+    label: "Bookings",
+    roles: ["admin", "super-admin"],
+    permission: "manage_bookings",
   },
   {
     id: "customer-portal",
@@ -323,6 +331,7 @@ function AuthenticatedApp() {
       case "intake":            return <div style={{ maxWidth: 680, margin: "0 auto" }}><AIPhotoEstimateSystem enablePayments={false} onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
       case "dashboard":         return <Dashboard />;
       case "customers":         return <CustomerManagement />;
+      case "bookings":          return <BookingsList />;
       case "staff-scheduling":  return <StaffScheduling tenantId={tenantId} />;
       case "route-optimization": return <RouteOptimization tenantId={tenantId} />;
       case "calendar":          return <CalendarView />;
