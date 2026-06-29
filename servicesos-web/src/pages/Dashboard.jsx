@@ -53,8 +53,15 @@ function StatCard({ label, value, sub, accent }) {
 function BookModal({ lead, onClose, onSave }) {
   const display = getFormData(lead);
   const pendingOwnerReview = isPendingOwnerReview(lead);
+  const normalizeBookingTime = (value) => {
+    if (/^\d{2}:\d{2}$/.test(value || "")) return value;
+    if (value === "morning") return "09:00";
+    if (value === "afternoon") return "13:00";
+    if (value === "evening") return "17:00";
+    return "09:00";
+  };
   const [date, setDate]   = useState(display.preferredDate || "");
-  const [time, setTime]   = useState(display.preferredTime || "09:00");
+  const [time, setTime]   = useState(normalizeBookingTime(display.preferredTime));
   const [price, setPrice] = useState(
     pendingOwnerReview ? "" : String(lead.estimate?.priceLow || "")
   );

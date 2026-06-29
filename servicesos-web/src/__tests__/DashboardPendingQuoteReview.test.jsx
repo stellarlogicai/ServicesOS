@@ -246,6 +246,72 @@ describe('Dashboard null-safety', () => {
     expect(screen.getByRole('button', { name: 'Create Booking' })).toBeInTheDocument();
   });
 
+  it('can create a booking from a manual estimate that stores a time bucket', async () => {
+    const manualEstimate = {
+      id: 'lead-manual-time-bucket',
+      type: 'lead',
+      source: 'admin',
+      status: 'new',
+      tenantId: 'tenant-test',
+      formData: {
+        fullName: 'Manual Time Bucket Customer',
+        phone: '555-0200',
+        address: '629 Golden Path Lane',
+        preferredTime: 'morning',
+        bedrooms: 3,
+        bathrooms: 2,
+        cleaningType: 'standard',
+        frequency: 'one-time'
+      },
+      estimate: {
+        laborHours: 4.5,
+        appointmentDuration: 4.5,
+        priceLow: 180,
+        priceHigh: 225,
+        aiEnhanced: false
+      },
+      booking: null,
+      createdAt: '2026-06-29T12:00:00.000Z'
+    };
+
+    dashboardMocks.getLeads.mockResolvedValue([manualEstimate]);
+    dashboardMocks.approveQuoteRequestAndCreateBooking.mockResolvedValue({
+      leadPatch: {
+        status: 'booked',
+        booking: {
+          bookingId: 'booking-manual-time-bucket',
+          scheduledAt: '2026-07-02T09:00:00.000Z',
+          agreedPrice: 180,
+          status: 'scheduled'
+        }
+      }
+    });
+
+    const { container } = render(<Dashboard />);
+
+    expect(await screen.findByText('Manual Time Bucket Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
+
+    const dateInput = container.querySelector('input[type="date"]');
+    const timeInput = container.querySelector('input[type="time"]');
+    expect(timeInput.value).toBe('09:00');
+
+    fireEvent.change(dateInput, { target: { value: '2026-07-02' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
+
+    await waitFor(() => {
+      expect(dashboardMocks.approveQuoteRequestAndCreateBooking).toHaveBeenCalledWith({
+        tenantId: 'tenant-test',
+        lead: manualEstimate,
+        bookingData: expect.objectContaining({
+          scheduledAt: '2026-07-02T14:00:00.000Z',
+          agreedPrice: 180
+        }),
+        reviewedBy: 'admin-test'
+      });
+    });
+  });
+
   it('renders when a lead is missing formData', async () => {
     const leadWithoutFormData = {
       id: 'lead-no-formdata',

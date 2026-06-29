@@ -502,3 +502,76 @@ Proceed to the next wife-beta verification pass for the next approved owner/admi
 #### Next recommended step
 
 Proceed to the next wife-beta owner/admin pass only for an approved surface. Do not implement Settings, payments, scheduling, calendar workflows, staff scheduling, route optimization, Tap to Pay, payroll, training, or future modules.
+
+### Owner/Admin Golden Path Wife-Beta Walkthrough — June 29, 2026
+
+**Status:** Wife-beta ready for human wife test with known annoyances.
+
+- Verified from local `master` after the normal-admin route visibility audit.
+- Approved normal-admin surfaces remained limited to Dashboard, Create Estimate, Customers, and Bookings for both tenant admins.
+- Deferred surfaces remained hidden from normal admins.
+- Tenant A account used: `test.owner@gmail.com`.
+- Tenant B account used for isolation sanity: `test.ownerb@gmail.com`.
+- No passwords were documented.
+
+#### Golden-path records created or used
+
+- Tenant A customer: `Golden Path Customer 0629`.
+- Tenant A estimate/lead: `Golden Path Estimate 0629`.
+- Tenant A booking: created from the Dashboard explicit `Create Booking` action for `Golden Path Estimate 0629`.
+- Booking details persisted in Bookings with address `629 Golden Path Lane`, scheduled for July 2, 2026 at 9:00 AM, price `$180.00`.
+
+#### What passed
+
+- Tenant A Dashboard loaded and displayed tenant-A-only data.
+- Tenant A Customers loaded and persisted `Golden Path Customer 0629`.
+- A no-photo/no-AI manual estimate saved successfully.
+- The Create Estimate results screen showed the non-blocking notification/manual-follow-up status after save.
+- Dashboard displayed the saved estimate as a new lead; estimate save did not create a booking or payment.
+- The explicit Dashboard `Create Booking` action converted the saved estimate into a booked lead.
+- Dashboard updated from 2 booked jobs / `$495` confirmed revenue to 3 booked jobs / `$675` confirmed revenue after booking.
+- Bookings displayed the new booking with the expected schedule, address, and price.
+- Bookings stayed read-only: no create, edit, delete, payment, assignment, refund, or reschedule controls were exposed in the Bookings list.
+- No payment confusion appeared: no false paid state, no required payment prompt, and no Stripe/payment action in the approved flow.
+- Sign-out returned to the login screen and removed tenant data. Re-login restored tenant-A Dashboard, Customers, Bookings, and Create Estimate data.
+- Tenant B loaded the admin shell for `test1` with the same approved surfaces only.
+- Tenant B Customers displayed tenant-B-only customer data and did not display `Golden Path Customer 0629` or `Beta Customer 0627 Edited`.
+- Tenant B Bookings displayed tenant-B bookings and did not display the tenant-A golden booking/address.
+- Tenant B Dashboard and Create Estimate loaded without tenant-A data.
+- Returning to Tenant A restored tenant-A golden customer, estimate/lead, and booking without tenant-B data.
+- Console/page errors captured during the final account-switching verification: none.
+
+#### Beta blocker fixed
+
+- The Dashboard booking modal initialized its time input directly from `preferredTime`. Manual estimates can store time buckets such as `morning`, which are valid customer preference values but invalid `<input type="time">` values. After entering a booking date, the modal could appear ready while booking creation did not complete because the scheduled timestamp used an invalid time string.
+- The fix is narrowly scoped to `Dashboard.jsx`: booking modal time values are normalized to valid times (`morning` → `09:00`, `afternoon` → `13:00`, `evening` → `17:00`, otherwise `09:00`) while preserving existing valid `HH:mm` times.
+- Focused regression coverage now proves a manual estimate with `preferredTime: "morning"` opens with `09:00` and can create a booking.
+
+#### Wife-beta annoyances found
+
+- `Golden Path Customer 0629` appeared twice in Tenant A Customers because an earlier browser-automation retry submitted the add-customer action more than once. This is a manual-run artifact; duplicate detection remains future polish.
+- The new booking appears in Bookings as `Unknown customer` even though the schedule, address, and price are correct. This is understandable enough for the read-only beta list but should be polished later by carrying/displaying a customer snapshot for admin-created estimate bookings.
+- Direct browser reload behavior is still state-based rather than URL-route-based; approved surfaces reload back through the admin shell rather than deep-linking to the current surface.
+
+#### Future polish / deferred work
+
+- Duplicate-customer detection and merge/archive tools.
+- Richer booking customer labels for admin-created estimate bookings.
+- URL-backed deep links for approved admin surfaces.
+- Settings, payments, Stripe/Connect, payment links, refunds, scheduling, calendar workflows, staff scheduling, assignment, route optimization, Tap to Pay, payroll, training, Customer Portal expansion, notification queues/retries, and future modules remain deferred.
+
+#### Wife-Beta Completion Assessment
+
+`Wife-beta ready for human wife test with known annoyances`
+
+The approved owner/admin flow can now run across Dashboard, Customers, Create Estimate, and read-only Bookings with tenant-scoped data, persisted customer/estimate/booking records, understandable notification/payment state, sign-out/account switching, and no remaining beta-critical blocker found in this pass. Known annoyances are documented above and do not require expanding deferred modules.
+
+#### Validation
+
+- Baseline validation before this pass: ESLint passed; full Vitest passed 120/120 across 22 files with exit code 0; production build passed with existing warnings.
+- Focused Dashboard regression after the booking-time fix: `DashboardPendingQuoteReview.test.jsx` passed 7/7.
+- Final validation after code/test/docs updates: ESLint passed; full Vitest passed 121/121 across 22 files with exit code 0; production build passed with the existing Node `--localstorage-file`, Vite ineffective dynamic-import, and large-chunk warnings.
+
+#### Next recommended step
+
+Run the first human wife-beta pass on the approved surfaces only. Have the tester complete Dashboard → Customers → Create Estimate → Dashboard Create Booking → Bookings → sign out/re-login. Do not begin Settings, payments, Schedule, assignment, route optimization, payroll, Tap to Pay, training, or future modules unless a beta-critical blocker is found.
