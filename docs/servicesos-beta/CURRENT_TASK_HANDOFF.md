@@ -439,3 +439,66 @@ Treat Customers tenant isolation and account-switch clearing as wife-beta verifi
 #### Next recommended step
 
 Proceed to the next wife-beta verification pass for the next approved owner/admin surface. Do not expand Bookings into scheduling, assignment, payments, or route/calendar workflows.
+
+### Wife-Beta Route Visibility Audit — June 29, 2026
+
+**Status:** Wife-beta verified for normal-admin route/navigation visibility.
+
+- Approved normal-admin surfaces remain:
+  - Dashboard
+  - Create Estimate
+  - Customers
+  - Bookings
+- Normal-admin navigation does not show deferred/admin-only surfaces:
+  - Settings
+  - Payments / Payment Links
+  - Stripe / Stripe Connect setup
+  - Scheduling / Schedule
+  - Calendar
+  - Staff Scheduling
+  - Customer Portal
+  - Insurance
+  - Data Export
+  - Backup
+  - Route Optimization
+  - Payroll
+  - Training / AI Training
+  - Tap to Pay
+  - Tenant Management
+- `App.jsx` currently uses internal app state for admin surface selection. There is no URL-backed route table for these admin surfaces despite the `BrowserRouter` wrapper.
+- Direct normal-admin URL attempts to deferred paths such as `/settings`, `/payments`, `/payment-links`, `/stripe`, `/scheduling`, `/schedule`, `/calendar`, `/staff-scheduling`, `/customer-portal`, `/insurance`, `/data-export`, `/backup`, `/route-optimization`, `/payroll`, `/training`, `/tap-to-pay`, `/ai-training`, and `/tenant-management` did not render the deferred modules. The app remained on an approved admin surface while the approved nav stayed limited to Dashboard, Create Estimate, Customers, and Bookings.
+- Existing super-admin nav visibility was left unchanged and is now covered by a focused test.
+- No product workflows, Firebase rules, auth/tenant logic, payments, Customer Portal quote submission, Dashboard conversion, Create Estimate behavior, Customers CRUD, Bookings list behavior, Schedule, Settings, Calendar, Staff Scheduling, or deferred module implementations were changed.
+
+#### Focused coverage added
+
+- Completed normal admin sees Dashboard, Create Estimate, Customers, and Bookings.
+- Completed normal admin does not see deferred normal-admin nav items.
+- Direct deferred path attempts by a completed normal admin do not render deferred modules.
+- Approved surfaces still render.
+- Existing super-admin nav visibility remains unchanged.
+- Sign-out remains covered in the app router test.
+
+#### Manual tenant-A verification
+
+- Tenant-A admin nav showed only Dashboard, Create Estimate, Customers, and Bookings.
+- Dashboard, Customers, Bookings, and Create Estimate each loaded from the approved nav.
+- Direct deferred URL attempts did not expose deferred pages to the normal admin.
+- Sign-out returned to Login and removed tenant data from the visible screen.
+- Re-login restored the admin shell and approved nav. A browser-control timeout interrupted an extra root reload check after re-login; no product-code change was made for that tooling issue.
+- Console warnings/errors captured during the route visibility walkthrough: none.
+
+#### Remaining limitations
+
+- Admin page selection is still state-based, not URL-route based. Direct URLs do not provide deep links to approved surfaces; they also do not expose deferred modules to normal admins.
+- Super-admin access to existing deferred/admin tooling remains intentionally unchanged and should be audited separately before any broader beta exposure.
+
+#### Validation
+
+- Baseline validation before the audit: ESLint passed; full Vitest passed 118/118 across 22 files with exit code 0; production build passed with existing Node `--localstorage-file`, Vite ineffective dynamic-import, and large-chunk warnings.
+- Focused route/router test passed: 4/4.
+- Final validation after test and documentation updates: ESLint passed; full Vitest passed 120/120 across 22 files with exit code 0; production build passed with the existing Node `--localstorage-file`, Vite ineffective dynamic-import, and large-chunk warnings.
+
+#### Next recommended step
+
+Proceed to the next wife-beta owner/admin pass only for an approved surface. Do not implement Settings, payments, scheduling, calendar workflows, staff scheduling, route optimization, Tap to Pay, payroll, training, or future modules.

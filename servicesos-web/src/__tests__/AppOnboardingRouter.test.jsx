@@ -24,6 +24,50 @@ vi.mock('../components/BookingsList', () => ({
   default: () => <h1>Bookings Screen</h1>
 }));
 
+vi.mock('../components/StaffScheduling', () => ({
+  default: () => <h1>Deferred Staff Scheduling Screen</h1>
+}));
+
+vi.mock('../components/RouteOptimization', () => ({
+  default: () => <h1>Deferred Route Optimization Screen</h1>
+}));
+
+vi.mock('../components/CalendarView', () => ({
+  default: () => <h1>Deferred Calendar Screen</h1>
+}));
+
+vi.mock('../components/PaymentLinks', () => ({
+  default: () => <h1>Deferred Payment Links Screen</h1>
+}));
+
+vi.mock('../components/InsuranceTracking', () => ({
+  default: () => <h1>Deferred Insurance Screen</h1>
+}));
+
+vi.mock('../components/DataExport', () => ({
+  default: () => <h1>Deferred Data Export Screen</h1>
+}));
+
+vi.mock('../components/TenantManagement', () => ({
+  default: () => <h1>Super Admin Tenant Management Screen</h1>
+}));
+
+vi.mock('../components/AIModelTraining', () => ({
+  default: () => <h1>Deferred AI Training Screen</h1>
+}));
+
+vi.mock('../components/BackupPanel', () => ({
+  default: () => <h1>Deferred Backup Screen</h1>
+}));
+
+vi.mock('../components/CompanySettings', () => ({
+  default: () => <h1>Deferred Settings Screen</h1>
+}));
+
+vi.mock('../components/CustomerPortal', () => ({
+  default: () => <h1>Customer Portal Screen</h1>
+}));
+
 const authState = {
   user: { uid: 'admin-test', email: 'admin@example.com' },
   userProfile: { uid: 'admin-test', onboardingCompleted: false },
@@ -52,6 +96,9 @@ describe('App onboarding router context', () => {
   beforeEach(() => {
     authState.logout.mockReset();
     authState.logout.mockResolvedValue({ success: true });
+    authState.role = 'admin';
+    authState.hasPermission = () => true;
+    authState.isSuperAdmin = () => false;
     authState.currentTenant = {
       id: 'tenant-test',
       businessName: 'Test Cleaning Co.',
@@ -109,5 +156,100 @@ describe('App onboarding router context', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
     expect(authState.logout).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not expose deferred wife-beta modules to a completed normal admin through nav or direct paths', () => {
+    authState.userProfile = { uid: 'admin-test', onboardingCompleted: true };
+
+    [
+      '/settings',
+      '/payments',
+      '/payment-links',
+      '/stripe',
+      '/scheduling',
+      '/schedule',
+      '/calendar',
+      '/staff-scheduling',
+      '/customer-portal',
+      '/insurance',
+      '/data-export',
+      '/backup',
+      '/route-optimization',
+      '/payroll',
+      '/training',
+      '/tap-to-pay'
+    ].forEach(path => {
+      window.history.pushState({}, '', path);
+      const { unmount } = render(<App />);
+
+      ['Dashboard', 'Create estimate', 'Customers', 'Bookings'].forEach(label => {
+        expect(screen.getByRole('button', { name: new RegExp(label, 'i') })).toBeInTheDocument();
+      });
+
+      [
+        'Customer portal',
+        'Staff scheduling',
+        'Route optimization',
+        'Calendar',
+        'Payment links',
+        'Insurance',
+        'Data export',
+        'Backup',
+        'Settings',
+        'Tenant management',
+        'AI training'
+      ].forEach(label => {
+        expect(screen.queryByText(label)).not.toBeInTheDocument();
+      });
+
+      [
+        'Customer Portal Screen',
+        'Deferred Staff Scheduling Screen',
+        'Deferred Route Optimization Screen',
+        'Deferred Calendar Screen',
+        'Deferred Payment Links Screen',
+        'Deferred Insurance Screen',
+        'Deferred Data Export Screen',
+        'Deferred Backup Screen',
+        'Deferred Settings Screen',
+        'Deferred AI Training Screen'
+      ].forEach(heading => {
+        expect(screen.queryByRole('heading', { name: heading })).not.toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('heading', { name: 'Wife Beta Dashboard' })).toBeInTheDocument();
+
+      unmount();
+    });
+  });
+
+  it('keeps existing super-admin nav visibility unchanged', () => {
+    authState.role = 'super-admin';
+    authState.isSuperAdmin = () => true;
+    authState.userProfile = { uid: 'super-admin-test', onboardingCompleted: true };
+    authState.currentTenant = null;
+
+    render(<App />);
+
+    [
+      'Dashboard',
+      'Create estimate',
+      'Customers',
+      'Bookings',
+      'Staff scheduling',
+      'Route optimization',
+      'Calendar',
+      'Payment links',
+      'Insurance',
+      'Data export',
+      'Tenant management',
+      'AI training',
+      'Backup',
+      'Settings'
+    ].forEach(label => {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('heading', { name: 'Super Admin Tenant Management Screen' })).toBeInTheDocument();
   });
 });
