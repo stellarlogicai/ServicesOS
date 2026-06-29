@@ -366,3 +366,21 @@ Keep manual customer follow-up as the beta fallback when the warning/unknown mes
 #### Next recommended step
 
 Provision a valid tenant-B admin fixture and complete Customers A → B → A isolation. Do not expand Bookings or other deferred modules during that verification.
+
+### Customers Tenant Isolation Verification — June 29, 2026
+
+**Status:** Wife-beta verified through a complete tenant A → tenant B → tenant A account-switching walkthrough.
+
+- Tenant-B account `test.ownerb@gmail.com` authenticated as an admin and loaded the linked `test1` business shell. Dashboard, Customers, Bookings, and Create Estimate were available; no Customer Portal or Business Not Linked fallback appeared.
+- The configured tenant-B ID for this fixture is `tenant_1781560864375`. The ID is not displayed in the current UI, so it was not independently read from the browser screen.
+- The requested seed name `Tenant B Isolation Customer 0627` was initially absent, although an existing tenant-B-only `Customer B` record was visible. The requested fixture was added through the tenant-B Customers UI with tenant-specific contact data; it persisted after a full reload.
+- Tenant A displayed `Beta Customer 0627 Edited` and never displayed either tenant-B customer record.
+- Tenant B displayed its own customer records and never displayed `Beta Customer 0627 Edited`.
+- Signing out from each account returned to Login and removed the prior tenant's data. Logging back into tenant A restored `Test Cleaning Services`, its Dashboard data, and its customer record without tenant-B data.
+- Dashboard, Customers, the read-only Bookings list, and Create Estimate loaded successfully for both admins. Neither Bookings list displayed customer data from the other tenant.
+- No tenant leakage, permission-denied, auth/profile, or route errors appeared during the walkthrough. The only retained console error was the known earlier non-blocking `[EMAIL] sendQuoteEmail failed: Failed to fetch` entry from the Create Estimate notification check; its timestamp preceded this walkthrough.
+- No product code, Firebase rules, security logic, payments, scheduling, or deferred modules were changed.
+
+#### Next recommended step
+
+Treat Customers tenant isolation and account-switch clearing as wife-beta verified. Proceed with a separately scoped manual wife-beta pass for the minimal read-only Bookings list using realistic tenant-specific complete and incomplete records; do not expand Bookings into scheduling, assignment, or payments.
