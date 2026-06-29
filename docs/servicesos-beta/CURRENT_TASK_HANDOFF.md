@@ -384,3 +384,58 @@ Provision a valid tenant-B admin fixture and complete Customers A → B → A is
 #### Next recommended step
 
 Treat Customers tenant isolation and account-switch clearing as wife-beta verified. Proceed with a separately scoped manual wife-beta pass for the minimal read-only Bookings list using realistic tenant-specific complete and incomplete records; do not expand Bookings into scheduling, assignment, or payments.
+
+### Bookings Tenant-Specific Verification — June 29, 2026
+
+**Status:** Wife-beta verified for the minimal read-only Bookings list with tenant-specific complete and incomplete records.
+
+- Verified from latest local `master` with no product-code changes.
+- Tenant A fixture tenant ID: `tenant_1781642309523`.
+- Tenant B fixture tenant ID: `tenant_1781560864375`.
+- Tenant A booking fixtures used:
+  - `wife-beta-a-complete-0629`: `Tenant A Complete Booking 0629`
+  - `wife-beta-a-incomplete-0629`: intentionally minimal/incomplete record
+- Tenant B booking fixtures used:
+  - `wife-beta-b-complete-0629`: `Tenant B Complete Booking 0629`
+  - `wife-beta-b-incomplete-0629`: intentionally minimal/incomplete record
+- Fixtures were written only under `tenants/{tenantId}/bookings/{bookingId}`. No global booking collection, Firebase rules, auth logic, backend functions, payments, or product schemas were changed.
+- Incomplete fixtures keep `date: ""` so the current `orderBy('date', 'desc')` query includes them while still exercising display fallbacks.
+
+#### A → B → A walkthrough result
+
+- Tenant A Dashboard loaded expected tenant-A data.
+- Tenant A Customers displayed `Beta Customer 0627 Edited` and did not display `Tenant B Isolation Customer 0627`.
+- Tenant A Bookings displayed `Tenant A Complete Booking 0629` and did not display `Tenant B Complete Booking 0629`.
+- Tenant A complete booking displayed customer, service, status, schedule, address, and price correctly.
+- Tenant A incomplete booking displayed safe fallbacks: `Unknown customer`, `Service not specified`, `Booked`, `Not scheduled`, `Address not provided`, and `Price not set`.
+- Tenant A Bookings exposed no create, edit, delete, payment, assignment, refund, or reschedule controls.
+- Signing out from Tenant A returned to Login and removed tenant-A and tenant-B data from the screen.
+- Tenant B authenticated as admin, loaded its admin shell, and Dashboard loaded.
+- Tenant B Customers displayed `Tenant B Isolation Customer 0627` and did not display `Beta Customer 0627 Edited`.
+- Tenant B Bookings displayed `Tenant B Complete Booking 0629` and did not display `Tenant A Complete Booking 0629`.
+- Tenant B complete booking displayed customer, service, status, schedule, address, and price correctly.
+- Tenant B incomplete booking displayed the same safe fallback text.
+- Tenant B Bookings exposed no create, edit, delete, payment, assignment, refund, or reschedule controls.
+- Signing out from Tenant B returned to Login and removed tenant-B and tenant-A data from the screen.
+- Returning to Tenant A restored Dashboard, Customers, Bookings, and Create Estimate with tenant-A-only data.
+- Console warnings/errors during the walkthrough: none.
+
+#### Reload behavior
+
+- Browser reload while viewing Bookings currently returns the in-memory admin shell to Dashboard.
+- After reopening Bookings post-reload, each tenant's complete and incomplete booking records persisted and the opposite tenant's records remained absent.
+- Treat direct Bookings page persistence across browser reload as future polish, not a wife-beta blocker for the current read-only admin list.
+
+#### Remaining limitations
+
+- Bookings remains read-only. Creation, editing, deletion, rescheduling, recurring jobs, employee assignment, calendar integration, route optimization, customer booking requests, notifications, status automation, and payment collection remain deferred.
+- Truly missing `date` fields are not included by the current `orderBy('date', 'desc')` query; the live fallback check used an empty date field to verify the UI safely renders `Not scheduled` once a record is returned.
+
+#### Validation
+
+- Baseline validation before verification: ESLint passed; full Vitest passed 118/118 across 22 files with exit code 0; production build passed with existing Vite dynamic-import and large-chunk warnings.
+- Final validation after documentation update: ESLint passed; full Vitest passed 118/118 across 22 files with exit code 0; production build passed with the existing Node `--localstorage-file`, Vite ineffective dynamic-import, and large-chunk warnings.
+
+#### Next recommended step
+
+Proceed to the next wife-beta verification pass for the next approved owner/admin surface. Do not expand Bookings into scheduling, assignment, payments, or route/calendar workflows.
