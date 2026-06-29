@@ -147,7 +147,16 @@ export function AuthProvider({ children }) {
         }
       } catch (err) {
         console.error('[Auth] Error loading user profile:', err);
-        setUserProfile({ uid: firebaseUser.uid, role: 'customer', tenantId: null });
+        setUser(null);
+        setUserProfile(null);
+        setCurrentTenant(null);
+        setTenantLoading(false);
+        clearCurrentTenantId();
+        try {
+          await firebaseSignOut(auth);
+        } catch (signOutError) {
+          console.error('[Auth] Failed to end session after profile load error:', signOutError);
+        }
       }
 
       setLoading(false);

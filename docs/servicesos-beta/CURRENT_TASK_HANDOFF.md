@@ -347,3 +347,22 @@ Continue wife-beta verification of the read-only Bookings list with realistic co
 #### Next recommended step
 
 Keep manual customer follow-up as the beta fallback when the warning/unknown message appears. Address secure provider-backed email/SMS delivery in a separately authorized infrastructure task; do not couple it to estimate persistence.
+
+### Auth Profile Load Fallback Guard — June 29, 2026
+
+**Status:** Reproduced and fixed with a narrow auth-state guard.
+
+- Cause: an authenticated user's Firestore profile read failure was treated the same as a confirmed missing profile document. `AuthContext` synthesized `{ role: 'customer', tenantId: null }`, which could briefly route a tenant admin into Customer Portal during a transient network failure.
+- Fix: a profile read exception now clears user, profile, tenant, tenant-loading state, and the stored tenant ID, then ends the Firebase session. It never fabricates a customer profile from an error.
+- The intentional customer fallback remains unchanged when `users/{uid}` is successfully read and confirmed not to exist.
+- Login, tenant loading after a valid profile read, Customer Portal identity handling, Firebase rules, tenant/security logic, and product workflows were not changed.
+
+#### Verification
+
+- Focused tests cover profile-read failure, clean sign-out, absence of customer/admin tenant state, a successful subsequent tenant-A admin login, and the legitimate missing-document customer fallback.
+- Existing login, router, Customer Portal identity/submission, Dashboard, Create Estimate, Customers, and Bookings behavior remained covered.
+- Manual tenant-A verification: Dashboard, Customers, Bookings, and Create Estimate navigation loaded as admin; sign-out returned to `Welcome Back` with tenant data absent; re-login restored `Test Cleaning Services`, admin navigation, and the Dashboard with 8 leads, 2 booked jobs, and $495 confirmed revenue.
+
+#### Next recommended step
+
+Provision a valid tenant-B admin fixture and complete Customers A → B → A isolation. Do not expand Bookings or other deferred modules during that verification.

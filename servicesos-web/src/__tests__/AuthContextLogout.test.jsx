@@ -53,7 +53,7 @@ vi.mock('../services/onboardingService', () => ({
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 
 function AuthStateProbe() {
-  const { currentTenant, loading, logout, user } = useAuth();
+  const { currentTenant, loading, logout, role, tenantId, user } = useAuth();
 
   if (loading) return <div>Loading auth</div>;
   if (!user) return <div>Login state</div>;
@@ -61,6 +61,8 @@ function AuthStateProbe() {
   return (
     <div>
       <div>Tenant dashboard: {currentTenant?.businessName}</div>
+      <div>Profile role: {role}</div>
+      <div>Tenant ID: {tenantId || 'none'}</div>
       <button onClick={logout}>Sign out</button>
     </div>
   );
@@ -106,5 +108,68 @@ describe('AuthContext logout', () => {
     expect(await screen.findByText('Login state')).toBeInTheDocument();
     expect(screen.queryByText('Tenant dashboard: Tenant A')).not.toBeInTheDocument();
     expect(mocks.clearCurrentTenantId).toHaveBeenCalled();
+  });
+
+  it('does not route an authenticated admin as customer when profile loading fails', async () => {
+    mocks.getDoc.mockRejectedValueOnce(new Error('network unavailable'));
+
+    render(
+      <AuthProvider>
+        <AuthStateProbe />
+      </AuthProvider>
+    );
+
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'owner@example.com', uid: 'admin-a' });
+    });
+
+    expect(mocks.firebaseSignOut).toHaveBeenCalledWith(mocks.auth);
+    expect(await screen.findByText('Login state')).toBeInTheDocument();
+    expect(screen.queryByText('Profile role: customer')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tenant dashboard: Tenant A')).not.toBeInTheDocument();
+    expect(mocks.getTenant).not.toHaveBeenCalled();
+    expect(mocks.clearCurrentTenantId).toHaveBeenCalled();
+  });
+
+  it('restores the correct admin profile on login after a transient profile failure', async () => {
+    mocks.getDoc.mockRejectedValueOnce(new Error('network unavailable'));
+
+    render(
+      <AuthProvider>
+        <AuthStateProbe />
+      </AuthProvider>
+    );
+
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'owner@example.com', uid: 'admin-a' });
+    });
+    expect(await screen.findByText('Login state')).toBeInTheDocument();
+
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'owner@example.com', uid: 'admin-a' });
+    });
+
+    expect(await screen.findByText('Tenant dashboard: Tenant A')).toBeInTheDocument();
+    expect(screen.getByText('Profile role: admin')).toBeInTheDocument();
+    expect(screen.getByText('Tenant ID: tenant-a')).toBeInTheDocument();
+    expect(screen.queryByText('Profile role: customer')).not.toBeInTheDocument();
+  });
+
+  it('preserves the intentional customer fallback only when the user document does not exist', async () => {
+    mocks.getDoc.mockResolvedValueOnce({ exists: () => false });
+
+    render(
+      <AuthProvider>
+        <AuthStateProbe />
+      </AuthProvider>
+    );
+
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'customer@example.com', uid: 'customer-new' });
+    });
+
+    expect(await screen.findByText('Profile role: customer')).toBeInTheDocument();
+    expect(screen.getByText('Tenant ID: none')).toBeInTheDocument();
+    expect(mocks.firebaseSignOut).not.toHaveBeenCalled();
   });
 });
