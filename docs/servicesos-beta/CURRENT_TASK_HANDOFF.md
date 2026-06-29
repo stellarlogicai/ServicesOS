@@ -575,3 +575,71 @@ The approved owner/admin flow can now run across Dashboard, Customers, Create Es
 #### Next recommended step
 
 Run the first human wife-beta pass on the approved surfaces only. Have the tester complete Dashboard → Customers → Create Estimate → Dashboard Create Booking → Bookings → sign out/re-login. Do not begin Settings, payments, Schedule, assignment, route optimization, payroll, Tap to Pay, training, or future modules unless a beta-critical blocker is found.
+
+### Aunt B Estimate Pricing Profile — June 29, 2026
+
+**Status:** Tenant/profile-specific pricing guardrails implemented and integrated behind explicit profile detection.
+
+- Pricing profile ID: `aunt-bs-cleaning-services`.
+- Profile location: `servicesos-web/src/core/estimates/pricingProfiles.js`.
+- Estimate utility location: `servicesos-web/src/core/estimates/calculateEstimate.js`.
+- Create Estimate integration: enabled only when the active tenant has `pricingProfileId: "aunt-bs-cleaning-services"`, `pricingProfile.id: "aunt-bs-cleaning-services"`, or an exact matching normalized Aunt B business name. Tenants without that explicit profile keep the existing legacy estimate calculation.
+- Aunt B pricing is not a global default.
+- No Settings UI, profile editor UI, Firebase rules, payments, Stripe, booking conversion, notification flow, scheduling, assignment, route optimization, payroll, training, mobile, or future modules were changed.
+
+#### EstimateResult shape
+
+The reusable utility returns a deterministic structured result with:
+
+- `tenantPricingProfileId`
+- `market`
+- `currency`
+- `low`
+- `suggested`
+- `high`
+- `requiresManualReview`
+- `manualReviewReasons`
+- `customerSummary`
+- `internalNotes`
+- `lineItems`
+- `warnings`
+
+The Create Estimate integration preserves legacy compatibility by keeping `priceLow` and `priceHigh` on the saved estimate payload and adding `priceSuggested`, pricing-profile metadata, review reasons, line items, notes, and warnings when a profile is active.
+
+#### Manual-review triggers
+
+Implemented manual-review handling for severe buildup, excessive clutter, pet waste or odor, smoke residue, mold, biohazard, hoarding cleanup, post-construction dust, large rural home, unclear scope, unsupported large homes, and over-35-mile travel. Manual-review results still return a guarded estimate when possible and include owner-facing reasons/notes instead of silently suppressing risk.
+
+#### Tested scenarios
+
+- 3 bed / 2 bath standard, normal condition, no pets, no add-ons, Bolivar core zone returns the Aunt B anchor around `$205` suggested.
+- 3 bed / 2 bath deep clean with multiple pets returns a suggested quote around `$290–$295`.
+- 2 bed / 1 bath standard, well-maintained, biweekly-after-initial-reset pricing does not go below the minimum job price.
+- Move-out 3 bed / 2 bath with inside fridge and oven produces a higher quote and add-on notes.
+- Pet waste or severe buildup requires manual review.
+- Excessive clutter requires manual review.
+- Over-35-mile travel requires manual review.
+- Unsupported larger homes do not crash and warn/require review.
+- Final prices round to the nearest `$5`.
+- Minimum job and service-specific minimum prices are enforced.
+- Create Estimate still saves a manual no-photo/no-AI estimate without booking/payment side effects, and explicit Aunt B profile opt-in produces the expected Aunt B range.
+
+#### Wife-beta impact
+
+When Aunt B’s tenant is configured with the pricing profile ID, Create Estimate uses structured Bolivar, Missouri cleaning price guardrails instead of the previous generic hourly/rural estimate. Human override remains possible through the existing Dashboard booking approval price. AI/photo analysis remains optional, and manual estimate save remains tenant-scoped.
+
+#### Known limitations
+
+- There is no Settings/profile editor UI; pricing profile assignment must be configured outside the normal-admin UI.
+- The current Create Estimate form does not expose every pricing input directly, so some utility features are available for future form/profile inputs but not currently visible in the beta UI.
+- The saved estimate keeps legacy `priceLow/priceHigh` fields for Dashboard/PDF/SMS compatibility; `priceSuggested` is additive metadata.
+- Deep-linking and other known wife-beta annoyances remain unchanged.
+
+#### Validation
+
+- Focused pricing/Create Estimate tests passed: 16/16 across 2 files.
+- Final full validation: ESLint passed; full Vitest passed 132/132 across 23 files with exit code 0; production build passed with the existing Node `--localstorage-file`, Vite ineffective dynamic-import, and large-chunk warnings.
+
+#### Next recommended step
+
+Configure Aunt B’s actual beta tenant with `pricingProfileId: "aunt-bs-cleaning-services"` in the real tenant document or equivalent tenant profile metadata, then run one human Create Estimate pass and confirm the visible range matches the structured profile. Do not build a Settings editor or deferred pricing-management UI yet.

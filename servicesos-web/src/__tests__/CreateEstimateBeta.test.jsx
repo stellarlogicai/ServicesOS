@@ -7,11 +7,12 @@ const mocks = vi.hoisted(() => ({
   saveQuote: vi.fn(),
   sendQuoteEmail: vi.fn(),
   sendSMS: vi.fn(),
-  compressImages: vi.fn()
+  compressImages: vi.fn(),
+  currentTenant: { id: 'tenant-test' }
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
-  useAuth: () => ({ currentTenant: { id: 'tenant-test' } })
+  useAuth: () => ({ currentTenant: mocks.currentTenant })
 }));
 
 vi.mock('../services/aiService', () => ({ analyzePhotos: mocks.analyzePhotos }));
@@ -40,10 +41,13 @@ function completeRequiredFields() {
 
 describe('Create Estimate wife-beta flow', () => {
   beforeEach(() => {
-    Object.values(mocks).forEach(mock => mock.mockReset());
+    Object.values(mocks).forEach(mock => {
+      if (typeof mock?.mockReset === 'function') mock.mockReset();
+    });
     mocks.saveQuote.mockResolvedValue({ id: 'lead-manual' });
     mocks.sendQuoteEmail.mockResolvedValue({ success: true });
     mocks.compressImages.mockImplementation(async files => files);
+    mocks.currentTenant = { id: 'tenant-test' };
     vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview') });
   });
 
@@ -75,6 +79,36 @@ describe('Create Estimate wife-beta flow', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Estimate saved successfully. Customer notification sent.'
     );
+  });
+
+  it('uses an explicit Aunt B pricing profile without changing manual save semantics', async () => {
+    mocks.currentTenant = {
+      id: 'tenant-aunt-b',
+      pricingProfileId: 'aunt-bs-cleaning-services'
+    };
+    const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-aunt-b-profile' });
+    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    completeRequiredFields();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Manual Estimate' }));
+
+    expect(await screen.findByRole('heading', { name: 'Estimate Results' })).toBeInTheDocument();
+    expect(onLeadSaved).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        tenantPricingProfileId: 'aunt-bs-cleaning-services',
+        priceLow: 190,
+        priceSuggested: 205,
+        priceHigh: 220,
+        requiresManualReview: false,
+        customerSummary: expect.stringContaining('3 bed / 2 bath')
+      }),
+      null
+    );
+    expect(onLeadSaved.mock.calls[0]).toHaveLength(3);
+    expect(JSON.stringify(onLeadSaved.mock.calls)).not.toMatch(/booking|payment/i);
+    expect(screen.queryByRole('button', { name: 'Proceed to Payment' })).not.toBeInTheDocument();
   });
 
   it('keeps the saved estimate successful and warns when notification reports failure', async () => {

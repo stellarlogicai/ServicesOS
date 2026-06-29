@@ -1,5 +1,7 @@
 // lib/estimateEngine.js
 
+import { calculatePricingProfileEstimate } from "../core/estimates/calculateEstimate";
+
 // MARKET PROFILES - Location-aware pricing for different markets
 const marketRates = {
   rural: {
@@ -28,7 +30,7 @@ const marketRates = {
   }
 };
 
-export function calculateEstimate(formData, aiAnalysis) {
+function estimateLaborHours(formData, aiAnalysis) {
   const {
     bedroomCount = 0,
     bathroomCount = 0,
@@ -206,5 +208,31 @@ export function calculateEstimate(formData, aiAnalysis) {
     priceLow: Math.round(priceLow),
     priceHigh: Math.round(priceHigh),
     aiEnhanced: Boolean(aiAnalysis)
+  };
+}
+
+export function calculateEstimate(formData, aiAnalysis, pricingProfile = null) {
+  const legacyEstimate = estimateLaborHours(formData, aiAnalysis);
+
+  if (!pricingProfile) {
+    return legacyEstimate;
+  }
+
+  const profileEstimate = calculatePricingProfileEstimate(formData, pricingProfile);
+
+  return {
+    ...legacyEstimate,
+    priceLow: profileEstimate.low,
+    priceSuggested: profileEstimate.suggested,
+    priceHigh: profileEstimate.high,
+    tenantPricingProfileId: profileEstimate.tenantPricingProfileId,
+    market: profileEstimate.market,
+    currency: profileEstimate.currency,
+    requiresManualReview: profileEstimate.requiresManualReview,
+    manualReviewReasons: profileEstimate.manualReviewReasons,
+    customerSummary: profileEstimate.customerSummary,
+    internalNotes: profileEstimate.internalNotes,
+    lineItems: profileEstimate.lineItems,
+    warnings: profileEstimate.warnings
   };
 }

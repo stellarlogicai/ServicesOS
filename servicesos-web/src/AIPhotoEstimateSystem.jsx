@@ -10,6 +10,7 @@ import PaymentForm from "./components/PaymentForm";
 import { compressImages } from "./services/imageCompressionService";
 import { formatAmount } from "./services/stripeService";
 import { useAuth } from "./contexts/AuthContext";
+import { getPricingProfileForTenant } from "./core/estimates/pricingProfiles";
 
 export default function AIPhotoEstimateSystem({
   enablePayments = true,
@@ -163,7 +164,8 @@ export default function AIPhotoEstimateSystem({
     setNotificationStatus(null);
 
     try {
-      const result = calculateEstimate(formData, aiAnalysis);
+      const pricingProfile = getPricingProfileForTenant(currentTenant);
+      const result = calculateEstimate(formData, aiAnalysis, pricingProfile);
       const tenantId = typeof currentTenant === "string" ? currentTenant : currentTenant?.id;
 
       if (onLeadSaved) {
