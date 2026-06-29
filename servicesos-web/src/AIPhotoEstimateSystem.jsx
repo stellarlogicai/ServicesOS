@@ -74,6 +74,7 @@ export default function AIPhotoEstimateSystem({
   const [aiMessage, setAiMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [notificationStatus, setNotificationStatus] = useState(null);
   const [compressing, setCompressing] = useState(false);
   const [paymentResult, setPaymentResult] = useState(null);
 
@@ -159,6 +160,7 @@ export default function AIPhotoEstimateSystem({
   const generate = async () => {
     setSaving(true);
     setSaveError("");
+    setNotificationStatus(null);
 
     try {
       const result = calculateEstimate(formData, aiAnalysis);
@@ -172,7 +174,38 @@ export default function AIPhotoEstimateSystem({
       setEstimate(result);
       setStep("results");
 
-      void sendQuoteEmail(formData, result);
+      setNotificationStatus({
+        type: "unknown",
+        message: "Estimate saved successfully. Customer notification status could not be confirmed. Please contact the customer manually if needed."
+      });
+
+      void Promise.resolve(sendQuoteEmail(formData, result))
+        .then(emailResult => {
+          if (emailResult?.success === true) {
+            setNotificationStatus({
+              type: "success",
+              message: "Estimate saved successfully. Customer notification sent."
+            });
+          } else if (emailResult?.success === false) {
+            setNotificationStatus({
+              type: "warning",
+              message: "Estimate saved successfully. Customer notification could not be sent. Please contact the customer manually for now."
+            });
+          } else {
+            setNotificationStatus({
+              type: "unknown",
+              message: "Estimate saved successfully. Customer notification status could not be confirmed. Please contact the customer manually if needed."
+            });
+          }
+        })
+        .catch(notificationError => {
+          console.error("Estimate email notification failed:", notificationError);
+          setNotificationStatus({
+            type: "warning",
+            message: "Estimate saved successfully. Customer notification could not be sent. Please contact the customer manually for now."
+          });
+        });
+
       try {
         sendSMS({
           to: formData.phone,
@@ -920,6 +953,22 @@ export default function AIPhotoEstimateSystem({
           </p>
         </div>
 
+        {notificationStatus && (
+          <div
+            role="status"
+            style={{
+              padding: 14,
+              borderRadius: 8,
+              marginBottom: 24,
+              background: notificationStatus.type === "success" ? "#f0fdf4" : "#fff7ed",
+              border: notificationStatus.type === "success" ? "1px solid #bbf7d0" : "1px solid #fed7aa",
+              color: notificationStatus.type === "success" ? "#166534" : "#9a3412"
+            }}
+          >
+            {notificationStatus.message}
+          </div>
+        )}
+
         <div style={{ marginBottom: 24 }}>
           <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
             Details
@@ -998,6 +1047,7 @@ export default function AIPhotoEstimateSystem({
               setAiAnalysis(null);
               setEstimate(null);
               setPaymentResult(null);
+              setNotificationStatus(null);
             }}
             style={{
               padding: "12px 24px",

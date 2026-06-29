@@ -72,6 +72,57 @@ describe('Create Estimate wife-beta flow', () => {
     expect(onLeadSaved.mock.calls[0]).toHaveLength(3);
     expect(screen.queryByRole('button', { name: 'Proceed to Payment' })).not.toBeInTheDocument();
     expect(JSON.stringify(onLeadSaved.mock.calls)).not.toMatch(/booking|payment/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Estimate saved successfully. Customer notification sent.'
+    );
+  });
+
+  it('keeps the saved estimate successful and warns when notification reports failure', async () => {
+    mocks.sendQuoteEmail.mockResolvedValue({ success: false, error: 'Failed to fetch' });
+    const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-notification-failed' });
+    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    completeRequiredFields();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Manual Estimate' }));
+
+    expect(await screen.findByRole('heading', { name: 'Estimate Results' })).toBeInTheDocument();
+    expect(onLeadSaved).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Estimate saved successfully. Customer notification could not be sent. Please contact the customer manually for now.'
+    );
+    expect(screen.queryByText('Customer notification sent.')).not.toBeInTheDocument();
+  });
+
+  it('keeps the saved estimate successful when notification throws', async () => {
+    mocks.sendQuoteEmail.mockRejectedValue(new Error('network unavailable'));
+    const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-notification-threw' });
+    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    completeRequiredFields();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Manual Estimate' }));
+
+    expect(await screen.findByRole('heading', { name: 'Estimate Results' })).toBeInTheDocument();
+    expect(onLeadSaved).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Estimate saved successfully. Customer notification could not be sent.'
+    );
+  });
+
+  it('shows conservative status when email delivery is unavailable', async () => {
+    mocks.sendQuoteEmail.mockResolvedValue({ success: null, reason: 'not_configured' });
+    const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-notification-unknown' });
+    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    completeRequiredFields();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Manual Estimate' }));
+
+    expect(await screen.findByRole('heading', { name: 'Estimate Results' })).toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Estimate saved successfully. Customer notification status could not be confirmed. Please contact the customer manually if needed.'
+    );
   });
 
   it('keeps manual saving available after optional AI analysis fails', async () => {

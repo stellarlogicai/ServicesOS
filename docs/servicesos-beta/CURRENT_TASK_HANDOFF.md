@@ -308,3 +308,42 @@ Keep Bookings hidden. Revisit it as a separately scoped minimal read-only owner/
 #### Next recommended step
 
 Continue wife-beta verification of the read-only Bookings list with realistic complete and incomplete booking data. Separately provision tenant B and complete Customers A → B → A isolation when Firebase Admin access is available. Do not expand Bookings into scheduling or payment workflows.
+
+### Create Estimate Notification Visibility — June 29, 2026
+
+**Status:** Wife-beta ready; estimate persistence remains non-blocking and notification status is visible.
+
+- `AIPhotoEstimateSystem.jsx` still persists through the admin `onLeadSaved` adapter before invoking customer notifications. AI/photo analysis remains optional.
+- Email and SMS remain separate. `sendQuoteEmail` reports success/failure; the current `sendSMS` helper is a local logging stub and cannot confirm delivery.
+- The results screen now conservatively reports notification status without delaying or reversing a successful estimate save:
+  - Confirmed email success: `Estimate saved successfully. Customer notification sent.`
+  - Email failure or throw: `Estimate saved successfully. Customer notification could not be sent. Please contact the customer manually for now.`
+  - Unconfigured/unknown email status: `Estimate saved successfully. Customer notification status could not be confirmed. Please contact the customer manually if needed.`
+- Missing email provider configuration now returns an unknown result instead of falsely reporting a sent notification.
+- No notification queue, retries, delivery database schema, backend/provider configuration, payment behavior, booking conversion, or Customer Portal messaging was added.
+
+#### Focused coverage
+
+- Save success with confirmed notification success.
+- Save success with notification failure, thrown error, and unavailable/unknown status.
+- Failure paths never claim notification success and never undo the persisted estimate.
+- Manual saving remains available after optional AI failure.
+- Existing no-booking/no-payment persistence assertions and Dashboard, Bookings, and Customers regressions remain covered.
+
+#### Manual tenant-A verification
+
+- Created the no-photo/no-AI manual estimate `Notification Beta 0629` for `$180 - $225`.
+- The local email request logged the known `[EMAIL] sendQuoteEmail failed: Failed to fetch`; the results UI displayed the explicit manual-follow-up failure message.
+- Dashboard persisted and displayed the new lead. Total leads increased from 7 to 8, while booked jobs remained 2 and confirmed revenue remained $495, confirming no booking or payment was created.
+- Customers and Bookings loaded successfully after the save.
+- Sign out removed tenant data. One transient network retry briefly loaded the existing customer fallback profile; signing out and retrying restored the correct tenant-A admin Dashboard with 8 leads. No auth code was changed in this notification pass.
+- Final console warning/error: the expected non-blocking email `Failed to fetch` entry only.
+
+#### Remaining limitations
+
+- Provider configuration, backend-secure delivery, SMS delivery confirmation, retries, queues, resend, and notification history remain deferred.
+- `Customer notification sent` confirms only the existing email helper's success result; the SMS logging stub does not provide delivery confirmation.
+
+#### Next recommended step
+
+Keep manual customer follow-up as the beta fallback when the warning/unknown message appears. Address secure provider-backed email/SMS delivery in a separately authorized infrastructure task; do not couple it to estimate persistence.

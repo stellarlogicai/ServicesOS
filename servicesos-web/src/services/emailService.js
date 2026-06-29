@@ -225,7 +225,7 @@ export async function sendQuoteEmail(lead, estimate) {
     // Skip email if no API key or in development mode
     if (!import.meta.env.VITE_RESEND_API_KEY || import.meta.env.VITE_RESEND_API_KEY === 'your_resend_api_key_here') {
       console.log('[EMAIL] Skipping email (no API key configured)');
-      return { success: true, id: 'skipped' };
+      return { success: null, reason: 'not_configured' };
     }
 
     const response = await fetch('https://api.resend.com/emails', {
