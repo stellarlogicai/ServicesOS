@@ -1612,6 +1612,264 @@ Final validation to be rerun after this documentation update before commit.
 
 Run optional Tenant B limited booking edit sanity with manual Tenant B login, then proceed to the next Aunt B V1 restore-and-harden task. Keep price/status edits deferred until Dashboard/lead sync is explicitly designed.
 
+### Manual Payment Status Audit — June 30, 2026
+
+#### Status
+
+Audit-only pass completed. No product code was changed.
+
+Manual payment status tracking is feasible for Aunt B V1, but it should not reuse the existing Stripe/payment-link/payment-record infrastructure. The smallest safe path is a booking-local manual status field added behind a narrow whitelist boundary, then displayed and edited only in the Bookings detail modal.
+
+This pass intentionally did not implement payment status because the current booking admin update whitelist explicitly rejects `paymentStatus`, Dashboard revenue is lead-derived/booked-revenue based, and existing payment infrastructure is Stripe/payment-collection oriented and deferred.
+
+#### Files audited
+
+- `servicesos-web/src/App.jsx`
+- `servicesos-web/src/AIPhotoEstimateSystem.jsx`
+- `servicesos-web/src/pages/Dashboard.jsx`
+- `servicesos-web/src/components/CRMDashboard.jsx`
+- `servicesos-web/src/components/BookingsList.jsx`
+- `servicesos-web/src/components/bookingDisplay.js`
+- `servicesos-web/src/components/CustomerManagement.jsx`
+- `servicesos-web/src/components/PaymentLinks.jsx`
+- `servicesos-web/src/components/PaymentForm.jsx`
+- `servicesos-web/src/core/payments/paymentService.js`
+- `servicesos-web/src/core/scheduling/schedulingService.js`
+- `servicesos-web/src/services/crmService.js`
+- `servicesos-web/src/services/quoteBookingConversionService.js`
+- `servicesos-web/src/services/stripeService.js`
+- `servicesos-web/src/services/paymentsTrackingService.js`
+- `servicesos-web/src/services/revenueReportingService.js`
+- `servicesos-web/src/__tests__/AppOnboardingRouter.test.jsx`
+- `servicesos-web/src/__tests__/BookingsList.test.jsx`
+- `servicesos-web/src/__tests__/CreateEstimateBeta.test.jsx`
+- `servicesos-web/src/__tests__/DashboardPendingQuoteReview.test.jsx`
+- `servicesos-web/src/__tests__/bookingAdminUpdatePatch.test.js`
+- `servicesos-web/src/__tests__/crmServiceManualEstimate.test.js`
+- `servicesos-web/src/__tests__/quoteBookingConversionService.test.js`
+
+#### Existing payment-related fields and write paths
+
+Leads:
+
+- Admin-created estimates saved through `crmService.saveLead(...)` write `type`, `source`, `formData`, `estimate`, `aiAnalysis`, and `booking: null`.
+- Focused coverage confirms manual estimate persistence does not write `payment` or `paymentId`.
+- Dashboard booking conversion updates the lead with `status: "booked"`, `booking`, approved `estimate`, `review`, and `appointmentRequest` fields.
+- No manual `paymentStatus` field is currently part of the approved owner/admin lead flow.
+- Legacy/secondary dashboard code has a lead status option named `paid`, but this is not the active Aunt B V1 Dashboard route and should not be used as the V1 manual payment model.
+
+Bookings:
+
+- `quoteBookingConversionService.buildQuoteBookingConversion(...)` creates tenant-scoped booking documents under `tenants/{tenantId}/bookings/{bookingId}` with booking/customer/schedule/price/status/notes metadata.
+- Booking conversion writes no payment, Stripe, payment-link, invoice, refund, or payment-intent fields.
+- `BookingsList.jsx` displays customer, service, status, schedule, address, price, reference, and notes.
+- `BookingsList.jsx` currently edits only date, start time, computed end time, and notes.
+- `schedulingService.buildBookingAdminUpdatePatch(...)` currently allows only `date`, `startTime`, `endTime`, `scheduledAt`, `status`, `notes`, `agreedPrice`, and generated `updatedAt`.
+- The booking admin update whitelist explicitly rejects `paymentStatus`, `payment`, `payments`, `stripe`, `stripePaymentIntentId`, and `refund`.
+
+Customers:
+
+- The active Customers CRUD flow has no payment status field.
+- Payment status should not live on customer records for V1 because payment state belongs to a specific booking/job, not to the customer identity record.
+
+Payment collections/services:
+
+- `core/payments/paymentService.js` manages a tenant-scoped `payments` collection and supports payment record creation/status updates.
+- `paymentsTrackingService.js` and revenue-reporting services are payment-record/accounting oriented.
+- These services are not the right first boundary for Aunt B V1 manual status because they imply payment records/accounting workflows rather than simple owner/admin tracking.
+
+Stripe/payment collection:
+
+- `PaymentForm.jsx`, `PaymentLinks.jsx`, and `stripeService.js` contain payment intent, checkout, payment link, and Stripe-related behavior.
+- `PaymentLinks.jsx` writes to `tenants/{tenantId}/payment_links` and calls Stripe checkout helpers.
+- These surfaces remain hidden/deferred for normal owner/admin wife-beta use and should not be touched for Aunt B V1 manual tracking.
+
+#### Route and nav visibility
+
+- Normal admin nav remains Dashboard, Create Estimate, Customers, and Bookings.
+- `App.jsx` still imports deferred payment modules, but normal admins do not receive the Payment links nav item.
+- `AppOnboardingRouter.test.jsx` covers route/nav visibility and asserts normal admins do not see payment/deferred surfaces.
+- Create Estimate is rendered with `enablePayments={false}` for owner/admin use.
+- `CreateEstimateBeta.test.jsx` asserts the `Proceed to Payment` button is not visible and saved manual estimates do not create booking/payment actions.
+- `BookingsList.test.jsx` asserts no Pay/Refund/payment controls are exposed in Bookings.
+
+#### Dashboard revenue/payment wording findings
+
+- Active `pages/Dashboard.jsx` calculates `revenue` from booked leads: `lead.status === "booked"` and `lead.booking.agreedPrice`.
+- The displayed card label is `Confirmed revenue` with subtext `From booked jobs`.
+- The chart is titled `Revenue (14 days)` with subtext `Scheduled booked jobs by appointment date`.
+- This is booked/expected revenue, not actual paid revenue.
+- `crmService.getStats(...)` and `getRevenueByDay(...)` follow the same booked-lead/booking-price model.
+- Because Dashboard revenue is lead-derived, booking price/status/payment edits are still unsafe to expose until lead/dashboard sync and metric semantics are explicitly designed.
+
+Recommended future wording audit:
+
+- Consider renaming `Confirmed revenue` to `Booked revenue`, `Scheduled revenue`, or `Expected revenue`.
+- Consider renaming `Revenue (14 days)` to `Booked revenue (14 days)` or `Scheduled booked revenue (14 days)`.
+- Do not introduce paid/unpaid metrics until actual payment-status semantics exist and Dashboard can distinguish booked revenue from paid revenue.
+
+#### Risk classification
+
+Safe to display manually later:
+
+- Booking-local manual payment status label in Bookings detail, with a missing/unknown fallback.
+- Booking-local payment notes only if separated clearly from technician notes and capped/trimmed.
+
+Safe to reuse later with hardening:
+
+- Existing `updateBookingAdminFields(...)` pattern and `buildBookingAdminUpdatePatch(...)` whitelist pattern.
+- Existing Bookings detail modal layout.
+- Existing tenant-scoped booking path: `tenants/{tenantId}/bookings/{bookingId}`.
+
+Unsafe/deferred for Aunt B V1:
+
+- Lead status `paid` as the payment model.
+- Dashboard paid revenue calculations.
+- Booking price/status edits tied to revenue metrics.
+- Customer-level payment status.
+- Separate payment records for manual status without a designed accounting model.
+
+Stripe-only/deferred:
+
+- `PaymentForm.jsx`
+- `PaymentLinks.jsx`
+- `stripeService.js`
+- payment intents
+- checkout sessions
+- payment links
+- refunds
+- payment collection
+- backend payment functions
+
+Should not be touched for Aunt B V1:
+
+- Stripe/Stripe Connect
+- payment links
+- invoices
+- refunds
+- Customer Portal payments
+- backend/cloud payment functions
+- Firebase/security rules
+- Tap to Pay
+
+#### Recommended data location
+
+Use booking document only for the first manual payment-status implementation.
+
+Recommended initial field:
+
+- `paymentStatus`
+
+Optional later field if needed:
+
+- `paymentStatusUpdatedAt`
+- `paymentStatusUpdatedBy`
+
+Do not write payment status to:
+
+- customer records
+- global collections
+- Stripe/payment-link/payment-intent fields
+- separate `payments` records
+- lead snapshots in the first pass
+
+Reasoning:
+
+- Aunt B V1 needs owner/admin operational tracking per booked job.
+- Bookings is the only approved surface where the owner/admin is already reviewing job-level details.
+- Booking-only metadata avoids pretending that booked revenue is paid revenue.
+- Dashboard/lead sync can be designed later without blocking manual tracking.
+
+#### Recommended manual status enum and labels
+
+Recommended enum values:
+
+```js
+paymentStatus:
+  "not_paid"
+  "deposit_requested"
+  "deposit_paid"
+  "final_due"
+  "paid_in_full"
+  "paid_cash"
+  "paid_check"
+  "paid_external_app"
+  "waived_family_discount"
+  "payment_issue"
+```
+
+Recommended labels:
+
+```js
+not_paid: "Not paid"
+deposit_requested: "Deposit requested"
+deposit_paid: "Deposit paid"
+final_due: "Final due"
+paid_in_full: "Paid in full"
+paid_cash: "Paid cash"
+paid_check: "Paid check"
+paid_external_app: "Paid external app"
+waived_family_discount: "Waived / family discount"
+payment_issue: "Payment issue"
+```
+
+Recommended fallback:
+
+- Missing/unknown status: `Payment status not set`
+
+#### Recommended implementation split
+
+Do not implement all payment tracking at once.
+
+- Payment Stage P1: audit existing payment/paymentStatus fields. Complete in this section.
+- Payment Stage P2: add a service-level manual payment status whitelist helper and wrapper, no UI.
+- Payment Stage P3: display read-only manual payment status in booking detail with fallback.
+- Payment Stage P4: add manual payment status edit in booking detail only.
+- Payment Stage P5: audit/rename Dashboard wording so booked revenue is not mistaken for paid revenue.
+- Payment Stage P6: defer Stripe/payment collection/payment links/refunds to a separate future payment project.
+
+#### Future tests required
+
+If manual payment status is implemented later, add focused tests for:
+
+1. Payment status appears only in Bookings detail/edit area.
+2. Allowed statuses render with safe labels.
+3. Missing/unknown payment status falls back to `Payment status not set`.
+4. Updating manual payment status writes only whitelisted booking payment status fields.
+5. Unknown/forbidden payment fields are rejected.
+6. No Stripe, payment link, payment intent, checkout, refund, or collection controls appear.
+7. No Stripe/payment intent/payment-link fields are written.
+8. No customer/payment/global collection writes occur.
+9. Tenant ID and booking ID are required.
+10. Tenant isolation remains intact.
+11. Dashboard wording/metrics remain honest and unchanged unless explicitly scoped.
+12. Create Estimate still does not create booking/payment actions.
+13. Dashboard Create Booking still does not create Stripe/payment records.
+14. Normal admin route visibility remains Dashboard, Create Estimate, Customers, and Bookings.
+15. Full lint/test/build pass.
+
+#### Validation
+
+Baseline before documentation:
+
+- `npm run lint` passed.
+- `npm run test -- --run` passed 169/169 across 24 files with the known `--localstorage-file` warning.
+- `npm run build` passed with existing Vite dynamic import/chunk-size warnings.
+
+Final validation to be rerun after this documentation update before commit.
+
+#### Remaining limitations
+
+- Manual payment status is not implemented yet.
+- Bookings still displays price but no payment status.
+- Dashboard revenue still represents booked/expected revenue, not paid revenue.
+- Booking price/status edits remain deferred until Dashboard/lead synchronization is designed.
+- Stripe, payment links, invoices, refunds, Tap to Pay, and customer payment collection remain deferred.
+
+#### Recommended next task
+
+Implement Payment Stage P2 only: add a booking-admin manual payment status whitelist helper/service wrapper with tests, no UI exposure, writing only to `tenants/{tenantId}/bookings/{bookingId}`. Keep Stripe/payment collection/payment links/refunds fully deferred.
+
 ### Duplicate Customer Prevention — June 30, 2026
 
 #### Status
