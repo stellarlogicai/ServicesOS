@@ -1285,6 +1285,123 @@ Focused validation after helper/tests passed 37/37 across booking admin update h
 
 Implement Stage C2 only after explicit approval: add a write wrapper and/or UI for date/time and notes only, with no price/status exposure until Dashboard/lead synchronization is designed.
 
+### Booking Admin Update Write Wrapper — June 30, 2026
+
+**Status:** Stage C2a implemented with service-level write wrapper and focused tests only. No booking edit UI, reschedule UI, status dropdown UI, price edit UI, cancel/delete control, payment control, employee assignment, Calendar, StaffScheduling, Settings, or future-module route was exposed.
+
+#### Wrapper added
+
+- Added `updateBookingAdminFields(tenantId, bookingId, proposedPatch, options)` in `servicesos-web/src/core/scheduling/schedulingService.js`.
+- The wrapper is the intended future write boundary for limited owner/admin booking edits.
+- It requires `tenantId`.
+- It requires `bookingId`.
+- It delegates all patch validation/sanitization to `buildBookingAdminUpdatePatch(proposedPatch, options)`.
+- It returns the helper validation failure unchanged when validation fails.
+- It writes only the helper’s sanitized payload when validation succeeds.
+- It preserves the scheduling service response convention by returning a standardized success/error response.
+
+#### Helper used
+
+- `buildBookingAdminUpdatePatch(...)` remains the only sanitizer for the wrapper.
+- The wrapper does not call broad `updateJob(...)`.
+- The wrapper does not call broad `updateJobStatus(...)`.
+- The wrapper does not call `deleteJob(...)`.
+- The wrapper does not call `assignEmployeeToJob(...)`.
+
+#### Tenant-scoped write path
+
+The wrapper writes only to:
+
+- `tenants/{tenantId}/bookings/{bookingId}`
+
+It does not use global booking collections and does not call `collection(...)`.
+
+#### Allowed write fields
+
+Only sanitized fields returned by the helper can be written:
+
+- `date`
+- `startTime`
+- `endTime`
+- `scheduledAt`
+- `status`
+- `notes`
+- `agreedPrice`
+- `updatedAt`
+
+#### Forbidden field behavior
+
+Unknown or forbidden fields return `VALIDATION_ERROR` and no Firestore update occurs. This includes tenant, customer, payment, employee, source lead, route, Stripe, refund, delete/cancel, and schema fields.
+
+#### Validation failure behavior
+
+When helper validation fails, the wrapper:
+
+- returns the same validation response shape/message
+- does not call `doc(...)`
+- does not call `updateDoc(...)`
+- does not write any path
+
+Covered examples:
+
+- empty patch
+- unknown/forbidden fields
+- invalid status
+- inconsistent date/time
+
+#### Tests added/updated
+
+Updated `servicesos-web/src/__tests__/bookingAdminUpdatePatch.test.js` with wrapper coverage:
+
+- Requires `tenantId`.
+- Requires `bookingId`.
+- Requires non-empty patch.
+- Writes only to `tenants/{tenantId}/bookings/{bookingId}`.
+- Writes only sanitized helper payload.
+- Valid date/time/notes patch writes sanitized payload.
+- Valid notes-only patch writes sanitized payload.
+- Unknown/forbidden fields are rejected without Firestore update.
+- Invalid status is rejected without Firestore update.
+- Inconsistent date/time is rejected without Firestore update.
+- No delete, assignment, lead, customer, payment, employee, global collection, or broad path calls occur.
+
+Focused validation after wrapper/tests passed 46/46 across booking admin update helper/wrapper, Bookings list/detail, admin router, booking audit, quote conversion, and Create Estimate beta tests.
+
+#### No UI exposure confirmation
+
+- `BookingsList.jsx` was not changed in Stage C2a.
+- The existing Bookings detail modal remains read-only.
+- No edit, reschedule, status, price, cancel/delete, payment, assignment, Calendar, StaffScheduling, Settings, or future-module control was added.
+- Normal admin navigation remains Dashboard, Create Estimate, Customers, and Bookings via existing route visibility tests.
+
+#### Dashboard/lead sync
+
+Dashboard and lead synchronization remain intentionally unresolved:
+
+- The wrapper updates booking documents only.
+- It does not patch source leads.
+- It does not patch customers.
+- It does not patch payments.
+- It does not patch employees.
+
+Price/status UI remains deferred until Dashboard/lead consistency is explicitly designed and tested.
+
+#### Validation
+
+- Baseline before changes: ESLint passed; full Vitest passed 148/148 across 24 files; production build passed with existing Vite dynamic import/chunk-size warnings.
+- Focused validation after wrapper/tests: 46/46 passed across 6 files.
+- Final full validation after documentation update: ESLint passed; full Vitest passed 157/157 across 24 files with the known `--localstorage-file` warning; production build passed with existing Vite dynamic import/chunk-size warnings.
+
+#### Remaining limitations
+
+- No UI uses the wrapper yet.
+- Price/status edits remain unsafe for UI until Dashboard/lead synchronization is designed.
+- Tenant isolation for actual future UI edits still needs A → B → A manual verification after UI exposure.
+
+#### Recommended next task
+
+Implement Stage C2b only after explicit approval: expose a limited edit modal for date/time and notes only, wired through `updateBookingAdminFields(...)`. Do not expose price or status controls yet.
+
 ### Aunt B Pricing Profile Tenant Configuration — June 29, 2026
 
 **Status:** Tenant configuration completed with mixed results - Tenant A correctly using Aunt B profile, Tenant B showing legacy pricing despite configuration.

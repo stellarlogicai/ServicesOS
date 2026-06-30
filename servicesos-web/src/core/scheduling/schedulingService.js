@@ -167,6 +167,40 @@ export function buildBookingAdminUpdatePatch(proposedPatch, { now = new Date().t
   return successResponse(payload);
 }
 
+export async function updateBookingAdminFields(tenantId, bookingId, proposedPatch, options = {}) {
+  try {
+    if (!tenantId) {
+      return errorResponse('Tenant ID is required', 'VALIDATION_ERROR');
+    }
+    if (!bookingId) {
+      return errorResponse('Booking ID is required', 'VALIDATION_ERROR');
+    }
+
+    const builtPatch = buildBookingAdminUpdatePatch(proposedPatch, options);
+    if (!builtPatch.success) {
+      return builtPatch;
+    }
+
+    const bookingRef = doc(db, 'tenants', tenantId, COLLECTION_NAME, bookingId);
+    await updateDoc(bookingRef, builtPatch.data);
+
+    return successResponse(
+      { id: bookingId, ...builtPatch.data },
+      'Booking updated successfully'
+    );
+  } catch (error) {
+    logError({
+      message: 'Failed to update booking admin fields',
+      module: 'core',
+      feature: 'scheduling',
+      severity: SEVERITY.HIGH,
+      tenantId,
+      error
+    });
+    return errorResponse('Failed to update booking admin fields', ERROR_CODES.FIRESTORE_ERROR, error);
+  }
+}
+
 /**
  * Get all jobs/bookings for a tenant
  * @param {string} tenantId - The tenant ID

@@ -1,7 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../firebase', () => ({ db: { id: 'db-test' } }));
-vi.mock('firebase/firestore', () => ({
+const firestoreMocks = vi.hoisted(() => ({
   addDoc: vi.fn(),
   collection: vi.fn(),
   deleteDoc: vi.fn(),
@@ -13,13 +12,23 @@ vi.mock('firebase/firestore', () => ({
   updateDoc: vi.fn(),
   where: vi.fn(),
 }));
-vi.mock('../shared/logging/errorLoggingStandard', () => ({
-  ERROR_CODES: { FIRESTORE_ERROR: 'FIRESTORE_ERROR', NOT_FOUND: 'NOT_FOUND' },
-  SEVERITY: { HIGH: 'high' },
+
+const loggingMocks = vi.hoisted(() => ({
   logError: vi.fn(),
 }));
 
-import { buildBookingAdminUpdatePatch } from '../core/scheduling/schedulingService';
+vi.mock('../firebase', () => ({ db: { id: 'db-test' } }));
+vi.mock('firebase/firestore', () => firestoreMocks);
+vi.mock('../shared/logging/errorLoggingStandard', () => ({
+  ERROR_CODES: { FIRESTORE_ERROR: 'FIRESTORE_ERROR', NOT_FOUND: 'NOT_FOUND' },
+  SEVERITY: { HIGH: 'high' },
+  logError: loggingMocks.logError,
+}));
+
+import {
+  buildBookingAdminUpdatePatch,
+  updateBookingAdminFields,
+} from '../core/scheduling/schedulingService';
 
 const now = '2026-06-30T12:00:00.000Z';
 
@@ -195,5 +204,156 @@ describe('booking admin update whitelist helper', () => {
       error: 'VALIDATION_ERROR',
       message: 'Booking update patch must include at least one supported field.',
     });
+  });
+});
+
+describe('booking admin update write wrapper', () => {
+  beforeEach(() => {
+    Object.values(firestoreMocks).forEach(mock => mock.mockReset());
+    loggingMocks.logError.mockReset();
+    firestoreMocks.doc.mockImplementation((db, ...path) => ({ db, path }));
+    firestoreMocks.updateDoc.mockResolvedValue(undefined);
+  });
+
+  it('requires tenantId before building or writing', async () => {
+    const result = await updateBookingAdminFields('', 'booking-1', { notes: 'ok' }, { now });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: 'VALIDATION_ERROR',
+      message: 'Tenant ID is required',
+    });
+    expect(firestoreMocks.doc).not.toHaveBeenCalled();
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('requires bookingId before building or writing', async () => {
+    const result = await updateBookingAdminFields('tenant-a', '', { notes: 'ok' }, { now });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: 'VALIDATION_ERROR',
+      message: 'Booking ID is required',
+    });
+    expect(firestoreMocks.doc).not.toHaveBeenCalled();
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('requires a non-empty patch and performs no Firestore update', async () => {
+    const result = await updateBookingAdminFields('tenant-a', 'booking-1', {}, { now });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: 'VALIDATION_ERROR',
+      message: 'Booking update patch must include at least one supported field.',
+    });
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('writes valid date/time/notes patch only to the tenant-scoped booking document path', async () => {
+    const result = await updateBookingAdminFields('tenant-a', 'booking-1', {
+      date: '2026-07-03',
+      startTime: '09:00',
+      endTime: '11:00',
+      notes: '  Gate code 1234.  ',
+    }, { now });
+
+    expect(result.success).toBe(true);
+    expect(firestoreMocks.doc).toHaveBeenCalledWith(
+      { id: 'db-test' },
+      'tenants',
+      'tenant-a',
+      'bookings',
+      'booking-1'
+    );
+    expect(firestoreMocks.updateDoc).toHaveBeenCalledWith(
+      { db: { id: 'db-test' }, path: ['tenants', 'tenant-a', 'bookings', 'booking-1'] },
+      {
+        date: '2026-07-03',
+        startTime: '09:00',
+        endTime: '11:00',
+        scheduledAt: expect.any(String),
+        notes: 'Gate code 1234.',
+        updatedAt: now,
+      }
+    );
+    expect(JSON.stringify(firestoreMocks.updateDoc.mock.calls)).not.toMatch(/lead|customer|payment|employee|stripe|route|refund/i);
+  });
+
+  it('writes valid notes-only patch as sanitized payload', async () => {
+    const result = await updateBookingAdminFields('tenant-a', 'booking-1', {
+      notes: '  Internal owner note.  ',
+    }, { now });
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        id: 'booking-1',
+        notes: 'Internal owner note.',
+        updatedAt: now,
+      },
+    });
+    expect(firestoreMocks.updateDoc).toHaveBeenCalledWith(
+      expect.any(Object),
+      { notes: 'Internal owner note.', updatedAt: now }
+    );
+  });
+
+  it('rejects unknown and forbidden fields and performs no Firestore update', async () => {
+    const result = await updateBookingAdminFields('tenant-a', 'booking-1', {
+      notes: 'ok',
+      paymentStatus: 'paid',
+    }, { now });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: 'VALIDATION_ERROR',
+      message: 'Unsupported booking update field: paymentStatus.',
+    });
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid status and performs no Firestore update', async () => {
+    const result = await updateBookingAdminFields('tenant-a', 'booking-1', {
+      status: 'in_progress',
+    }, { now });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: 'VALIDATION_ERROR',
+      message: 'Booking status is not allowed for owner/admin updates.',
+    });
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects inconsistent date/time and performs no Firestore update', async () => {
+    const result = await updateBookingAdminFields('tenant-a', 'booking-1', {
+      date: '2026-07-04',
+      startTime: '09:00',
+      scheduledAt: new Date('2026-07-03T09:00').toISOString(),
+    }, { now });
+
+    expect(result).toMatchObject({
+      success: false,
+      error: 'VALIDATION_ERROR',
+      message: 'Booking date must match scheduledAt.',
+    });
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('does not call delete, assignment, lead, customer, payment, employee, or global collection paths', async () => {
+    await updateBookingAdminFields('tenant-a', 'booking-1', { notes: 'ok' }, { now });
+
+    expect(firestoreMocks.deleteDoc).not.toHaveBeenCalled();
+    expect(firestoreMocks.collection).not.toHaveBeenCalled();
+    expect(firestoreMocks.addDoc).not.toHaveBeenCalled();
+    expect(firestoreMocks.getDoc).not.toHaveBeenCalled();
+    expect(firestoreMocks.doc.mock.calls).toEqual([[
+      { id: 'db-test' },
+      'tenants',
+      'tenant-a',
+      'bookings',
+      'booking-1',
+    ]]);
   });
 });
