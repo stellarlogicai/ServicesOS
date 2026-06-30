@@ -26,6 +26,24 @@ const BOOKING_ADMIN_UPDATE_ALLOWED_FIELDS = new Set([
 ]);
 const BOOKING_ADMIN_STATUS_VALUES = new Set(['scheduled', 'completed', 'cancelled']);
 const BOOKING_ADMIN_NOTES_MAX_LENGTH = 1000;
+const BOOKING_MANUAL_PAYMENT_STATUS_ALLOWED_FIELDS = new Set([
+  'paymentStatus',
+  'paymentStatusUpdatedBy',
+]);
+export const BOOKING_MANUAL_PAYMENT_STATUS_LABELS = {
+  not_paid: 'Not paid',
+  deposit_requested: 'Deposit requested',
+  deposit_paid: 'Deposit paid',
+  final_due: 'Final due',
+  paid_in_full: 'Paid in full',
+  paid_cash: 'Paid cash',
+  paid_check: 'Paid check',
+  paid_external_app: 'Paid external app',
+  waived_family_discount: 'Waived / family discount',
+  payment_issue: 'Payment issue',
+};
+const BOOKING_MANUAL_PAYMENT_STATUS_VALUES = new Set(Object.keys(BOOKING_MANUAL_PAYMENT_STATUS_LABELS));
+const BOOKING_MANUAL_PAYMENT_UPDATED_BY_MAX_LENGTH = 128;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_ONLY_PATTERN = /^\d{2}:\d{2}$/;
 
@@ -167,6 +185,54 @@ export function buildBookingAdminUpdatePatch(proposedPatch, { now = new Date().t
   return successResponse(payload);
 }
 
+export function buildBookingManualPaymentStatusPatch(proposedPatch, { now = new Date().toISOString(), updatedBy } = {}) {
+  if (!proposedPatch || typeof proposedPatch !== 'object' || Array.isArray(proposedPatch)) {
+    return bookingAdminValidationError('Booking manual payment status patch must be an object.');
+  }
+
+  const incomingFields = Object.keys(proposedPatch);
+  if (incomingFields.length === 0) {
+    return bookingAdminValidationError('Booking manual payment status patch must include paymentStatus.');
+  }
+
+  const unknownFields = incomingFields.filter(field => !BOOKING_MANUAL_PAYMENT_STATUS_ALLOWED_FIELDS.has(field));
+  if (unknownFields.length > 0) {
+    return bookingAdminValidationError(`Unsupported booking manual payment status field: ${unknownFields[0]}.`);
+  }
+
+  if (!Object.hasOwn(proposedPatch, 'paymentStatus')) {
+    return bookingAdminValidationError('Booking manual payment status patch must include paymentStatus.');
+  }
+
+  if (!BOOKING_MANUAL_PAYMENT_STATUS_VALUES.has(proposedPatch.paymentStatus)) {
+    return bookingAdminValidationError('Booking manual payment status is not allowed.');
+  }
+
+  const proposedUpdatedBy = Object.hasOwn(proposedPatch, 'paymentStatusUpdatedBy')
+    ? proposedPatch.paymentStatusUpdatedBy
+    : updatedBy;
+  const payload = {
+    paymentStatus: proposedPatch.paymentStatus,
+    paymentStatusUpdatedAt: now,
+  };
+
+  if (proposedUpdatedBy !== undefined) {
+    if (typeof proposedUpdatedBy !== 'string') {
+      return bookingAdminValidationError('Booking manual payment status updatedBy must be a string.');
+    }
+    const normalizedUpdatedBy = proposedUpdatedBy.trim();
+    if (!normalizedUpdatedBy) {
+      return bookingAdminValidationError('Booking manual payment status updatedBy must not be empty.');
+    }
+    if (normalizedUpdatedBy.length > BOOKING_MANUAL_PAYMENT_UPDATED_BY_MAX_LENGTH) {
+      return bookingAdminValidationError(`Booking manual payment status updatedBy must be ${BOOKING_MANUAL_PAYMENT_UPDATED_BY_MAX_LENGTH} characters or fewer.`);
+    }
+    payload.paymentStatusUpdatedBy = normalizedUpdatedBy;
+  }
+
+  return successResponse(payload);
+}
+
 export async function updateBookingAdminFields(tenantId, bookingId, proposedPatch, options = {}) {
   try {
     if (!tenantId) {
@@ -198,6 +264,40 @@ export async function updateBookingAdminFields(tenantId, bookingId, proposedPatc
       error
     });
     return errorResponse('Failed to update booking admin fields', ERROR_CODES.FIRESTORE_ERROR, error);
+  }
+}
+
+export async function updateBookingManualPaymentStatus(tenantId, bookingId, proposedPatch, options = {}) {
+  try {
+    if (!tenantId) {
+      return errorResponse('Tenant ID is required', 'VALIDATION_ERROR');
+    }
+    if (!bookingId) {
+      return errorResponse('Booking ID is required', 'VALIDATION_ERROR');
+    }
+
+    const builtPatch = buildBookingManualPaymentStatusPatch(proposedPatch, options);
+    if (!builtPatch.success) {
+      return builtPatch;
+    }
+
+    const bookingRef = doc(db, 'tenants', tenantId, COLLECTION_NAME, bookingId);
+    await updateDoc(bookingRef, builtPatch.data);
+
+    return successResponse(
+      { id: bookingId, ...builtPatch.data },
+      'Booking manual payment status updated successfully'
+    );
+  } catch (error) {
+    logError({
+      message: 'Failed to update booking manual payment status',
+      module: 'core',
+      feature: 'scheduling',
+      severity: SEVERITY.HIGH,
+      tenantId,
+      error
+    });
+    return errorResponse('Failed to update booking manual payment status', ERROR_CODES.FIRESTORE_ERROR, error);
   }
 }
 
