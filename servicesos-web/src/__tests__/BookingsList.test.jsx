@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -61,7 +62,7 @@ describe('read-only Bookings admin list', () => {
     expect(screen.getByText('Booked')).toBeInTheDocument();
 
     await waitFor(() => {
-      ['Create', 'Edit', 'Delete', 'Pay', 'Assign', 'Reschedule'].forEach(name => {
+      ['Create', 'Edit', 'Delete', 'Pay', 'Assign', 'Refund', 'Reschedule'].forEach(name => {
         expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
       });
     });
@@ -123,5 +124,75 @@ describe('read-only Bookings admin list', () => {
         expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
       });
     });
+  });
+
+  it('opens and closes a read-only booking detail view with complete booking fields', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-detail-complete',
+        leadId: 'lead-detail-complete',
+        customerName: 'Customer Name Display Smoke 0630',
+        customerSnapshot: {
+          email: 'display-smoke@example.com',
+          phone: '555-0630',
+        },
+        address: '630 Display Lane',
+        agreedPrice: 205,
+        date: '2026-07-02',
+        startTime: '09:00',
+        serviceType: 'standard',
+        status: 'scheduled',
+        notes: 'Bring blue microfiber cloths.'
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Customer Name Display Smoke 0630' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Customer Name Display Smoke 0630' });
+    expect(dialog).toHaveTextContent('display-smoke@example.com');
+    expect(dialog).toHaveTextContent('555-0630');
+    expect(dialog).toHaveTextContent('standard');
+    expect(dialog).toHaveTextContent('scheduled');
+    expect(dialog).toHaveTextContent('Jul 2, 2026 at 09:00');
+    expect(dialog).toHaveTextContent('630 Display Lane');
+    expect(dialog).toHaveTextContent('$205.00');
+    expect(dialog).toHaveTextContent('Bring blue microfiber cloths.');
+    expect(dialog).toHaveTextContent('lead-detail-complete');
+
+    ['Edit', 'Delete', 'Pay', 'Assign', 'Refund', 'Reschedule', 'Update status', 'Cancel booking'].forEach(name => {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Close booking details' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows safe fallbacks in the read-only detail view for incomplete bookings', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{ id: 'booking-partial' }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Unknown customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Unknown customer' });
+    expect(dialog).toHaveTextContent('Email not provided');
+    expect(dialog).toHaveTextContent('Phone not provided');
+    expect(dialog).toHaveTextContent('Service not specified');
+    expect(dialog).toHaveTextContent('Booked');
+    expect(dialog).toHaveTextContent('Not scheduled');
+    expect(dialog).toHaveTextContent('Address not provided');
+    expect(dialog).toHaveTextContent('Price not set');
+    expect(dialog).toHaveTextContent('No notes provided');
+    expect(dialog).toHaveTextContent('booking-partial');
   });
 });

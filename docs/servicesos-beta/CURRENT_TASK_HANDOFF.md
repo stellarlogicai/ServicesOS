@@ -837,6 +837,98 @@ Extraction priority is existing lead/customer snapshot data first, then `lead.fo
 
 After final validation and commit, proceed to Stage B only: a read-only booking detail view showing customer, contact, address, service, date/time, price, status, and notes. Do not expose edit/reschedule/status controls yet.
 
+### Read-Only Booking Detail View — June 30, 2026
+
+**Status:** Stage B implemented and manually verified for Tenant A/Aunt B.
+
+#### What was added
+
+- The read-only Bookings list now exposes a `View Details` action on each booking card.
+- Clicking `View Details` opens a local read-only modal using the booking already returned by `getJobs(tenantId)`.
+- Closing the modal returns the owner/admin to the Bookings list.
+- No second Firestore fetch, write, customer lookup, tenant path change, payment behavior, status behavior, assignment behavior, or deferred module exposure was added.
+
+#### Files changed
+
+- `servicesos-web/src/components/BookingsList.jsx`
+- `servicesos-web/src/components/bookingDisplay.js`
+- `servicesos-web/src/__tests__/BookingsList.test.jsx`
+
+#### Fields displayed
+
+- Customer name
+- Customer email
+- Customer phone
+- Service
+- Status
+- Scheduled date/time
+- Address
+- Price
+- Reference ID when available
+- Notes
+
+#### Fallback behavior
+
+The detail modal uses safe display fallbacks for incomplete bookings:
+
+- `Unknown customer`
+- `Email not provided`
+- `Phone not provided`
+- `Service not specified`
+- `Booked`
+- `Not scheduled`
+- `Address not provided`
+- `Price not set`
+- `Reference not provided`
+- `No notes provided`
+
+Existing older bookings that lack customer display data still fall back safely instead of crashing.
+
+#### Tests added/updated
+
+- `BookingsList.test.jsx` now verifies each booking card exposes `View Details`.
+- Detail modal opens and displays customer, email, phone, service, status, schedule, address, price, reference, and notes for a complete booking.
+- Detail modal closes cleanly.
+- Incomplete bookings show safe fallback text in the detail modal.
+- List and modal remain read-only with no edit, delete, payment, assignment, refund, reschedule, or status-update controls.
+- Existing tenant-bound `getJobs(tenantId)`, loading, empty, error, and incomplete fallback behavior remains covered.
+
+#### Manual Tenant A result
+
+- Logged in as Tenant A/Aunt B admin.
+- Approved admin nav remained limited to Dashboard, Create Estimate, Customers, and Bookings.
+- Opened Bookings and verified `View Details` appears for booking cards.
+- Opened detail view for `Customer Name Display Smoke 0630`.
+- Detail showed customer name, email, phone, service, status, schedule, address, price, reference, and notes.
+- Closed the detail view successfully.
+- Opened an incomplete older booking and confirmed fallback text was understandable.
+- Refreshed, reopened Bookings, and confirmed the detail view still works.
+- Signed out and verified tenant data cleared from the login screen.
+- Re-logged in as Tenant A and confirmed the detail view still works.
+- No edit, delete, payment, assignment, refund, reschedule, or status-update controls appeared in the Bookings list or detail modal.
+
+#### Tenant B sanity
+
+Optional Tenant B sanity was not run in this Stage B pass. Prior Customers and Bookings tenant isolation remains the current tenant-isolation baseline.
+
+#### Console result
+
+Only the known local notification warning was present: `[EMAIL] sendQuoteEmail failed: Failed to fetch`. No permission-denied, crash, booking detail, or tenant/auth errors were captured.
+
+#### Deferred
+
+Booking edit, reschedule, status update, cancel/delete, payment status, payment collection, Stripe, Tap to Pay, Calendar, StaffScheduling, employee assignment, route optimization, payroll, training, mobile app, Settings, pricing editor, Customer Portal expansion, and recurring automation remain deferred.
+
+#### Validation
+
+- Baseline before changes: ESLint passed; full Vitest passed 134/134 across 23 files; production build passed with existing warnings.
+- Focused validation after code/test updates: Bookings list, admin router, and booking admin-list audit tests passed 15/15 across 3 files.
+- Final full validation after documentation update: ESLint passed; full Vitest passed 136/136 across 23 files with the known `--localstorage-file` warning; production build passed with existing Vite dynamic import/chunk-size warnings.
+
+#### Recommended next task
+
+Continue Aunt B V1 restore-and-harden with the next approved owner/admin beta blocker or verification pass. Do not expose edit/reschedule/status controls, Calendar, StaffScheduling, payments, assignment, Settings, or future modules without explicit approval.
+
 ### Aunt B Pricing Profile Tenant Configuration — June 29, 2026
 
 **Status:** Tenant configuration completed with mixed results - Tenant A correctly using Aunt B profile, Tenant B showing legacy pricing despite configuration.

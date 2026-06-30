@@ -94,3 +94,35 @@ export function bookingPrice(booking = {}) {
 export function bookingStatus(booking = {}) {
   return firstText(booking.status) || 'Booked';
 }
+
+export function bookingCustomerEmail(booking = {}) {
+  return firstText(
+    booking.customerEmail,
+    booking.customer?.email,
+    booking.customerSnapshot?.email,
+    booking.formData?.email
+  ) || 'Email not provided';
+}
+
+export function bookingCustomerPhone(booking = {}) {
+  return firstText(
+    booking.customerPhone,
+    booking.customer?.phone,
+    booking.customerSnapshot?.phone,
+    booking.formData?.phone
+  ) || 'Phone not provided';
+}
+
+export function bookingNotes(booking = {}) {
+  return firstText(
+    booking.notes,
+    booking.technicianNotes,
+    booking.internalNotes,
+    booking.formData?.specialRequests,
+    booking.requestSnapshot?.specialRequests
+  ) || 'No notes provided';
+}
+
+export function bookingReference(booking = {}) {
+  return firstText(booking.leadId, booking.requestId, booking.id);
+}
