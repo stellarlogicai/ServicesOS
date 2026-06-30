@@ -168,6 +168,7 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('lead-detail-complete');
 
     expect(screen.getByRole('button', { name: 'Edit Date & Notes' })).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('Payment status');
     ['Delete', 'Pay', 'Assign', 'Refund', 'Reschedule', 'Update status', 'Cancel booking'].forEach(name => {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     });
@@ -230,6 +231,7 @@ describe('read-only Bookings admin list', () => {
 
     expect(screen.queryByLabelText(/price/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/status/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/payment/i)).not.toBeInTheDocument();
     ['Payment', 'Delete', 'Assign', 'Refund', 'Reschedule', 'Cancel booking'].forEach(name => {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     });

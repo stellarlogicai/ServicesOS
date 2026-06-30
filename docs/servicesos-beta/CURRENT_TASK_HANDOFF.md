@@ -1870,6 +1870,161 @@ Final validation to be rerun after this documentation update before commit.
 
 Implement Payment Stage P2 only: add a booking-admin manual payment status whitelist helper/service wrapper with tests, no UI exposure, writing only to `tenants/{tenantId}/bookings/{bookingId}`. Keep Stripe/payment collection/payment links/refunds fully deferred.
 
+### Manual Payment Status Whitelist Helper — June 30, 2026
+
+#### Status
+
+Payment Stage P2 implemented. This adds the service-layer boundary for future manual payment status tracking, with no UI exposure.
+
+No Stripe, payment collection, payment links, refunds, invoices, Customer Portal payments, Firebase rules, Dashboard revenue metrics, lead records, customer records, or global payment collections were changed.
+
+#### Helper added
+
+Added `buildBookingManualPaymentStatusPatch(proposedPatch, options)` in `servicesos-web/src/core/scheduling/schedulingService.js`.
+
+The helper:
+
+- Accepts only a proposed manual booking payment status patch.
+- Requires `paymentStatus`.
+- Rejects empty, missing, non-object, and array patches.
+- Rejects unknown fields.
+- Rejects invalid payment status values.
+- Returns a sanitized payload only.
+- Adds generated `paymentStatusUpdatedAt` using the current ISO timestamp convention.
+- Optionally accepts safe `paymentStatusUpdatedBy` from the proposed patch or `options.updatedBy`.
+- Does not allow paid amount, deposit amount, balance due, tip, fee, currency, Stripe, refund, payment-link, payment-intent, customer, lead, employee, route, schema, tenant, create/delete, or global-collection fields.
+
+#### Wrapper added
+
+Added `updateBookingManualPaymentStatus(tenantId, bookingId, proposedPatch, options)` in `servicesos-web/src/core/scheduling/schedulingService.js`.
+
+The wrapper:
+
+- Requires `tenantId`.
+- Requires `bookingId`.
+- Delegates all validation and sanitization to `buildBookingManualPaymentStatusPatch(...)`.
+- Returns the same standardized validation response on failure.
+- Does not call `doc(...)` or `updateDoc(...)` on validation failure.
+- Writes only the sanitized manual payment status payload.
+- Writes only to `tenants/{tenantId}/bookings/{bookingId}`.
+- Does not call `updateBookingAdminFields(...)`, broad `updateJob(...)`, `deleteJob(...)`, assignment helpers, payment services, Stripe services, lead services, customer services, or global collections.
+
+#### Allowed statuses
+
+Allowed `paymentStatus` values:
+
+```js
+[
+  "not_paid",
+  "deposit_requested",
+  "deposit_paid",
+  "final_due",
+  "paid_in_full",
+  "paid_cash",
+  "paid_check",
+  "paid_external_app",
+  "waived_family_discount",
+  "payment_issue"
+]
+```
+
+Exported labels for future display use:
+
+```js
+{
+  not_paid: "Not paid",
+  deposit_requested: "Deposit requested",
+  deposit_paid: "Deposit paid",
+  final_due: "Final due",
+  paid_in_full: "Paid in full",
+  paid_cash: "Paid cash",
+  paid_check: "Paid check",
+  paid_external_app: "Paid external app",
+  waived_family_discount: "Waived / family discount",
+  payment_issue: "Payment issue"
+}
+```
+
+#### Fields written
+
+The successful sanitized payload can include only:
+
+- `paymentStatus`
+- `paymentStatusUpdatedAt`
+- `paymentStatusUpdatedBy` when provided and valid
+
+No amount, deposit, balance, fee, tip, currency, Stripe, payment-link, refund, customer, lead, employee, route, schema, tenant, or delete/cancel fields are written.
+
+#### Forbidden fields
+
+Focused tests cover rejection of:
+
+- payment record fields: `payment`, `payments`, `paymentId`
+- Stripe/payment intent/link fields: `paymentIntentId`, `stripePaymentIntentId`, `stripe`, `stripeCustomerId`, `stripeAccountId`, `checkoutSessionId`, `paymentLink`, `paymentLinkId`
+- invoice/refund/charge fields: `invoice`, `invoiceId`, `refund`, `refundId`, `charge`, `chargeId`
+- financial calculation fields: `amount`, `paidAmount`, `depositAmount`, `balanceDue`, `tip`, `fee`, `platformFee`, `currency`
+- customer/lead/tenant/source fields: `customerId`, `customerName`, `customerSnapshot`, `leadId`, `sourceLeadId`, `tenantId`
+- employee/route/schema/delete fields: `employeeId`, `assignment`, `route`, `schemaVersion`, `delete`, `cancelledBy`
+- any unknown field
+
+#### No UI exposure confirmation
+
+- `BookingsList.jsx` was not changed.
+- Booking detail still does not show payment status.
+- Booking detail still does not show manual payment status edit controls.
+- Existing Bookings edit UI remains limited to Date, Start time, and Notes.
+- No Pay, Refund, Stripe, payment-link, invoice, delete/cancel, assignment, or reschedule controls were exposed.
+- Normal admin nav remains Dashboard, Create Estimate, Customers, and Bookings.
+
+#### Tests added/updated
+
+Updated `servicesos-web/src/__tests__/bookingAdminUpdatePatch.test.js` to cover:
+
+- all allowed manual payment statuses
+- random/unknown statuses rejected
+- empty/missing/non-object patches rejected
+- unknown fields rejected
+- Stripe/payment-intent/payment-link/refund/invoice fields rejected
+- financial calculation fields rejected
+- customer/lead/tenant/source/employee/schema/route/delete fields rejected
+- generated `paymentStatusUpdatedAt`
+- optional safe `paymentStatusUpdatedBy`
+- unsafe `paymentStatusUpdatedBy` rejected
+- wrapper requires `tenantId`
+- wrapper requires `bookingId`
+- wrapper writes only to `tenants/{tenantId}/bookings/{bookingId}`
+- wrapper writes only sanitized payload
+- wrapper performs no Firestore write on validation failure
+- wrapper does not call global collections, payment, delete, assignment, lead, or customer paths
+
+Updated `servicesos-web/src/__tests__/BookingsList.test.jsx` to confirm no payment-status UI or payment controls are exposed in this P2 pass.
+
+Focused validation:
+
+- `npm run test -- --run src/__tests__/bookingAdminUpdatePatch.test.js src/__tests__/BookingsList.test.jsx` passed 47/47.
+
+#### Validation
+
+Baseline before changes:
+
+- `npm run lint` passed.
+- `npm run test -- --run` passed 169/169 with the known `--localstorage-file` warning.
+- Initial parallel build run hit a transient Vite/Rolldown emitted-asset-name error in this sandbox; rerunning `npm run build` serially passed with the existing dynamic import/chunk-size warnings.
+
+Final validation to be rerun serially after this documentation update before commit.
+
+#### Remaining limitations
+
+- No manual payment status UI exists yet.
+- Bookings detail does not display payment status yet.
+- Dashboard revenue still represents booked/expected revenue, not paid revenue.
+- No lead/customer/payment-record synchronization is implemented.
+- Stripe, payment collection, payment links, invoices, refunds, Tap to Pay, Customer Portal payments, and backend payment functions remain deferred.
+
+#### Recommended next task
+
+Implement Payment Stage P3 only: display read-only manual payment status in the Bookings detail modal with a safe fallback label. Do not add edit controls yet. Do not touch Stripe, payment links, refunds, payment collection, Dashboard revenue metrics, lead records, customer records, Firebase rules, or Customer Portal payments.
+
 ### Duplicate Customer Prevention — June 30, 2026
 
 #### Status
