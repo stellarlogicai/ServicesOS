@@ -2148,6 +2148,177 @@ Final validation to be rerun after this documentation update before commit.
 
 Implement Payment Stage P4 only: add manual payment status edit in the Bookings detail modal using `updateBookingManualPaymentStatus(...)`. Keep it booking-local only. Do not touch Stripe, payment links, refunds, payment records, Dashboard revenue metrics, lead records, customer records, Firebase rules, or Customer Portal payments.
 
+### Manual Payment Status Edit — June 30, 2026
+
+#### Status
+
+Payment Stage P4 implemented. Bookings detail now supports a small booking-local manual payment status edit flow.
+
+This is owner/admin tracking only. No Stripe, payment collection, payment links, refunds, invoices, Customer Portal payments, Firebase rules, Dashboard revenue metrics, Dashboard wording, lead records, customer records, payment records, or global payment collections were changed.
+
+#### UI added
+
+Updated `servicesos-web/src/components/BookingsList.jsx`:
+
+- Existing read-only `Payment Status` detail row remains.
+- Added `Edit Payment Status` button in the booking detail modal.
+- Clicking it opens a separate `Edit Payment Status` form.
+- The form edits only manual `paymentStatus`.
+- The existing `Edit Date & Notes` form remains separate and still edits only Date, Start time, and Notes.
+
+#### Wrapper used
+
+The UI calls:
+
+```js
+updateBookingManualPaymentStatus(tenantId, selectedBooking.id, { paymentStatus })
+```
+
+No Stripe/payment service, payment-link service, refund service, payment-record service, lead service, customer service, global collection path, broad booking update, delete, assignment, or Dashboard sync is called.
+
+#### Patch fields sent
+
+The UI sends only:
+
+```js
+{ paymentStatus }
+```
+
+The wrapper remains responsible for `paymentStatusUpdatedAt` and validation.
+
+The UI does not send amount, deposit amount, balance due, tip, fee, currency, Stripe IDs, payment-link IDs, invoice IDs, refund IDs, lead/customer/tenant fields, route fields, schema fields, or delete/cancel fields.
+
+#### Allowed statuses exposed
+
+The edit dropdown exposes only:
+
+- `not_paid` — `Not paid`
+- `deposit_requested` — `Deposit requested`
+- `deposit_paid` — `Deposit paid`
+- `final_due` — `Final due`
+- `paid_in_full` — `Paid in full`
+- `paid_cash` — `Paid cash`
+- `paid_check` — `Paid check`
+- `paid_external_app` — `Paid external app`
+- `waived_family_discount` — `Waived / family discount`
+- `payment_issue` — `Payment issue`
+
+#### Success/failure behavior
+
+On success:
+
+- Closes payment-status edit mode.
+- Reloads bookings through the existing `getJobs(tenantId)` path.
+- Merges the sanitized wrapper response into the selected booking.
+- Shows `Booking payment status updated.`
+- Detail displays the friendly payment status label.
+
+On validation/update failure:
+
+- Keeps payment-status edit mode open.
+- Shows the returned error message.
+- Does not show success.
+- Does not reload bookings.
+
+On cancel:
+
+- Exits payment-status edit mode.
+- Does not call `updateBookingManualPaymentStatus(...)`.
+
+#### No Stripe/payment collection confirmation
+
+No Pay, Refund, Stripe checkout, payment link, invoice, collect payment, payment amount, deposit amount, balance due, tip, fee, payment collection, delete/cancel booking, assignment, or reschedule controls were added.
+
+Normal admin nav remains Dashboard, Create Estimate, Customers, and Bookings.
+
+#### Tests added/updated
+
+Updated `servicesos-web/src/__tests__/BookingsList.test.jsx` to cover:
+
+- Detail modal shows `Edit Payment Status`.
+- Clicking it opens the payment-status edit UI.
+- The edit UI shows only allowed manual status options.
+- Saving calls `updateBookingManualPaymentStatus(...)` with active tenant ID, booking ID, and only `{ paymentStatus }`.
+- Successful save reloads bookings.
+- Successful save shows the friendly label.
+- Validation/update failure keeps edit UI open and shows the returned error.
+- Cancel exits edit mode without calling the wrapper.
+- Existing read-only fallback remains.
+- Unknown payment status fallback remains.
+- Existing `Edit Date & Notes` still does not include payment status.
+- Payment-status edit does not include Date, Start time, Notes, price, booking status, or amount fields.
+- No Pay, Refund, Stripe checkout, payment link, invoice, collect-payment, or payment collection controls appear.
+- Existing date/time/notes edit tests remain green.
+
+Focused validation:
+
+- `npm run test -- --run src/__tests__/BookingsList.test.jsx` passed 18/18.
+- `npm run test -- --run src/__tests__/BookingsList.test.jsx src/__tests__/AppOnboardingRouter.test.jsx src/__tests__/CreateEstimateBeta.test.jsx src/__tests__/quoteBookingConversionService.test.js src/__tests__/bookingAdminUpdatePatch.test.js` passed 66/66.
+
+#### Manual Tenant A result
+
+Tenant A/Aunt B manual verification passed:
+
+- Tenant A was already signed in.
+- Approved nav showed Dashboard, Create Estimate, Customers, and Bookings.
+- Opened Bookings.
+- Opened details for `Customer Name Display Smoke 0630`.
+- Confirmed `Payment Status` displayed.
+- Clicked `Edit Payment Status`.
+- Confirmed the edit UI showed only manual payment status options.
+- Selected `Paid cash`.
+- Saved successfully.
+- Detail showed `Paid cash`.
+- Refreshed the app.
+- Reopened Bookings and the same booking detail.
+- Confirmed `Paid cash` persisted.
+- Changed payment status to `Not paid` because clearing back to unset is not a supported product state.
+- Saved successfully.
+- Refreshed the app.
+- Reopened Bookings and the same booking detail.
+- Confirmed `Not paid` persisted.
+- Opened `Edit Date & Notes`.
+- Confirmed only Date, Start time, and Notes were editable there.
+- Confirmed no Pay, Refund, Stripe checkout, payment-link, invoice, or collect-payment controls appeared.
+- Signed out.
+- Login screen appeared and tenant data cleared from the visible app shell.
+
+#### Re-login result
+
+Skipped. Password entry was avoided in automation/logs. Do not treat post-sign-out re-login persistence as manually passed in this P4 verification. Persistence before sign-out was verified through refresh/reopen.
+
+#### Tenant B sanity result
+
+Skipped. Tenant B manual login was optional and credentials were not entered during this pass. Do not treat Tenant B payment-status edit isolation as passed.
+
+#### Console warnings/errors
+
+Manual browser console check was clean: no warnings or errors captured during the Tenant A payment-status edit, refresh, or sign-out checks.
+
+#### Validation
+
+Baseline before changes:
+
+- `npm run lint` passed.
+- Initial full test run hit the known sandbox mirror path issue for `src/test/setup.js`; rerun from the real web app directory passed.
+- `npm run test -- --run` passed 183/183 with the known `--localstorage-file` warning.
+- `npm run build` passed with existing Vite dynamic import/chunk-size warnings.
+
+Final validation to be rerun after this documentation update before commit.
+
+#### Remaining limitations
+
+- Manual payment status is booking-local only.
+- No payment amounts, deposits, balances, tips, fees, invoices, payment links, refunds, or Stripe/payment collection are implemented.
+- No Dashboard paid revenue metric exists; Dashboard revenue still represents booked/expected revenue.
+- No lead/customer/payment-record synchronization is implemented.
+- Tenant B edit isolation sanity remains skipped, not passed.
+- Post-sign-out re-login persistence remains skipped, not passed.
+
+#### Recommended next task
+
+Run optional Tenant B manual payment-status edit isolation sanity, then decide whether Aunt B V1 needs Dashboard wording cleanup for booked/expected revenue. Keep Stripe/payment collection/payment links/refunds and Dashboard paid revenue deferred unless explicitly scoped.
+
 ### Duplicate Customer Prevention — June 30, 2026
 
 #### Status

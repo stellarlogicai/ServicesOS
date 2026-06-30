@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getJobs, updateBookingAdminFields } from '../core/scheduling/schedulingService';
+import {
+  BOOKING_MANUAL_PAYMENT_STATUS_LABELS,
+  getJobs,
+  updateBookingAdminFields,
+  updateBookingManualPaymentStatus,
+} from '../core/scheduling/schedulingService';
 import { useAuth } from '../contexts/AuthContext';
 import {
   bookingAddress,
@@ -25,6 +30,10 @@ export default function BookingsList() {
   const [editForm, setEditForm] = useState({ date: '', startTime: '', notes: '' });
   const [editError, setEditError] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [isEditingPaymentStatus, setIsEditingPaymentStatus] = useState(false);
+  const [paymentStatusForm, setPaymentStatusForm] = useState('not_paid');
+  const [paymentStatusError, setPaymentStatusError] = useState('');
+  const [savingPaymentStatus, setSavingPaymentStatus] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
   const loadBookings = useCallback(async () => {
@@ -69,14 +78,18 @@ export default function BookingsList() {
   const openBookingDetails = (booking) => {
     setSelectedBooking(booking);
     setIsEditingBooking(false);
+    setIsEditingPaymentStatus(false);
     setEditError('');
+    setPaymentStatusError('');
     setSuccessMessage('');
   };
 
   const closeBookingDetails = () => {
     setSelectedBooking(null);
     setIsEditingBooking(false);
+    setIsEditingPaymentStatus(false);
     setEditError('');
+    setPaymentStatusError('');
     setSuccessMessage('');
   };
 
@@ -87,7 +100,9 @@ export default function BookingsList() {
       notes: bookingNotes(selectedBooking) === 'No notes provided' ? '' : bookingNotes(selectedBooking),
     });
     setEditError('');
+    setPaymentStatusError('');
     setSuccessMessage('');
+    setIsEditingPaymentStatus(false);
     setIsEditingBooking(true);
   };
 
@@ -99,6 +114,53 @@ export default function BookingsList() {
   const updateEditField = (event) => {
     const { name, value } = event.target;
     setEditForm(current => ({ ...current, [name]: value }));
+  };
+
+  const startPaymentStatusEdit = () => {
+    const currentStatus = typeof selectedBooking?.paymentStatus === 'string' &&
+      BOOKING_MANUAL_PAYMENT_STATUS_LABELS[selectedBooking.paymentStatus]
+      ? selectedBooking.paymentStatus
+      : 'not_paid';
+    setPaymentStatusForm(currentStatus);
+    setPaymentStatusError('');
+    setEditError('');
+    setSuccessMessage('');
+    setIsEditingBooking(false);
+    setIsEditingPaymentStatus(true);
+  };
+
+  const cancelPaymentStatusEdit = () => {
+    setIsEditingPaymentStatus(false);
+    setPaymentStatusError('');
+  };
+
+  const savePaymentStatusEdit = async (event) => {
+    event.preventDefault();
+    if (!selectedBooking?.id) {
+      setPaymentStatusError('Booking payment status could not be updated. Please close and try again.');
+      return;
+    }
+
+    setSavingPaymentStatus(true);
+    setPaymentStatusError('');
+    setSuccessMessage('');
+
+    const result = await updateBookingManualPaymentStatus(
+      tenantId,
+      selectedBooking.id,
+      { paymentStatus: paymentStatusForm }
+    );
+    if (!result.success) {
+      setSavingPaymentStatus(false);
+      setPaymentStatusError(result.message || 'Booking payment status could not be updated. Please try again.');
+      return;
+    }
+
+    await loadBookings();
+    setSelectedBooking(current => current ? { ...current, ...result.data } : current);
+    setSavingPaymentStatus(false);
+    setIsEditingPaymentStatus(false);
+    setSuccessMessage('Booking payment status updated.');
   };
 
   const saveBookingEdit = async (event) => {
@@ -258,23 +320,39 @@ export default function BookingsList() {
               </div>
             )}
 
-            {!isEditingBooking && (
-              <button
-                type="button"
-                onClick={startBookingEdit}
-                style={{
-                  marginTop: 20,
-                  border: '1px solid #2563eb',
-                  background: '#2563eb',
-                  color: '#fff',
-                  borderRadius: 8,
-                  padding: '9px 14px',
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                Edit Date &amp; Notes
-              </button>
+            {!isEditingBooking && !isEditingPaymentStatus && (
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 20 }}>
+                <button
+                  type="button"
+                  onClick={startBookingEdit}
+                  style={{
+                    border: '1px solid #2563eb',
+                    background: '#2563eb',
+                    color: '#fff',
+                    borderRadius: 8,
+                    padding: '9px 14px',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Edit Date &amp; Notes
+                </button>
+                <button
+                  type="button"
+                  onClick={startPaymentStatusEdit}
+                  style={{
+                    border: '1px solid #0f766e',
+                    background: '#0f766e',
+                    color: '#fff',
+                    borderRadius: 8,
+                    padding: '9px 14px',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Edit Payment Status
+                </button>
+              </div>
             )}
 
             {isEditingBooking && (
@@ -357,6 +435,66 @@ export default function BookingsList() {
                       padding: '9px 14px',
                       fontWeight: 700,
                       cursor: savingEdit ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {isEditingPaymentStatus && (
+              <form onSubmit={savePaymentStatusEdit} aria-label="Edit booking payment status" style={{ marginTop: 22, padding: 16, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 10 }}>
+                <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18 }}>Edit Payment Status</h3>
+
+                <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
+                  Payment status
+                  <select
+                    name="paymentStatus"
+                    value={paymentStatusForm}
+                    onChange={event => setPaymentStatusForm(event.target.value)}
+                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #99f6e4', borderRadius: 8, background: '#fff' }}
+                  >
+                    {Object.entries(BOOKING_MANUAL_PAYMENT_STATUS_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                {paymentStatusError && (
+                  <div role="alert" style={{ marginBottom: 12, padding: 10, border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, color: '#991b1b' }}>
+                    {paymentStatusError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="submit"
+                    disabled={savingPaymentStatus}
+                    style={{
+                      border: '1px solid #0f766e',
+                      background: savingPaymentStatus ? '#5eead4' : '#0f766e',
+                      color: '#fff',
+                      borderRadius: 8,
+                      padding: '9px 14px',
+                      fontWeight: 700,
+                      cursor: savingPaymentStatus ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {savingPaymentStatus ? 'Saving…' : 'Save payment status'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelPaymentStatusEdit}
+                    disabled={savingPaymentStatus}
+                    style={{
+                      border: '1px solid #99f6e4',
+                      background: '#fff',
+                      color: '#0f172a',
+                      borderRadius: 8,
+                      padding: '9px 14px',
+                      fontWeight: 700,
+                      cursor: savingPaymentStatus ? 'not-allowed' : 'pointer'
                     }}
                   >
                     Cancel
