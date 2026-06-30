@@ -1,3 +1,5 @@
+import { BOOKING_MANUAL_PAYMENT_STATUS_LABELS } from '../core/scheduling/schedulingService';
+
 function firstText(...values) {
   return values.find(value => typeof value === 'string' && value.trim())?.trim() || '';
 }
@@ -93,6 +95,10 @@ export function bookingPrice(booking = {}) {
 
 export function bookingStatus(booking = {}) {
   return firstText(booking.status) || 'Booked';
+}
+
+export function bookingPaymentStatus(booking = {}) {
+  return BOOKING_MANUAL_PAYMENT_STATUS_LABELS[firstText(booking.paymentStatus)] || 'Payment status not set';
 }
 
 export function bookingCustomerEmail(booking = {}) {

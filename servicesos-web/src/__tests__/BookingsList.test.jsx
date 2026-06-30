@@ -13,6 +13,18 @@ vi.mock('../contexts/AuthContext', () => ({
 }));
 
 vi.mock('../core/scheduling/schedulingService', () => ({
+  BOOKING_MANUAL_PAYMENT_STATUS_LABELS: {
+    not_paid: 'Not paid',
+    deposit_requested: 'Deposit requested',
+    deposit_paid: 'Deposit paid',
+    final_due: 'Final due',
+    paid_in_full: 'Paid in full',
+    paid_cash: 'Paid cash',
+    paid_check: 'Paid check',
+    paid_external_app: 'Paid external app',
+    waived_family_discount: 'Waived / family discount',
+    payment_issue: 'Payment issue',
+  },
   getJobs: mocks.getJobs,
   updateBookingAdminFields: mocks.updateBookingAdminFields,
 }));
@@ -147,6 +159,7 @@ describe('read-only Bookings admin list', () => {
         startTime: '09:00',
         serviceType: 'standard',
         status: 'scheduled',
+        paymentStatus: 'paid_cash',
         notes: 'Bring blue microfiber cloths.'
       }],
     });
@@ -161,6 +174,8 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('555-0630');
     expect(dialog).toHaveTextContent('standard');
     expect(dialog).toHaveTextContent('scheduled');
+    expect(dialog).toHaveTextContent('Payment Status');
+    expect(dialog).toHaveTextContent('Paid cash');
     expect(dialog).toHaveTextContent('Jul 2, 2026 at 09:00');
     expect(dialog).toHaveTextContent('630 Display Lane');
     expect(dialog).toHaveTextContent('$205.00');
@@ -168,8 +183,9 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('lead-detail-complete');
 
     expect(screen.getByRole('button', { name: 'Edit Date & Notes' })).toBeInTheDocument();
-    expect(dialog).not.toHaveTextContent('Payment status');
-    ['Delete', 'Pay', 'Assign', 'Refund', 'Reschedule', 'Update status', 'Cancel booking'].forEach(name => {
+    expect(screen.queryByRole('button', { name: /payment status/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/payment status/i)).not.toBeInTheDocument();
+    ['Delete', 'Pay', 'Assign', 'Refund', 'Reschedule', 'Update status', 'Cancel booking', 'Collect payment', 'Create payment link', 'Stripe checkout', 'Invoice'].forEach(name => {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     });
 
@@ -194,11 +210,48 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('Phone not provided');
     expect(dialog).toHaveTextContent('Service not specified');
     expect(dialog).toHaveTextContent('Booked');
+    expect(dialog).toHaveTextContent('Payment Status');
+    expect(dialog).toHaveTextContent('Payment status not set');
     expect(dialog).toHaveTextContent('Not scheduled');
     expect(dialog).toHaveTextContent('Address not provided');
     expect(dialog).toHaveTextContent('Price not set');
     expect(dialog).toHaveTextContent('No notes provided');
     expect(dialog).toHaveTextContent('booking-partial');
+  });
+
+  it('renders known manual payment status labels and falls back for unknown values', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [
+        {
+          id: 'booking-deposit-requested',
+          customerName: 'Deposit Requested Customer',
+          paymentStatus: 'deposit_requested',
+        },
+        {
+          id: 'booking-unknown-payment-status',
+          customerName: 'Unknown Payment Customer',
+          paymentStatus: 'stripe_paid',
+        },
+      ],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Deposit Requested Customer' })).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: 'View Details' })[0]);
+    let dialog = await screen.findByRole('dialog', { name: 'Deposit Requested Customer' });
+    expect(dialog).toHaveTextContent('Payment Status');
+    expect(dialog).toHaveTextContent('Deposit requested');
+    expect(screen.queryByRole('button', { name: /payment status/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/payment status/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close booking details' }));
+    await user.click(screen.getAllByRole('button', { name: 'View Details' })[1]);
+    dialog = await screen.findByRole('dialog', { name: 'Unknown Payment Customer' });
+    expect(dialog).toHaveTextContent('Payment Status');
+    expect(dialog).toHaveTextContent('Payment status not set');
   });
 
   it('opens limited date, start time, and notes edit UI from booking details', async () => {
@@ -232,7 +285,7 @@ describe('read-only Bookings admin list', () => {
     expect(screen.queryByLabelText(/price/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/status/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/payment/i)).not.toBeInTheDocument();
-    ['Payment', 'Delete', 'Assign', 'Refund', 'Reschedule', 'Cancel booking'].forEach(name => {
+    ['Payment', 'Pay', 'Delete', 'Assign', 'Refund', 'Reschedule', 'Cancel booking', 'Collect payment', 'Create payment link', 'Stripe checkout', 'Invoice'].forEach(name => {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     });
   });

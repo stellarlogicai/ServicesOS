@@ -2025,6 +2025,129 @@ Final validation to be rerun serially after this documentation update before com
 
 Implement Payment Stage P3 only: display read-only manual payment status in the Bookings detail modal with a safe fallback label. Do not add edit controls yet. Do not touch Stripe, payment links, refunds, payment collection, Dashboard revenue metrics, lead records, customer records, Firebase rules, or Customer Portal payments.
 
+### Manual Payment Status Read-Only Display — June 30, 2026
+
+#### Status
+
+Payment Stage P3 implemented. Bookings detail now displays booking-local manual payment status as read-only information.
+
+No payment status edit UI was added. No Stripe, payment collection, payment links, refunds, invoices, Customer Portal payments, Firebase rules, Dashboard revenue metrics, lead records, customer records, payment records, or global payment collections were changed.
+
+#### Display helper added
+
+Added `bookingPaymentStatus(booking)` in `servicesos-web/src/components/bookingDisplay.js`.
+
+The helper uses the P2-exported `BOOKING_MANUAL_PAYMENT_STATUS_LABELS` from `servicesos-web/src/core/scheduling/schedulingService.js`.
+
+Known status labels:
+
+- `not_paid` → `Not paid`
+- `deposit_requested` → `Deposit requested`
+- `deposit_paid` → `Deposit paid`
+- `final_due` → `Final due`
+- `paid_in_full` → `Paid in full`
+- `paid_cash` → `Paid cash`
+- `paid_check` → `Paid check`
+- `paid_external_app` → `Paid external app`
+- `waived_family_discount` → `Waived / family discount`
+- `payment_issue` → `Payment issue`
+
+Fallback behavior:
+
+- Missing, empty, null, or unknown `paymentStatus` renders `Payment status not set`.
+
+#### Detail modal field added
+
+Updated `servicesos-web/src/components/BookingsList.jsx` to show a read-only `Payment Status` detail item in the existing booking detail modal.
+
+The field is not shown on booking list cards.
+
+#### No edit UI confirmation
+
+- Existing `Edit Date & Notes` remains limited to Date, Start time, and Notes.
+- No payment status dropdown was added.
+- No payment status input was added.
+- No payment status save action was added.
+- No payment status edit button was added.
+- `updateBookingManualPaymentStatus(...)` is not called by UI in this pass.
+
+#### No Stripe/payment controls confirmation
+
+No Pay, Refund, Stripe checkout, payment link, invoice, collect payment, payment collection, delete/cancel, assignment, or reschedule controls were added.
+
+Normal admin nav remains Dashboard, Create Estimate, Customers, and Bookings.
+
+#### Tests added/updated
+
+Updated `servicesos-web/src/__tests__/BookingsList.test.jsx` to cover:
+
+- Booking detail shows `Payment Status`.
+- Known `paid_cash` status renders `Paid cash`.
+- Known `deposit_requested` status renders `Deposit requested`.
+- Missing payment status renders `Payment status not set`.
+- Unknown payment status renders `Payment status not set`.
+- Payment status is read-only.
+- No payment status dropdown/input/edit/save controls appear.
+- Existing Edit Date & Notes form does not include payment status.
+- No Pay, Refund, Stripe checkout, payment link, invoice, collect payment, or payment collection controls appear.
+- Existing booking detail fields still render.
+- Incomplete booking fallbacks remain green.
+- Existing date/time/notes edit behavior remains green.
+
+Focused validation:
+
+- `npm run test -- --run src/__tests__/BookingsList.test.jsx` passed 14/14.
+- `npm run test -- --run src/__tests__/BookingsList.test.jsx src/__tests__/AppOnboardingRouter.test.jsx src/__tests__/CreateEstimateBeta.test.jsx src/__tests__/quoteBookingConversionService.test.js src/__tests__/bookingAdminUpdatePatch.test.js` passed 62/62.
+
+#### Manual Tenant A result
+
+Tenant A/Aunt B admin manual verification passed:
+
+- App loaded already signed in as Tenant A admin.
+- Approved nav showed Dashboard, Create Estimate, Customers, and Bookings.
+- Opened Bookings.
+- Opened details for `Customer Name Display Smoke 0630`.
+- Detail modal showed `Payment Status`.
+- Because no manual status exists on that booking, detail modal showed `Payment status not set`.
+- No payment status edit/dropdown/control appeared.
+- No Pay, Refund, Stripe checkout, payment-link, invoice, or collect-payment controls appeared.
+- Opened `Edit Date & Notes`.
+- Edit form contained only Date, Start time, and Notes.
+- Closed without changes.
+- Refreshed the app, reopened Bookings and the same detail flow.
+- `Payment Status` and `Payment status not set` still displayed correctly.
+
+#### Seeded-status manual result
+
+Skipped. No controlled Firestore/manual fixture was created in this pass. Known-status rendering is covered by focused tests for `paid_cash` and `deposit_requested`.
+
+#### Console warnings/errors
+
+Manual browser console check was clean: no warnings or errors were reported during the Tenant A fallback display check.
+
+#### Validation
+
+Baseline before changes:
+
+- `npm run lint` passed.
+- `npm run test -- --run` passed 182/182 with the known `--localstorage-file` warning.
+- `npm run build` passed with existing Vite dynamic import/chunk-size warnings.
+
+Final validation to be rerun after this documentation update before commit.
+
+#### Remaining limitations
+
+- Manual payment status is display-only.
+- No payment status edit UI exists yet.
+- No seeded live booking was manually updated to `paid_cash` in this pass.
+- Dashboard revenue still represents booked/expected revenue, not paid revenue.
+- No lead/customer/payment-record synchronization is implemented.
+- Stripe, payment collection, payment links, invoices, refunds, Tap to Pay, Customer Portal payments, and backend payment functions remain deferred.
+
+#### Recommended next task
+
+Implement Payment Stage P4 only: add manual payment status edit in the Bookings detail modal using `updateBookingManualPaymentStatus(...)`. Keep it booking-local only. Do not touch Stripe, payment links, refunds, payment records, Dashboard revenue metrics, lead records, customer records, Firebase rules, or Customer Portal payments.
+
 ### Duplicate Customer Prevention — June 30, 2026
 
 #### Status

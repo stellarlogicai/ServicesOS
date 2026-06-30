@@ -7,6 +7,7 @@ import {
   bookingCustomerName,
   bookingCustomerPhone,
   bookingNotes,
+  bookingPaymentStatus,
   bookingPrice,
   bookingReference,
   bookingSchedule,
@@ -239,6 +240,7 @@ export default function BookingsList() {
               <DetailItem label="Customer phone" value={bookingCustomerPhone(selectedBooking)} />
               <DetailItem label="Service" value={bookingServiceType(selectedBooking)} />
               <DetailItem label="Status" value={bookingStatus(selectedBooking)} />
+              <DetailItem label="Payment Status" value={bookingPaymentStatus(selectedBooking)} />
               <DetailItem label="Scheduled" value={bookingSchedule(selectedBooking)} />
               <DetailItem label="Address" value={bookingAddress(selectedBooking)} />
               <DetailItem label="Price" value={bookingPrice(selectedBooking)} />
