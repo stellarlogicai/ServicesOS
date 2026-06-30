@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getJobs: vi.fn(),
+  updateBookingAdminFields: vi.fn(),
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
@@ -13,6 +14,7 @@ vi.mock('../contexts/AuthContext', () => ({
 
 vi.mock('../core/scheduling/schedulingService', () => ({
   getJobs: mocks.getJobs,
+  updateBookingAdminFields: mocks.updateBookingAdminFields,
 }));
 
 import BookingsList from '../components/BookingsList';
@@ -20,6 +22,7 @@ import BookingsList from '../components/BookingsList';
 describe('read-only Bookings admin list', () => {
   beforeEach(() => {
     mocks.getJobs.mockReset();
+    mocks.updateBookingAdminFields.mockReset();
   });
 
   it('loads bookings through the active tenant service boundary', async () => {
@@ -62,7 +65,7 @@ describe('read-only Bookings admin list', () => {
     expect(screen.getByText('Booked')).toBeInTheDocument();
 
     await waitFor(() => {
-      ['Create', 'Edit', 'Delete', 'Pay', 'Assign', 'Refund', 'Reschedule'].forEach(name => {
+      ['Create', 'Delete', 'Pay', 'Assign', 'Refund', 'Reschedule'].forEach(name => {
         expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
       });
     });
@@ -120,7 +123,7 @@ describe('read-only Bookings admin list', () => {
     expect(screen.getByText('$205.00')).toBeInTheDocument();
 
     await waitFor(() => {
-      ['Create', 'Edit', 'Delete', 'Pay', 'Assign', 'Refund', 'Reschedule'].forEach(name => {
+      ['Create', 'Delete', 'Pay', 'Assign', 'Refund', 'Reschedule'].forEach(name => {
         expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
       });
     });
@@ -164,7 +167,8 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('Bring blue microfiber cloths.');
     expect(dialog).toHaveTextContent('lead-detail-complete');
 
-    ['Edit', 'Delete', 'Pay', 'Assign', 'Refund', 'Reschedule', 'Update status', 'Cancel booking'].forEach(name => {
+    expect(screen.getByRole('button', { name: 'Edit Date & Notes' })).toBeInTheDocument();
+    ['Delete', 'Pay', 'Assign', 'Refund', 'Reschedule', 'Update status', 'Cancel booking'].forEach(name => {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     });
 
@@ -194,5 +198,237 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('Price not set');
     expect(dialog).toHaveTextContent('No notes provided');
     expect(dialog).toHaveTextContent('booking-partial');
+  });
+
+  it('opens limited date, start time, and notes edit UI from booking details', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-editable',
+        customerName: 'Editable Customer',
+        date: '2026-07-02',
+        startTime: '09:00',
+        endTime: '11:00',
+        notes: 'Original notes',
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Editable Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Date & Notes' }));
+
+    const form = screen.getByRole('form', { name: 'Edit booking date and notes' });
+    expect(form).toBeInTheDocument();
+    expect(screen.getByLabelText('Date')).toHaveValue('2026-07-02');
+    expect(screen.getByLabelText('Start time')).toHaveValue('09:00');
+    expect(screen.getByLabelText('Notes')).toHaveValue('Original notes');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+
+    expect(screen.queryByLabelText(/price/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/status/i)).not.toBeInTheDocument();
+    ['Payment', 'Delete', 'Assign', 'Refund', 'Reschedule', 'Cancel booking'].forEach(name => {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    });
+  });
+
+  it('saves date, computed end time, and trimmed notes through updateBookingAdminFields then reloads bookings', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs
+      .mockResolvedValueOnce({
+        success: true,
+        data: [{
+          id: 'booking-editable',
+          customerName: 'Editable Customer',
+          date: '2026-07-02',
+          startTime: '09:00',
+          endTime: '11:00',
+          notes: 'Original notes',
+        }],
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: [{
+          id: 'booking-editable',
+          customerName: 'Editable Customer',
+          date: '2026-07-05',
+          startTime: '10:30',
+          endTime: '12:30',
+          notes: 'Updated owner note',
+        }],
+      });
+    mocks.updateBookingAdminFields.mockResolvedValue({
+      success: true,
+      data: {
+        id: 'booking-editable',
+        date: '2026-07-05',
+        startTime: '10:30',
+        endTime: '12:30',
+        notes: 'Updated owner note',
+      },
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Editable Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Date & Notes' }));
+    await user.clear(screen.getByLabelText('Date'));
+    await user.type(screen.getByLabelText('Date'), '2026-07-05');
+    await user.clear(screen.getByLabelText('Start time'));
+    await user.type(screen.getByLabelText('Start time'), '10:30');
+    await user.clear(screen.getByLabelText('Notes'));
+    await user.type(screen.getByLabelText('Notes'), '  Updated owner note  ');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => {
+      expect(mocks.updateBookingAdminFields).toHaveBeenCalledWith('tenant-a', 'booking-editable', {
+        date: '2026-07-05',
+        startTime: '10:30',
+        endTime: '12:30',
+        notes: 'Updated owner note',
+      });
+    });
+    expect(mocks.updateBookingAdminFields.mock.calls[0][2]).not.toMatchObject({
+      agreedPrice: expect.anything(),
+      status: expect.anything(),
+      customerName: expect.anything(),
+      customerSnapshot: expect.anything(),
+      leadId: expect.anything(),
+      sourceLeadId: expect.anything(),
+      tenantId: expect.anything(),
+    });
+    await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('status')).toHaveTextContent('Booking date and notes updated.');
+    expect(screen.queryByRole('form', { name: 'Edit booking date and notes' })).not.toBeInTheDocument();
+  });
+
+  it('uses a conservative two-hour end time when existing duration cannot be determined', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-default-duration',
+        customerName: 'Default Duration Customer',
+        date: '2026-07-02',
+        startTime: '09:00',
+      }],
+    });
+    mocks.updateBookingAdminFields.mockResolvedValue({
+      success: true,
+      data: { id: 'booking-default-duration', date: '2026-07-03', startTime: '08:15', endTime: '10:15', notes: '' },
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Default Duration Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Date & Notes' }));
+    await user.clear(screen.getByLabelText('Date'));
+    await user.type(screen.getByLabelText('Date'), '2026-07-03');
+    await user.clear(screen.getByLabelText('Start time'));
+    await user.type(screen.getByLabelText('Start time'), '08:15');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => {
+      expect(mocks.updateBookingAdminFields).toHaveBeenCalledWith('tenant-a', 'booking-default-duration', {
+        date: '2026-07-03',
+        startTime: '08:15',
+        endTime: '10:15',
+        notes: '',
+      });
+    });
+  });
+
+  it('keeps edit mode open and displays validation errors without reloading as success', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-invalid',
+        customerName: 'Invalid Edit Customer',
+        date: '2026-07-02',
+        startTime: '09:00',
+        endTime: '11:00',
+      }],
+    });
+    mocks.updateBookingAdminFields.mockResolvedValue({
+      success: false,
+      error: 'VALIDATION_ERROR',
+      message: 'Booking date and startTime must produce a valid scheduledAt value.',
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Invalid Edit Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Date & Notes' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Booking date and startTime must produce a valid scheduledAt value.');
+    expect(screen.getByRole('form', { name: 'Edit booking date and notes' })).toBeInTheDocument();
+    expect(screen.queryByText('Booking date and notes updated.')).not.toBeInTheDocument();
+    expect(mocks.getJobs).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps edit mode open and displays update failures without reloading as success', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-update-fail',
+        customerName: 'Update Failure Customer',
+        date: '2026-07-02',
+        startTime: '09:00',
+        endTime: '11:00',
+      }],
+    });
+    mocks.updateBookingAdminFields.mockResolvedValue({
+      success: false,
+      error: 'FIRESTORE_ERROR',
+      message: 'Failed to update booking admin fields',
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Update Failure Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Date & Notes' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to update booking admin fields');
+    expect(screen.getByRole('form', { name: 'Edit booking date and notes' })).toBeInTheDocument();
+    expect(screen.queryByText('Booking date and notes updated.')).not.toBeInTheDocument();
+    expect(mocks.getJobs).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels limited edit mode without calling updateBookingAdminFields', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-cancel-edit',
+        customerName: 'Cancel Edit Customer',
+        date: '2026-07-02',
+        startTime: '09:00',
+        notes: 'Keep this note',
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Cancel Edit Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Date & Notes' }));
+    await user.clear(screen.getByLabelText('Notes'));
+    await user.type(screen.getByLabelText('Notes'), 'Unsaved note');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(mocks.updateBookingAdminFields).not.toHaveBeenCalled();
+    expect(screen.queryByRole('form', { name: 'Edit booking date and notes' })).not.toBeInTheDocument();
+    expect(screen.getByText('Keep this note')).toBeInTheDocument();
   });
 });

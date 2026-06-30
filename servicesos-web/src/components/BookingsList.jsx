@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getJobs } from '../core/scheduling/schedulingService';
+import { getJobs, updateBookingAdminFields } from '../core/scheduling/schedulingService';
 import { useAuth } from '../contexts/AuthContext';
 import {
   bookingAddress,
@@ -20,6 +20,11 @@ export default function BookingsList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [isEditingBooking, setIsEditingBooking] = useState(false);
+  const [editForm, setEditForm] = useState({ date: '', startTime: '', notes: '' });
+  const [editError, setEditError] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   const loadBookings = useCallback(async () => {
     setLoading(true);
@@ -36,7 +41,6 @@ export default function BookingsList() {
       const result = await getJobs(tenantId);
       if (result.success) {
         setBookings(Array.isArray(result.data) ? result.data : []);
-        setSelectedBooking(null);
       } else {
         setBookings([]);
         setSelectedBooking(null);
@@ -60,6 +64,77 @@ export default function BookingsList() {
       isActive = false;
     };
   }, [loadBookings]);
+
+  const openBookingDetails = (booking) => {
+    setSelectedBooking(booking);
+    setIsEditingBooking(false);
+    setEditError('');
+    setSuccessMessage('');
+  };
+
+  const closeBookingDetails = () => {
+    setSelectedBooking(null);
+    setIsEditingBooking(false);
+    setEditError('');
+    setSuccessMessage('');
+  };
+
+  const startBookingEdit = () => {
+    setEditForm({
+      date: bookingDateInputValue(selectedBooking),
+      startTime: bookingStartTimeInputValue(selectedBooking),
+      notes: bookingNotes(selectedBooking) === 'No notes provided' ? '' : bookingNotes(selectedBooking),
+    });
+    setEditError('');
+    setSuccessMessage('');
+    setIsEditingBooking(true);
+  };
+
+  const cancelBookingEdit = () => {
+    setIsEditingBooking(false);
+    setEditError('');
+  };
+
+  const updateEditField = (event) => {
+    const { name, value } = event.target;
+    setEditForm(current => ({ ...current, [name]: value }));
+  };
+
+  const saveBookingEdit = async (event) => {
+    event.preventDefault();
+    if (!selectedBooking?.id) {
+      setEditError('Booking could not be updated. Please close and try again.');
+      return;
+    }
+
+    setSavingEdit(true);
+    setEditError('');
+    setSuccessMessage('');
+
+    const form = event.currentTarget;
+    const submittedDate = form.elements.date.value;
+    const submittedStartTime = form.elements.startTime.value;
+    const submittedNotes = form.elements.notes.value.trim();
+    const patch = {
+      date: submittedDate,
+      startTime: submittedStartTime,
+      endTime: endTimeForBookingEdit(selectedBooking, submittedStartTime),
+      notes: submittedNotes,
+    };
+
+    const result = await updateBookingAdminFields(tenantId, selectedBooking.id, patch);
+    if (!result.success) {
+      setSavingEdit(false);
+      setEditError(result.message || 'Booking could not be updated. Please check the fields and try again.');
+      return;
+    }
+
+    await loadBookings();
+    setSelectedBooking(current => current ? { ...current, ...result.data } : current);
+    setSavingEdit(false);
+    setIsEditingBooking(false);
+    setSuccessMessage('Booking date and notes updated.');
+  };
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 0' }}>
@@ -101,7 +176,7 @@ export default function BookingsList() {
               </dl>
               <button
                 type="button"
-                onClick={() => setSelectedBooking(booking)}
+                onClick={() => openBookingDetails(booking)}
                 style={{
                   marginTop: 16,
                   border: '1px solid #cbd5e1',
@@ -144,7 +219,7 @@ export default function BookingsList() {
               </div>
               <button
                 type="button"
-                onClick={() => setSelectedBooking(null)}
+                onClick={closeBookingDetails}
                 aria-label="Close booking details"
                 style={{
                   border: '1px solid #cbd5e1',
@@ -174,11 +249,176 @@ export default function BookingsList() {
               <dt style={{ color: '#64748b', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Notes</dt>
               <dd style={{ margin: '6px 0 0', color: '#0f172a', whiteSpace: 'pre-wrap' }}>{bookingNotes(selectedBooking)}</dd>
             </div>
+
+            {successMessage && (
+              <div role="status" style={{ marginTop: 18, padding: 12, border: '1px solid #bbf7d0', background: '#f0fdf4', borderRadius: 8, color: '#166534' }}>
+                {successMessage}
+              </div>
+            )}
+
+            {!isEditingBooking && (
+              <button
+                type="button"
+                onClick={startBookingEdit}
+                style={{
+                  marginTop: 20,
+                  border: '1px solid #2563eb',
+                  background: '#2563eb',
+                  color: '#fff',
+                  borderRadius: 8,
+                  padding: '9px 14px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Edit Date &amp; Notes
+              </button>
+            )}
+
+            {isEditingBooking && (
+              <form onSubmit={saveBookingEdit} aria-label="Edit booking date and notes" style={{ marginTop: 22, padding: 16, border: '1px solid #dbeafe', background: '#eff6ff', borderRadius: 10 }}>
+                <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18 }}>Edit Date &amp; Notes</h3>
+
+                <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
+                  Date
+                  <input
+                    name="date"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="\d{4}-\d{2}-\d{2}"
+                    placeholder="YYYY-MM-DD"
+                    value={editForm.date}
+                    onChange={updateEditField}
+                    required
+                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #cbd5e1', borderRadius: 8 }}
+                  />
+                </label>
+
+                <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
+                  Start time
+                  <input
+                    name="startTime"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="\d{2}:\d{2}"
+                    placeholder="HH:mm"
+                    value={editForm.startTime}
+                    onChange={updateEditField}
+                    required
+                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #cbd5e1', borderRadius: 8 }}
+                  />
+                </label>
+
+                <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
+                  Notes
+                  <textarea
+                    name="notes"
+                    value={editForm.notes}
+                    onChange={updateEditField}
+                    rows={5}
+                    maxLength={1000}
+                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #cbd5e1', borderRadius: 8 }}
+                  />
+                </label>
+
+                {editError && (
+                  <div role="alert" style={{ marginBottom: 12, padding: 10, border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, color: '#991b1b' }}>
+                    {editError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="submit"
+                    disabled={savingEdit}
+                    style={{
+                      border: '1px solid #2563eb',
+                      background: savingEdit ? '#93c5fd' : '#2563eb',
+                      color: '#fff',
+                      borderRadius: 8,
+                      padding: '9px 14px',
+                      fontWeight: 700,
+                      cursor: savingEdit ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {savingEdit ? 'Saving…' : 'Save changes'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelBookingEdit}
+                    disabled={savingEdit}
+                    style={{
+                      border: '1px solid #cbd5e1',
+                      background: '#fff',
+                      color: '#0f172a',
+                      borderRadius: 8,
+                      padding: '9px 14px',
+                      fontWeight: 700,
+                      cursor: savingEdit ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
     </div>
   );
+}
+
+function toDate(value) {
+  if (!value) return null;
+  const converted = typeof value?.toDate === 'function' ? value.toDate() : new Date(value);
+  return Number.isNaN(converted.getTime()) ? null : converted;
+}
+
+function padTime(value) {
+  return String(value).padStart(2, '0');
+}
+
+function timeToMinutes(value) {
+  if (typeof value !== 'string' || !/^\d{2}:\d{2}$/.test(value)) return null;
+  const [hours, minutes] = value.split(':').map(Number);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function minutesToTime(value) {
+  const normalized = ((value % 1440) + 1440) % 1440;
+  return `${padTime(Math.floor(normalized / 60))}:${padTime(normalized % 60)}`;
+}
+
+function bookingDateInputValue(booking = {}) {
+  const scheduledAt = toDate(booking.scheduledAt);
+  if (scheduledAt) {
+    return `${scheduledAt.getFullYear()}-${padTime(scheduledAt.getMonth() + 1)}-${padTime(scheduledAt.getDate())}`;
+  }
+  return typeof booking.date === 'string' ? booking.date : '';
+}
+
+function bookingStartTimeInputValue(booking = {}) {
+  const scheduledAt = toDate(booking.scheduledAt);
+  if (scheduledAt) {
+    return `${padTime(scheduledAt.getHours())}:${padTime(scheduledAt.getMinutes())}`;
+  }
+  return typeof booking.startTime === 'string' ? booking.startTime : '';
+}
+
+function bookingDurationMinutes(booking = {}) {
+  const startMinutes = timeToMinutes(booking.startTime);
+  const endMinutes = timeToMinutes(booking.endTime);
+  if (startMinutes === null || endMinutes === null) return 120;
+  const duration = endMinutes - startMinutes;
+  return duration > 0 ? duration : 120;
+}
+
+function endTimeForBookingEdit(booking, startTime) {
+  const startMinutes = timeToMinutes(startTime);
+  if (startMinutes === null) return '';
+  return minutesToTime(startMinutes + bookingDurationMinutes(booking));
 }
 
 function DetailItem({ label, value }) {

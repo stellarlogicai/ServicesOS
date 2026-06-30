@@ -1402,6 +1402,133 @@ Price/status UI remains deferred until Dashboard/lead consistency is explicitly 
 
 Implement Stage C2b only after explicit approval: expose a limited edit modal for date/time and notes only, wired through `updateBookingAdminFields(...)`. Do not expose price or status controls yet.
 
+### Limited Booking Date and Notes Edit — June 30, 2026
+
+#### Status
+
+Stage C2b implemented with a narrow owner/admin booking edit path for date, start time, and notes only.
+
+#### UI added
+
+- Added `Edit Date & Notes` inside the existing booking detail modal.
+- The edit UI stays inside the Bookings detail flow; no new route was added.
+- On save success, the edit UI closes, the existing Bookings load path refreshes, and a success message is shown.
+- On validation/update failure, the edit UI remains open and shows the returned error message.
+
+#### Exact editable fields
+
+Editable fields exposed:
+
+- Date (`YYYY-MM-DD`)
+- Start time (`HH:mm`)
+- Notes
+
+End time is not directly editable. The UI computes it from the existing booking duration when possible, otherwise it uses a conservative two-hour default.
+
+#### Wrapper used
+
+Saves call:
+
+- `updateBookingAdminFields(tenantId, bookingId, patch)`
+
+#### Patch fields sent
+
+The UI sends only:
+
+```js
+{
+  date: "YYYY-MM-DD",
+  startTime: "HH:mm",
+  endTime: "HH:mm",
+  notes: "trimmed notes"
+}
+```
+
+The service helper/wrapper remains responsible for validating/sanitizing and generating `scheduledAt` / `updatedAt`.
+
+#### Fields intentionally not exposed
+
+No UI was added for:
+
+- price
+- status
+- completed/cancelled controls
+- payment status or collection
+- delete/cancel booking
+- assignment
+- refund
+- reschedule workflow language
+- Calendar
+- StaffScheduling
+- Settings
+- Customer Portal expansion
+- future/deferred modules
+
+No leads, customers, payments, employees, Dashboard metrics, or source records are patched.
+
+#### Tests added/updated
+
+Updated `servicesos-web/src/__tests__/BookingsList.test.jsx` to cover:
+
+- Detail modal shows `Edit Date & Notes`.
+- Limited edit UI opens from details.
+- Edit UI exposes only date, start time, notes, save, and cancel.
+- Price/status/payment/delete/assignment/refund/reschedule controls remain absent.
+- Successful save calls `updateBookingAdminFields(...)` with active tenant ID, booking ID, and only allowed patch fields.
+- Existing duration is preserved for computed `endTime`.
+- Missing duration falls back to two hours.
+- Successful save reloads bookings through the existing list load path.
+- Validation/update failures show errors and do not close as success.
+- Cancel exits edit mode without calling the update wrapper.
+- Existing detail and incomplete-booking fallback coverage remains green.
+
+#### Manual Tenant A result
+
+Manual Tenant A/Aunt B admin verification completed for the core edit flow:
+
+- Approved admin nav remained Dashboard, Create Estimate, Customers, and Bookings.
+- Opened Bookings.
+- Opened details for `Customer Name Display Smoke 0630`.
+- Confirmed `Edit Date & Notes` appeared.
+- Confirmed no price/status/payment/delete/assignment/reschedule controls appeared in the edit UI.
+- Updated the booking date to `2026-07-04`, start time to `10:15`, and notes to `Stage C2b manual verification date time notes 0630.`
+- Save succeeded.
+- Bookings list and detail modal showed `Jul 4, 2026, 10:15 AM`.
+- Detail modal showed the updated notes.
+- Browser refresh preserved the updated date/time in the Bookings list and detail modal.
+- Sign-out showed the login screen and cleared tenant data.
+
+Re-login persistence after sign-out was not completed in this pass because the password was not entered into automation/logs. The browser retained password field did not submit a login. The booking update had already been verified after refresh.
+
+#### Tenant B sanity result
+
+Tenant B sanity was not run in this pass. Existing A → B → A tenant isolation and Bookings tenant-specific verification remain the latest tenant-isolation baseline.
+
+#### Console result
+
+Console showed the known local email notification warning:
+
+- `[EMAIL] sendQuoteEmail failed: Failed to fetch`
+
+No Stage C2b booking-edit console error was observed during the successful Tenant A edit/save/refresh flow.
+
+#### Validation
+
+- Baseline before changes: ESLint passed; full Vitest passed 157/157; production build passed with existing Vite dynamic import/chunk-size warnings.
+- Focused Bookings test after changes: 13/13 passed.
+- Full validation to be rerun after this documentation update before commit.
+
+#### Remaining limitations
+
+- Only date, start time, computed end time, and notes are editable.
+- Price/status edits remain deferred until Dashboard/lead synchronization is designed.
+- Re-login persistence still needs a manual user-assisted check or approved credential entry flow that does not write passwords into logs.
+- Tenant B edit sanity remains optional follow-up.
+
+#### Recommended next task
+
+Complete manual sign-out/re-login persistence verification for Tenant A without logging credentials, then run optional Tenant B sanity. Do not expose price/status controls until Dashboard/lead sync is explicitly designed.
+
 ### Aunt B Pricing Profile Tenant Configuration — June 29, 2026
 
 **Status:** Tenant configuration completed with mixed results - Tenant A correctly using Aunt B profile, Tenant B showing legacy pricing despite configuration.
