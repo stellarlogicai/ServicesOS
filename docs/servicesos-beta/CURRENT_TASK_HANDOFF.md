@@ -2737,3 +2737,29 @@ Deploy the UI polish commits to a Netlify preview and repeat the Dashboard/sideb
 - The hardened component is not reachable through normal-admin navigation, so manual tenant UI verification was limited to confirming the existing approved routes remain unchanged.
 - No month/week visualization, employee lanes, drag/drop, booking actions, or Calendar exposure were added.
 - Recommended next step: review the hidden read-only component and run a direct dev-only Tenant A/B data-isolation smoke test before separately approving any navigation exposure.
+
+### Read-Only Calendar Exposure — June 30, 2026
+
+**Status:** Exposed to completed normal admins after explicit product approval because Aunt B needs a calendar surface for wife beta.
+
+#### Exposure and safety boundary
+
+- Normal-admin navigation now includes Dashboard, Create Estimate, Customers, Bookings, and Calendar.
+- Calendar remains read-only and continues to load only through `getJobs(tenantId)` from the active authenticated tenant.
+- Calendar displays customer, service, schedule, address, status, and price through the shared booking fallback helpers.
+- No booking create, edit, delete, payment, refund, payment-link, assignment, reschedule, or status controls are present.
+- Staff Scheduling, Schedule, Settings, payments, Customer Portal, Route Optimization, payroll, training, Tap to Pay, Tenant Management, and other deferred surfaces remain hidden from normal admins.
+
+#### Tests and manual verification
+
+- Updated normal-admin router coverage to require Calendar alongside the four existing approved surfaces, render Calendar through its nav item, and keep deferred surfaces hidden.
+- Existing focused Calendar coverage verifies active-tenant reads, loading, empty, retryable error, missing-tenant, incomplete-record fallback, and no mutation/employee controls.
+- Tenant A manual verification confirmed the five approved nav items, Calendar rendering Tenant A bookings, understandable complete and incomplete data, no Calendar action buttons, and usable narrow/mobile layout.
+- Bookings still loaded with its existing read-only list and View Details controls. Dashboard loaded before Calendar navigation with booked-revenue wording unchanged.
+- Tenant B manual isolation was skipped because no password was entered or logged in this pass; it is not claimed as passed.
+- Browser console contained one stale Vite hot-reload failure from the edit cycle. A subsequent full reload rendered Dashboard, Calendar, and Bookings successfully with no observed product runtime failure.
+
+#### Remaining limitations and recommended next task
+
+- Calendar is currently a responsive chronological read-only booking list, not a month/week grid.
+- Run a Tenant A → Tenant B → Tenant A Calendar isolation check and deployed mobile smoke test before promoting this branch to the wife-beta release.

@@ -6,6 +6,8 @@ Status: Audit and design only; no Calendar route or UI restored
 
 > Stage 1 update — June 30, 2026: the existing `CalendarView` was hardened into a tenant-context, read-only booking display using `getJobs(tenantId)` and the shared booking fallback helpers. Employee and direct Firestore dependencies were removed. Calendar remains hidden from normal-admin navigation.
 
+> Exposure update — June 30, 2026: after explicit product approval, the hardened read-only Calendar was added to normal-admin navigation for wife beta. `StaffScheduling`, full scheduling workflows, employee assignment, and every Calendar mutation remain deferred and hidden.
+
 ## Scope and conclusion
 
 The smallest safe restoration is a new read-only Upcoming Jobs calendar/list that consumes the existing tenant-scoped `getJobs(tenantId)` boundary and the existing `bookingDisplay.js` fallback helpers. It must not reuse or expose the current full `CalendarView` directly.

@@ -90,8 +90,7 @@ const NAV_ITEMS = [
     id: "calendar",
     icon: "📅",
     label: "Calendar",
-    roles: ["super-admin"],
-    permission: "manage_staff",
+    roles: ["admin", "super-admin"],
   },
   {
     id: "payment-links",
