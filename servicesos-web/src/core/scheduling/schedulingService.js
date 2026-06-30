@@ -15,6 +15,157 @@ import { logError, ERROR_CODES, SEVERITY } from '../../shared/logging/errorLoggi
 
 const COLLECTION_NAME = 'bookings';
 const SCHEMA_TYPE = 'JOB';
+const BOOKING_ADMIN_UPDATE_ALLOWED_FIELDS = new Set([
+  'date',
+  'startTime',
+  'endTime',
+  'scheduledAt',
+  'status',
+  'notes',
+  'agreedPrice',
+]);
+const BOOKING_ADMIN_STATUS_VALUES = new Set(['scheduled', 'completed', 'cancelled']);
+const BOOKING_ADMIN_NOTES_MAX_LENGTH = 1000;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_ONLY_PATTERN = /^\d{2}:\d{2}$/;
+
+function localDateParts(date) {
+  const pad = value => String(value).padStart(2, '0');
+  return {
+    date: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    time: `${pad(date.getHours())}:${pad(date.getMinutes())}`,
+  };
+}
+
+function bookingAdminValidationError(message) {
+  return errorResponse(message, 'VALIDATION_ERROR');
+}
+
+function isValidDateOnly(value) {
+  if (typeof value !== 'string' || !DATE_ONLY_PATTERN.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00`);
+  return !Number.isNaN(parsed.getTime()) && localDateParts(parsed).date === value;
+}
+
+function isValidTimeOnly(value) {
+  if (typeof value !== 'string' || !TIME_ONLY_PATTERN.test(value)) return false;
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+}
+
+function parseValidIsoDate(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  if (parsed.toISOString() !== value) return null;
+  return parsed;
+}
+
+function normalizeBookingAdminTimeFields(patch, payload) {
+  const hasDate = Object.hasOwn(patch, 'date');
+  const hasStartTime = Object.hasOwn(patch, 'startTime');
+  const hasEndTime = Object.hasOwn(patch, 'endTime');
+  const hasScheduledAt = Object.hasOwn(patch, 'scheduledAt');
+
+  if (hasDate && !isValidDateOnly(patch.date)) {
+    return bookingAdminValidationError('Booking date must use YYYY-MM-DD format.');
+  }
+
+  if (hasStartTime && !isValidTimeOnly(patch.startTime)) {
+    return bookingAdminValidationError('Booking startTime must use HH:mm format.');
+  }
+
+  if (hasEndTime && !isValidTimeOnly(patch.endTime)) {
+    return bookingAdminValidationError('Booking endTime must use HH:mm format.');
+  }
+
+  if (hasScheduledAt) {
+    const scheduledDate = parseValidIsoDate(patch.scheduledAt);
+    if (!scheduledDate) {
+      return bookingAdminValidationError('Booking scheduledAt must be a valid ISO string.');
+    }
+
+    const derived = localDateParts(scheduledDate);
+    if (hasDate && patch.date !== derived.date) {
+      return bookingAdminValidationError('Booking date must match scheduledAt.');
+    }
+    if (hasStartTime && patch.startTime !== derived.time) {
+      return bookingAdminValidationError('Booking startTime must match scheduledAt.');
+    }
+
+    payload.scheduledAt = patch.scheduledAt;
+    payload.date = hasDate ? patch.date : derived.date;
+    payload.startTime = hasStartTime ? patch.startTime : derived.time;
+  } else if (hasDate || hasStartTime) {
+    if (!hasDate || !hasStartTime) {
+      return bookingAdminValidationError('Booking date and startTime must be supplied together.');
+    }
+
+    const scheduledDate = new Date(`${patch.date}T${patch.startTime}`);
+    if (Number.isNaN(scheduledDate.getTime())) {
+      return bookingAdminValidationError('Booking date and startTime must produce a valid scheduledAt value.');
+    }
+
+    payload.date = patch.date;
+    payload.startTime = patch.startTime;
+    payload.scheduledAt = scheduledDate.toISOString();
+  }
+
+  if (hasEndTime) {
+    payload.endTime = patch.endTime;
+  }
+
+  return null;
+}
+
+export function buildBookingAdminUpdatePatch(proposedPatch, { now = new Date().toISOString() } = {}) {
+  if (!proposedPatch || typeof proposedPatch !== 'object' || Array.isArray(proposedPatch)) {
+    return bookingAdminValidationError('Booking update patch must be an object.');
+  }
+
+  const incomingFields = Object.keys(proposedPatch);
+  const unknownFields = incomingFields.filter(field => !BOOKING_ADMIN_UPDATE_ALLOWED_FIELDS.has(field));
+  if (unknownFields.length > 0) {
+    return bookingAdminValidationError(`Unsupported booking update field: ${unknownFields[0]}.`);
+  }
+
+  const payload = {};
+  const timeError = normalizeBookingAdminTimeFields(proposedPatch, payload);
+  if (timeError) return timeError;
+
+  if (Object.hasOwn(proposedPatch, 'status')) {
+    if (!BOOKING_ADMIN_STATUS_VALUES.has(proposedPatch.status)) {
+      return bookingAdminValidationError('Booking status is not allowed for owner/admin updates.');
+    }
+    payload.status = proposedPatch.status;
+  }
+
+  if (Object.hasOwn(proposedPatch, 'notes')) {
+    if (typeof proposedPatch.notes !== 'string') {
+      return bookingAdminValidationError('Booking notes must be a string.');
+    }
+    const notes = proposedPatch.notes.trim();
+    if (notes.length > BOOKING_ADMIN_NOTES_MAX_LENGTH) {
+      return bookingAdminValidationError(`Booking notes must be ${BOOKING_ADMIN_NOTES_MAX_LENGTH} characters or fewer.`);
+    }
+    payload.notes = notes;
+  }
+
+  if (Object.hasOwn(proposedPatch, 'agreedPrice')) {
+    const agreedPrice = Number(proposedPatch.agreedPrice);
+    if (!Number.isFinite(agreedPrice) || agreedPrice < 0) {
+      return bookingAdminValidationError('Booking agreedPrice must be a non-negative number.');
+    }
+    payload.agreedPrice = agreedPrice;
+  }
+
+  if (Object.keys(payload).length === 0) {
+    return bookingAdminValidationError('Booking update patch must include at least one supported field.');
+  }
+
+  payload.updatedAt = now;
+  return successResponse(payload);
+}
 
 /**
  * Get all jobs/bookings for a tenant

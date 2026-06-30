@@ -1150,6 +1150,141 @@ Booking delete/cancel, broad reschedule workflow, payment status, payment collec
 
 Implement Stage C1 only: add and test a pure service-level whitelist helper for limited booking admin updates. Do not expose any edit UI yet.
 
+### Booking Admin Update Whitelist Helper — June 30, 2026
+
+**Status:** Stage C1 implemented with service-level helper and focused tests only. No booking edit UI, reschedule UI, status dropdown UI, price edit UI, cancel/delete control, payment control, employee assignment, Calendar, StaffScheduling, Settings, or future-module route was exposed.
+
+#### What was added
+
+- Added `buildBookingAdminUpdatePatch(proposedPatch, options)` in `servicesos-web/src/core/scheduling/schedulingService.js`.
+- The helper is pure and returns the existing standardized API response shape.
+- The helper validates a proposed owner/admin booking update and returns a sanitized payload containing only approved booking fields plus `updatedAt`.
+- The helper accepts an optional `now` value for deterministic tests; production default follows the current project timestamp convention, `new Date().toISOString()`.
+
+#### Write wrapper
+
+- No Firestore-writing wrapper was added in this pass.
+- `updateBookingAdminFields(...)` remains a future Stage C implementation step after the pure whitelist helper is stable.
+- Existing broad `updateJob(...)` and `updateJobStatus(...)` are still not wired to Bookings UI.
+
+#### Allowed fields
+
+The helper allows only:
+
+- `date`
+- `startTime`
+- `endTime`
+- `scheduledAt`
+- `status`
+- `notes`
+- `agreedPrice`
+
+The sanitized payload always adds:
+
+- `updatedAt`
+
+#### Forbidden fields behavior
+
+Unknown or forbidden fields are rejected with `VALIDATION_ERROR`; they are not stripped silently. This includes tenant, customer, payment, employee, source lead, route, Stripe, refund, delete/cancel, and schema fields such as:
+
+- `tenantId`
+- `customerId`
+- `customerName`
+- `customerSnapshot`
+- `propertyId`
+- `propertySnapshot`
+- `leadId`
+- `sourceLeadId`
+- `source`
+- `createdAt`
+- `createdBy`
+- `schemaVersion`
+- `paymentStatus`
+- `payment`
+- `payments`
+- `stripe`
+- `stripePaymentIntentId`
+- `employeeId`
+- `assignedEmployee`
+- `assignment`
+- `route`
+- `routeOptimization`
+- `refund`
+- `delete`
+- `cancelledBy`
+
+#### Status whitelist
+
+Allowed:
+
+- `scheduled`
+- `completed`
+- `cancelled`
+
+Rejected/deferred:
+
+- `confirmed`
+- `needs_reschedule`
+- `in_progress`
+- any other value
+
+#### Date/time validation
+
+- `date` must use local `YYYY-MM-DD`.
+- `startTime` and `endTime` must use `HH:mm`.
+- `scheduledAt` must be a valid ISO string.
+- If `date` and `startTime` are supplied without `scheduledAt`, the helper generates `scheduledAt`.
+- If `scheduledAt` is supplied, the helper validates supplied `date` and `startTime` against its local date/time parts.
+- Supplying only `date` or only `startTime` is rejected because the helper cannot safely infer the missing temporal field.
+
+#### Notes and price validation
+
+- `notes` must be a string.
+- `notes` are trimmed.
+- `notes` are limited to 1000 characters.
+- `agreedPrice` must be numeric and non-negative.
+- Price support exists only in the helper and tests; no price edit UI or Dashboard/lead synchronization was added.
+
+#### Tests added
+
+Added `servicesos-web/src/__tests__/bookingAdminUpdatePatch.test.js` covering:
+
+- Date/time/notes update and `updatedAt`.
+- `scheduledAt`, `date`, and `startTime` consistency.
+- Rejection of inconsistent or partial temporal input.
+- Status whitelist acceptance/rejection.
+- Numeric non-negative `agreedPrice`.
+- Negative/non-numeric `agreedPrice` rejection.
+- Notes trimming and notes length rejection.
+- Unknown field rejection.
+- Explicit forbidden-field rejection for tenant/customer/payment/employee/source/route/Stripe/refund/schema fields.
+- Empty patch rejection.
+
+Focused validation after helper/tests passed 37/37 across booking admin update helper, Bookings list/detail, admin router, booking audit, quote conversion, and Create Estimate beta tests.
+
+#### No UI exposure confirmation
+
+- `BookingsList.jsx` was not changed in Stage C1.
+- The existing Bookings detail modal remains read-only.
+- No edit, reschedule, status, price, cancel/delete, payment, assignment, Calendar, StaffScheduling, Settings, or future-module control was added.
+
+#### Validation
+
+- Baseline before changes: ESLint passed; full Vitest passed 136/136 across 23 files; production build passed with existing Vite dynamic import/chunk-size warnings.
+- Focused validation after helper/tests: 37/37 passed across 6 files.
+- Final full validation after documentation update: ESLint passed; full Vitest passed 148/148 across 24 files with the known `--localstorage-file` warning; production build passed with existing Vite dynamic import/chunk-size warnings.
+
+#### Remaining limitations
+
+- No write wrapper exists yet.
+- No UI uses the helper yet.
+- Dashboard/revenue and lead synchronization remain intentionally unresolved for price/date/status edits.
+- Status semantics remain limited to `scheduled`, `completed`, and `cancelled`.
+
+#### Recommended next task
+
+Implement Stage C2 only after explicit approval: add a write wrapper and/or UI for date/time and notes only, with no price/status exposure until Dashboard/lead synchronization is designed.
+
 ### Aunt B Pricing Profile Tenant Configuration — June 29, 2026
 
 **Status:** Tenant configuration completed with mixed results - Tenant A correctly using Aunt B profile, Tenant B showing legacy pricing despite configuration.
