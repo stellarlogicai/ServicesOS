@@ -644,6 +644,143 @@ When Aunt B’s tenant is configured with the pricing profile ID, Create Estimat
 
 Configure Aunt B’s actual beta tenant with `pricingProfileId: "aunt-bs-cleaning-services"` in the real tenant document or equivalent tenant profile metadata, then run one human Create Estimate pass and confirm the visible range matches the structured profile. Do not build a Settings editor or deferred pricing-management UI yet.
 
+### Booking Restore-and-Harden Audit — June 29, 2026
+
+**Status:** Audit complete; no booking UI or product behavior was changed in this pass.
+
+#### Files and capabilities audited
+
+- `servicesos-web/src/components/BookingsList.jsx`
+  - Current approved normal-admin Bookings surface.
+  - Uses `useAuth().tenantId` and `getJobs(tenantId)`.
+  - Read-only list only; no create, edit, delete, payment, assignment, refund, or reschedule controls.
+- `servicesos-web/src/components/bookingDisplay.js`
+  - Display fallback helpers for customer, service, status, schedule, address, and price.
+  - Customer fallback order is `booking.customerName`, `booking.customer`, `booking.customerSnapshot`, then `booking.formData`.
+- `servicesos-web/src/pages/Dashboard.jsx`
+  - Contains the explicit `Create Booking` modal/action from leads.
+  - Calls `approveQuoteRequestAndCreateBooking` and then reloads leads.
+- `servicesos-web/src/services/quoteBookingConversionService.js`
+  - Converts a lead into `tenants/{tenantId}/bookings/{bookingId}` and updates `tenants/{tenantId}/leads/{leadId}` in one batch.
+  - Writes date/start/end time, scheduledAt, agreedPrice, status, serviceType, address, notes, lead/customer/property/request snapshots when available.
+  - Does not write payments.
+- `servicesos-web/src/core/scheduling/schedulingService.js`
+  - Existing tenant-scoped service boundary for `getJobs`, `getJobsByDate`, `getJobById`, `createJob`, `updateJob`, `updateJobStatus`, `deleteJob`, and `assignEmployeeToJob`.
+- Hidden/deferred components and services reviewed:
+  - `CalendarView.jsx`
+  - `StaffScheduling.jsx`
+  - `JobCompletion.jsx`
+  - `customerPortalService.js` reschedule functions
+  - `rebookingService.js`
+  - `employeeAssignmentService.js`, `staffSchedulingService.js`, and related employee/payment/service code by search.
+- Tests reviewed:
+  - `BookingsList.test.jsx`
+  - `bookingAdminListAudit.test.js`
+  - `quoteBookingConversionService.test.js`
+  - `DashboardPendingQuoteReview.test.jsx`
+  - router/route-visibility coverage in `AppOnboardingRouter.test.jsx`
+  - older smoke/workflow tests that assert scheduling service exports.
+
+#### Existing capability map
+
+1. **Read-only Bookings list**
+   - Data source: `getJobs(tenantId)`.
+   - Tenant path: `tenants/{tenantId}/bookings`.
+   - Current fields displayed: customer name, service type, status, scheduled date/time, address, and price.
+   - Current fallbacks: `Unknown customer`, `Service not specified`, `Booked`, `Not scheduled`, `Address not provided`, `Price not set`.
+   - Limitation: list does not show notes, phone/email, lead/customer IDs, or detail view.
+
+2. **Dashboard Create Booking flow**
+   - Conversion source: Dashboard lead row/modal.
+   - Booking document shape: tenantId, leadId/sourceLeadId, source, customerId/propertyId, snapshots when present, date/startTime/endTime/scheduledAt, agreedPrice, status, serviceType, address, notes, createdBy/createdAt/updatedAt, schema version.
+   - Lead patch: status becomes `booked`; lead estimate is locked to agreed price; review/appointmentRequest flags are cleared when present.
+   - Why admin-created estimate bookings can show `Unknown customer`: admin-created leads persist customer identity mainly under `formData.fullName`, but the booking conversion currently does not copy `lead.formData` or synthesize `customerName/customerSnapshot` into the booking. `bookingDisplay.js` can already display those fields if present.
+
+3. **Existing booking/status/edit/reschedule capabilities**
+   - `getJobById`, `updateJob`, `updateJobStatus`, and `deleteJob` exist in the core scheduling service and are tenant-scoped.
+   - `assignEmployeeToJob` exists but is employee-assignment scope and should remain deferred.
+   - `StaffScheduling.jsx` can create jobs and update status to `in_progress`/`completed`, but it also creates/edits/deletes employees and schedules employee shifts, so it is too broad for Aunt B’s V1 restoration.
+   - `customerPortalService.js` has reschedule request/confirm functions, but they target `tenants/{tenantId}/jobs/{jobId}` rather than the current approved `bookings` collection and live in Customer Portal scope.
+   - `JobCompletion.jsx` updates `tenants/{tenantId}/jobs`, uploads photos/signatures, creates reviews and AI learning data; this is unsafe for the owner/admin V1 booking edit path.
+
+4. **Hidden Calendar/Schedule/StaffScheduling code**
+   - `CalendarView.jsx` reads `tenants/{tenantId}/bookings` and employees, supports month/week/day views, and includes a simple booking detail modal.
+   - It is hidden from normal admins and coupled to employee display (`employeeId`) and calendar workflow assumptions. It may be a reference for future read-only layout only, not a direct V1 restoration.
+   - `StaffScheduling.jsx` is intentionally deferred because it mixes booking/job creation, status changes, employee management, and assignment.
+
+5. **Service boundaries**
+   - Safe read boundary now in use: `getJobs(tenantId)`.
+   - Potential read boundary for detail: `getJobById(tenantId, jobId)`.
+   - Potential narrow mutation boundaries after hardening: `updateJob(tenantId, jobId, patch)` and `updateJobStatus(tenantId, jobId, status)`.
+   - Unsafe for immediate V1: `deleteJob`, `assignEmployeeToJob`, StaffScheduling create-job flow, Customer Portal reschedule functions targeting `jobs`, recurring/rebooking automation, job completion/photo/signature/AI-learning flows.
+   - All useful core scheduling service functions require tenantId; error handling returns standardized success/error responses and logs Firestore failures.
+
+#### Safety assessment by capability
+
+- Booking detail view: **Reusable after hardening**. Build a new minimal read-only detail from BookingsList data or `getJobById`; avoid Calendar dependency.
+- Booking edit: **Needs new minimal implementation** using a whitelist patch for date/time/price/status/internal notes only.
+- Booking reschedule: **Needs new minimal implementation** against `tenants/{tenantId}/bookings`; existing Customer Portal reschedule targets `jobs` and should not be reused directly.
+- Booking status update: **Reusable after hardening** through `updateJobStatus`, with an owner/admin whitelist such as `scheduled`, `completed`, `cancelled`.
+- Booking cancel: **Reusable after hardening** as a status update, not `deleteJob`.
+- Customer snapshot display: **Safe to reuse now** by writing/displaying `customerName` or `customerSnapshot` for new Dashboard-created bookings while preserving old fallbacks.
+- Customer/job notes: **Reusable after hardening** as read-only detail first; later editable as a single internal-notes field.
+- Recurring service marker: **Too coupled to deferred modules**; keep read-only if present, no automation.
+- Payment status marker: **Too coupled to deferred payments**; defer.
+- Employee assignment: **Too coupled to deferred modules**; defer.
+- Calendar display: **Too coupled to deferred modules** for now; maybe future read-only reference only.
+
+#### Recommended staged Aunt B V1 path
+
+**Stage A — Fix booking customer display**
+
+- First restoration task: `Fix booking customer name display for admin-created estimate bookings`.
+- Copy or synthesize enough customer display data during Dashboard booking conversion so new admin-created bookings have `customerName` and/or `customerSnapshot.fullName`.
+- Preserve existing incomplete-record fallbacks.
+- Do not add edit/reschedule/status controls.
+
+**Stage B — Booking detail view**
+
+- Add a read-only detail view from BookingsList.
+- Show customer, phone/email if available, address, service, date/time, price, status, and notes.
+- Use tenant-scoped data only.
+
+**Stage C — Booking edit/reschedule/status**
+
+- Add a small owner/admin edit modal limited to date, time, status, price, and internal/job notes.
+- Use whitelisted fields and tenant-scoped service functions.
+- Do not include employee assignment, route optimization, calendar workflows, payment collection, or recurring automation.
+
+**Stage D — Manual payment status later**
+
+- Keep separate from booking edit unless payment scope is explicitly approved.
+
+#### Acceptance criteria for first restoration task
+
+`Fix booking customer name display for admin-created estimate bookings`
+
+- Dashboard Create Booking stores enough customer display data for admin-created estimate bookings.
+- Bookings displays the customer name for newly created admin-estimate bookings.
+- Existing incomplete bookings still show `Unknown customer`.
+- No tenant leakage between Tenant A and Tenant B.
+- No payment, scheduling, assignment, refund, delete, edit, or reschedule controls are introduced.
+- Refresh/logout/re-login preserves customer display.
+- Dashboard quote-to-booking conversion behavior remains otherwise unchanged.
+- Create Estimate still saves tenant-scoped leads only and does not create bookings/payments.
+- Focused conversion/display tests and full lint/test/build pass.
+
+#### What not to touch in the first restoration task
+
+- Firebase rules, backend/cloud functions, Stripe/payments/payment status, StaffScheduling, Calendar exposure, employee assignment, route optimization, payroll, training, mobile, Customer Portal expansion, pricing editor, broad Settings, recurring automation, and delete/cascade behavior.
+
+#### Validation
+
+- Baseline before audit: ESLint passed; full Vitest passed 132/132 across 23 files; production build passed with existing Node `--localstorage-file`, Vite ineffective dynamic-import, and large-chunk warnings.
+- Final validation after this documentation-only audit: ESLint passed; full Vitest passed 132/132 across 23 files; production build passed with the existing Node `--localstorage-file`, Vite ineffective dynamic-import, and large-chunk warnings.
+
+#### Next recommended task
+
+Implement Stage A only: fix booking customer name display for admin-created estimate bookings with focused conversion/display tests. Do not expose edit/reschedule/status, Calendar, StaffScheduling, payment status, or assignment in that pass.
+
 ### Aunt B Pricing Profile Tenant Configuration — June 29, 2026
 
 **Status:** Tenant configuration completed with mixed results - Tenant A correctly using Aunt B profile, Tenant B showing legacy pricing despite configuration.
