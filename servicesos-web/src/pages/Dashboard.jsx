@@ -442,7 +442,7 @@ export default function Dashboard() {
           <StatCard label="Total leads"   value={totalLeads}             sub="All time" />
           <StatCard label="New leads"     value={newLeads}               sub="Need follow-up" />
           <StatCard label="Booked jobs"   value={bookedLeads.length}     sub={`${conversionRate}% conversion`} />
-          <StatCard label="Confirmed revenue" value={`$${revenue.toLocaleString()}`} sub="From booked jobs" accent />
+          <StatCard label="Booked revenue" value={`$${revenue.toLocaleString()}`} sub="Expected from booked jobs" accent />
           <StatCard label="Pipeline value"    value={`$${Math.round(pipeline).toLocaleString()}`} sub="Avg of all ranges" />
         </div>
 
@@ -450,8 +450,8 @@ export default function Dashboard() {
         <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, marginBottom: 32 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 600, color: "#111827" }}>Revenue (14 days)</div>
-              <div style={{ fontSize: 13, color: "#9ca3af" }}>Scheduled booked jobs by appointment date</div>
+              <div style={{ fontSize: 16, fontWeight: 600, color: "#111827" }}>Booked revenue (14 days)</div>
+              <div style={{ fontSize: 13, color: "#9ca3af" }}>Expected revenue by scheduled job date</div>
             </div>
             <div style={{ fontSize: 22, fontWeight: 700, color: "#1d4ed8" }}>${revenue.toLocaleString()}</div>
           </div>

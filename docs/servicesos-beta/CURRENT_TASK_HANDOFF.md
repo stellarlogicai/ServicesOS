@@ -2319,6 +2319,94 @@ Final validation to be rerun after this documentation update before commit.
 
 Run optional Tenant B manual payment-status edit isolation sanity, then decide whether Aunt B V1 needs Dashboard wording cleanup for booked/expected revenue. Keep Stripe/payment collection/payment links/refunds and Dashboard paid revenue deferred unless explicitly scoped.
 
+### Dashboard Booked Revenue Wording — June 30, 2026
+
+#### Status
+
+Payment Stage P5 implemented as wording/display cleanup only.
+
+Dashboard revenue calculations were not changed. The Dashboard still derives the dollar amount from booked leads and `lead.booking.agreedPrice`. No paid revenue metric, payment collection metric, payment-status rollup, Stripe read, payment-record read, lead write, booking write, customer write, or schema change was added.
+
+#### Wording changed
+
+Updated `servicesos-web/src/pages/Dashboard.jsx`:
+
+- `Confirmed revenue` → `Booked revenue`
+- `From booked jobs` → `Expected from booked jobs`
+- `Revenue (14 days)` → `Booked revenue (14 days)`
+- `Scheduled booked jobs by appointment date` → `Expected revenue by scheduled job date`
+
+The new wording is intended to make clear that the Dashboard amount is expected/booked revenue, not money already paid or collected.
+
+#### Calculation unchanged
+
+The existing Dashboard logic remains:
+
+- booked job count: leads where `status === "booked"`
+- booked revenue total: sum of `lead.booking.agreedPrice || 0` for booked leads
+- chart buckets: booked leads grouped by `booking.scheduledAt`
+
+Dashboard does not read booking `paymentStatus`.
+Dashboard does not read payment records.
+Dashboard does not calculate paid, unpaid, collected, refunded, deposit, balance, or Stripe revenue.
+
+#### No payment/Stripe changes
+
+No Stripe, Stripe Connect, payment intents, checkout sessions, payment links, refunds, invoices, Tap to Pay, Customer Portal payments, backend payment functions, Firebase rules, customer records, lead records, booking records, payment records, or global payment collections were changed.
+
+Manual payment status display/edit behavior in Bookings remains unchanged.
+
+#### Tests added/updated
+
+Updated `servicesos-web/src/__tests__/DashboardPendingQuoteReview.test.jsx` to cover:
+
+- Dashboard shows `Booked revenue`.
+- Dashboard no longer shows `Confirmed revenue`.
+- Dashboard subtext says `Expected from booked jobs`.
+- Chart title says `Booked revenue (14 days)`.
+- Chart subtext says `Expected revenue by scheduled job date`.
+- Existing booked job count and `$245` booked total remain unchanged in the focused fixture.
+
+#### Manual Tenant A result
+
+Tenant A manual browser verification passed:
+
+- Approved nav showed Dashboard, Create Estimate, Customers, and Bookings.
+- Dashboard did not show `Confirmed revenue`.
+- Dashboard showed `Booked revenue`.
+- Dashboard supporting text used expected/booked language, not paid/collected language.
+- Booked job count and dollar amount still displayed.
+- Bookings opened.
+- Booking detail still showed manual payment status display/edit.
+- No Pay, Refund, Stripe checkout, payment-link, invoice, or collect-payment controls appeared.
+- Returned to Dashboard successfully.
+
+#### Tenant B result
+
+Skipped. Tenant B manual verification was not required for this wording-only pass. Do not treat Tenant B payment-status isolation sanity as passed by this P5 work.
+
+#### Console warnings/errors
+
+Manual browser console check was clean during the Tenant A Dashboard and Bookings verification.
+
+#### Validation
+
+- Baseline before changes: `npm run lint`, `npm run test -- --run`, and `npm run build` passed.
+- Final validation after changes: `npm run lint`, `npm run test -- --run`, and `npm run build` passed.
+- Known non-blocking warnings remain: Vitest `--localstorage-file` warning and existing Vite dynamic import/chunk-size warnings.
+
+#### Remaining limitations
+
+- Dashboard still has no paid revenue metric.
+- Dashboard still has no paid/unpaid breakdown.
+- Dashboard still does not sync lead-derived booked revenue with manual booking payment status.
+- Manual payment status remains booking-local owner/admin tracking only.
+- Stripe/payment collection/payment links/refunds/invoices remain deferred.
+
+#### Recommended next task
+
+Run optional Tenant B manual payment-status edit isolation sanity if needed, then begin the next Aunt B V1 beta hardening item with the same narrow scope. Do not implement paid revenue, Stripe, payment links, refunds, invoices, or Customer Portal payments unless explicitly scoped.
+
 ### Duplicate Customer Prevention — June 30, 2026
 
 #### Status

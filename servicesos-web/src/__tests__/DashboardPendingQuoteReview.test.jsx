@@ -141,6 +141,14 @@ describe('Dashboard pending quote review', () => {
     expect(screen.getByRole('button', { name: 'Approve / Create Booking' })).toBeInTheDocument();
     expect(screen.getByText('Total leads').nextElementSibling).toHaveTextContent('2');
     expect(screen.getByText('Booked jobs').nextElementSibling).toHaveTextContent('1');
+    expect(screen.getByText('Booked revenue').nextElementSibling).toHaveTextContent('$245');
+    expect(screen.getByText('Expected from booked jobs')).toBeInTheDocument();
+    expect(screen.getByText('Booked revenue (14 days)')).toBeInTheDocument();
+    expect(screen.getByText('Expected revenue by scheduled job date')).toBeInTheDocument();
+    expect(screen.queryByText('Confirmed revenue')).not.toBeInTheDocument();
+    expect(screen.queryByText('From booked jobs')).not.toBeInTheDocument();
+    expect(screen.queryByText('Revenue (14 days)')).not.toBeInTheDocument();
+    expect(screen.queryByText('Scheduled booked jobs by appointment date')).not.toBeInTheDocument();
     expect(screen.getAllByText('$245').length).toBeGreaterThan(0);
     expect(dashboardMocks.checkInsuranceExpiration).not.toHaveBeenCalled();
     expect(dashboardMocks.getRemainingCredits).not.toHaveBeenCalled();
