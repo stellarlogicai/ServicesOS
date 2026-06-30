@@ -1529,6 +1529,89 @@ No Stage C2b booking-edit console error was observed during the successful Tenan
 
 Complete manual sign-out/re-login persistence verification for Tenant A without logging credentials, then run optional Tenant B sanity. Do not expose price/status controls until Dashboard/lead sync is explicitly designed.
 
+### Limited Booking Edit Persistence Verification — June 30, 2026
+
+#### Status
+
+Verification-only pass completed for Stage C2b limited booking edit persistence.
+
+#### Tenant A re-login persistence result
+
+Tenant A/Aunt B admin was verified through a manual/human-assisted login path with no password written to docs, tests, commits, logs, or reports.
+
+First manual re-login check:
+
+- Dashboard loaded after manual login.
+- Approved admin nav was visible: Dashboard, Create Estimate, Customers, Bookings.
+- Opened Bookings.
+- Opened details for `Customer Name Display Smoke 0630`.
+- Confirmed persisted schedule: `Jul 4, 2026, 10:15 AM`.
+- Confirmed persisted notes: `Stage C2b manual verification date time notes 0630.`
+- Confirmed `Edit Date & Notes` still appeared.
+- Signed out.
+- Login screen appeared and tenant data cleared.
+
+Second manual re-login check:
+
+- Dashboard loaded after manual login.
+- Opened Bookings again.
+- Reopened details for `Customer Name Display Smoke 0630`.
+- Confirmed persisted schedule remained `Jul 4, 2026, 10:15 AM`.
+- Confirmed persisted notes remained `Stage C2b manual verification date time notes 0630.`
+
+#### Tenant B sanity result
+
+Tenant B sanity was skipped in this verification pass. Reason: Tenant B was optional for this pass, and no manual Tenant B login was provided during the verification window. Do not treat Tenant B Stage C2b edit sanity as passed.
+
+Existing prior tenant isolation remains the current tenant-safety baseline:
+
+- Tenant A/B Customers isolation was verified previously.
+- Bookings tenant-specific visibility was verified previously.
+
+#### Forbidden controls confirmation
+
+During Tenant A detail/edit verification, no forbidden booking mutation controls were observed:
+
+- no price edit
+- no status edit
+- no payment controls
+- no delete/cancel booking controls
+- no assignment controls
+- no refund controls
+- no reschedule workflow controls
+
+The only edit action visible in booking details was `Edit Date & Notes`.
+
+#### Console warnings/errors
+
+Console showed the known earlier local email warning:
+
+- `[EMAIL] sendQuoteEmail failed: Failed to fetch`
+
+No Stage C2b booking-edit console errors were observed during the re-login persistence verification.
+
+#### Validation
+
+Baseline before verification:
+
+- `npm run lint` initially exited nonzero with no rendered ESLint failure output.
+- Direct `npx eslint . --format stylish` passed.
+- Re-running `npm run lint` passed.
+- `npm run test -- --run` passed 163/163 across 24 files with the known `--localstorage-file` warning.
+- `npm run build` passed with existing Vite dynamic import/chunk-size warnings.
+
+Final validation to be rerun after this documentation update before commit.
+
+#### Remaining limitations
+
+- Tenant B Stage C2b edit sanity remains skipped, not passed.
+- Price/status edits remain deferred until Dashboard/lead synchronization is designed.
+- No payment, assignment, delete/cancel, reschedule workflow, Calendar, StaffScheduling, Settings, or Customer Portal expansion was added.
+
+#### Recommended next task
+
+Run optional Tenant B limited booking edit sanity with manual Tenant B login, then proceed to the next Aunt B V1 restore-and-harden task. Keep price/status edits deferred until Dashboard/lead sync is explicitly designed.
+
 ### Aunt B Pricing Profile Tenant Configuration — June 29, 2026
 
 **Status:** Tenant configuration completed with mixed results - Tenant A correctly using Aunt B profile, Tenant B showing legacy pricing despite configuration.
