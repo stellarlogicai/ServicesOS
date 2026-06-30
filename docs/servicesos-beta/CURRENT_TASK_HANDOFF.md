@@ -2654,3 +2654,31 @@ Run optional Tenant B duplicate-prevention sanity with manual Tenant B login. Af
 #### Recommended next task
 
 Deploy the committed UI polish to a Netlify preview and repeat the Dashboard/sidebar smoke check at the deployed production viewport before promoting it.
+
+### Mobile Menu Scroll Artifact — June 30, 2026
+
+**Status:** Step 8b fixed and manually verified for Tenant A.
+
+#### Root cause and fix
+
+- The mobile menu toggle and the Dashboard sticky header both used `z-index: 100`. Once the page scrolled, the later-painted header covered most of the fixed toggle and left only a blue strip visible.
+- The toggle now has a dedicated fixed-size CSS class, explicit border/background/shadow, contained overflow, mobile-menu accessibility attributes, and an inset `:focus-visible` outline.
+- Its layer is above the Dashboard sticky header. The mobile Dashboard header reserves the toggle's top-left space so the control does not overlap the Dashboard logo.
+- Desktop sidebar behavior and desktop Dashboard header spacing remain unchanged.
+
+#### Regression coverage and manual verification
+
+- Added focused router coverage for the accessible mobile menu open/close state and approved admin navigation.
+- At narrow width and after scrolling to `scrollY 631`, the complete 44×44 toggle remained fixed at `(16, 16)` with no strip or clipping.
+- The toggle remained clickable and opened/closed the sidebar.
+- Approved navigation remained Dashboard, Create Estimate, Customers, and Bookings only.
+- At 1440×900, the mobile toggle remained hidden, the 220px sticky desktop sidebar remained unchanged, and Dashboard header padding remained 24px.
+- Browser console contained no warnings or errors during the check.
+
+#### Remaining limitations
+
+- The responsive check covered the current in-app narrow viewport and a 1440×900 desktop viewport; a deployed mobile-device smoke check remains recommended after release.
+
+#### Recommended next task
+
+Deploy the UI polish commits to a Netlify preview and repeat the Dashboard/sidebar/mobile-toggle smoke check before promoting to production.

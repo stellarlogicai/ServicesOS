@@ -158,6 +158,30 @@ describe('App onboarding router context', () => {
     expect(authState.logout).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the mobile menu toggle accessible and limited to approved admin navigation', () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 600 });
+    authState.userProfile = { uid: 'admin-test', onboardingCompleted: true };
+
+    const { unmount } = render(<App />);
+    const menuToggle = screen.getByRole('button', { name: 'Open navigation menu' });
+
+    expect(menuToggle).toHaveClass('mobile-menu-toggle');
+    expect(menuToggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(menuToggle);
+
+    expect(screen.getByRole('button', { name: 'Close navigation menu' })).toHaveAttribute('aria-expanded', 'true');
+    ['Dashboard', 'Create estimate', 'Customers', 'Bookings'].forEach(label => {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Settings')).not.toBeInTheDocument();
+    expect(screen.queryByText('Payment links')).not.toBeInTheDocument();
+
+    unmount();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
+  });
+
   it('does not expose deferred wife-beta modules to a completed normal admin through nav or direct paths', () => {
     authState.userProfile = { uid: 'admin-test', onboardingCompleted: true };
 

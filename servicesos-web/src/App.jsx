@@ -353,10 +353,14 @@ function AuthenticatedApp() {
     <div style={{ display: "flex", minHeight: "100vh", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", background: "#f8fafc" }}>
       {/* Mobile hamburger */}
       <button
+        type="button"
+        className="mobile-menu-toggle"
+        aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+        aria-expanded={mobileMenuOpen}
         onClick={() => setMobileMenuOpen(o => !o)}
-        style={{ display: isMobile ? "block" : "none", position: "fixed", top: 16, left: 16, zIndex: 100, background: "linear-gradient(135deg, #3b82f6, #1d4ed8)", color: "white", border: "none", borderRadius: 8, padding: "12px", cursor: "pointer", fontSize: 20, boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}
+        style={{ display: isMobile ? "inline-flex" : "none" }}
       >
-        {mobileMenuOpen ? "✕" : "☰"}
+        <span aria-hidden="true">{mobileMenuOpen ? "✕" : "☰"}</span>
       </button>
 
       {mobileMenuOpen && isMobile && (
