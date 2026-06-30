@@ -643,3 +643,70 @@ When Aunt B’s tenant is configured with the pricing profile ID, Create Estimat
 #### Next recommended step
 
 Configure Aunt B’s actual beta tenant with `pricingProfileId: "aunt-bs-cleaning-services"` in the real tenant document or equivalent tenant profile metadata, then run one human Create Estimate pass and confirm the visible range matches the structured profile. Do not build a Settings editor or deferred pricing-management UI yet.
+
+### Aunt B Pricing Profile Tenant Configuration — June 29, 2026
+
+**Status:** Tenant configuration completed with mixed results - Tenant A correctly using Aunt B profile, Tenant B showing legacy pricing despite configuration.
+
+#### Configuration Applied
+
+- **Tenant A (test.owner@gmail.com)**: Added `pricingProfileId: "aunt-bs-cleaning-services"` to tenant document
+- **Tenant B (test.ownerb@gmail.com)**: Added `pricingProfileId: "aunt-bs-cleaning-services"` to tenant document
+
+#### Smoke Test Results
+
+**Tenant A (Test Cleaning Services) - Aunt B Profile Active:**
+- Customer: "Pricing Smoke Customer 0629"
+- Service: Standard Clean, One-Time
+- Property: 3 bed, 2 bath, 1 kitchen, 1 living room
+- Condition: Normal clutter, Monthly cleaning, No pets, Rural market
+- **Pricing Result: $190 - $220** (4.5 hours labor)
+- **Status:** ✅ Matches expected Aunt B profile anchors (low ~$190, high ~$220)
+- Estimate saved successfully with notification status: "Estimate saved successfully. Customer notification could not be sent."
+- Booking conversion: Successfully converted to booking at $190 agreed price
+- Booking persisted and visible in Bookings list
+
+**Tenant B (test1) - Unexpected Legacy Pricing:**
+- Customer: "Fallback Test Customer 0629"
+- Service: Standard Clean, One-Time
+- Property: 3 bed, 2 bath, 1 kitchen, 1 living room
+- Condition: Normal clutter, Monthly cleaning, No pets, Rural market
+- **Pricing Result: $180 - $225** (4.5 hours labor)
+- **Status:** ⚠️ Does NOT match Aunt B profile anchors (expected $190 - $220)
+- Estimate saved successfully with notification status: "Estimate saved successfully. Customer notification could not be sent."
+
+#### Analysis
+
+**Tenant A Success:**
+- The Aunt B pricing profile is correctly activated for Tenant A
+- Pricing matches the expected anchors defined in `pricingProfiles.js`
+- Estimate save, persistence, and booking conversion work as expected
+- No booking or payment auto-creation occurred (manual booking required)
+
+**Tenant B Discrepancy:**
+- Despite manual configuration of `pricingProfileId: "aunt-bs-cleaning-services"`, Tenant B is using legacy/default pricing ($180 - $225)
+- This suggests either:
+  1. The tenant document configuration was not applied correctly to Tenant B
+  2. There's a caching issue with tenant data loading
+  3. The profile detection logic has an edge case for this specific tenant
+- Further investigation needed to determine why Tenant B is not using the Aunt B profile
+
+#### Profile Detection Logic Confirmed
+
+- Primary field: `tenant.pricingProfileId`
+- Secondary field: `tenant.pricingProfile.id`
+- Fallback: Normalized business name matching
+- Detection occurs in `getPricingProfileForTenant()` in `pricingProfiles.js`
+- Integration point in `AIPhotoEstimateSystem.jsx` line 167
+
+#### Console Errors (Non-blocking)
+
+- Email notification failures due to CORS policy on Resend API (expected in local development)
+- No product code errors related to pricing profile detection or calculation
+
+#### Next Steps
+
+1. Investigate why Tenant B is not using the Aunt B profile despite configuration
+2. Verify Tenant B tenant document actually has the `pricingProfileId` field in Firestore
+3. Consider adding tenant data refresh or cache invalidation if needed
+4. Once Tenant B pricing is corrected, repeat smoke test to confirm
