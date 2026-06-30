@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '../core/customers/customerService';
 import { useAuth } from '../contexts/AuthContext';
 
+const DUPLICATE_CUSTOMER_MESSAGE = 'Possible duplicate customer found. A customer with this email or phone already exists. Please review the existing customer before creating another record.';
+
 export default function CustomerManagement() {
   const { currentTenant } = useAuth();
   const [customers, setCustomers] = useState([]);
@@ -11,6 +13,8 @@ export default function CustomerManagement() {
   const [showModal, setShowModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -64,6 +68,7 @@ export default function CustomerManagement() {
   }, [loadCustomers]);
 
   const handleInputChange = (e) => {
+    setFormError('');
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
@@ -75,8 +80,15 @@ export default function CustomerManagement() {
       return;
     }
 
+    const duplicate = findDuplicateCustomer(customers, formData, editingCustomer?.id);
+    if (duplicate) {
+      setFormError(DUPLICATE_CUSTOMER_MESSAGE);
+      return;
+    }
+
     try {
       let result;
+      setSaving(true);
       
       if (editingCustomer) {
         // Update existing customer
@@ -89,6 +101,7 @@ export default function CustomerManagement() {
       if (result.success) {
         setShowModal(false);
         setEditingCustomer(null);
+        setFormError('');
         setFormData({
           name: '', email: '', phone: '', address: '',
           city: '', state: '', zip: '', notes: ''
@@ -100,11 +113,14 @@ export default function CustomerManagement() {
     } catch (error) {
       console.error('Error saving customer:', error);
       alert('Error saving customer: ' + error.message);
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleEdit = (customer) => {
     setEditingCustomer(customer);
+    setFormError('');
     setFormData({
       name: customer.name || '',
       email: customer.email || '',
@@ -206,6 +222,7 @@ export default function CustomerManagement() {
         <button
           onClick={() => {
             setEditingCustomer(null);
+            setFormError('');
             setFormData({
               name: '', email: '', phone: '', address: '',
               city: '', state: '', zip: '', notes: ''
@@ -339,6 +356,17 @@ export default function CustomerManagement() {
             </h2>
             
             <form onSubmit={handleSubmit}>
+              {formError && (
+                <div role="alert" style={{ marginBottom: '16px', padding: '12px', border: '1px solid #fde68a', background: '#fffbeb', color: '#92400e', borderRadius: '8px', fontSize: '14px' }}>
+                  <div>{formError}</div>
+                  {findDuplicateCustomer(customers, formData, editingCustomer?.id) && (
+                    <div style={{ marginTop: '8px' }}>
+                      Existing customer: {findDuplicateCustomer(customers, formData, editingCustomer?.id).name || 'Unnamed customer'}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
                   Name *
@@ -508,6 +536,7 @@ export default function CustomerManagement() {
                   onClick={() => {
                     setShowModal(false);
                     setEditingCustomer(null);
+                    setFormError('');
                     setFormData({
                       name: '', email: '', phone: '', address: '',
                       city: '', state: '', zip: '', notes: ''
@@ -528,19 +557,20 @@ export default function CustomerManagement() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving}
                   style={{
                     padding: '10px 20px',
-                    background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+                    background: saving ? '#93c5fd' : 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
                     color: 'white',
                     border: 'none',
                     borderRadius: '8px',
                     fontSize: '14px',
                     fontWeight: '600',
-                    cursor: 'pointer',
+                    cursor: saving ? 'not-allowed' : 'pointer',
                     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                   }}
                 >
-                  {editingCustomer ? 'Update Customer' : 'Add Customer'}
+                  {saving ? 'Saving...' : editingCustomer ? 'Update Customer' : 'Add Customer'}
                 </button>
               </div>
             </form>
@@ -549,4 +579,33 @@ export default function CustomerManagement() {
       )}
     </div>
   );
+}
+
+function normalizeCustomerEmail(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function normalizeCustomerPhone(value) {
+  if (typeof value !== 'string') return '';
+  const digits = value.replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function findDuplicateCustomer(customers, proposedCustomer, currentCustomerId) {
+  const proposedEmail = normalizeCustomerEmail(proposedCustomer?.email);
+  const proposedPhone = normalizeCustomerPhone(proposedCustomer?.phone);
+
+  if (!proposedEmail && !proposedPhone) return null;
+
+  return customers.find(customer => {
+    if (!customer || customer.id === currentCustomerId) return false;
+
+    const existingEmail = normalizeCustomerEmail(customer.email);
+    const existingPhone = normalizeCustomerPhone(customer.phone);
+
+    return (
+      (proposedEmail && existingEmail && proposedEmail === existingEmail) ||
+      (proposedPhone && existingPhone && proposedPhone === existingPhone)
+    );
+  }) || null;
 }

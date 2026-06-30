@@ -1612,6 +1612,144 @@ Final validation to be rerun after this documentation update before commit.
 
 Run optional Tenant B limited booking edit sanity with manual Tenant B login, then proceed to the next Aunt B V1 restore-and-harden task. Keep price/status edits deferred until Dashboard/lead sync is explicitly designed.
 
+### Duplicate Customer Prevention — June 30, 2026
+
+#### Status
+
+Implemented a small tenant-local duplicate prevention layer in the owner/admin Customers flow.
+
+This was implemented because the existing Customers UI already loads the active tenant customer list into memory, so obvious duplicate checks could be done locally with no new Firestore queries, no Firebase rules changes, no backend changes, and no Customer Portal changes.
+
+#### Files audited
+
+- `servicesos-web/src/components/CustomerManagement.jsx`
+- `servicesos-web/src/core/customers/customerService.js`
+- `servicesos-web/src/__tests__/CustomerManagementSafetyGate.test.jsx`
+- `servicesos-web/src/__tests__/customerServiceSafetyGate.test.js`
+- `servicesos-web/src/__tests__/customerPortalIdentityService.test.js`
+- `servicesos-web/src/__tests__/CustomerPortalQuoteSubmit.test.jsx`
+- `servicesos-web/src/__tests__/AppOnboardingRouter.test.jsx`
+
+#### Current add/edit flow
+
+- Customer list is loaded in `CustomerManagement.jsx` via `getCustomers(currentTenant.id)`.
+- The service reads only from `tenants/{tenantId}/customers`.
+- Customer creation happens in `CustomerManagement.jsx` via `createCustomer(currentTenant.id, formData)`.
+- Customer editing happens in `CustomerManagement.jsx` via `updateCustomer(currentTenant.id, editingCustomer.id, formData)`.
+- The component already has the active tenant customer list in memory when adding/editing.
+- The service layer does not perform duplicate checks.
+- The UI previously allowed repeated/duplicate customer creation if the browser/user submitted a customer with the same email/phone.
+- Edit service still preserves hidden linkage metadata by merging existing document data with visible fields.
+- Hard delete remains blocked by `CUSTOMER_DELETE_BLOCKED`.
+- Loading uses an explicit loading state, load error state, and retry button.
+
+#### Duplicate detection strategy
+
+Duplicate detection is local to the active tenant customer list already loaded in `CustomerManagement.jsx`.
+
+No global lookup is performed.
+No cross-tenant lookup is performed.
+No merge/delete/archive behavior is performed.
+Existing duplicate records are not mutated.
+
+#### Normalization rules
+
+- Email: `trim()` and lowercase.
+- Phone: strip non-digits; if more than 10 digits are present, compare the last 10 digits.
+
+#### Add-flow behavior
+
+On add:
+
+- If the proposed email matches an existing active-tenant customer email, creation is blocked.
+- If the proposed phone matches an existing active-tenant customer phone, creation is blocked.
+- The create service is not called when a duplicate is found.
+- The modal stays open and shows:
+  - `Possible duplicate customer found. A customer with this email or phone already exists. Please review the existing customer before creating another record.`
+  - the matched existing customer name when available.
+
+#### Edit-flow behavior
+
+On edit:
+
+- The current customer ID is ignored, so editing a customer without changing email/phone does not flag itself as duplicate.
+- If the edited email/phone matches another active-tenant customer, update is blocked.
+- The update service is not called when a duplicate is found.
+- Existing hidden linkage metadata preservation remains covered by service tests.
+
+#### Tests added/updated
+
+Updated `servicesos-web/src/__tests__/CustomerManagementSafetyGate.test.jsx` to cover:
+
+- Unique customer add still calls `createCustomer(...)`.
+- Duplicate email add is blocked with case/whitespace normalization.
+- Duplicate phone add is blocked with formatting normalization.
+- Editing without changing email/phone does not self-match.
+- Editing to another customer email is blocked.
+- Editing to another customer phone is blocked.
+- Duplicate block does not call create/update service.
+- Existing safe-delete behavior remains unchanged.
+- Existing metadata-preserving edit path remains covered.
+
+Focused related validation passed across Customers, customer service safety gate, Customer Portal identity, Customer Portal quote submit, and admin route visibility tests.
+
+#### Manual Tenant A result
+
+Tenant A/Aunt B admin manual verification passed:
+
+- Approved nav remained Dashboard, Create Estimate, Customers, and Bookings.
+- Opened Customers.
+- Existing duplicate `Golden Path Customer 0629` records were visible from prior testing; the new prevention does not mutate existing duplicate records.
+- Added `Duplicate Check Unique 0630`; save succeeded.
+- Attempted add with the same email using different casing; duplicate warning appeared and no duplicate was created.
+- Attempted add with the same phone using different formatting; duplicate warning appeared and no duplicate was created.
+- Edited the original unique customer name/notes without changing email/phone; edit succeeded.
+- Attempted to edit another customer to the unique customer email; duplicate warning appeared and edit was blocked.
+- Attempted to edit another customer to the unique customer phone; duplicate warning appeared and edit was blocked.
+- Refreshed Customers; `Duplicate Check Unique 0630 Edited` appeared once.
+- Duplicate email/phone attempt records did not appear after refresh.
+- Signed out; login screen appeared and tenant data cleared.
+- Re-logged in manually without logging password; `Duplicate Check Unique 0630 Edited` persisted once.
+- Tenant B customer `Tenant B Isolation Customer 0627` was not visible in Tenant A.
+
+#### Tenant B sanity result
+
+Tenant B sanity was skipped in this pass. Reason: Tenant B login was optional and no manual Tenant B login was provided during the verification window. Do not treat Tenant B duplicate-prevention sanity as passed.
+
+#### Console warnings/errors
+
+Console showed only the known earlier local email warning:
+
+- `[EMAIL] sendQuoteEmail failed: Failed to fetch`
+
+No Customers duplicate-prevention console errors were observed.
+
+#### Validation
+
+Baseline before changes:
+
+- `npm run lint` passed.
+- `npm run test -- --run` passed 163/163 across 24 files with the known `--localstorage-file` warning.
+- `npm run build` passed with existing Vite dynamic import/chunk-size warnings.
+
+Focused validation after implementation:
+
+- `CustomerManagementSafetyGate.test.jsx` passed 9/9.
+- Related focused tests passed 25/25 across CustomerManagement, customer service safety gate, Customer Portal identity, Customer Portal quote submit, and admin route visibility.
+
+Final validation to be rerun after this documentation update before commit.
+
+#### Remaining limitations
+
+- Existing duplicate records are not merged, deleted, archived, or cleaned up.
+- Duplicate detection is client-side and based on the currently loaded active-tenant customer list.
+- Tenant B duplicate-prevention sanity remains skipped, not passed.
+- Bulk import, merge tools, archive/soft-delete, global search, and future CRM automation remain deferred.
+
+#### Recommended next task
+
+Run optional Tenant B duplicate-prevention sanity with manual Tenant B login. After that, continue Aunt B V1 restore-and-harden work without expanding into merge/archive/import/future CRM features.
+
 ### Aunt B Pricing Profile Tenant Configuration — June 29, 2026
 
 **Status:** Tenant configuration completed with mixed results - Tenant A correctly using Aunt B profile, Tenant B showing legacy pricing despite configuration.
