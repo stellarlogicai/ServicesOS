@@ -90,4 +90,38 @@ describe('read-only Bookings admin list', () => {
     expect(screen.getByText('$245.00')).toBeInTheDocument();
     expect(screen.getByText('scheduled')).toBeInTheDocument();
   });
+
+  it('displays customerName for admin-created estimate bookings without exposing mutation controls', async () => {
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-admin-created',
+        customerName: 'Customer Name Display Smoke 0630',
+        customerSnapshot: {
+          name: 'Customer Name Display Smoke 0630',
+          email: 'display-smoke@example.com',
+          phone: '555-0630',
+        },
+        address: '630 Display Lane',
+        agreedPrice: 205,
+        date: '2026-07-02',
+        startTime: '09:00',
+        serviceType: 'standard',
+        status: 'scheduled',
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Customer Name Display Smoke 0630' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Unknown customer' })).not.toBeInTheDocument();
+    expect(screen.getByText('630 Display Lane')).toBeInTheDocument();
+    expect(screen.getByText('$205.00')).toBeInTheDocument();
+
+    await waitFor(() => {
+      ['Create', 'Edit', 'Delete', 'Pay', 'Assign', 'Refund', 'Reschedule'].forEach(name => {
+        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+      });
+    });
+  });
 });

@@ -10,6 +10,52 @@ function localDateParts(date) {
   };
 }
 
+function firstText(...values) {
+  return values.find(value => typeof value === 'string' && value.trim())?.trim() || '';
+}
+
+function joinedName(source) {
+  if (!source || typeof source !== 'object') return '';
+  return firstText(
+    source.fullName,
+    source.name,
+    [source.firstName, source.lastName].filter(Boolean).join(' ')
+  );
+}
+
+function buildCustomerDisplaySnapshot(lead) {
+  const name = firstText(
+    lead.customerName,
+    joinedName(lead.customer),
+    joinedName(lead.customerSnapshot),
+    joinedName(lead.formData)
+  );
+  const email = firstText(
+    lead.customer?.email,
+    lead.customerSnapshot?.email,
+    lead.formData?.email
+  );
+  const phone = firstText(
+    lead.customer?.phone,
+    lead.customerSnapshot?.phone,
+    lead.formData?.phone
+  );
+
+  if (!name && !email && !phone) {
+    return { customerName: '', customerSnapshot: lead.customerSnapshot || null };
+  }
+
+  return {
+    customerName: name,
+    customerSnapshot: {
+      ...(lead.customerSnapshot || {}),
+      ...(name ? { name } : {}),
+      ...(email ? { email } : {}),
+      ...(phone ? { phone } : {})
+    }
+  };
+}
+
 export function buildQuoteBookingConversion({
   lead,
   bookingData,
@@ -32,6 +78,7 @@ export function buildQuoteBookingConversion({
   const start = localDateParts(scheduledDate);
   const end = localDateParts(endDate);
   const notes = String(bookingData?.notes || '').trim();
+  const customerDisplay = buildCustomerDisplaySnapshot(lead);
 
   const booking = addSchemaVersion({
     tenantId: lead.tenantId || null,
@@ -40,7 +87,8 @@ export function buildQuoteBookingConversion({
     source: lead.source || 'admin',
     customerId: lead.customerId || null,
     propertyId: lead.propertyId || null,
-    customerSnapshot: lead.customerSnapshot || null,
+    ...(customerDisplay.customerName ? { customerName: customerDisplay.customerName } : {}),
+    customerSnapshot: customerDisplay.customerSnapshot,
     propertySnapshot: lead.propertySnapshot || null,
     requestSnapshot: lead.requestSnapshot || null,
     appointmentRequest: lead.appointmentRequest || null,

@@ -144,6 +144,55 @@ describe('quote booking conversion', () => {
     expect(JSON.stringify(firestoreMocks.set.mock.calls)).not.toContain('payment');
   });
 
+  it('copies admin-created lead formData customer display fields onto the booking', () => {
+    const adminLead = {
+      id: 'lead-admin-manual',
+      tenantId: 'tenant-test',
+      type: 'lead',
+      source: 'admin',
+      status: 'new',
+      formData: {
+        fullName: 'Customer Name Display Smoke 0630',
+        email: 'display-smoke@example.com',
+        phone: '555-0630',
+        address: '630 Display Lane',
+        cleaningType: 'standard'
+      },
+      estimate: {
+        priceLow: 190,
+        priceHigh: 220,
+        appointmentDuration: 3
+      },
+      booking: null
+    };
+
+    const result = buildQuoteBookingConversion({
+      lead: adminLead,
+      bookingData: {
+        scheduledAt: '2026-07-02T14:00:00.000Z',
+        agreedPrice: 205
+      },
+      reviewedBy: 'admin-test',
+      bookingId: 'booking-admin-manual',
+      now: '2026-06-30T12:00:00.000Z'
+    });
+
+    expect(result.booking).toMatchObject({
+      leadId: 'lead-admin-manual',
+      source: 'admin',
+      customerName: 'Customer Name Display Smoke 0630',
+      customerSnapshot: {
+        name: 'Customer Name Display Smoke 0630',
+        email: 'display-smoke@example.com',
+        phone: '555-0630'
+      },
+      address: '630 Display Lane',
+      serviceType: 'standard',
+      agreedPrice: 205,
+      status: 'scheduled'
+    });
+  });
+
   it('rejects conversion without a positive approved price', () => {
     expect(() => buildQuoteBookingConversion({
       lead: pendingLead,

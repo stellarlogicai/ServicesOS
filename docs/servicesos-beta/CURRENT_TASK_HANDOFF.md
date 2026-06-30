@@ -781,6 +781,62 @@ Configure Aunt B’s actual beta tenant with `pricingProfileId: "aunt-bs-cleanin
 
 Implement Stage A only: fix booking customer name display for admin-created estimate bookings with focused conversion/display tests. Do not expose edit/reschedule/status, Calendar, StaffScheduling, payment status, or assignment in that pass.
 
+### Booking Customer Display Fix — June 30, 2026
+
+**Status:** Stage A implemented and manually verified for Tenant A/Aunt B.
+
+#### Root cause
+
+Dashboard Create Booking converts leads into booking documents through `quoteBookingConversionService.js`. Customer Portal quote requests already carry `customerSnapshot`, but admin-created estimates primarily store the display name under `lead.formData.fullName` or first/last name fields. The conversion path did not synthesize `customerName` or a safe customer display snapshot from those admin lead fields, so the read-only Bookings list fell through to `Unknown customer`.
+
+#### Fields added
+
+The booking conversion path now adds customer display data when available from the existing lead payload only:
+
+- `customerName`
+- `customerSnapshot.name`
+- `customerSnapshot.email`
+- `customerSnapshot.phone`
+
+Extraction priority is existing lead/customer snapshot data first, then `lead.formData.fullName`, then `lead.formData.firstName + lead.formData.lastName`. No customer collection lookup, customer mutation, tenant path change, booking ID change, payment behavior, or status behavior was added.
+
+#### Tests added/updated
+
+- `quoteBookingConversionService.test.js` now verifies an admin-created manual estimate lead copies `formData.fullName`, email, and phone into the booking display fields while preserving tenant-scoped conversion behavior.
+- `BookingsList.test.jsx` now verifies a booking with `customerName` displays that customer name instead of `Unknown customer` and still exposes no create/edit/delete/payment/assignment/refund/reschedule controls.
+- Existing incomplete booking fallback coverage still verifies `Unknown customer`.
+- Focused validation passed: quote booking conversion, Bookings list, Dashboard booking, and Create Estimate tests passed 22/22.
+
+#### Manual verification
+
+- Tenant A/Aunt B UI smoke completed with `Customer Name Display Smoke 0630`.
+- Approved admin nav remained limited to Dashboard, Create Estimate, Customers, and Bookings.
+- Manual no-photo/no-AI estimate saved successfully. The optional email notification failed in local dev with a non-blocking manual-contact warning.
+- Saved estimate persisted to Dashboard as a new lead and did not create a booking automatically.
+- Dashboard Create Booking converted the lead to a booking at the expected $190 agreed price.
+- Read-only Bookings displayed `Customer Name Display Smoke 0630` instead of `Unknown customer`.
+- Schedule, address, and price displayed as `Jul 3, 2026, 9:00 AM`, `630 Display Smoke Lane`, and `$190.00`.
+- Browser reload returned to Dashboard, and reopening Bookings still showed the customer name.
+- Sign-out cleared tenant data from the visible UI. Re-login as Tenant A reloaded Dashboard and Bookings with the smoke booking still showing the customer name.
+- Bookings still exposed no edit, delete, payment, assignment, refund, or reschedule controls.
+- Optional Tenant B sanity was not run in this Stage A pass; prior Customers and Bookings tenant isolation remains the current tenant-isolation baseline.
+- Console result: only known local notification warning, `[EMAIL] sendQuoteEmail failed: Failed to fetch`; no permission-denied, crash, booking display, or tenant/auth errors were captured.
+
+#### Remaining limitations
+
+- This pass fixes customer display data for new bookings only. Existing bookings that were already created without customer display fields may still show `Unknown customer`.
+- Booking detail, edit, reschedule, status update, cancel, payment status, employee assignment, Calendar, StaffScheduling, and recurring automation remain deferred.
+
+#### Validation
+
+- Baseline before changes: ESLint passed; full Vitest passed 132/132 across 23 files; production build passed with existing warnings.
+- Focused validation after code/test updates: 22/22 passed across 4 files.
+- Final full validation after manual verification: ESLint passed; full Vitest passed 134/134 across 23 files with the known `--localstorage-file` warning; production build passed with existing Vite dynamic import/chunk-size warnings.
+
+#### Recommended next task
+
+After final validation and commit, proceed to Stage B only: a read-only booking detail view showing customer, contact, address, service, date/time, price, status, and notes. Do not expose edit/reschedule/status controls yet.
+
 ### Aunt B Pricing Profile Tenant Configuration — June 29, 2026
 
 **Status:** Tenant configuration completed with mixed results - Tenant A correctly using Aunt B profile, Tenant B showing legacy pricing despite configuration.
