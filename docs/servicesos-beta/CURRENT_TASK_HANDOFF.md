@@ -929,6 +929,227 @@ Booking edit, reschedule, status update, cancel/delete, payment status, payment 
 
 Continue Aunt B V1 restore-and-harden with the next approved owner/admin beta blocker or verification pass. Do not expose edit/reschedule/status controls, Calendar, StaffScheduling, payments, assignment, Settings, or future modules without explicit approval.
 
+### Limited Booking Edit Audit — June 30, 2026
+
+**Status:** Audit-only Stage C pass completed. No booking edit, reschedule, status, delete, payment, assignment, Calendar, StaffScheduling, Settings, Customer Portal expansion, or future-module UI was exposed.
+
+#### Files audited
+
+- `servicesos-web/src/components/BookingsList.jsx`
+- `servicesos-web/src/components/bookingDisplay.js`
+- `servicesos-web/src/core/scheduling/schedulingService.js`
+- `servicesos-web/src/pages/Dashboard.jsx`
+- `servicesos-web/src/services/quoteBookingConversionService.js`
+- `servicesos-web/src/__tests__/BookingsList.test.jsx`
+- `servicesos-web/src/__tests__/DashboardPendingQuoteReview.test.jsx`
+- `servicesos-web/src/__tests__/quoteBookingConversionService.test.js`
+- `servicesos-web/src/__tests__/bookingAdminListAudit.test.js`
+- `servicesos-web/src/__tests__/AppOnboardingRouter.test.jsx`
+- Deferred/risk reference only: `CalendarView.jsx`, `StaffScheduling.jsx`, `customerPortalService.js`, `JobCompletion.jsx`
+
+#### Current booking document shape
+
+Dashboard Create Booking writes booking documents through `approveQuoteRequestAndCreateBooking()` and `buildQuoteBookingConversion()` under:
+
+- `tenants/{tenantId}/bookings/{bookingId}`
+
+Current booking fields written by the conversion path:
+
+- `tenantId`: copied from the active tenant
+- `leadId` / `sourceLeadId`: source lead linkage
+- `source`: lead source, defaulting to `admin`
+- `customerId` / `propertyId`
+- `customerName` when available
+- `customerSnapshot` with safe display fields when available
+- `propertySnapshot`
+- `requestSnapshot`
+- `appointmentRequest`
+- `date`: local `YYYY-MM-DD` from `scheduledAt`
+- `startTime`: local `HH:mm` from `scheduledAt`
+- `endTime`: local `HH:mm`, computed from appointment duration
+- `scheduledAt`: ISO string
+- `agreedPrice`: number
+- `status`: currently `scheduled`
+- `serviceType`
+- `address`
+- `notes`: string, trimmed
+- `createdBy`
+- `createdAt`: ISO string
+- `updatedAt`: ISO string
+- schema version metadata from `addSchemaVersion(..., 'JOB')`
+
+Dashboard also patches the source lead in the same batch:
+
+- `lead.status: "booked"`
+- `lead.booking.bookingId`
+- `lead.booking.scheduledAt`
+- `lead.booking.agreedPrice`
+- `lead.booking.notes`
+- `lead.booking.status`
+- `lead.estimate.priceLow` / `priceHigh` set to agreed price
+- owner-review flags cleared
+- `lead.updatedAt`
+
+Fixtures/tests currently exercise booking statuses including `scheduled`, `completed`, `cancelled`, `in_progress`, and lead statuses including `new`, `quoted`, `booked`, `lost`, `pending_owner_review`, and `pending_review`.
+
+#### Service mutation boundaries
+
+`schedulingService.js` uses the tenant-scoped collection path `tenants/{tenantId}/bookings` for its core booking functions.
+
+- `getJobs(tenantId)`: read-only; requires tenant ID; safe and currently used by Bookings.
+- `getJobsByDate(tenantId, date)`: read-only; requires tenant ID and date; used by hidden/deferred scheduling surfaces; safe as a read, but not needed for Stage C Bookings.
+- `getJobById(tenantId, jobId)`: read-only; requires tenant ID and job ID; safe, but Stage B proved `getJobs(tenantId)` already returns enough detail, so Stage C should avoid a second fetch unless stale-data handling requires it.
+- `createJob(tenantId, jobData)`: writes arbitrary job data and defaults status to `scheduled`; unsafe/deferred for Stage C because owner/admin booking creation already flows through Dashboard quote conversion and this bypasses lead synchronization.
+- `updateJob(tenantId, jobId, jobData)`: writes arbitrary fields plus `updatedAt` and schema version. Usable only behind a strict whitelist wrapper; unsafe if called directly from UI.
+- `updateJobStatus(tenantId, jobId, status)`: writes arbitrary status plus `updatedAt`. Usable only behind approved status validation; unsafe if called directly from UI.
+- `deleteJob(tenantId, jobId)`: destructive booking delete; deferred.
+- `assignEmployeeToJob(tenantId, jobId, employeeId)`: employee assignment; deferred.
+
+Recommended future service boundary is a new narrow wrapper, not direct UI access to broad mutation functions:
+
+```js
+updateBookingAdminFields(tenantId, bookingId, patch)
+```
+
+The wrapper should validate tenant ID, booking ID, allowed fields, date/time normalization, price, status, note length, and should write only tenant-scoped booking fields. It can internally call `updateJob()` only after building a clean whitelisted payload.
+
+#### Dashboard and revenue impact
+
+Dashboard does not currently calculate owner/admin metrics from `tenants/{tenantId}/bookings`. It calculates from leads:
+
+- Booked jobs: `leads.filter(l => l.status === "booked")`
+- Confirmed revenue: sum of `lead.booking.agreedPrice`
+- Revenue chart: booked leads grouped by `lead.booking.scheduledAt`
+- Pipeline: lead estimate low/high values
+
+Impact:
+
+- Editing booking `agreedPrice` alone will not update Dashboard confirmed revenue.
+- Editing booking `scheduledAt`/`date`/`startTime` alone will not move the Dashboard revenue chart.
+- Editing booking `status` alone will not affect Dashboard booked count because booked count is lead-status based.
+- Editing booking notes alone will not update the Dashboard lead drawer unless `lead.booking.notes` is also patched.
+- Patching both booking and source lead may be required for price/date/status/notes consistency, but that adds cross-document mutation risk and should be designed deliberately.
+
+Recommendation:
+
+- Stage C should not start with price/status if Dashboard consistency is required.
+- If price/date/status edits are exposed later, decide whether the source lead snapshot must be patched in the same batch using `sourceLeadId`/`leadId`.
+- Do not silently update customer records, payment records, employee records, or global collections.
+
+#### Safe future field whitelist
+
+Recommended future editable booking fields, with project conventions:
+
+```js
+{
+  date: "YYYY-MM-DD",
+  startTime: "HH:mm",
+  endTime: "HH:mm",
+  scheduledAt: "ISO-8601 string",
+  agreedPrice: number,
+  status: "scheduled" | "completed" | "cancelled",
+  notes: "string",
+  updatedAt: "ISO-8601 string"
+}
+```
+
+Notes:
+
+- `endTime` should be computed from existing booking duration when possible, otherwise from a conservative default such as two hours.
+- `updatedAt` should follow current project convention: `new Date().toISOString()`.
+- `agreedPrice` must be numeric and non-negative. If Dashboard revenue consistency is required, delay price editing until lead synchronization is included and tested.
+- `notes` should remain internal/job notes and should have a length cap.
+- Do not allow customer, tenant, payment, employee, source linkage, schema, createdAt, createdBy, review, appointment request, or customer snapshot edits through Stage C.
+
+#### Status whitelist recommendation
+
+Current safest status values for the owner/admin Bookings UI:
+
+- `scheduled`
+- `completed`
+- `cancelled`
+
+Defer these until display/metric semantics are explicit:
+
+- `confirmed`: not currently used by booking creation; hidden Calendar falls back to grey unless updated.
+- `needs_reschedule`: not currently used by booking creation; Customer Portal reschedule writes a different deferred `jobs` path and separate reschedule fields.
+- `in_progress`: currently appears in StaffScheduling/check-in flows and should remain employee/field-work deferred.
+
+User-facing labels can map as:
+
+- `scheduled` → Booked
+- `completed` → Completed
+- `cancelled` → Cancelled
+
+If the product needs `Confirmed` or `Needs Reschedule`, add them in a separate status semantics pass with Dashboard/Bookings display tests.
+
+#### Deferred component risks
+
+- `CalendarView.jsx` reads `tenants/{tenantId}/bookings` by date/startTime and displays status colors for `scheduled`, `in_progress`, `completed`, and `cancelled`; it also expects employee IDs. Do not expose it for Stage C.
+- `StaffScheduling.jsx` can create jobs, update employee records, and set `in_progress`/`completed`; it imports employee services and is broader than owner/admin booking edits. Do not reuse or expose it for Stage C.
+- `customerPortalService.js` has reschedule request/confirm helpers, but they write to `tenants/{tenantId}/jobs`, not the restored `bookings` path. Do not reuse for Stage C Bookings.
+- `JobCompletion.jsx` writes to `jobs`, storage, photos, reviews, signatures, and AI learning data. It is completion/training workflow scope and remains deferred.
+
+#### Future validation and safety rules
+
+Future Stage C implementation should enforce:
+
+- Active tenant ID required.
+- Booking ID required.
+- Tenant-scoped path only: `tenants/{tenantId}/bookings/{bookingId}`.
+- No global writes.
+- No unknown fields.
+- No employee assignment fields.
+- No payment/refund/status/payment-link fields.
+- No customer mutation.
+- No lead/customer collection writes unless the implementation explicitly handles Dashboard consistency in one tested batch.
+- Date/time normalized before write.
+- `scheduledAt`, `date`, `startTime`, and `endTime` kept internally consistent.
+- Price numeric and non-negative.
+- Status from whitelist only.
+- Notes string length limited.
+- Existing read-only detail fallback still works.
+- Route visibility remains unchanged.
+
+#### Future tests required before exposing mutation UI
+
+1. Edit modal opens from booking detail only after explicit user action.
+2. Only allowed fields appear: date, time, status, agreed price, notes.
+3. Date/time update writes only whitelisted booking fields.
+4. Date/time update keeps `scheduledAt`, `date`, `startTime`, and `endTime` consistent.
+5. Price update writes numeric `agreedPrice` only, or is delayed until lead/Dashboard synchronization is implemented.
+6. Status update accepts only whitelisted statuses.
+7. Invalid status is rejected by helper and is not rendered as an option.
+8. Notes update persists safely and respects length limit.
+9. No payment, assignment, delete/cancel, Customer Portal reschedule, Calendar, or StaffScheduling controls appear.
+10. Tenant ID and booking ID are passed to the update boundary.
+11. Cross-tenant/global writes are impossible through the service helper.
+12. Dashboard/Bookings consistency is tested for any field that Dashboard displays from `lead.booking`.
+13. Read-only detail still works for incomplete bookings.
+14. Route visibility remains unchanged.
+15. Full lint, full tests, and build pass.
+
+#### Recommended implementation split
+
+- **Stage C1:** Add service-level whitelist builder/helper and focused tests only. No UI exposure.
+- **Stage C2:** Add edit modal for date/time and notes only. Update booking document only. Manual Tenant A verification.
+- **Stage C3:** Add status dropdown only for `scheduled`, `completed`, and `cancelled`; keep `confirmed`, `needs_reschedule`, and `in_progress` deferred until semantics are explicit.
+- **Stage C4:** Add price edit only after deciding whether to patch source lead booking/estimate fields in the same batch so Dashboard revenue stays accurate.
+- **Stage C5:** Manual A → B → A verification for tenant isolation, refresh persistence, sign-out/re-login clearing, Dashboard consistency, and no deferred controls.
+
+#### What remains deferred
+
+Booking delete/cancel, broad reschedule workflow, payment status, payment collection, Stripe, Stripe Connect, Tap to Pay, Calendar, StaffScheduling, employee assignment, route optimization, payroll, training, mobile app, Settings, pricing editor, Customer Portal expansion, JobCompletion, AI learning, signatures, photos, and recurring automation remain deferred.
+
+#### Validation
+
+- Baseline before audit documentation: ESLint passed; full Vitest passed 136/136 across 23 files with the known `--localstorage-file` warning; production build passed with existing Vite dynamic import/chunk-size warnings.
+- Final full validation after documentation update: ESLint passed; full Vitest passed 136/136 across 23 files with the known `--localstorage-file` warning; production build passed with existing Vite dynamic import/chunk-size warnings.
+
+#### Clear next prompt recommendation
+
+Implement Stage C1 only: add and test a pure service-level whitelist helper for limited booking admin updates. Do not expose any edit UI yet.
+
 ### Aunt B Pricing Profile Tenant Configuration — June 29, 2026
 
 **Status:** Tenant configuration completed with mixed results - Tenant A correctly using Aunt B profile, Tenant B showing legacy pricing despite configuration.
