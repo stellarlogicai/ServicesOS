@@ -12,6 +12,12 @@ import { formatAmount } from "./services/stripeService";
 import { useAuth } from "./contexts/AuthContext";
 import { getPricingProfileForTenant } from "./core/estimates/pricingProfiles";
 
+const OWNER_EXTRA_KEYS = [
+  "oven", "fridge", "windows", "baseboards", "cabinetsInside", "garageCleaning",
+  "closetOrganization", "pantryOrganization", "laundryRoomCleaning", "basementCleaning",
+  "petWasteRemoval", "blindCleaning", "ceilingFanCleaning", "wallSpotCleaning"
+];
+
 export default function AIPhotoEstimateSystem({
   enablePayments = true,
   onLeadSaved = null
@@ -103,6 +109,14 @@ export default function AIPhotoEstimateSystem({
     } else {
       setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     }
+  };
+
+  const allExtrasSelected = OWNER_EXTRA_KEYS.every((key) => formData.extras[key]);
+  const handleSelectAllExtras = (checked) => {
+    setFormData((current) => ({
+      ...current,
+      extras: Object.fromEntries(OWNER_EXTRA_KEYS.map((key) => [key, checked]))
+    }));
   };
 
   const handleUpload = async e => {
@@ -635,6 +649,16 @@ export default function AIPhotoEstimateSystem({
           <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
             Additional Services
           </h3>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 4, fontWeight: 600 }}>
+            <input
+              type="checkbox"
+              aria-label="Select all additional services"
+              checked={allExtrasSelected}
+              onChange={(event) => handleSelectAllExtras(event.target.checked)}
+              style={{ width: 18, height: 18 }}
+            />
+            <span>Select All</span>
+          </label>
           
           <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, marginTop: 16 }}>Kitchen & Appliances</h4>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 16 }}>

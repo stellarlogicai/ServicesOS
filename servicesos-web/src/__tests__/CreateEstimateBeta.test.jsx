@@ -81,6 +81,27 @@ describe('Create Estimate wife-beta flow', () => {
     );
   });
 
+  it('selects all owner add-ons and allows an individual add-on to be removed', async () => {
+    const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-add-ons' });
+    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    completeRequiredFields();
+
+    fireEvent.click(screen.getByLabelText('Select all additional services'));
+    const oven = screen.getByRole('checkbox', { name: 'Inside Oven (+1h)' });
+    const fridge = screen.getByRole('checkbox', { name: 'Inside Fridge (+0.75h)' });
+    expect(oven).toBeChecked();
+    expect(fridge).toBeChecked();
+    fireEvent.click(oven);
+    expect(screen.getByLabelText('Select all additional services')).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Manual Estimate' }));
+    await screen.findByRole('heading', { name: 'Estimate Results' });
+
+    expect(onLeadSaved.mock.calls[0][0].extras.oven).toBe(false);
+    expect(onLeadSaved.mock.calls[0][0].extras.fridge).toBe(true);
+  });
+
   it('uses an explicit Aunt B pricing profile without changing manual save semantics', async () => {
     mocks.currentTenant = {
       id: 'tenant-aunt-b',

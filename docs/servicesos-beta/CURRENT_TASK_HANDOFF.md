@@ -2682,3 +2682,36 @@ Deploy the committed UI polish to a Netlify preview and repeat the Dashboard/sid
 #### Recommended next task
 
 Deploy the UI polish commits to a Netlify preview and repeat the Dashboard/sidebar/mobile-toggle smoke check before promoting to production.
+
+### Customer Request Safety and Add-On UX — June 30, 2026
+
+**Status:** Workstream A implemented and covered by focused tests; Tenant A admin UI verified. Tenant B and customer-account live submission were not run in this pass.
+
+#### Customer account and request safety
+
+- Open self-signup no longer creates Firebase users or profiles without a tenant. The login screen explains that customer accounts require an invitation and directs quote seekers to the business quote form.
+- No invite-token flow currently exists. This pass safely guards open signup instead of inventing an invitation system; a real tenant-bound invite flow remains follow-up work.
+- Email/password signup now requires a tenant ID before Firebase account creation. First-time Google sign-in without a tenant is signed out and rejected rather than creating a null-tenant profile.
+- Quote requests continue using the established tenant-scoped path `tenants/{tenantId}/leads` with `type: quote_request` and `source: customer-portal`; no global request collection was added.
+- Customers now displays active customer-portal quote requests under **New Customer Requests**. Allowed request actions are limited to `contacted` and `archived`, and the service verifies request type/source before writing only `requestStatus`.
+- Archived requests are omitted from the active request list. Customer CRUD behavior and hard-delete safeguards were not changed.
+
+#### Add-on selection behavior
+
+- The customer request form preselects oven, refrigerator, and baseboard cleaning as recommended options, explains that they can be unchecked, and submits the resulting selected-state payload.
+- Create Estimate now includes an owner/admin **Select All** checkbox for all supported extras. Unchecking an individual extra clears the all-selected state, and only the resulting selected extras are saved.
+- Pricing formulas, Aunt B anchors, booking conversion, and payment behavior were not changed.
+
+#### Verification and coverage
+
+- Focused tests cover guarded signup, no Firebase user creation without a tenant, tenant-scoped request reads/status updates, forbidden status rejection/no write, Customers request rendering/action wiring, customer recommended-option defaults/unchecking/payload, and owner Select All/unchecking/save payload.
+- Tenant A manual check confirmed approved navigation only, the New Customer Requests section, tenant-scoped request details, and a successful `new` to `contacted` update for an existing controlled request.
+- The browser connection timed out during the subsequent reload check, so that manual reload persistence check is recorded as incomplete. Persistence and tenant-scoped reads/writes are covered by focused service tests.
+- Tenant B isolation was not manually rerun in this pass. Existing tenant-scoped service boundaries and tests passed; live A/B request isolation remains a recommended verification step.
+- Customer-side live submission was not performed because no tenant-bound customer invite/session was available. Missing-tenant and save-failure behavior are covered by tests.
+
+#### Remaining risks and recommended next task
+
+- Build a separately approved, tenant-bound customer invitation flow before enabling customer self-registration.
+- Run a controlled tenant-A customer request submission plus Tenant A/B visibility walkthrough, including refresh and archive persistence.
+- After Workstream A is committed and reviewed, begin CalendarView read-only hardening on its separate branch without exposing Calendar navigation.

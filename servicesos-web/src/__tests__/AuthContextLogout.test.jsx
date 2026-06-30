@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   auth: { name: 'test-auth' },
   authStateChanged: null,
   clearCurrentTenantId: vi.fn(),
+  createUserWithEmailAndPassword: vi.fn(),
   firebaseSignOut: vi.fn(),
   getDoc: vi.fn(),
   getTenant: vi.fn(),
@@ -13,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('firebase/auth', () => ({
-  createUserWithEmailAndPassword: vi.fn(),
+  createUserWithEmailAndPassword: mocks.createUserWithEmailAndPassword,
   onAuthStateChanged: vi.fn((_auth, callback) => {
     mocks.authStateChanged = callback;
     return vi.fn();
@@ -68,6 +69,12 @@ function AuthStateProbe() {
   );
 }
 
+function SignupGuardProbe() {
+  const { loading, signup } = useAuth();
+  if (loading) return <div>Loading auth</div>;
+  return <button onClick={() => signup('customer@example.com', 'password', null, 'customer')}>Try orphan signup</button>;
+}
+
 describe('AuthContext logout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -108,6 +115,16 @@ describe('AuthContext logout', () => {
     expect(await screen.findByText('Login state')).toBeInTheDocument();
     expect(screen.queryByText('Tenant dashboard: Tenant A')).not.toBeInTheDocument();
     expect(mocks.clearCurrentTenantId).toHaveBeenCalled();
+  });
+
+  it('rejects signup without a tenant before creating a Firebase user', async () => {
+    render(<AuthProvider><SignupGuardProbe /></AuthProvider>);
+    await act(async () => {
+      await mocks.authStateChanged(null);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try orphan signup' }));
+    await waitFor(() => expect(mocks.createUserWithEmailAndPassword).not.toHaveBeenCalled());
   });
 
   it('does not route an authenticated admin as customer when profile loading fails', async () => {

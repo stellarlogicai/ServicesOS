@@ -9,11 +9,17 @@ const customerMocks = vi.hoisted(() => ({
   deleteCustomer: vi.fn()
 }));
 
+const requestMocks = vi.hoisted(() => ({
+  getCustomerPortalQuoteRequests: vi.fn(),
+  updateCustomerPortalQuoteRequestStatus: vi.fn()
+}));
+
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({ currentTenant: { id: 'tenant-test' } })
 }));
 
 vi.mock('../core/customers/customerService', () => customerMocks);
+vi.mock('../services/customerPortalQuoteRequestService', () => requestMocks);
 
 import CustomerManagement from '../components/CustomerManagement';
 
@@ -55,6 +61,10 @@ describe('CustomerManagement restoration safety gate', () => {
       success: false,
       message: 'Customer deletion is disabled until linked records can be verified.'
     });
+    requestMocks.getCustomerPortalQuoteRequests.mockReset();
+    requestMocks.getCustomerPortalQuoteRequests.mockResolvedValue({ success: true, data: [] });
+    requestMocks.updateCustomerPortalQuoteRequestStatus.mockReset();
+    requestMocks.updateCustomerPortalQuoteRequestStatus.mockResolvedValue({ success: true });
     vi.spyOn(window, 'alert').mockImplementation(() => {});
   });
 
@@ -71,6 +81,26 @@ describe('CustomerManagement restoration safety gate', () => {
     expect(errorState).toHaveTextContent('Missing or insufficient permissions.');
     expect(screen.queryByText('No customers found')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeInTheDocument();
+  });
+
+  it('shows active-tenant customer requests and updates only request status', async () => {
+    requestMocks.getCustomerPortalQuoteRequests.mockResolvedValue({ success: true, data: [{
+      id: 'request-a',
+      type: 'quote_request',
+      source: 'customer-portal',
+      requestStatus: 'new',
+      customerSnapshot: { fullName: 'Request Customer', email: 'request@example.com' },
+      requestSnapshot: { cleaningType: 'deep', specialRequests: 'Focus on kitchen', preferredDate: '2026-07-10' },
+      createdAt: '2026-06-30T12:00:00.000Z'
+    }] });
+
+    render(<CustomerManagement />);
+    expect(await screen.findByText('Request Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Mark contacted' }));
+
+    await waitFor(() => expect(requestMocks.updateCustomerPortalQuoteRequestStatus).toHaveBeenCalledWith(
+      'tenant-test', 'request-a', 'contacted'
+    ));
   });
 
   it('submits visible edits through the metadata-preserving customer service', async () => {

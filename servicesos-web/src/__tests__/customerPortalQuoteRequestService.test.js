@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const leadServiceMock = vi.hoisted(() => ({
-  createLead: vi.fn()
+  createLead: vi.fn(),
+  getLeadById: vi.fn(),
+  getLeads: vi.fn(),
+  updateLead: vi.fn()
 }));
 
-vi.mock('../core/leads/leadService', () => ({
-  createLead: leadServiceMock.createLead
-}));
+vi.mock('../core/leads/leadService', () => leadServiceMock);
 
-import { submitCustomerPortalQuoteRequest } from '../services/customerPortalQuoteRequestService';
+import {
+  getCustomerPortalQuoteRequests,
+  submitCustomerPortalQuoteRequest,
+  updateCustomerPortalQuoteRequestStatus
+} from '../services/customerPortalQuoteRequestService';
 import { buildCustomerPortalQuoteIntakeDraft } from '../services/customerPortalQuoteRequestMapper';
 
 const submittedAt = '2026-06-22T19:00:00.000Z';
@@ -55,6 +60,9 @@ function buildFakeQuoteIntakeDraft(overrides = {}) {
 describe('Customer Portal quote request service', () => {
   beforeEach(() => {
     leadServiceMock.createLead.mockReset();
+    leadServiceMock.getLeadById.mockReset();
+    leadServiceMock.getLeads.mockReset();
+    leadServiceMock.updateLead.mockReset();
     leadServiceMock.createLead.mockResolvedValue({
       success: true,
       data: {
@@ -63,6 +71,38 @@ describe('Customer Portal quote request service', () => {
       },
       message: 'Lead created successfully'
     });
+  });
+
+  it('loads only active-tenant Customer Portal quote requests', async () => {
+    leadServiceMock.getLeads.mockResolvedValue({ success: true, data: [
+      { id: 'request-a', type: 'quote_request', source: 'customer-portal' },
+      { id: 'admin-lead', type: 'lead', source: 'admin' }
+    ] });
+
+    const result = await getCustomerPortalQuoteRequests('tenant-a');
+
+    expect(leadServiceMock.getLeads).toHaveBeenCalledWith('tenant-a');
+    expect(result.data).toEqual([{ id: 'request-a', type: 'quote_request', source: 'customer-portal' }]);
+  });
+
+  it('updates only the allowed customer request status field', async () => {
+    leadServiceMock.getLeadById.mockResolvedValue({
+      success: true,
+      data: { id: 'request-a', type: 'quote_request', source: 'customer-portal' }
+    });
+    leadServiceMock.updateLead.mockResolvedValue({ success: true });
+
+    await updateCustomerPortalQuoteRequestStatus('tenant-a', 'request-a', 'contacted');
+
+    expect(leadServiceMock.updateLead).toHaveBeenCalledWith('tenant-a', 'request-a', {
+      requestStatus: 'contacted'
+    });
+  });
+
+  it('rejects invalid request statuses without writing', async () => {
+    const result = await updateCustomerPortalQuoteRequestStatus('tenant-a', 'request-a', 'paid');
+    expect(result).toMatchObject({ success: false, code: 'INVALID_REQUEST_STATUS' });
+    expect(leadServiceMock.updateLead).not.toHaveBeenCalled();
   });
 
   it('blocks missing tenantId before createLead is called', async () => {

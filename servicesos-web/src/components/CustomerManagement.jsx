@@ -2,12 +2,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '../core/customers/customerService';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  getCustomerPortalQuoteRequests,
+  updateCustomerPortalQuoteRequestStatus
+} from '../services/customerPortalQuoteRequestService';
 
 const DUPLICATE_CUSTOMER_MESSAGE = 'Possible duplicate customer found. A customer with this email or phone already exists. Please review the existing customer before creating another record.';
 
 export default function CustomerManagement() {
   const { currentTenant } = useAuth();
   const [customers, setCustomers] = useState([]);
+  const [customerRequests, setCustomerRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -37,16 +42,22 @@ export default function CustomerManagement() {
     setLoading(true);
     setLoadError('');
     try {
-      const result = await getCustomers(currentTenant.id);
-      if (result.success) {
-        setCustomers(result.data);
+      const [customerResult, requestResult] = await Promise.all([
+        getCustomers(currentTenant.id),
+        getCustomerPortalQuoteRequests(currentTenant.id)
+      ]);
+      if (customerResult.success) {
+        setCustomers(customerResult.data);
+        setCustomerRequests(requestResult.success ? requestResult.data : []);
       } else {
         setCustomers([]);
-        setLoadError(result.message || 'Unable to load customers.');
+        setCustomerRequests([]);
+        setLoadError(customerResult.message || 'Unable to load customers.');
       }
     } catch (error) {
       console.error('Error loading customers:', error);
       setCustomers([]);
+      setCustomerRequests([]);
       setLoadError('Unable to load customers. Check your access and try again.');
     } finally {
       setLoading(false);
@@ -154,6 +165,16 @@ export default function CustomerManagement() {
     setSearchTerm(e.target.value);
   };
 
+  const updateRequestStatus = async (requestId, requestStatus) => {
+    if (!currentTenant?.id) return;
+    const result = await updateCustomerPortalQuoteRequestStatus(currentTenant.id, requestId, requestStatus);
+    if (result.success) {
+      await loadCustomers();
+    } else {
+      alert(result.error || result.message || 'Unable to update customer request.');
+    }
+  };
+
   const filteredCustomers = customers.filter(customer => {
     if (!searchTerm) return true;
     
@@ -246,6 +267,30 @@ export default function CustomerManagement() {
       </div>
 
       {/* Search */}
+      <section style={{ marginBottom: 24, padding: 20, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, textAlign: 'left' }}>
+        <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#0f172a' }}>New Customer Requests</h2>
+        {customerRequests.filter(request => request.requestStatus !== 'archived').length === 0 ? (
+          <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>No new customer requests.</p>
+        ) : customerRequests.filter(request => request.requestStatus !== 'archived').map(request => {
+          const customer = request.customerSnapshot || request.formData || {};
+          const details = request.requestSnapshot || {};
+          return (
+            <article key={request.id} style={{ padding: 16, marginTop: 12, background: '#fff', border: '1px solid #dbeafe', borderRadius: 10 }}>
+              <div style={{ fontWeight: 700, color: '#0f172a' }}>{customer.fullName || customer.name || 'Unknown customer'}</div>
+              <div style={{ color: '#475569', fontSize: 13 }}>{[customer.email, customer.phone].filter(Boolean).join(' · ') || 'Contact information not provided'}</div>
+              <div style={{ marginTop: 8, fontSize: 14, color: '#334155' }}><strong>Service:</strong> {details.cleaningType || request.formData?.cleaningType || 'Not specified'}</div>
+              <div style={{ fontSize: 14, color: '#334155' }}><strong>Notes:</strong> {details.specialRequests || details.customerNotes || request.formData?.specialRequests || 'None provided'}</div>
+              <div style={{ fontSize: 14, color: '#334155' }}><strong>Preferred date:</strong> {details.preferredDate || request.appointmentRequest?.preferredDate || 'Not specified'}</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Status: {request.requestStatus || 'new'} · Source: customer portal · Created: {request.createdAt ? new Date(request.createdAt).toLocaleString() : 'Unknown'}</div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button type="button" onClick={() => updateRequestStatus(request.id, 'contacted')} disabled={request.requestStatus === 'contacted'}>Mark contacted</button>
+                <button type="button" onClick={() => updateRequestStatus(request.id, 'archived')}>Archive</button>
+              </div>
+            </article>
+          );
+        })}
+      </section>
+
       <div style={{ marginBottom: '24px' }}>
         <input
           type="text"

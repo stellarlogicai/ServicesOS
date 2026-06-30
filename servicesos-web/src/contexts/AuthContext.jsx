@@ -186,6 +186,13 @@ export function AuthProvider({ children }) {
    * @param {string} [role]     — defaults to 'admin'
    */
   const signup = async (email, password, tenantId, role = 'admin') => {
+    if (!tenantId) {
+      return {
+        success: false,
+        error: 'A valid business invitation is required before creating an account.'
+      };
+    }
+
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
 
@@ -193,7 +200,7 @@ export function AuthProvider({ children }) {
       await setDoc(doc(db, 'users', cred.user.uid), {
         email,
         role,
-        tenantId: tenantId || null,
+        tenantId,
         displayName: '',
         status: 'active',
         createdAt: serverTimestamp(),
@@ -213,11 +220,19 @@ export function AuthProvider({ children }) {
       // Check if user doc exists; create it if not (first-time Google sign-in)
       const userSnap = await getDoc(doc(db, 'users', uid));
       if (!userSnap.exists()) {
+        if (!tenantId) {
+          await firebaseSignOut(auth);
+          return {
+            success: false,
+            error: 'A valid business invitation is required before creating an account.'
+          };
+        }
+
         await setDoc(doc(db, 'users', uid), {
           email: cred.user.email,
           displayName: cred.user.displayName || '',
           role: 'customer',
-          tenantId: tenantId || null,
+          tenantId,
           status: 'active',
           createdAt: serverTimestamp(),
         });

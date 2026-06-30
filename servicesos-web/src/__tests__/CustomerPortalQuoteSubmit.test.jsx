@@ -162,6 +162,28 @@ describe('CustomerPortal quote request submit wiring', () => {
     });
   });
 
+  it('preselects recommended options and submits only the options still selected', async () => {
+    render(<CustomerPortal />);
+    await screen.findByText('Customer identity resolved');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Request Quote' })[0]);
+
+    expect(screen.getByText('We pre-selected common cleaning options to save time. Uncheck anything you do not need.')).toBeInTheDocument();
+    const optionGroup = screen.getByRole('group', { name: 'Recommended cleaning options' });
+    const oven = optionGroup.querySelector('input[type="checkbox"]');
+    expect(oven).toBeChecked();
+    fireEvent.click(oven);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review Quote Request Draft' }));
+    await screen.findByRole('heading', { name: 'Quote request preview' });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Quote Request for Owner Review' }));
+
+    await waitFor(() => expect(customerPortalMocks.submitCustomerPortalQuoteRequest).toHaveBeenCalled());
+    const submittedDraft = customerPortalMocks.submitCustomerPortalQuoteRequest.mock.calls[0][0].quoteIntakeDraft;
+    expect(submittedDraft.quoteRequestDraft.requestSnapshot.serviceScope.oven).toBe(false);
+    expect(submittedDraft.quoteRequestDraft.requestSnapshot.serviceScope.fridge).toBe(true);
+    expect(submittedDraft.quoteRequestDraft.requestSnapshot.serviceScope.baseboards).toBe(true);
+  });
+
   it('renders a pending quote request from snapshots without booking or zero-value placeholders', async () => {
     customerPortalMocks.getQuotes.mockResolvedValue([
       {

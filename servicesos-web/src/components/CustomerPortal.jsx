@@ -42,10 +42,10 @@ const DEFAULT_QUOTE_REQUEST_FORM = {
   clutterLevel: 'normal',
   lastCleaned: '',
   serviceScope: {
-    oven: false,
-    fridge: false,
+    oven: true,
+    fridge: true,
     windows: false,
-    baseboards: false,
+    baseboards: true,
     cabinetsInside: false,
     laundryRoomCleaning: false
   },
@@ -704,7 +704,7 @@ export default function CustomerPortal() {
             </section>
 
             <section className="quote-request-section" aria-labelledby="pets-addons-heading">
-              <h3 id="pets-addons-heading">Pets and add-ons</h3>
+              <h3 id="pets-addons-heading">Pets and recommended cleaning options</h3>
               <div className="quote-request-grid">
                 <div>
                   <label htmlFor="quotePetCount">Pets</label>
@@ -734,7 +734,10 @@ export default function CustomerPortal() {
                 </div>
               </div>
 
-              <div className="quote-request-checkbox-row quote-request-checkbox-row--addons" aria-label="Requested add-ons">
+              <p style={{ margin: '12px 0', color: '#475569', fontSize: 14 }}>
+                We pre-selected common cleaning options to save time. Uncheck anything you do not need.
+              </p>
+              <div role="group" className="quote-request-checkbox-row quote-request-checkbox-row--addons" aria-label="Recommended cleaning options">
                 {ADD_ON_FIELDS.map((field) => (
                   <label key={field.name} className="quote-request-checkbox">
                     <input

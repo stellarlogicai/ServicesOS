@@ -5,19 +5,17 @@ import { useAuth } from '../contexts/AuthContext';
 export default function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSignup, setIsSignup] = useState(false);
+  const [showSignupInfo, setShowSignupInfo] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, signup, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const result = isSignup 
-      ? await signup(email, password, null, 'customer') // Create customer account without tenant
-      : await login(email, password);
+    const result = await login(email, password);
 
     setLoading(false);
 
@@ -60,14 +58,23 @@ export default function LoginForm() {
           margin: '0 auto 16px'
         }}>🧹</div>
         <h2 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#0f172a' }}>
-          {isSignup ? 'Create Account' : 'Welcome Back'}
+          {showSignupInfo ? 'Customer Accounts by Invitation' : 'Welcome Back'}
         </h2>
         <p style={{ margin: '8px 0 0', fontSize: 14, color: '#64748b' }}>
-          {isSignup ? 'Sign up to get started' : 'Sign in to your account'}
+          {showSignupInfo ? 'Connect with your service provider to get access.' : 'Sign in to your account'}
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {showSignupInfo ? (
+        <div>
+          <div role="status" style={{ padding: 16, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, color: '#1e3a8a', fontSize: 14, lineHeight: 1.5 }}>
+            Customer accounts are created by invitation from your service provider. If you are trying to request a quote, please use the company’s quote form or contact the business directly.
+          </div>
+          <button type="button" onClick={() => setShowSignupInfo(false)} style={{ width: '100%', marginTop: 16, padding: 12, background: 'white', color: '#1d4ed8', border: '1px solid #93c5fd', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            Back to sign in
+          </button>
+        </div>
+      ) : <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
           <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#374151', marginBottom: 6 }}>
             Email
@@ -140,7 +147,7 @@ export default function LoginForm() {
             opacity: loading ? 0.6 : 1,
           }}
         >
-          {loading ? 'Loading...' : (isSignup ? 'Create Account' : 'Sign In')}
+          {loading ? 'Loading...' : 'Sign In'}
         </button>
 
         <div style={{
@@ -183,13 +190,13 @@ export default function LoginForm() {
           </svg>
           Continue with Google
         </button>
-      </form>
+      </form>}
 
-      <div style={{ textAlign: 'center', marginTop: 24 }}>
+      {!showSignupInfo && <div style={{ textAlign: 'center', marginTop: 24 }}>
         <button
           type="button"
           onClick={() => {
-            setIsSignup(!isSignup);
+            setShowSignupInfo(true);
             setError('');
           }}
           style={{
@@ -201,9 +208,9 @@ export default function LoginForm() {
             textDecoration: 'underline',
           }}
         >
-          {isSignup ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+          Don't have an account? Learn how to get access
         </button>
-      </div>
+      </div>}
     </div>
   );
 }

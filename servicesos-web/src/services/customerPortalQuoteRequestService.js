@@ -1,4 +1,4 @@
-import { createLead } from '../core/leads/leadService';
+import { createLead, getLeadById, getLeads, updateLead } from '../core/leads/leadService';
 import { buildCustomerPortalQuoteLeadPayload } from './customerPortalQuoteLeadPayloadBuilder';
 
 const isPlainObject = (value) =>
@@ -14,6 +14,42 @@ const validationFailure = (code, message) => ({
 
 const getQuoteRequestDraft = (quoteIntakeDraft) =>
   quoteIntakeDraft?.quoteRequestDraft ?? quoteIntakeDraft;
+
+const CUSTOMER_REQUEST_STATUSES = new Set(['new', 'contacted', 'archived']);
+
+const isCustomerPortalRequest = (lead) =>
+  lead?.type === 'quote_request' && lead?.source === 'customer-portal';
+
+export async function getCustomerPortalQuoteRequests(tenantId) {
+  if (!isMeaningful(tenantId)) {
+    return validationFailure('MISSING_TENANT_ID', 'Tenant ID is required before loading customer requests.');
+  }
+
+  const result = await getLeads(tenantId);
+  if (!result?.success) return result;
+
+  return {
+    success: true,
+    data: (Array.isArray(result.data) ? result.data : []).filter(isCustomerPortalRequest)
+  };
+}
+
+export async function updateCustomerPortalQuoteRequestStatus(tenantId, requestId, requestStatus) {
+  if (!isMeaningful(tenantId) || !isMeaningful(requestId)) {
+    return validationFailure('MISSING_REQUEST_IDENTITY', 'Tenant ID and request ID are required.');
+  }
+
+  if (!CUSTOMER_REQUEST_STATUSES.has(requestStatus)) {
+    return validationFailure('INVALID_REQUEST_STATUS', 'Customer request status is invalid.');
+  }
+
+  const existing = await getLeadById(tenantId, requestId);
+  if (!existing?.success || !isCustomerPortalRequest(existing.data)) {
+    return validationFailure('INVALID_CUSTOMER_REQUEST', 'Customer request could not be updated.');
+  }
+
+  return updateLead(tenantId, requestId, { requestStatus });
+}
 
 function buildDraftWithIdentity({ quoteIntakeDraft, tenantId, user, customer }) {
   const quoteRequestDraft = getQuoteRequestDraft(quoteIntakeDraft);
