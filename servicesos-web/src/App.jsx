@@ -241,9 +241,11 @@ function AuthenticatedApp() {
       flexDirection: "column",
       padding: "24px 0",
       flexShrink: 0,
-      position: isMobile ? "fixed" : "relative",
+      position: isMobile ? "fixed" : "sticky",
       left: 0, top: 0,
-      height: isMobile ? "100vh" : "auto",
+      height: "100vh",
+      boxSizing: "border-box",
+      overflowY: "auto",
       zIndex: 50,
       transform: isMobile ? (mobileMenuOpen ? "translateX(0)" : "translateX(-100%)") : "none",
       transition: isMobile ? "transform 0.3s ease" : "none",
@@ -363,7 +365,7 @@ function AuthenticatedApp() {
 
       {sidebar}
 
-      <main style={{ flex: 1, overflowY: "auto", background: "#ffffff", padding: isMobile ? "60px 16px 24px" : "0 24px 48px" }}>
+      <main style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "#ffffff", padding: isMobile ? "60px 16px 24px" : "0 24px 48px" }}>
         {renderPage()}
       </main>
     </div>

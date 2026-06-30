@@ -2611,3 +2611,46 @@ Run optional Tenant B duplicate-prevention sanity with manual Tenant B login. Af
 2. Verify Tenant B tenant document actually has the `pricingProfileId` field in Firestore
 3. Consider adding tenant data refresh or cache invalidation if needed
 4. Once Tenant B pricing is corrected, repeat smoke test to confirm
+
+### Dashboard and Sidebar UI Polish — June 30, 2026
+
+**Status:** Wife-beta UI polish verified for Tenant A.
+
+#### Issues addressed
+
+- Dashboard row actions were compressed beyond the available main-content width and clipped by the leads card. The app root also retained an obsolete `1126px` width cap.
+- Desktop Sign Out followed the full Dashboard document height because the sidebar used automatic height instead of a viewport-height flex column.
+
+#### Fixes
+
+- Removed the obsolete root width cap and allowed the main flex region to shrink correctly.
+- Added a controlled minimum width to the leads table, horizontal overflow handling, and sufficient non-wrapping width for the action column.
+- Made the desktop sidebar a viewport-height sticky flex column with border-box sizing and internal vertical overflow. The existing `margin-top: auto` footer now anchors Sign Out within the visible sidebar.
+- Product behavior, Dashboard calculations, booking conversion, approved navigation, and deferred modules were unchanged.
+
+#### Manual Tenant A verification
+
+- At a 1440px viewport, Create Booking and Delete were fully visible without clipping.
+- At a 1024px viewport, the leads table used horizontal scrolling instead of clipping its action column.
+- Sign Out remained fully visible at both 1440×900 and 1024×768 viewport checks.
+- Approved navigation remained Dashboard, Create Estimate, Customers, and Bookings only.
+- Create Booking opened the existing booking modal; no booking was submitted during this layout check.
+- Customers, Create Estimate, and Bookings opened successfully.
+- Booking details retained the manual payment-status display and Edit Payment Status control. No Stripe, refund, or payment-link controls appeared.
+- Sign Out returned to Login and cleared tenant data.
+- Browser console contained no warnings or errors during this verification.
+
+#### Validation
+
+- Baseline: lint passed, full tests passed 187/187, and build passed.
+- Focused Dashboard and admin-router tests passed 11/11.
+- Final: lint passed, full tests passed 187/187, and build passed with only the existing Vitest local-storage and Vite bundle/dynamic-import warnings.
+
+#### Remaining limitations
+
+- Narrow/mobile layouts intentionally require horizontal table scrolling to reach the action column.
+- This pass did not redesign the Dashboard table or add product functionality.
+
+#### Recommended next task
+
+Deploy the committed UI polish to a Netlify preview and repeat the Dashboard/sidebar smoke check at the deployed production viewport before promoting it.

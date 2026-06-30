@@ -484,7 +484,7 @@ export default function Dashboard() {
 
           {/* Table */}
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", minWidth: 1050, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#f9fafb" }}>
                   {["Client", "Service", "Property", "Estimate", "Status", "Date", "Actions"].map(h => (
@@ -546,8 +546,8 @@ export default function Dashboard() {
                     <td style={{ padding: "14px 16px", fontSize: 13, color: "#9ca3af" }}>
                       {new Date(lead.createdAt).toLocaleDateString()}
                     </td>
-                    <td style={{ padding: "14px 16px" }}>
-                      <div style={{ display: "flex", gap: 8 }}>
+                    <td style={{ padding: "14px 16px", minWidth: 220 }}>
+                      <div style={{ display: "flex", gap: 8, whiteSpace: "nowrap" }}>
                         {lead.status !== "booked" && (
                           <button
                             onClick={e => { e.stopPropagation(); setBookingLead(lead); }}
