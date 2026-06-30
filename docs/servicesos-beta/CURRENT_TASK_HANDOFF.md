@@ -2715,3 +2715,25 @@ Deploy the UI polish commits to a Netlify preview and repeat the Dashboard/sideb
 - Build a separately approved, tenant-bound customer invitation flow before enabling customer self-registration.
 - Run a controlled tenant-A customer request submission plus Tenant A/B visibility walkthrough, including refresh and archive persistence.
 - After Workstream A is committed and reviewed, begin CalendarView read-only hardening on its separate branch without exposing Calendar navigation.
+
+### CalendarView Read-Only Hardening — June 30, 2026
+
+**Status:** CalendarView hardened on a separate branch and intentionally not exposed to normal admins.
+
+#### Boundary changes
+
+- CalendarView now obtains the active tenant ID through the same authenticated context pattern as Bookings.
+- Booking reads go only through `getJobs(tenantId)`, which uses `tenants/{tenantId}/bookings`; direct Firestore queries were removed.
+- The employee collection read, employee display assumptions, and assignment dependency were removed.
+- Customer, service, schedule, address, price, and status values use the shared `bookingDisplay.js` fallbacks.
+- Loading, empty, missing-tenant, retryable error, and incomplete-record states render safely.
+- The view is explicitly read-only and exposes no create, edit, delete, payment, assignment, reschedule, or status-mutation controls.
+- Normal-admin navigation remains Dashboard, Create Estimate, Customers, and Bookings. Calendar and Staff Scheduling remain hidden.
+
+#### Tests and remaining limitations
+
+- Focused tests cover active-tenant `getJobs` use, loading, missing tenant, empty data, retry, shared fallbacks, incomplete data, and absence of mutation/employee controls.
+- Existing route-visibility coverage confirms Calendar remains hidden.
+- The hardened component is not reachable through normal-admin navigation, so manual tenant UI verification was limited to confirming the existing approved routes remain unchanged.
+- No month/week visualization, employee lanes, drag/drop, booking actions, or Calendar exposure were added.
+- Recommended next step: review the hidden read-only component and run a direct dev-only Tenant A/B data-isolation smoke test before separately approving any navigation exposure.
