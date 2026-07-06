@@ -275,6 +275,28 @@ describe('Dashboard null-safety', () => {
     expect(screen.getByRole('button', { name: 'Create Booking' })).toBeInTheDocument();
   });
 
+  it('shows a readable Cancel button that closes Create Booking without converting', async () => {
+    dashboardMocks.getLeads.mockResolvedValue([{
+      id: 'lead-cancel', tenantId: 'tenant-test', type: 'lead', source: 'admin', status: 'new',
+      formData: { fullName: 'Cancel Modal Customer', address: '81 Safe Exit Lane', cleaningType: 'standard' },
+      estimate: { priceLow: 180, priceHigh: 220, appointmentDuration: 2 },
+      booking: null, createdAt: '2026-07-01T12:00:00.000Z'
+    }]);
+
+    render(<Dashboard />);
+    expect(await screen.findByText('Cancel Modal Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
+
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    expect(cancel).toBeVisible();
+    expect(cancel).toHaveStyle({ background: '#fff', color: '#374151' });
+    expect(screen.getByRole('button', { name: 'Confirm booking' })).toBeInTheDocument();
+
+    fireEvent.click(cancel);
+    expect(screen.queryByRole('heading', { name: 'Create booking' })).not.toBeInTheDocument();
+    expect(dashboardMocks.approveQuoteRequestAndCreateBooking).not.toHaveBeenCalled();
+  });
+
   it('can create a booking from a manual estimate that stores a time bucket', async () => {
     const manualEstimate = {
       id: 'lead-manual-time-bucket',

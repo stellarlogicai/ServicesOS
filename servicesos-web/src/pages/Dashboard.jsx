@@ -205,7 +205,7 @@ function BookModal({ lead, onClose, onSave, onCheckAvailability, onCheckConflict
         )}
 
         <div style={{ display: "flex", gap: 12 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: "12px", background: "transparent", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, cursor: "pointer" }}>
+          <button type="button" onClick={onClose} style={{ flex: 1, padding: "12px", background: "#fff", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
             Cancel
           </button>
           <button onClick={() => handleSave()} disabled={!date || !validPrice || checking} style={{ flex: 2, padding: "12px", background: date && validPrice ? "#059669" : "#e5e7eb", color: date && validPrice ? "#fff" : "#9ca3af", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: date && validPrice ? "pointer" : "not-allowed" }}>

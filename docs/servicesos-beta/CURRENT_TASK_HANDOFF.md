@@ -2840,3 +2840,33 @@ Deploy the UI polish commits to a Netlify preview and repeat the Dashboard/sideb
 - Tenant A manual browser verification remains required for the saved Monday-Saturday configuration: confirm Sunday warns, choose-another-day creates nothing, and any controlled override still passes through the conflict gate.
 - Tenant B availability isolation is not claimed in this pass.
 - Recommended next task: manually verify the Tenant A warning/override flow, then perform a Tenant A → Tenant B → Tenant A availability-isolation check before expanding any booking controls.
+
+### Calendar Month UI Polish — June 30, 2026
+
+**Status:** Implemented and covered by focused tests; local human smoke verification remains pending.
+
+#### Create Booking modal polish
+
+- The Dashboard Create Booking **Cancel** button now has an explicit white background, dark text, border, and font weight so its label remains visible regardless of inherited color-scheme styles.
+- Cancel remains a no-write action: it closes the modal and does not call quote-to-booking conversion.
+- Confirm Booking, unavailable-day warning, conflict warning, and their separate explicit override gates are unchanged.
+
+#### Read-only month Calendar
+
+- Calendar now renders the current month and year, Previous Month and Next Month controls, a seven-column weekday grid, booking counts, and up to two short customer chips per booked day.
+- Today is selected by default in the current month. Moving to another month selects its first day.
+- Selecting a date shows that day's customer, service, schedule, address, status, and price through the existing safe `bookingDisplay.js` helpers. Empty dates show “No bookings scheduled for this day.”
+- The narrow-width layout keeps controls readable, allows horizontal month-grid scrolling, and places selected-day bookings below the grid.
+- Data remains tenant-scoped through `getJobs(tenantId)` only. Grouping is client-side; Calendar has no direct Firestore, employee, customer, legacy jobs, or write dependency.
+- Calendar exposes no create, edit, delete, reschedule, drag/drop, payment, refund, assignment, staff, route, or status controls.
+
+#### Files, tests, and verification
+
+- Product files changed: `Dashboard.jsx`, `CalendarView.jsx`, and new `CalendarView.css`.
+- Focused Dashboard coverage verifies readable Cancel styling, modal close, no conversion, and Confirm Booking presence while existing availability/conflict tests remain active.
+- Focused Calendar coverage verifies month/year and weekday grid rendering, active-tenant reads, date grouping and markers, booked/empty day selection, month navigation, incomplete-record fallbacks, retry states, and absence of mutation/deferred controls.
+- Router and Bookings tests remain part of focused and full validation; approved navigation remains Dashboard, Create Estimate, Customers, Bookings, Calendar, and Business Settings.
+- Automated in-app localhost control is blocked by the browser URL policy, so Tenant A visual/manual behavior and console health are not claimed as passed here. The local server is available for Jamie's human smoke test.
+- Tenant B verification was skipped and is not claimed as passed.
+- Remaining limitation: Calendar is a read-only month grid with horizontal scrolling on narrow screens, not a scheduling, drag/drop, employee, route, or booking-management system.
+- Recommended next task: complete the Tenant A manual checklist, then run Tenant A → Tenant B → Tenant A Calendar isolation before release promotion.

@@ -1,11 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CalendarView from '../components/CalendarView';
 
-const mocks = vi.hoisted(() => ({
-  getJobs: vi.fn(),
-  tenantId: 'tenant-a',
-}));
+const mocks = vi.hoisted(() => ({ getJobs: vi.fn(), tenantId: 'tenant-a' }));
 
 vi.mock('../core/scheduling/schedulingService', () => ({
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS: {},
@@ -16,59 +13,96 @@ vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({ tenantId: mocks.tenantId }),
 }));
 
-describe('CalendarView read-only boundary', () => {
+const now = new Date();
+const year = now.getFullYear();
+const month = now.getMonth();
+const daysInMonth = new Date(year, month + 1, 0).getDate();
+const bookedDay = Math.min(now.getDate() + 1, daysInMonth);
+const emptyDay = bookedDay === daysInMonth ? bookedDay - 1 : bookedDay + 1;
+const pad = value => String(value).padStart(2, '0');
+const dateForDay = day => `${year}-${pad(month + 1)}-${pad(day)}`;
+const monthHeading = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+const dayLabel = day => new Date(year, month, day).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+describe('CalendarView month calendar read-only boundary', () => {
   beforeEach(() => {
     mocks.tenantId = 'tenant-a';
     mocks.getJobs.mockReset();
   });
 
-  it('loads active-tenant bookings through getJobs and renders safe display fields', async () => {
-    mocks.getJobs.mockResolvedValue({
-      success: true,
-      data: [{
-        id: 'booking-a',
-        customerName: 'Tenant A Customer',
-        serviceType: 'Deep clean',
-        date: '2026-07-02',
-        startTime: '10:00',
-        address: '1 Tenant Lane',
-        agreedPrice: 225,
-        status: 'scheduled',
-      }],
-    });
-
+  it('renders a month grid and loads active-tenant bookings through getJobs', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [] });
     render(<CalendarView />);
+
     expect(screen.getByRole('status')).toHaveTextContent('Loading calendar');
-    expect(await screen.findByText('Tenant A Customer')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: monthHeading })).toBeInTheDocument();
     expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a');
+    ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(day => {
+      expect(screen.getByText(day)).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(`${monthHeading} month calendar`)).toBeInTheDocument();
+    expect(screen.getByText('No bookings scheduled for this day.')).toBeInTheDocument();
+  });
+
+  it('groups bookings by date and shows booked-day markers and selected-day details', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [
+      { id: 'booking-a', customerName: 'Tenant A Customer', serviceType: 'Deep clean', date: dateForDay(bookedDay), startTime: '10:00', address: '1 Tenant Lane', agreedPrice: 225, status: 'scheduled' },
+      { id: 'booking-b', customerName: 'Second Customer', serviceType: 'Standard clean', date: dateForDay(bookedDay), startTime: '13:00', address: '2 Tenant Lane', agreedPrice: 150, status: 'scheduled' },
+    ] });
+    render(<CalendarView />);
+
+    await screen.findByRole('heading', { name: monthHeading });
+    const bookedDayButton = screen.getByRole('button', { name: `Select ${dayLabel(bookedDay)}, 2 bookings` });
+    expect(within(bookedDayButton).getByText('2 bookings')).toBeInTheDocument();
+    expect(within(bookedDayButton).getByText('Tenant A Customer')).toBeInTheDocument();
+
+    fireEvent.click(bookedDayButton);
+    expect(screen.getByRole('heading', { name: 'Tenant A Customer' })).toBeInTheDocument();
     expect(screen.getByText('Deep clean')).toBeInTheDocument();
     expect(screen.getByText('1 Tenant Lane')).toBeInTheDocument();
     expect(screen.getByText('$225.00')).toBeInTheDocument();
   });
 
-  it('renders incomplete records with shared booking fallbacks', async () => {
-    mocks.getJobs.mockResolvedValue({ success: true, data: [{ id: 'incomplete' }] });
-
+  it('shows a clear message when an empty day is selected', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [] });
     render(<CalendarView />);
+    await screen.findByRole('heading', { name: monthHeading });
 
-    expect(await screen.findByText('Unknown customer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: `Select ${dayLabel(emptyDay)}, 0 bookings` }));
+    expect(screen.getByText('No bookings scheduled for this day.')).toBeInTheDocument();
+  });
+
+  it('changes the visible month with Previous Month and Next Month controls', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [] });
+    render(<CalendarView />);
+    await screen.findByRole('heading', { name: monthHeading });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next Month' }));
+    const nextHeading = new Date(year, month + 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    expect(screen.getByRole('heading', { name: nextHeading })).toBeInTheDocument();
+    expect(screen.getByText('No bookings scheduled for this day.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous Month' }));
+    expect(screen.getByRole('heading', { name: monthHeading })).toBeInTheDocument();
+  });
+
+  it('renders incomplete selected-day records with shared booking fallbacks', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{ id: 'incomplete', date: dateForDay(bookedDay) }] });
+    render(<CalendarView />);
+    await screen.findByRole('heading', { name: monthHeading });
+    fireEvent.click(screen.getByRole('button', { name: `Select ${dayLabel(bookedDay)}, 1 booking` }));
+
+    expect(screen.getByRole('heading', { name: 'Unknown customer' })).toBeInTheDocument();
     expect(screen.getByText('Service not specified')).toBeInTheDocument();
-    expect(screen.getByText('Not scheduled')).toBeInTheDocument();
+    expect(screen.getByText(/at|Not scheduled/)).toBeInTheDocument();
     expect(screen.getByText('Address not provided')).toBeInTheDocument();
     expect(screen.getByText('Price not set')).toBeInTheDocument();
     expect(screen.getByText('Booked')).toBeInTheDocument();
   });
 
-  it('renders an empty state', async () => {
-    mocks.getJobs.mockResolvedValue({ success: true, data: [] });
-    render(<CalendarView />);
-    expect(await screen.findByText('No bookings to display.')).toBeInTheDocument();
-  });
-
   it('does not read without a tenant or offer a retry that cannot succeed', async () => {
     mocks.tenantId = '';
     render(<CalendarView />);
-
     expect(await screen.findByRole('alert')).toHaveTextContent('tenant is unavailable');
     expect(mocks.getJobs).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
@@ -79,21 +113,20 @@ describe('CalendarView read-only boundary', () => {
       .mockResolvedValueOnce({ success: false, message: 'permission-denied' })
       .mockResolvedValueOnce({ success: true, data: [] });
     render(<CalendarView />);
-
-    const retry = await screen.findByRole('button', { name: 'Try again' });
-    fireEvent.click(retry);
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText('No bookings to display.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: monthHeading })).toBeInTheDocument();
   });
 
-  it('exposes no booking mutation or employee controls', async () => {
-    mocks.getJobs.mockResolvedValue({ success: true, data: [{ id: 'booking-a' }] });
+  it('exposes navigation only and no booking mutation, payment, or employee controls', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{ id: 'booking-a', date: dateForDay(bookedDay) }] });
     render(<CalendarView />);
-    await screen.findByText('Unknown customer');
+    await screen.findByRole('heading', { name: monthHeading });
 
-    for (const label of ['Create', 'Edit', 'Delete', 'Pay', 'Assign', 'Reschedule', 'Update status']) {
+    for (const label of ['Create', 'Edit', 'Delete', 'Pay', 'Payment', 'Refund', 'Assign', 'Reschedule', 'Update status', 'Staff', 'Route']) {
       expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
     }
-    expect(screen.queryByText(/employee/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous Month' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next Month' })).toBeInTheDocument();
   });
 });
