@@ -64,6 +64,10 @@ vi.mock('../components/CompanySettings', () => ({
   default: () => <h1>Deferred Settings Screen</h1>
 }));
 
+vi.mock('../components/BusinessSettings', () => ({
+  default: () => <h1>Business Settings Screen</h1>
+}));
+
 vi.mock('../components/CustomerPortal', () => ({
   default: () => <h1>Customer Portal Screen</h1>
 }));
@@ -120,7 +124,7 @@ describe('App onboarding router context', () => {
     render(<App />);
 
     expect(screen.queryByRole('heading', { name: 'Welcome to CleanOps' })).not.toBeInTheDocument();
-    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Calendar'].forEach(label => {
+    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Calendar', 'Business Settings'].forEach(label => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
     [
@@ -156,6 +160,10 @@ describe('App onboarding router context', () => {
 
     expect(screen.getByRole('heading', { name: 'Read-Only Calendar Screen' })).toBeInTheDocument();
 
+    fireEvent.click(screen.getByText('Business Settings'));
+
+    expect(screen.getByRole('heading', { name: 'Business Settings Screen' })).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
     expect(authState.logout).toHaveBeenCalledTimes(1);
@@ -175,7 +183,7 @@ describe('App onboarding router context', () => {
     fireEvent.click(menuToggle);
 
     expect(screen.getByRole('button', { name: 'Close navigation menu' })).toHaveAttribute('aria-expanded', 'true');
-    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Calendar'].forEach(label => {
+    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Calendar', 'Business Settings'].forEach(label => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
     expect(screen.queryByText('Settings')).not.toBeInTheDocument();
@@ -208,7 +216,7 @@ describe('App onboarding router context', () => {
       window.history.pushState({}, '', path);
       const { unmount } = render(<App />);
 
-      ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Calendar'].forEach(label => {
+      ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Calendar', 'Business Settings'].forEach(label => {
         expect(screen.getByText(label)).toBeInTheDocument();
       });
 
@@ -263,6 +271,7 @@ describe('App onboarding router context', () => {
       'Staff scheduling',
       'Route optimization',
       'Calendar',
+      'Business Settings',
       'Payment links',
       'Insurance',
       'Data export',

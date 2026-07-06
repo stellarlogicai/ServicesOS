@@ -6,6 +6,7 @@ import Dashboard              from "./pages/Dashboard.jsx";
 import LoginForm              from "./components/LoginForm.jsx";
 import BackupPanel            from "./components/BackupPanel.jsx";
 import CompanySettings        from "./components/CompanySettings.jsx";
+import BusinessSettings       from "./components/BusinessSettings.jsx";
 import StaffScheduling        from "./components/StaffScheduling.jsx";
 import CustomerPortal         from "./components/CustomerPortal.jsx";
 import CustomerManagement     from "./components/CustomerManagement.jsx";
@@ -90,6 +91,12 @@ const NAV_ITEMS = [
     id: "calendar",
     icon: "📅",
     label: "Calendar",
+    roles: ["admin", "super-admin"],
+  },
+  {
+    id: "business-settings",
+    icon: "🏢",
+    label: "Business Settings",
     roles: ["admin", "super-admin"],
   },
   {
@@ -336,6 +343,7 @@ function AuthenticatedApp() {
       case "staff-scheduling":  return <StaffScheduling tenantId={tenantId} />;
       case "route-optimization": return <RouteOptimization tenantId={tenantId} />;
       case "calendar":          return <CalendarView />;
+      case "business-settings": return <BusinessSettings />;
       case "payment-links":     return <PaymentLinks />;
       case "insurance":         return <InsuranceTracking tenantId={tenantId} />;
       case "data-export":       return <DataExport />;

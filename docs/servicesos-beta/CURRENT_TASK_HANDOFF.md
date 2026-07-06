@@ -2794,3 +2794,27 @@ Deploy the UI polish commits to a Netlify preview and repeat the Dashboard/sideb
 - Calendar exposed no mutation controls and the browser console was clean during the verified flow.
 - Tenant B was skipped; cross-tenant conflict behavior is not claimed as manually passed.
 - Recommended next task: verify Tenant B bookings never affect Tenant A warnings, then connect the warning to approved business availability when that configuration exists.
+
+### Minimal Business Settings Restore — June 30, 2026
+
+**Status:** Minimal tenant-scoped Business Settings implemented; full Company Settings remains hidden from normal admins.
+
+#### Scope and data boundary
+
+- The legacy `CompanySettings` surface was not exposed because it combines branding, pricing, feature flags, email/provider configuration, booking/payment links, integrations, webhooks, and Stripe Connect.
+- The new **Business Settings** surface exposes only business name, phone, email, service area, and available working days.
+- Reads and writes use only `tenants/{tenantId}`. The narrow write replaces only the `businessSettings` field and generated `updatedAt`, preserving unrelated tenant fields.
+- Saved shape: `businessSettings: { businessName, businessPhone, businessEmail, serviceArea, availability: { availableDays } }`.
+- Missing availability defaults to Monday through Friday. Values are restricted to lowercase weekday enums, and at least one day is required.
+
+#### Safety and coverage
+
+- Normal-admin navigation adds **Business Settings** while full **Settings**, payments, Stripe, Staff Scheduling, Customer Portal configuration, pricing, providers/API keys, routes, payroll, training, Tap to Pay, and tenant management remain hidden.
+- The component includes loading, missing-tenant, retryable load error, honest save failure, and post-save success states.
+- Focused tests cover active-tenant loading, Monday-Friday defaults, allowed-field sanitization, tenant-only document path, weekday changes/save, empty-day rejection, save failure, missing tenant, approved navigation, and deferred-field absence.
+- Tenant A manual verification confirmed the six approved nav items, loaded existing business contact data, and rendered no Stripe/payment/staff/portal/pricing/provider fields.
+- Saturday was added to the default Monday-Friday availability, saved successfully, and remained selected after a full refresh and reopening Business Settings.
+- Dashboard remained stable with `Booked revenue` wording, and the browser console was clean during the settings load/save/refresh flow.
+- Tenant B was skipped and is not claimed as passed.
+- Remaining limitation: business availability is stored for the next approved booking-warning integration step; this task does not yet warn on unavailable days.
+- Recommended next task: manually verify Tenant A persistence, then add a separate unavailable-day warning to Dashboard Create Booking using this exact availability boundary.
