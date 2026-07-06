@@ -2902,3 +2902,12 @@ Deploy the UI polish commits to a Netlify preview and repeat the Dashboard/sideb
 - Tenant A manual desktop/mobile visual verification and console review remain pending because automated localhost browser control is blocked by browser URL policy. Tenant B was skipped and is not claimed as passed.
 - Remaining limitation: this is a safe default theme, not a tenant branding editor. Calendar remains read-only and Bookings retains only its previously approved limited edits.
 - Recommended next task: complete Tenant A desktop/mobile smoke testing, then Tenant A → Tenant B → Tenant A visual/data isolation before release promotion.
+
+### Bookings and Calendar Surface Refinement — July 6, 2026
+
+- **Bookings** is explicitly the owner/admin job-management surface. Its subtitle is “Manage booked jobs, details, notes, and payment status.” Rich cards, View Details, Edit Date & Notes, and Edit Payment Status remain unchanged.
+- **Calendar** is explicitly a lightweight read-only schedule visualization. Its subtitle is “View your schedule by month and day.” The month grid and selected-day modal remain.
+- Calendar day details now focus on time, customer, service, address, and booking status. Manual payment status is retained only as a small contextual badge; price and duplicated job-management details were removed.
+- Calendar exposes no View Details, edit, payment-edit, create, delete, reschedule, assignment, or other booking-management actions. It continues to read only through `getJobs(tenantId)` and performs no writes.
+- Focused Calendar and Bookings coverage verifies the subtitles, schedule fields, absence of price/admin controls in Calendar, and preservation of Bookings management behavior.
+- Recommended next step: Tenant A desktop/mobile visual smoke test of both surfaces, followed by Tenant B schedule isolation verification.

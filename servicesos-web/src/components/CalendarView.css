@@ -91,6 +91,7 @@
 .calendar-booking-heading { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .calendar-booking-heading h3 { margin: 0 0 4px; font-size: 18px; }
 .calendar-booking-heading p { margin: 0; color: #475569; }
+.calendar-schedule-badges { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
 .calendar-booking-card dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin: 16px 0 0; }
 .calendar-booking-card dd { margin: 0; }
 .calendar-error { padding: 16px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; }

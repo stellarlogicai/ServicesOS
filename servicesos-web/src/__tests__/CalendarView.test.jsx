@@ -36,6 +36,7 @@ describe('CalendarView month calendar read-only boundary', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading calendar');
     expect(await screen.findByRole('heading', { name: monthHeading })).toBeInTheDocument();
+    expect(screen.getByText('View your schedule by month and day.')).toBeInTheDocument();
     expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a');
     ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(day => {
       expect(screen.getByText(day)).toBeInTheDocument();
@@ -63,7 +64,8 @@ describe('CalendarView month calendar read-only boundary', () => {
     expect(screen.getByRole('heading', { name: 'Tenant A Customer' })).toBeInTheDocument();
     expect(screen.getByText('Deep clean')).toBeInTheDocument();
     expect(screen.getByText('1 Tenant Lane')).toBeInTheDocument();
-    expect(screen.getByText('$225.00')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveTextContent('10:00');
+    expect(screen.queryByText('$225.00')).not.toBeInTheDocument();
     expect(screen.getAllByText('Payment status not set').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
@@ -101,10 +103,10 @@ describe('CalendarView month calendar read-only boundary', () => {
 
     expect(screen.getByRole('heading', { name: 'Unknown customer' })).toBeInTheDocument();
     expect(screen.getByText('Service not specified')).toBeInTheDocument();
-    expect(screen.getByRole('dialog')).toHaveTextContent(new Date(year, month, bookedDay).toLocaleDateString('en-US', { dateStyle: 'medium' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Time not set');
     expect(screen.getByText('Address not provided')).toBeInTheDocument();
-    expect(screen.getByText('Price not set')).toBeInTheDocument();
     expect(screen.getByText('Booked')).toBeInTheDocument();
+    expect(screen.queryByText('Price not set')).not.toBeInTheDocument();
   });
 
   it('does not read without a tenant or offer a retry that cannot succeed', async () => {
@@ -135,5 +137,8 @@ describe('CalendarView month calendar read-only boundary', () => {
     }
     expect(screen.getByRole('button', { name: 'Previous Month' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next Month' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit Date & Notes' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit Payment Status' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View Details' })).not.toBeInTheDocument();
   });
 });

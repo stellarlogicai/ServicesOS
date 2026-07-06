@@ -5,8 +5,6 @@ import {
   bookingAddress,
   bookingCustomerName,
   bookingPaymentStatus,
-  bookingPrice,
-  bookingSchedule,
   bookingServiceType,
   bookingStatus,
 } from './bookingDisplay';
@@ -20,6 +18,18 @@ function pad(value) {
 
 function dateKey(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function bookingTime(booking = {}) {
+  if (booking.scheduledAt) {
+    const scheduledAt = typeof booking.scheduledAt?.toDate === 'function'
+      ? booking.scheduledAt.toDate()
+      : new Date(booking.scheduledAt);
+    if (!Number.isNaN(scheduledAt.getTime())) {
+      return scheduledAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    }
+  }
+  return booking.startTime || booking.time || booking.appointmentTime || 'Time not set';
 }
 
 function bookingCalendarDateKey(booking = {}) {
@@ -76,13 +86,14 @@ function DayBookings({ selectedDate, bookings, onClose }) {
                   <h3>{bookingCustomerName(booking)}</h3>
                   <p>{bookingServiceType(booking)}</p>
                 </div>
-                <strong>{bookingStatus(booking)}</strong>
+                <div className="calendar-schedule-badges">
+                  <span className="v1-pill">{bookingStatus(booking)}</span>
+                  <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>
+                </div>
               </div>
               <dl>
-                <dt>Schedule</dt><dd>{bookingSchedule(booking)}</dd>
+                <dt>Time</dt><dd>{bookingTime(booking)}</dd>
                 <dt>Address</dt><dd>{bookingAddress(booking)}</dd>
-                <dt>Payment</dt><dd>{bookingPaymentStatus(booking)}</dd>
-                <dt>Price</dt><dd>{bookingPrice(booking)}</dd>
               </dl>
             </article>
           ))}
@@ -174,7 +185,7 @@ export default function CalendarView() {
       <header className="calendar-page-header">
         <div>
           <h1 className="v1-page-title" id="calendar-title">Calendar</h1>
-          <p className="v1-page-subtitle">Read-only booking calendar</p>
+          <p className="v1-page-subtitle">View your schedule by month and day.</p>
         </div>
       </header>
 

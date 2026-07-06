@@ -203,7 +203,7 @@ export default function BookingsList() {
     <div className="v1-page bookings-page">
       <div className="v1-page-header">
         <h1 className="v1-page-title">Bookings</h1>
-        <p className="v1-page-subtitle">View scheduled jobs and customer details.</p>
+        <p className="v1-page-subtitle">Manage booked jobs, details, notes, and payment status.</p>
       </div>
 
       {loading && <p role="status">Loading bookings…</p>}

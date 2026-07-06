@@ -40,6 +40,13 @@ describe('read-only Bookings admin list', () => {
     mocks.updateBookingManualPaymentStatus.mockReset();
   });
 
+  it('identifies Bookings as the job management surface', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [] });
+    render(<BookingsList />);
+
+    expect(await screen.findByText('Manage booked jobs, details, notes, and payment status.')).toBeInTheDocument();
+  });
+
   it('loads bookings through the active tenant service boundary', async () => {
     let resolveLoad;
     mocks.getJobs.mockReturnValue(new Promise(resolve => {
