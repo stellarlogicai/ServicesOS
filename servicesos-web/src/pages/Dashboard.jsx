@@ -2,6 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { getLeads, setLeadStatus, deleteLead } from "../services/crmService";
 import { approveQuoteRequestAndCreateBooking } from "../services/quoteBookingConversionService";
+import { getJobs } from "../core/scheduling/schedulingService";
+import { findBookingConflict } from "../services/bookingConflictService";
+import {
+  bookingAddress,
+  bookingCustomerName,
+  bookingSchedule,
+  bookingServiceType
+} from "../components/bookingDisplay";
 import {
   getQuoteLeadDisplayData,
   getQuoteLeadPriceDisplay,
@@ -50,7 +58,7 @@ function StatCard({ label, value, sub, accent }) {
 }
 
 // ─── Book modal ───────────────────────────────────────────────────────────────
-function BookModal({ lead, onClose, onSave }) {
+function BookModal({ lead, onClose, onSave, onCheckConflict }) {
   const display = getFormData(lead);
   const pendingOwnerReview = isPendingOwnerReview(lead);
   const normalizeBookingTime = (value) => {
@@ -66,12 +74,40 @@ function BookModal({ lead, onClose, onSave }) {
     pendingOwnerReview ? "" : String(lead.estimate?.priceLow || "")
   );
   const [notes, setNotes] = useState("");
+  const [conflict, setConflict] = useState(null);
+  const [checkError, setCheckError] = useState("");
+  const [checking, setChecking] = useState(false);
   const validPrice = Number(price) > 0;
 
-  const handleSave = () => {
+  const bookingData = () => ({
+    scheduledAt: new Date(`${date}T${time}`).toISOString(),
+    agreedPrice: Number(price),
+    notes
+  });
+
+  const resetConflict = () => {
+    setConflict(null);
+    setCheckError("");
+  };
+
+  const handleSave = async () => {
     if (!date || !validPrice) return;
-    const scheduledAt = new Date(`${date}T${time}`).toISOString();
-    onSave({ scheduledAt, agreedPrice: Number(price), notes });
+    setChecking(true);
+    setCheckError("");
+    try {
+      const nextBooking = bookingData();
+      const foundConflict = await onCheckConflict(nextBooking);
+      if (foundConflict) {
+        setConflict(foundConflict);
+        return;
+      }
+      onSave(nextBooking);
+    } catch {
+      setConflict(null);
+      setCheckError("Could not check for booking conflicts. Please try again before scheduling.");
+    } finally {
+      setChecking(false);
+    }
   };
 
   const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 };
@@ -90,11 +126,11 @@ function BookModal({ lead, onClose, onSave }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
           <div>
             <div style={label}>Date *</div>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={field} />
+            <input type="date" value={date} onChange={e => { setDate(e.target.value); resetConflict(); }} style={field} />
           </div>
           <div>
             <div style={label}>Time</div>
-            <input type="time" value={time} onChange={e => setTime(e.target.value)} style={field} />
+            <input type="time" value={time} onChange={e => { setTime(e.target.value); resetConflict(); }} style={field} />
           </div>
         </div>
 
@@ -117,12 +153,30 @@ function BookModal({ lead, onClose, onSave }) {
           <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Gate code, parking instructions, special requests…" style={{ ...field, resize: "vertical" }} />
         </div>
 
+        {checkError && <div role="alert" style={{ marginBottom: 16, color: "#b91c1c", fontSize: 13 }}>{checkError}</div>}
+
+        {conflict && (
+          <div role="alert" style={{ marginBottom: 16, padding: 14, border: "1px solid #f59e0b", borderRadius: 8, background: "#fffbeb" }}>
+            <strong style={{ display: "block", marginBottom: 6 }}>Booking conflict</strong>
+            <div style={{ fontSize: 13, marginBottom: 8 }}>
+              You already have a booking scheduled during this time. Review the existing booking before scheduling another job at the same time.
+            </div>
+            <div style={{ fontSize: 12, color: "#78350f" }}>
+              {bookingCustomerName(conflict)} · {bookingServiceType(conflict)} · {bookingSchedule(conflict)} · {bookingAddress(conflict)}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button type="button" onClick={() => setConflict(null)}>Choose another time</button>
+              <button type="button" onClick={() => onSave(bookingData())}>Schedule anyway</button>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 12 }}>
           <button onClick={onClose} style={{ flex: 1, padding: "12px", background: "transparent", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, cursor: "pointer" }}>
             Cancel
           </button>
-          <button onClick={handleSave} disabled={!date || !validPrice} style={{ flex: 2, padding: "12px", background: date && validPrice ? "#059669" : "#e5e7eb", color: date && validPrice ? "#fff" : "#9ca3af", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: date && validPrice ? "pointer" : "not-allowed" }}>
-            {pendingOwnerReview ? "Approve / Create Booking" : "Confirm booking"}
+          <button onClick={handleSave} disabled={!date || !validPrice || checking} style={{ flex: 2, padding: "12px", background: date && validPrice ? "#059669" : "#e5e7eb", color: date && validPrice ? "#fff" : "#9ca3af", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: date && validPrice ? "pointer" : "not-allowed" }}>
+            {checking ? "Checking schedule…" : pendingOwnerReview ? "Approve / Create Booking" : "Confirm booking"}
           </button>
         </div>
       </div>
@@ -378,6 +432,18 @@ export default function Dashboard() {
     }
   }, [currentTenant, reviewerUid]);
 
+  const checkBookingConflict = useCallback(async (lead, bookingData) => {
+    const tenantId = currentTenant?.id;
+    if (!tenantId) throw new Error('Tenant ID is required.');
+    const result = await getJobs(tenantId);
+    if (!result.success) throw new Error('Booking conflict check failed.');
+    return findBookingConflict({
+      bookings: result.data,
+      scheduledAt: bookingData.scheduledAt,
+      durationHours: lead.estimate?.appointmentDuration
+    });
+  }, [currentTenant]);
+
   const handleStatusChange = useCallback(async (lead, status) => {
     try {
       await setLeadStatus(currentTenant?.id, lead.id, status);
@@ -587,6 +653,7 @@ export default function Dashboard() {
           lead={bookingLead}
           onClose={() => setBookingLead(null)}
           onSave={data => handleBook(bookingLead, data)}
+          onCheckConflict={data => checkBookingConflict(bookingLead, data)}
         />
       )}
     </div>

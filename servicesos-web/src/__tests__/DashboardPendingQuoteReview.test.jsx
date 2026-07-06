@@ -6,6 +6,7 @@ const dashboardMocks = vi.hoisted(() => ({
   getLeads: vi.fn(),
   setLeadStatus: vi.fn(),
   deleteLead: vi.fn(),
+  getJobs: vi.fn(),
   approveQuoteRequestAndCreateBooking: vi.fn(),
   checkInsuranceExpiration: vi.fn(),
   getRemainingCredits: vi.fn()
@@ -26,6 +27,11 @@ vi.mock('../services/crmService', () => ({
 
 vi.mock('../services/quoteBookingConversionService', () => ({
   approveQuoteRequestAndCreateBooking: dashboardMocks.approveQuoteRequestAndCreateBooking
+}));
+
+vi.mock('../core/scheduling/schedulingService', () => ({
+  BOOKING_MANUAL_PAYMENT_STATUS_LABELS: {},
+  getJobs: dashboardMocks.getJobs
 }));
 
 vi.mock('../services/insuranceService', () => ({
@@ -114,6 +120,7 @@ describe('Dashboard pending quote review', () => {
   beforeEach(() => {
     Object.values(dashboardMocks).forEach(mock => mock.mockReset());
     dashboardMocks.getLeads.mockResolvedValue([pendingQuoteRequest, bookedLead]);
+    dashboardMocks.getJobs.mockResolvedValue({ success: true, data: [] });
     dashboardMocks.checkInsuranceExpiration.mockResolvedValue(null);
     dashboardMocks.getRemainingCredits.mockResolvedValue(null);
     dashboardMocks.approveQuoteRequestAndCreateBooking.mockResolvedValue({
@@ -182,6 +189,7 @@ describe('Dashboard pending quote review', () => {
 describe('Dashboard null-safety', () => {
   beforeEach(() => {
     Object.values(dashboardMocks).forEach(mock => mock.mockReset());
+    dashboardMocks.getJobs.mockResolvedValue({ success: true, data: [] });
     vi.spyOn(window, 'alert').mockImplementation(() => {});
   });
 
@@ -318,6 +326,85 @@ describe('Dashboard null-safety', () => {
         reviewedBy: 'admin-test'
       });
     });
+  });
+
+  it('warns on a tenant booking conflict and schedules only after explicit override', async () => {
+    const lead = {
+      id: 'lead-conflict',
+      tenantId: 'tenant-test',
+      status: 'new',
+      formData: {
+        fullName: 'Conflict Candidate',
+        address: '10 New Job Lane',
+        cleaningType: 'standard',
+        preferredDate: '2026-07-15',
+        preferredTime: '10:00'
+      },
+      estimate: { priceLow: 200, priceHigh: 225, appointmentDuration: 2 },
+      booking: null,
+      createdAt: '2026-06-30T12:00:00.000Z'
+    };
+    dashboardMocks.getLeads.mockResolvedValue([lead]);
+    dashboardMocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'existing-booking',
+        customerName: 'Existing Customer',
+        serviceType: 'Deep Clean',
+        date: '2026-07-15',
+        startTime: '09:30',
+        endTime: '11:30',
+        address: '20 Existing Lane',
+        status: 'scheduled'
+      }]
+    });
+    dashboardMocks.approveQuoteRequestAndCreateBooking.mockResolvedValue({ leadPatch: { status: 'booked' } });
+
+    render(<Dashboard />);
+    expect(await screen.findByText('Conflict Candidate')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
+
+    expect(await screen.findByText('Booking conflict')).toBeInTheDocument();
+    expect(screen.getByText(/Existing Customer · Deep Clean/)).toBeInTheDocument();
+    expect(dashboardMocks.approveQuoteRequestAndCreateBooking).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose another time' }));
+    expect(screen.getByRole('heading', { name: 'Create booking' })).toBeInTheDocument();
+    expect(dashboardMocks.approveQuoteRequestAndCreateBooking).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
+    await screen.findByText('Booking conflict');
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule anyway' }));
+
+    await waitFor(() => expect(dashboardMocks.approveQuoteRequestAndCreateBooking).toHaveBeenCalledTimes(1));
+  });
+
+  it('blocks booking when the tenant conflict check fails', async () => {
+    const lead = {
+      id: 'lead-check-failure',
+      tenantId: 'tenant-test',
+      status: 'new',
+      formData: {
+        fullName: 'Check Failure Customer',
+        address: '30 Safety Lane',
+        preferredDate: '2026-07-16',
+        preferredTime: '09:00'
+      },
+      estimate: { priceLow: 200, priceHigh: 225, appointmentDuration: 2 },
+      booking: null,
+      createdAt: '2026-06-30T12:00:00.000Z'
+    };
+    dashboardMocks.getLeads.mockResolvedValue([lead]);
+    dashboardMocks.getJobs.mockResolvedValue({ success: false, message: 'permission-denied' });
+
+    render(<Dashboard />);
+    expect(await screen.findByText('Check Failure Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not check for booking conflicts');
+    expect(dashboardMocks.approveQuoteRequestAndCreateBooking).not.toHaveBeenCalled();
   });
 
   it('renders when a lead is missing formData', async () => {

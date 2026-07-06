@@ -2763,3 +2763,34 @@ Deploy the UI polish commits to a Netlify preview and repeat the Dashboard/sideb
 
 - Calendar is currently a responsive chronological read-only booking list, not a month/week grid.
 - Run a Tenant A → Tenant B → Tenant A Calendar isolation check and deployed mobile smoke test before promoting this branch to the wife-beta release.
+
+### Booking Conflict Warning — June 30, 2026
+
+**Status:** Implemented as a Dashboard Create Booking safety warning; this is not a scheduling or capacity system.
+
+#### Conflict rule and data boundary
+
+- Before conversion/write, Dashboard calls the existing tenant-scoped `getJobs(tenantId)` boundary.
+- Cancelled bookings are ignored. Same-date bookings conflict when their start times match, or when valid start/end windows overlap.
+- Existing records without an end time use the conservative same-start-time rule.
+- The proposed booking window uses the lead's existing `estimate.appointmentDuration`, with the conversion flow's existing two-hour fallback and half-hour minimum.
+- No global or legacy jobs collection, employees, Staff Scheduling, route, payment, or Calendar mutation boundary is used.
+
+#### Warning and failure behavior
+
+- A conflict keeps the Create Booking modal open and shows the existing customer, service, schedule, and address when available.
+- **Choose another time** dismisses the warning without creating a booking. Changing date or time clears the warning and requires a fresh conflict check.
+- **Schedule anyway** is the explicit owner override and invokes the unchanged quote-to-booking conversion flow.
+- If the tenant is missing or existing bookings cannot be loaded, the modal reports: “Could not check for booking conflicts. Please try again before scheduling.” No booking is created.
+
+#### Tests, limitations, and next step
+
+- Focused tests cover same-start fallback, overlapping windows, adjacent/non-overlapping windows, different dates, cancelled records, duration fallback, warning summary, choose-another-time, explicit override, and conflict-read failure.
+- Existing quote conversion, booked-revenue wording, booking-time normalization, Bookings, Calendar, and normal-admin route coverage remain in the validation suite.
+- This warning assumes one business-level capacity window; it does not model crews, employees, routes, recurring work, or capacity greater than one.
+- Tenant A manual verification used an existing July 1, 9:00 AM booking. The same-time attempt showed the warning and existing-booking summary; **Choose another time** kept the modal open and created nothing.
+- The automated date-field change did not propagate reliably through the browser harness, so alternate-time save is covered by focused tests and is not claimed as manually passed.
+- **Schedule anyway** created the controlled Jamie Brown booking only after explicit override. Dashboard booked jobs/revenue updated, and the booking appeared in both Bookings and read-only Calendar.
+- Calendar exposed no mutation controls and the browser console was clean during the verified flow.
+- Tenant B was skipped; cross-tenant conflict behavior is not claimed as manually passed.
+- Recommended next task: verify Tenant B bookings never affect Tenant A warnings, then connect the warning to approved business availability when that configuration exists.
