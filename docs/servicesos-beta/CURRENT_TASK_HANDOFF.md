@@ -2870,3 +2870,35 @@ Deploy the UI polish commits to a Netlify preview and repeat the Dashboard/sideb
 - Tenant B verification was skipped and is not claimed as passed.
 - Remaining limitation: Calendar is a read-only month grid with horizontal scrolling on narrow screens, not a scheduling, drag/drop, employee, route, or booking-management system.
 - Recommended next task: complete the Tenant A manual checklist, then run Tenant A → Tenant B → Tenant A Calendar isolation before release promotion.
+
+### ServicesOS White-Label Default UI Polish — June 30, 2026
+
+**Status:** Shared default visual system implemented across approved owner/admin surfaces; automated validation complete and human Tenant A visual verification pending.
+
+#### Why and approved surfaces
+
+- The restored Dashboard, Create Estimate, Customers, Bookings, Calendar, and Business Settings surfaces previously used unrelated one-off styles. A small shared V1 token/class layer now provides a consistent cool-gray canvas, white surfaces, navy shell, blue accent, typography, cards, buttons, form focus states, pills, modal treatment, and mobile spacing.
+- The shell uses the active tenant's existing business name when present and a neutral **ServicesOS** / **Service operations** fallback when absent. No Aunt B-specific branding is hardcoded into reusable UI.
+- Dashboard keeps its existing data and workflows but uses the shared card/modal treatment and ServicesOS default identity. Customers, Create Estimate, and Business Settings receive light shared page/form styling without changing CRUD, estimate, or settings persistence behavior.
+
+#### Safe branding audit
+
+- The hidden legacy `CompanySettings` and `brandingService` path was not restored. It combines branding uploads/presets with pricing, feature flags, email, social, booking/payment configuration, integrations, import/export, storage, and Stripe Connect.
+- No branding fields or schema were added in this pass. No logo upload, custom CSS, domain, provider/API key, portal, pricing, feature-flag, or payment branding is exposed.
+- White-label readiness is structural: shared CSS variables/classes and dynamic existing tenant business names. The polished ServicesOS default theme is used when tenant branding is absent.
+
+#### Bookings, Calendar, and modal behavior
+
+- Bookings now uses responsive scan-friendly rows on desktop and stacked cards on mobile. Customer, service, schedule, address, price, booking status, manual payment status, and **View Details** remain visible.
+- Existing Booking Details, Edit Date & Notes, and Edit Payment Status behavior is preserved. No create, delete, reschedule, assignment, payment collection, refund, Stripe, or new mutation control was added.
+- Calendar remains a tenant-scoped read-only month grid using only `getJobs(tenantId)`. Selecting any day now opens an immediate modal with readable date, booking count, safe booking fields, manual payment status, price, and visible **Close** action. Empty days open the same modal with clear empty feedback. The prior below-grid details panel is removed.
+- Create Booking Cancel retains explicit readable contrast, closes the modal, and creates nothing. Availability and conflict gates remain unchanged.
+
+#### Files, tests, and verification
+
+- Shared style primitives: `src/styles/v1.css` plus scoped classes in the app shell and approved components.
+- Focused tests cover Calendar modal date/count/details/empty/close behavior, Bookings card payment/status display and existing edits, Create Booking Cancel/warnings, approved navigation, default ServicesOS identity, Business Settings, Customers, and Create Estimate regressions.
+- Legacy build chunk/dynamic-import warnings and the Vitest local-storage warning remain unrelated.
+- Tenant A manual desktop/mobile visual verification and console review remain pending because automated localhost browser control is blocked by browser URL policy. Tenant B was skipped and is not claimed as passed.
+- Remaining limitation: this is a safe default theme, not a tenant branding editor. Calendar remains read-only and Bookings retains only its previously approved limited edits.
+- Recommended next task: complete Tenant A desktop/mobile smoke testing, then Tenant A → Tenant B → Tenant A visual/data isolation before release promotion.

@@ -41,7 +41,7 @@ describe('CalendarView month calendar read-only boundary', () => {
       expect(screen.getByText(day)).toBeInTheDocument();
     });
     expect(screen.getByLabelText(`${monthHeading} month calendar`)).toBeInTheDocument();
-    expect(screen.getByText('No bookings scheduled for this day.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('groups bookings by date and shows booked-day markers and selected-day details', async () => {
@@ -57,10 +57,17 @@ describe('CalendarView month calendar read-only boundary', () => {
     expect(within(bookedDayButton).getByText('Tenant A Customer')).toBeInTheDocument();
 
     fireEvent.click(bookedDayButton);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('2 bookings scheduled');
+    expect(dialog).toHaveTextContent(new Date(year, month, bookedDay).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }));
     expect(screen.getByRole('heading', { name: 'Tenant A Customer' })).toBeInTheDocument();
     expect(screen.getByText('Deep clean')).toBeInTheDocument();
     expect(screen.getByText('1 Tenant Lane')).toBeInTheDocument();
     expect(screen.getByText('$225.00')).toBeInTheDocument();
+    expect(screen.getAllByText('Payment status not set').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('shows a clear message when an empty day is selected', async () => {
@@ -69,7 +76,7 @@ describe('CalendarView month calendar read-only boundary', () => {
     await screen.findByRole('heading', { name: monthHeading });
 
     fireEvent.click(screen.getByRole('button', { name: `Select ${dayLabel(emptyDay)}, 0 bookings` }));
-    expect(screen.getByText('No bookings scheduled for this day.')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveTextContent('No bookings scheduled for this day.');
   });
 
   it('changes the visible month with Previous Month and Next Month controls', async () => {
@@ -80,7 +87,7 @@ describe('CalendarView month calendar read-only boundary', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next Month' }));
     const nextHeading = new Date(year, month + 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     expect(screen.getByRole('heading', { name: nextHeading })).toBeInTheDocument();
-    expect(screen.getByText('No bookings scheduled for this day.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Previous Month' }));
     expect(screen.getByRole('heading', { name: monthHeading })).toBeInTheDocument();
@@ -94,7 +101,7 @@ describe('CalendarView month calendar read-only boundary', () => {
 
     expect(screen.getByRole('heading', { name: 'Unknown customer' })).toBeInTheDocument();
     expect(screen.getByText('Service not specified')).toBeInTheDocument();
-    expect(screen.getByText(/at|Not scheduled/)).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveTextContent(new Date(year, month, bookedDay).toLocaleDateString('en-US', { dateStyle: 'medium' }));
     expect(screen.getByText('Address not provided')).toBeInTheDocument();
     expect(screen.getByText('Price not set')).toBeInTheDocument();
     expect(screen.getByText('Booked')).toBeInTheDocument();

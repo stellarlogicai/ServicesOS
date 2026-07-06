@@ -136,8 +136,8 @@ function BookModal({ lead, onClose, onSave, onCheckAvailability, onCheckConflict
   const label   = { fontSize: 13, fontWeight: 500, color: "#374151" };
 
   return (
-    <div style={overlay} onClick={onClose}>
-      <div style={box} onClick={e => e.stopPropagation()}>
+    <div className="v1-modal-overlay" style={overlay} onClick={onClose}>
+      <div className="v1-modal" style={box} onClick={e => e.stopPropagation()}>
         <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 600 }}>
           {pendingOwnerReview ? "Approve quote and create booking" : "Create booking"}
         </h2>
@@ -531,14 +531,14 @@ export default function Dashboard() {
   const serviceLabel = { standard: "Standard", deep: "Deep Clean", moveout: "Move-Out", construction: "Post-Constr." };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f9fafb", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+    <div className="dashboard-page" style={{ minHeight: "100vh", background: "#f9fafb", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
       
       {/* Top nav */}
       <div className="dashboard-top-nav" style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "space-between", height: 60, position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 32, height: 32, background: "#1d4ed8", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🧹</div>
           <div>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#111827" }}>CleanOps</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: "#111827" }}>ServicesOS</span>
             <span style={{ marginLeft: 8, fontSize: 12, color: "#9ca3af" }}>Admin Dashboard</span>
           </div>
         </div>
@@ -560,7 +560,7 @@ export default function Dashboard() {
         </div>
 
         {/* Revenue chart */}
-        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, marginBottom: 32 }}>
+        <div className="v1-card" style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, marginBottom: 32 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <div>
               <div style={{ fontSize: 16, fontWeight: 600, color: "#111827" }}>Booked revenue (14 days)</div>
@@ -572,7 +572,7 @@ export default function Dashboard() {
         </div>
 
         {/* Leads table */}
-        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden" }}>
+        <div className="v1-card" style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden" }}>
           
           {/* Table header */}
           <div style={{ padding: "20px 24px", borderBottom: "1px solid #f3f4f6" }}>

@@ -169,6 +169,16 @@ describe('App onboarding router context', () => {
     expect(authState.logout).toHaveBeenCalledTimes(1);
   });
 
+  it('uses the polished ServicesOS default identity when tenant branding is absent', () => {
+    authState.currentTenant = { id: 'tenant-test', onboardingCompleted: true };
+    authState.userProfile = { uid: 'admin-test', onboardingCompleted: true };
+
+    render(<App />);
+
+    expect(screen.getByText('ServicesOS')).toBeInTheDocument();
+    expect(screen.getByText('Service operations')).toBeInTheDocument();
+  });
+
   it('keeps the mobile menu toggle accessible and limited to approved admin navigation', () => {
     const originalWidth = window.innerWidth;
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 600 });

@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   bookingAddress,
   bookingCustomerName,
+  bookingPaymentStatus,
   bookingPrice,
   bookingSchedule,
   bookingServiceType,
@@ -49,16 +50,23 @@ function monthCells(monthDate) {
   ];
 }
 
-function DayBookings({ selectedDate, bookings }) {
+function DayBookings({ selectedDate, bookings, onClose }) {
   const displayDate = selectedDate.toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
 
   return (
-    <section className="calendar-day-panel" aria-labelledby="selected-day-title">
-      <h2 id="selected-day-title">{displayDate}</h2>
+    <div className="v1-modal-overlay" onClick={onClose}>
+      <section className="v1-modal calendar-day-modal" role="dialog" aria-modal="true" aria-labelledby="selected-day-title" onClick={event => event.stopPropagation()}>
+        <header className="calendar-day-modal-header">
+          <div>
+            <h2 id="selected-day-title">{displayDate}</h2>
+            <p>{bookings.length} {bookings.length === 1 ? 'booking' : 'bookings'} scheduled</p>
+          </div>
+          <button type="button" className="v1-button v1-button-secondary" onClick={onClose}>Close</button>
+        </header>
       {bookings.length === 0 ? (
-        <p>No bookings scheduled for this day.</p>
+        <div className="v1-empty-state">No bookings scheduled for this day.</div>
       ) : (
         <div className="calendar-day-bookings">
           {bookings.map((booking, index) => (
@@ -73,13 +81,15 @@ function DayBookings({ selectedDate, bookings }) {
               <dl>
                 <dt>Schedule</dt><dd>{bookingSchedule(booking)}</dd>
                 <dt>Address</dt><dd>{bookingAddress(booking)}</dd>
+                <dt>Payment</dt><dd>{bookingPaymentStatus(booking)}</dd>
                 <dt>Price</dt><dd>{bookingPrice(booking)}</dd>
               </dl>
             </article>
           ))}
         </div>
       )}
-    </section>
+      </section>
+    </div>
   );
 }
 
@@ -91,6 +101,7 @@ export default function CalendarView() {
   const [error, setError] = useState('');
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+  const [dayDialogOpen, setDayDialogOpen] = useState(false);
 
   const loadBookings = useCallback(async () => {
     setLoading(true);
@@ -126,6 +137,15 @@ export default function CalendarView() {
     return () => { isActive = false; };
   }, [loadBookings]);
 
+  useEffect(() => {
+    if (!dayDialogOpen) return undefined;
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') setDayDialogOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [dayDialogOpen]);
+
   const bookingsByDate = useMemo(() => {
     const grouped = new Map();
     bookings.forEach(booking => {
@@ -146,14 +166,15 @@ export default function CalendarView() {
     const nextMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + offset, 1);
     setVisibleMonth(nextMonth);
     setSelectedDate(nextMonth);
+    setDayDialogOpen(false);
   };
 
   return (
-    <section className="calendar-page" aria-labelledby="calendar-title">
+    <section className="v1-page calendar-page" aria-labelledby="calendar-title">
       <header className="calendar-page-header">
         <div>
-          <h1 id="calendar-title">Calendar</h1>
-          <p>Read-only booking calendar</p>
+          <h1 className="v1-page-title" id="calendar-title">Calendar</h1>
+          <p className="v1-page-subtitle">Read-only booking calendar</p>
         </div>
       </header>
 
@@ -189,7 +210,10 @@ export default function CalendarView() {
                     aria-label={`Select ${label}`}
                     aria-pressed={selected}
                     key={cell.key}
-                    onClick={() => setSelectedDate(cell.date)}
+                    onClick={() => {
+                      setSelectedDate(cell.date);
+                      setDayDialogOpen(true);
+                    }}
                   >
                     <span className="calendar-day-number">{cell.day}</span>
                     {dayBookings.length > 0 && (
@@ -208,7 +232,7 @@ export default function CalendarView() {
             </div>
           </div>
 
-          <DayBookings selectedDate={selectedDate} bookings={selectedBookings} />
+          {dayDialogOpen && <DayBookings selectedDate={selectedDate} bookings={selectedBookings} onClose={() => setDayDialogOpen(false)} />}
         </>
       )}
     </section>

@@ -21,6 +21,7 @@ import ImprovedOnboarding     from "./components/ImprovedOnboarding.jsx";
 import RouteOptimization      from "./components/RouteOptimization.jsx";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
 import { saveLead }           from "./services/crmService.js";
+import "./styles/v1.css";
 
 // ─── Window resize hook ───────────────────────────────────────────────────────
 function useWindowSize() {
@@ -239,7 +240,7 @@ function AuthenticatedApp() {
 
   // ── Sidebar ──────────────────────────────────────────────────────────────
   const sidebar = (
-    <nav style={{
+    <nav className="v1-sidebar" style={{
       width: 220,
       background: "#0f172a",
       color: "#fff",
@@ -257,15 +258,15 @@ function AuthenticatedApp() {
       transition: isMobile ? "transform 0.3s ease" : "none",
     }}>
       {/* Logo */}
-      <div style={{ padding: "0 20px 24px", borderBottom: "1px solid #1e293b", marginBottom: 12 }}>
+      <div className="v1-brand" style={{ padding: "0 20px 24px", borderBottom: "1px solid #1e293b", marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 36, height: 36, background: "linear-gradient(135deg, #3b82f6, #1d4ed8)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🧹</div>
+          <div className="v1-brand-mark">{(currentTenant?.businessName || "ServicesOS").trim().charAt(0).toUpperCase()}</div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, background: "linear-gradient(135deg, #3b82f6, #1d4ed8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              {currentTenant?.businessName ?? "Aunt B's"}
+              {currentTenant?.businessName ?? "ServicesOS"}
             </div>
             <div style={{ fontSize: 11, color: "#94a3b8" }}>
-              {isSuperAdmin() ? "Super Admin" : "Cleaning Services"}
+              {isSuperAdmin() ? "Super Admin" : "Service operations"}
             </div>
           </div>
         </div>
@@ -276,6 +277,7 @@ function AuthenticatedApp() {
       {/* Filtered nav links */}
       {visibleNav.map(n => (
         <button
+          className={page === n.id ? "v1-nav-item v1-nav-item-active" : "v1-nav-item"}
           key={n.id}
           onClick={() => navigate(n.id)}
           style={{
@@ -336,7 +338,7 @@ function AuthenticatedApp() {
     const tenantId = typeof currentTenant === 'string' ? currentTenant : currentTenant?.id;
 
     switch (page) {
-      case "intake":            return <div style={{ maxWidth: 680, margin: "0 auto" }}><AIPhotoEstimateSystem enablePayments={false} onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
+      case "intake":            return <div className="v1-page" style={{ maxWidth: 720 }}><AIPhotoEstimateSystem enablePayments={false} onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
       case "dashboard":         return <Dashboard />;
       case "customers":         return <CustomerManagement />;
       case "bookings":          return <BookingsList />;
@@ -357,7 +359,7 @@ function AuthenticatedApp() {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", background: "#f8fafc" }}>
+    <div className="v1-app-shell" style={{ display: "flex", minHeight: "100vh", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", background: "#f8fafc" }}>
       {/* Mobile hamburger */}
       <button
         type="button"
@@ -376,7 +378,7 @@ function AuthenticatedApp() {
 
       {sidebar}
 
-      <main style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "#ffffff", padding: isMobile ? "60px 16px 24px" : "0 24px 48px" }}>
+      <main className="servicesos-main" style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "#ffffff", padding: isMobile ? "60px 16px 24px" : "0 24px 48px" }}>
         {renderPage()}
       </main>
     </div>

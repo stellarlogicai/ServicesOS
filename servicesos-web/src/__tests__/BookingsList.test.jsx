@@ -350,7 +350,7 @@ describe('read-only Bookings admin list', () => {
     await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledTimes(2));
     expect(await screen.findByRole('status')).toHaveTextContent('Booking payment status updated.');
     expect(screen.queryByRole('form', { name: 'Edit booking payment status' })).not.toBeInTheDocument();
-    expect(screen.getByText('Paid cash')).toBeInTheDocument();
+    expect(screen.getAllByText('Paid cash').length).toBeGreaterThan(0);
   });
 
   it('keeps payment status edit mode open and displays update failures', async () => {
@@ -403,7 +403,7 @@ describe('read-only Bookings admin list', () => {
 
     expect(mocks.updateBookingManualPaymentStatus).not.toHaveBeenCalled();
     expect(screen.queryByRole('form', { name: 'Edit booking payment status' })).not.toBeInTheDocument();
-    expect(screen.getByText('Not paid')).toBeInTheDocument();
+    expect(screen.getAllByText('Not paid').length).toBeGreaterThan(0);
   });
 
   it('opens limited date, start time, and notes edit UI from booking details', async () => {

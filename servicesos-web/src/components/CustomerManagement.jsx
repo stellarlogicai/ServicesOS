@@ -235,9 +235,9 @@ export default function CustomerManagement() {
   }
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
+    <div className="v1-page customers-page" style={{ maxWidth: '1200px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', margin: 0 }}>
+        <h1 className="v1-page-title">
           Customer Management
         </h1>
         <button

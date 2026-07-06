@@ -200,10 +200,10 @@ export default function BookingsList() {
   };
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '32px 0' }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 28 }}>Bookings</h1>
-        <p style={{ margin: 0, color: '#64748b' }}>View confirmed jobs for your business.</p>
+    <div className="v1-page bookings-page">
+      <div className="v1-page-header">
+        <h1 className="v1-page-title">Bookings</h1>
+        <p className="v1-page-subtitle">View scheduled jobs and customer details.</p>
       </div>
 
       {loading && <p role="status">Loading bookings…</p>}
@@ -222,37 +222,23 @@ export default function BookingsList() {
       )}
 
       {!loading && !error && bookings.length > 0 && (
-        <div style={{ display: 'grid', gap: 12 }}>
+        <div className="bookings-grid">
           {bookings.map((booking, index) => (
-            <article key={booking?.id || `booking-${index}`} style={{ padding: 18, border: '1px solid #e2e8f0', borderRadius: 10, background: '#fff' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-                <div>
+            <article className="v1-card booking-list-card" key={booking?.id || `booking-${index}`}>
+              <div className="booking-list-main">
+                <div className="booking-list-customer">
                   <h2 style={{ margin: '0 0 6px', fontSize: 18, color: '#0f172a' }}>{bookingCustomerName(booking)}</h2>
                   <div style={{ color: '#475569' }}>{bookingServiceType(booking)}</div>
                 </div>
-                <div style={{ fontWeight: 600, color: '#0f172a' }}>{bookingStatus(booking)}</div>
+                <div className="booking-list-schedule">{bookingSchedule(booking)}</div>
+                <div className="booking-list-address">{bookingAddress(booking)}</div>
+                <div className="booking-list-price">{bookingPrice(booking)}</div>
+                <div className="booking-list-badges">
+                  <span className="v1-pill">{bookingStatus(booking)}</span>
+                  <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>
+                </div>
+                <button type="button" className="v1-button v1-button-secondary" onClick={() => openBookingDetails(booking)}>View Details</button>
               </div>
-              <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, margin: '16px 0 0' }}>
-                <div><dt style={{ color: '#64748b', fontSize: 12 }}>Scheduled</dt><dd style={{ margin: '4px 0 0' }}>{bookingSchedule(booking)}</dd></div>
-                <div><dt style={{ color: '#64748b', fontSize: 12 }}>Address</dt><dd style={{ margin: '4px 0 0' }}>{bookingAddress(booking)}</dd></div>
-                <div><dt style={{ color: '#64748b', fontSize: 12 }}>Price</dt><dd style={{ margin: '4px 0 0' }}>{bookingPrice(booking)}</dd></div>
-              </dl>
-              <button
-                type="button"
-                onClick={() => openBookingDetails(booking)}
-                style={{
-                  marginTop: 16,
-                  border: '1px solid #cbd5e1',
-                  background: '#f8fafc',
-                  color: '#0f172a',
-                  borderRadius: 8,
-                  padding: '8px 12px',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                View Details
-              </button>
             </article>
           ))}
         </div>
@@ -260,6 +246,7 @@ export default function BookingsList() {
 
       {selectedBooking && (
         <div
+          className="v1-modal-overlay"
           role="dialog"
           aria-modal="true"
           aria-labelledby="booking-detail-title"
@@ -274,7 +261,7 @@ export default function BookingsList() {
             zIndex: 50
           }}
         >
-          <div style={{ width: 'min(680px, 100%)', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 12, boxShadow: '0 20px 45px rgba(15, 23, 42, 0.25)', padding: 24 }}>
+          <div className="v1-modal" style={{ width: 'min(680px, 100%)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
               <div>
                 <p style={{ margin: '0 0 6px', color: '#64748b', fontSize: 13 }}>Booking details</p>

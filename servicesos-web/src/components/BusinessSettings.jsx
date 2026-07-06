@@ -91,14 +91,16 @@ export default function BusinessSettings() {
   const fieldStyle = { width: '100%', boxSizing: 'border-box', padding: 10, border: '1px solid #cbd5e1', borderRadius: 8 };
 
   return (
-    <section style={{ maxWidth: 760, margin: '0 auto', padding: 24 }} aria-labelledby="business-settings-title">
-      <h1 id="business-settings-title">Business Settings</h1>
-      <p style={{ color: '#64748b' }}>Business contact details and available working days.</p>
+    <section className="v1-page business-settings-page" style={{ maxWidth: 820 }} aria-labelledby="business-settings-title">
+      <div className="v1-page-header">
+        <h1 className="v1-page-title" id="business-settings-title">Business Settings</h1>
+        <p className="v1-page-subtitle">Business contact details and available working days.</p>
+      </div>
       {loading && <p role="status">Loading business settings...</p>}
       {!loading && error && <div role="alert" style={{ color: '#b91c1c', marginBottom: 16 }}>{error}</div>}
       {!loading && error && tenantId && <button type="button" onClick={load}>Try again</button>}
       {!loading && !error && (
-        <form onSubmit={save} style={{ display: 'grid', gap: 18 }}>
+        <form className="v1-card business-settings-form" onSubmit={save} style={{ display: 'grid', gap: 18 }}>
           <label>Business name<input name="businessName" value={form.businessName} onChange={updateText} style={fieldStyle} /></label>
           <label>Business phone<input name="businessPhone" value={form.businessPhone} onChange={updateText} style={fieldStyle} /></label>
           <label>Business email<input name="businessEmail" type="email" value={form.businessEmail} onChange={updateText} style={fieldStyle} /></label>
@@ -119,7 +121,7 @@ export default function BusinessSettings() {
           </fieldset>
           {error && <div role="alert" style={{ color: '#b91c1c' }}>{error}</div>}
           {success && <div role="status" style={{ color: '#15803d' }}>{success}</div>}
-          <button type="submit" disabled={saving || form.availability.availableDays.length === 0}>
+          <button className="v1-button v1-button-primary" type="submit" disabled={saving || form.availability.availableDays.length === 0}>
             {saving ? 'Saving…' : 'Save Business Settings'}
           </button>
         </form>
