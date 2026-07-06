@@ -2818,3 +2818,25 @@ Deploy the UI polish commits to a Netlify preview and repeat the Dashboard/sideb
 - Tenant B was skipped and is not claimed as passed.
 - Remaining limitation: business availability is stored for the next approved booking-warning integration step; this task does not yet warn on unavailable days.
 - Recommended next task: manually verify Tenant A persistence, then add a separate unavailable-day warning to Dashboard Create Booking using this exact availability boundary.
+
+### Booking Available-Days Warning — June 30, 2026
+
+**Status:** Implemented as a narrow Dashboard Create Booking guard using the saved Business Settings availability.
+
+#### Behavior and safety boundary
+
+- Dashboard reads the active tenant's availability through `getBusinessSettings(tenantId)` before running the existing booking-conflict check.
+- Missing availability defaults to Monday through Friday. Empty or invalid saved availability fails safely with an honest error and creates no booking.
+- An unavailable day keeps the modal open and states: “This day is marked unavailable for this business. Choose another day or schedule anyway.”
+- **Choose another day** dismisses the warning and creates nothing. Changing the date or time clears prior availability and conflict warnings so checks run again.
+- **Schedule anyway** explicitly overrides only the unavailable-day warning. The existing tenant-scoped conflict check still runs afterward and requires its own separate override when a conflict exists.
+- Booking creation still uses the unchanged quote-to-booking conversion boundary. No scheduling, staff, payment, route, Calendar mutation, or tenant/security behavior was added.
+
+#### Tests and remaining verification
+
+- Focused tests cover available and unavailable weekdays, missing-availability defaults, invalid/empty availability, choose-another-day, explicit unavailable-day override, availability failure, and the ordered availability-then-conflict two-gate flow.
+- Existing Dashboard quote conversion and conflict-warning coverage remains active; no navigation or deferred surfaces were changed.
+- Automated focused validation passed. Full lint, test, and build results are recorded with the final task validation.
+- Tenant A manual browser verification remains required for the saved Monday-Saturday configuration: confirm Sunday warns, choose-another-day creates nothing, and any controlled override still passes through the conflict gate.
+- Tenant B availability isolation is not claimed in this pass.
+- Recommended next task: manually verify the Tenant A warning/override flow, then perform a Tenant A → Tenant B → Tenant A availability-isolation check before expanding any booking controls.

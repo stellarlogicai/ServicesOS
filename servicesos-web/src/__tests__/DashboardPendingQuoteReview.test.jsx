@@ -7,6 +7,7 @@ const dashboardMocks = vi.hoisted(() => ({
   setLeadStatus: vi.fn(),
   deleteLead: vi.fn(),
   getJobs: vi.fn(),
+  getBusinessSettings: vi.fn(),
   approveQuoteRequestAndCreateBooking: vi.fn(),
   checkInsuranceExpiration: vi.fn(),
   getRemainingCredits: vi.fn()
@@ -32,6 +33,12 @@ vi.mock('../services/quoteBookingConversionService', () => ({
 vi.mock('../core/scheduling/schedulingService', () => ({
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS: {},
   getJobs: dashboardMocks.getJobs
+}));
+
+vi.mock('../services/businessSettingsService', () => ({
+  BUSINESS_DAYS: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+  DEFAULT_AVAILABLE_DAYS: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+  getBusinessSettings: dashboardMocks.getBusinessSettings
 }));
 
 vi.mock('../services/insuranceService', () => ({
@@ -121,6 +128,9 @@ describe('Dashboard pending quote review', () => {
     Object.values(dashboardMocks).forEach(mock => mock.mockReset());
     dashboardMocks.getLeads.mockResolvedValue([pendingQuoteRequest, bookedLead]);
     dashboardMocks.getJobs.mockResolvedValue({ success: true, data: [] });
+    dashboardMocks.getBusinessSettings.mockResolvedValue({
+      availability: { availableDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] }
+    });
     dashboardMocks.checkInsuranceExpiration.mockResolvedValue(null);
     dashboardMocks.getRemainingCredits.mockResolvedValue(null);
     dashboardMocks.approveQuoteRequestAndCreateBooking.mockResolvedValue({
@@ -190,6 +200,9 @@ describe('Dashboard null-safety', () => {
   beforeEach(() => {
     Object.values(dashboardMocks).forEach(mock => mock.mockReset());
     dashboardMocks.getJobs.mockResolvedValue({ success: true, data: [] });
+    dashboardMocks.getBusinessSettings.mockResolvedValue({
+      availability: { availableDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] }
+    });
     vi.spyOn(window, 'alert').mockImplementation(() => {});
   });
 
@@ -378,6 +391,102 @@ describe('Dashboard null-safety', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Schedule anyway' }));
 
     await waitFor(() => expect(dashboardMocks.approveQuoteRequestAndCreateBooking).toHaveBeenCalledTimes(1));
+  });
+
+  it('warns on an unavailable business day and does not schedule when another day is chosen', async () => {
+    const lead = {
+      id: 'lead-unavailable', tenantId: 'tenant-test', status: 'new',
+      formData: { fullName: 'Unavailable Day Customer', address: '40 Closed Lane', preferredDate: '2026-07-19', preferredTime: '10:00' },
+      estimate: { priceLow: 200, priceHigh: 225, appointmentDuration: 2 }, booking: null,
+      createdAt: '2026-06-30T12:00:00.000Z'
+    };
+    dashboardMocks.getLeads.mockResolvedValue([lead]);
+
+    render(<Dashboard />);
+    expect(await screen.findByText('Unavailable Day Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
+    fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-07-19' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
+
+    expect(await screen.findByText('Unavailable business day')).toBeInTheDocument();
+    expect(screen.getByText(/This day is marked unavailable/)).toBeInTheDocument();
+    expect(dashboardMocks.getJobs).not.toHaveBeenCalled();
+    expect(dashboardMocks.approveQuoteRequestAndCreateBooking).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose another day' }));
+    expect(screen.queryByText('Unavailable business day')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Create booking' })).toBeInTheDocument();
+  });
+
+  it('checks conflicts after an unavailable-day override before scheduling', async () => {
+    const lead = {
+      id: 'lead-two-gates', tenantId: 'tenant-test', status: 'new',
+      formData: { fullName: 'Two Gate Customer', address: '50 Closed Lane', preferredDate: '2026-07-19', preferredTime: '10:00' },
+      estimate: { priceLow: 200, priceHigh: 225, appointmentDuration: 2 }, booking: null,
+      createdAt: '2026-06-30T12:00:00.000Z'
+    };
+    dashboardMocks.getLeads.mockResolvedValue([lead]);
+    dashboardMocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'existing-sunday', customerName: 'Existing Sunday Customer', serviceType: 'Standard Clean',
+      date: '2026-07-19', startTime: '09:30', endTime: '11:30', status: 'scheduled'
+    }] });
+    dashboardMocks.approveQuoteRequestAndCreateBooking.mockResolvedValue({ leadPatch: { status: 'booked' } });
+
+    render(<Dashboard />);
+    expect(await screen.findByText('Two Gate Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
+    fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-07-19' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
+    await screen.findByText('Unavailable business day');
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule anyway' }));
+
+    expect(await screen.findByText('Booking conflict')).toBeInTheDocument();
+    expect(dashboardMocks.approveQuoteRequestAndCreateBooking).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule anyway' }));
+    await waitFor(() => expect(dashboardMocks.approveQuoteRequestAndCreateBooking).toHaveBeenCalledTimes(1));
+  });
+
+  it('schedules an unavailable day after explicit override when no conflict exists', async () => {
+    const lead = {
+      id: 'lead-unavailable-override', tenantId: 'tenant-test', status: 'new',
+      formData: { fullName: 'Override Day Customer', address: '60 Closed Lane', preferredDate: '2026-07-19', preferredTime: '10:00' },
+      estimate: { priceLow: 200, priceHigh: 225, appointmentDuration: 2 }, booking: null,
+      createdAt: '2026-06-30T12:00:00.000Z'
+    };
+    dashboardMocks.getLeads.mockResolvedValue([lead]);
+    dashboardMocks.approveQuoteRequestAndCreateBooking.mockResolvedValue({ leadPatch: { status: 'booked' } });
+
+    render(<Dashboard />);
+    expect(await screen.findByText('Override Day Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
+    fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-07-19' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
+    await screen.findByText('Unavailable business day');
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule anyway' }));
+
+    await waitFor(() => expect(dashboardMocks.approveQuoteRequestAndCreateBooking).toHaveBeenCalledTimes(1));
+    expect(dashboardMocks.getJobs).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks booking when business availability cannot be validated', async () => {
+    const lead = {
+      id: 'lead-availability-failure', tenantId: 'tenant-test', status: 'new',
+      formData: { fullName: 'Availability Failure Customer', address: '70 Safety Lane', preferredDate: '2026-07-20', preferredTime: '09:00' },
+      estimate: { priceLow: 200, priceHigh: 225, appointmentDuration: 2 }, booking: null,
+      createdAt: '2026-06-30T12:00:00.000Z'
+    };
+    dashboardMocks.getLeads.mockResolvedValue([lead]);
+    dashboardMocks.getBusinessSettings.mockResolvedValue({ availability: { availableDays: [] } });
+
+    render(<Dashboard />);
+    expect(await screen.findByText('Availability Failure Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
+    fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-07-20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not check business availability');
+    expect(dashboardMocks.getJobs).not.toHaveBeenCalled();
+    expect(dashboardMocks.approveQuoteRequestAndCreateBooking).not.toHaveBeenCalled();
   });
 
   it('blocks booking when the tenant conflict check fails', async () => {

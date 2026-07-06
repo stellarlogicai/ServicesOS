@@ -4,6 +4,8 @@ import { getLeads, setLeadStatus, deleteLead } from "../services/crmService";
 import { approveQuoteRequestAndCreateBooking } from "../services/quoteBookingConversionService";
 import { getJobs } from "../core/scheduling/schedulingService";
 import { findBookingConflict } from "../services/bookingConflictService";
+import { checkBookingDayAvailability } from "../services/bookingAvailabilityService";
+import { getBusinessSettings } from "../services/businessSettingsService";
 import {
   bookingAddress,
   bookingCustomerName,
@@ -58,7 +60,7 @@ function StatCard({ label, value, sub, accent }) {
 }
 
 // ─── Book modal ───────────────────────────────────────────────────────────────
-function BookModal({ lead, onClose, onSave, onCheckConflict }) {
+function BookModal({ lead, onClose, onSave, onCheckAvailability, onCheckConflict }) {
   const display = getFormData(lead);
   const pendingOwnerReview = isPendingOwnerReview(lead);
   const normalizeBookingTime = (value) => {
@@ -74,6 +76,7 @@ function BookModal({ lead, onClose, onSave, onCheckConflict }) {
     pendingOwnerReview ? "" : String(lead.estimate?.priceLow || "")
   );
   const [notes, setNotes] = useState("");
+  const [availabilityWarning, setAvailabilityWarning] = useState(false);
   const [conflict, setConflict] = useState(null);
   const [checkError, setCheckError] = useState("");
   const [checking, setChecking] = useState(false);
@@ -85,26 +88,43 @@ function BookModal({ lead, onClose, onSave, onCheckConflict }) {
     notes
   });
 
-  const resetConflict = () => {
+  const resetChecks = () => {
+    setAvailabilityWarning(false);
     setConflict(null);
     setCheckError("");
   };
 
-  const handleSave = async () => {
-    if (!date || !validPrice) return;
+  const checkConflictAndSave = async (nextBooking) => {
+    const foundConflict = await onCheckConflict(nextBooking);
+    if (foundConflict) {
+      setConflict(foundConflict);
+      return;
+    }
+    onSave(nextBooking);
+  };
+
+  const handleSave = async (skipAvailability = false) => {
+    if (!date || !validPrice || checking) return;
     setChecking(true);
     setCheckError("");
     try {
       const nextBooking = bookingData();
-      const foundConflict = await onCheckConflict(nextBooking);
-      if (foundConflict) {
-        setConflict(foundConflict);
-        return;
+      if (!skipAvailability) {
+        const availability = await onCheckAvailability(nextBooking);
+        if (!availability.available) {
+          setAvailabilityWarning(true);
+          setConflict(null);
+          return;
+        }
       }
-      onSave(nextBooking);
-    } catch {
+      setAvailabilityWarning(false);
+      await checkConflictAndSave(nextBooking);
+    } catch (error) {
+      setAvailabilityWarning(false);
       setConflict(null);
-      setCheckError("Could not check for booking conflicts. Please try again before scheduling.");
+      setCheckError(error?.message === 'Booking conflict check failed.'
+        ? "Could not check for booking conflicts. Please try again before scheduling."
+        : "Could not check business availability. Please try again before scheduling.");
     } finally {
       setChecking(false);
     }
@@ -126,11 +146,11 @@ function BookModal({ lead, onClose, onSave, onCheckConflict }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
           <div>
             <div style={label}>Date *</div>
-            <input type="date" value={date} onChange={e => { setDate(e.target.value); resetConflict(); }} style={field} />
+            <input type="date" value={date} onChange={e => { setDate(e.target.value); resetChecks(); }} style={field} />
           </div>
           <div>
             <div style={label}>Time</div>
-            <input type="time" value={time} onChange={e => { setTime(e.target.value); resetConflict(); }} style={field} />
+            <input type="time" value={time} onChange={e => { setTime(e.target.value); resetChecks(); }} style={field} />
           </div>
         </div>
 
@@ -155,7 +175,20 @@ function BookModal({ lead, onClose, onSave, onCheckConflict }) {
 
         {checkError && <div role="alert" style={{ marginBottom: 16, color: "#b91c1c", fontSize: 13 }}>{checkError}</div>}
 
-        {conflict && (
+        {availabilityWarning && (
+          <div role="alert" style={{ marginBottom: 16, padding: 14, border: "1px solid #f59e0b", borderRadius: 8, background: "#fffbeb" }}>
+            <strong style={{ display: "block", marginBottom: 6 }}>Unavailable business day</strong>
+            <div style={{ fontSize: 13 }}>
+              This day is marked unavailable for this business. Choose another day or schedule anyway.
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button type="button" onClick={() => setAvailabilityWarning(false)}>Choose another day</button>
+              <button type="button" onClick={() => handleSave(true)}>Schedule anyway</button>
+            </div>
+          </div>
+        )}
+
+        {!availabilityWarning && conflict && (
           <div role="alert" style={{ marginBottom: 16, padding: 14, border: "1px solid #f59e0b", borderRadius: 8, background: "#fffbeb" }}>
             <strong style={{ display: "block", marginBottom: 6 }}>Booking conflict</strong>
             <div style={{ fontSize: 13, marginBottom: 8 }}>
@@ -175,7 +208,7 @@ function BookModal({ lead, onClose, onSave, onCheckConflict }) {
           <button onClick={onClose} style={{ flex: 1, padding: "12px", background: "transparent", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, cursor: "pointer" }}>
             Cancel
           </button>
-          <button onClick={handleSave} disabled={!date || !validPrice || checking} style={{ flex: 2, padding: "12px", background: date && validPrice ? "#059669" : "#e5e7eb", color: date && validPrice ? "#fff" : "#9ca3af", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: date && validPrice ? "pointer" : "not-allowed" }}>
+          <button onClick={() => handleSave()} disabled={!date || !validPrice || checking} style={{ flex: 2, padding: "12px", background: date && validPrice ? "#059669" : "#e5e7eb", color: date && validPrice ? "#fff" : "#9ca3af", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: date && validPrice ? "pointer" : "not-allowed" }}>
             {checking ? "Checking schedule…" : pendingOwnerReview ? "Approve / Create Booking" : "Confirm booking"}
           </button>
         </div>
@@ -435,12 +468,26 @@ export default function Dashboard() {
   const checkBookingConflict = useCallback(async (lead, bookingData) => {
     const tenantId = currentTenant?.id;
     if (!tenantId) throw new Error('Tenant ID is required.');
-    const result = await getJobs(tenantId);
-    if (!result.success) throw new Error('Booking conflict check failed.');
-    return findBookingConflict({
-      bookings: result.data,
+    try {
+      const result = await getJobs(tenantId);
+      if (!result.success) throw new Error('Booking conflict check failed.');
+      return findBookingConflict({
+        bookings: result.data,
+        scheduledAt: bookingData.scheduledAt,
+        durationHours: lead.estimate?.appointmentDuration
+      });
+    } catch {
+      throw new Error('Booking conflict check failed.');
+    }
+  }, [currentTenant]);
+
+  const checkBookingAvailability = useCallback(async (bookingData) => {
+    const tenantId = currentTenant?.id;
+    if (!tenantId) throw new Error('Tenant ID is required.');
+    const settings = await getBusinessSettings(tenantId);
+    return checkBookingDayAvailability({
       scheduledAt: bookingData.scheduledAt,
-      durationHours: lead.estimate?.appointmentDuration
+      availableDays: settings?.availability?.availableDays,
     });
   }, [currentTenant]);
 
@@ -653,6 +700,7 @@ export default function Dashboard() {
           lead={bookingLead}
           onClose={() => setBookingLead(null)}
           onSave={data => handleBook(bookingLead, data)}
+          onCheckAvailability={checkBookingAvailability}
           onCheckConflict={data => checkBookingConflict(bookingLead, data)}
         />
       )}
