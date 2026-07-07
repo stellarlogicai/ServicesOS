@@ -16,7 +16,6 @@ import TenantManagement       from "./components/TenantManagement.jsx";
 import AIModelTraining        from "./components/AIModelTraining.jsx";
 import CalendarView           from "./components/CalendarView.jsx";
 import DataExport             from "./components/DataExport.jsx";
-import PaymentLinks           from "./components/PaymentLinks.jsx";
 import InsuranceTracking      from "./components/InsuranceTracking.jsx";
 import ImprovedOnboarding     from "./components/ImprovedOnboarding.jsx";
 import RouteOptimization      from "./components/RouteOptimization.jsx";
@@ -107,12 +106,6 @@ const NAV_ITEMS = [
     icon: "🏢",
     label: "Business Settings",
     roles: ["admin", "super-admin"],
-  },
-  {
-    id: "payment-links",
-    icon: "💳",
-    label: "Payment links",
-    roles: ["super-admin"],
   },
   {
     id: "insurance",
@@ -346,7 +339,7 @@ function AuthenticatedApp() {
     const tenantId = typeof currentTenant === 'string' ? currentTenant : currentTenant?.id;
 
     switch (page) {
-      case "intake":            return <div className="v1-page" style={{ maxWidth: 720 }}><AIPhotoEstimateSystem enablePayments={false} onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
+      case "intake":            return <div className="v1-page" style={{ maxWidth: 720 }}><AIPhotoEstimateSystem onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
       case "dashboard":         return <Dashboard />;
       case "customers":         return <CustomerManagement />;
       case "bookings":          return <BookingsList />;
@@ -355,7 +348,6 @@ function AuthenticatedApp() {
       case "route-optimization": return <RouteOptimization tenantId={tenantId} />;
       case "calendar":          return <CalendarView />;
       case "business-settings": return <BusinessSettings />;
-      case "payment-links":     return <PaymentLinks />;
       case "insurance":         return <InsuranceTracking tenantId={tenantId} />;
       case "data-export":       return <DataExport />;
       case "customer-portal":   return <CustomerPortal />;

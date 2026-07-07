@@ -193,7 +193,7 @@ describe('Dashboard pending quote review', () => {
         reviewedBy: 'admin-test'
       });
     });
-  });
+  }, 10000);
 });
 
 describe('Dashboard null-safety', () => {

@@ -18,16 +18,13 @@ vi.mock('../contexts/AuthContext', () => ({
 vi.mock('../services/aiService', () => ({ analyzePhotos: mocks.analyzePhotos }));
 vi.mock('../services/crmService', () => ({ saveQuote: mocks.saveQuote }));
 vi.mock('../services/emailService', () => ({
-  sendQuoteEmail: mocks.sendQuoteEmail,
-  sendPaymentConfirmationEmail: vi.fn()
+  sendQuoteEmail: mocks.sendQuoteEmail
 }));
 vi.mock('../services/notificationService', () => ({ sendSMS: mocks.sendSMS }));
 vi.mock('../services/imageCompressionService', () => ({
   compressImages: mocks.compressImages
 }));
 vi.mock('../services/pdfService', () => ({ downloadQuotePDF: vi.fn() }));
-vi.mock('../services/stripeService', () => ({ formatAmount: vi.fn() }));
-vi.mock('../components/PaymentForm', () => ({ default: () => null }));
 vi.mock('../components/PhotoGrid', () => ({ PhotoGrid: () => <div>Photo preview</div> }));
 
 import AIPhotoEstimateSystem from '../AIPhotoEstimateSystem';
@@ -53,7 +50,7 @@ describe('Create Estimate wife-beta flow', () => {
 
   it('renders and saves a manual estimate without AI, booking, or payment actions', async () => {
     const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-manual' });
-    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    render(<AIPhotoEstimateSystem onLeadSaved={onLeadSaved} />);
 
     expect(screen.getByRole('heading', { name: 'Create Estimate' })).toBeInTheDocument();
     completeRequiredFields();
@@ -81,9 +78,22 @@ describe('Create Estimate wife-beta flow', () => {
     );
   });
 
+  it('does not expose the removed payment form or fake payment success flow by default', async () => {
+    render(<AIPhotoEstimateSystem />);
+
+    completeRequiredFields();
+    fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Manual Estimate' }));
+
+    expect(await screen.findByRole('heading', { name: 'Estimate Results' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Proceed to Payment' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Payment Successful/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Payment ID/i)).not.toBeInTheDocument();
+  });
+
   it('selects all owner add-ons and allows an individual add-on to be removed', async () => {
     const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-add-ons' });
-    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    render(<AIPhotoEstimateSystem onLeadSaved={onLeadSaved} />);
     completeRequiredFields();
 
     fireEvent.click(screen.getByLabelText('Select all additional services'));
@@ -108,7 +118,7 @@ describe('Create Estimate wife-beta flow', () => {
       pricingProfileId: 'aunt-bs-cleaning-services'
     };
     const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-aunt-b-profile' });
-    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    render(<AIPhotoEstimateSystem onLeadSaved={onLeadSaved} />);
     completeRequiredFields();
 
     fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
@@ -135,7 +145,7 @@ describe('Create Estimate wife-beta flow', () => {
   it('keeps the saved estimate successful and warns when notification reports failure', async () => {
     mocks.sendQuoteEmail.mockResolvedValue({ success: false, error: 'Failed to fetch' });
     const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-notification-failed' });
-    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    render(<AIPhotoEstimateSystem onLeadSaved={onLeadSaved} />);
     completeRequiredFields();
 
     fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
@@ -152,7 +162,7 @@ describe('Create Estimate wife-beta flow', () => {
   it('keeps the saved estimate successful when notification throws', async () => {
     mocks.sendQuoteEmail.mockRejectedValue(new Error('network unavailable'));
     const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-notification-threw' });
-    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    render(<AIPhotoEstimateSystem onLeadSaved={onLeadSaved} />);
     completeRequiredFields();
 
     fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
@@ -168,7 +178,7 @@ describe('Create Estimate wife-beta flow', () => {
   it('shows conservative status when email delivery is unavailable', async () => {
     mocks.sendQuoteEmail.mockResolvedValue({ success: null, reason: 'not_configured' });
     const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-notification-unknown' });
-    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    render(<AIPhotoEstimateSystem onLeadSaved={onLeadSaved} />);
     completeRequiredFields();
 
     fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
@@ -183,7 +193,7 @@ describe('Create Estimate wife-beta flow', () => {
   it('keeps manual saving available after optional AI analysis fails', async () => {
     mocks.analyzePhotos.mockRejectedValue(new Error('AI unavailable'));
     const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-manual' });
-    render(<AIPhotoEstimateSystem enablePayments={false} onLeadSaved={onLeadSaved} />);
+    render(<AIPhotoEstimateSystem onLeadSaved={onLeadSaved} />);
     completeRequiredFields();
 
     const photo = new File(['photo'], 'kitchen.jpg', { type: 'image/jpeg' });

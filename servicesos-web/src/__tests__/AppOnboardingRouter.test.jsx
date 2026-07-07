@@ -8,12 +8,7 @@ vi.mock('../pages/Dashboard', () => ({
 }));
 
 vi.mock('../AIPhotoEstimateSystem', () => ({
-  default: ({ enablePayments }) => (
-    <>
-      <h1>Create Estimate Screen</h1>
-      {enablePayments && <button>Proceed to Payment</button>}
-    </>
-  )
+  default: () => <h1>Create Estimate Screen</h1>
 }));
 
 vi.mock('../components/CustomerManagement', () => ({
@@ -38,10 +33,6 @@ vi.mock('../components/RouteOptimization', () => ({
 
 vi.mock('../components/CalendarView', () => ({
   default: () => <h1>Read-Only Calendar Screen</h1>
-}));
-
-vi.mock('../components/PaymentLinks', () => ({
-  default: () => <h1>Deferred Payment Links Screen</h1>
 }));
 
 vi.mock('../components/InsuranceTracking', () => ({
@@ -258,7 +249,6 @@ describe('App onboarding router context', () => {
         'Customer Portal Screen',
         'Deferred Staff Scheduling Screen',
         'Deferred Route Optimization Screen',
-        'Deferred Payment Links Screen',
         'Deferred Insurance Screen',
         'Deferred Data Export Screen',
         'Deferred Backup Screen',
@@ -274,7 +264,7 @@ describe('App onboarding router context', () => {
     });
   });
 
-  it('keeps existing super-admin nav visibility unchanged', () => {
+  it('keeps old payment links hidden from super-admin navigation while preserving other deferred routes', () => {
     authState.role = 'super-admin';
     authState.isSuperAdmin = () => true;
     authState.userProfile = { uid: 'super-admin-test', onboardingCompleted: true };
@@ -292,7 +282,6 @@ describe('App onboarding router context', () => {
       'Route optimization',
       'Calendar',
       'Business Settings',
-      'Payment links',
       'Insurance',
       'Data export',
       'Tenant management',
@@ -302,6 +291,7 @@ describe('App onboarding router context', () => {
     ].forEach(label => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
+    expect(screen.queryByText('Payment links')).not.toBeInTheDocument();
 
     expect(screen.getByRole('heading', { name: 'Super Admin Tenant Management Screen' })).toBeInTheDocument();
   });

@@ -2,13 +2,11 @@ import { useState } from "react";
 import { analyzePhotos } from "./services/aiService";
 import { calculateEstimate } from "./lib/estimateEngine";
 import { saveQuote } from "./services/crmService";
-import { sendQuoteEmail, sendPaymentConfirmationEmail } from "./services/emailService";
+import { sendQuoteEmail } from "./services/emailService";
 import { sendSMS } from "./services/notificationService";
 import { PhotoGrid } from "./components/PhotoGrid";
 import { downloadQuotePDF } from "./services/pdfService";
-import PaymentForm from "./components/PaymentForm";
 import { compressImages } from "./services/imageCompressionService";
-import { formatAmount } from "./services/stripeService";
 import { useAuth } from "./contexts/AuthContext";
 import { getPricingProfileForTenant } from "./core/estimates/pricingProfiles";
 
@@ -19,7 +17,6 @@ const OWNER_EXTRA_KEYS = [
 ];
 
 export default function AIPhotoEstimateSystem({
-  enablePayments = true,
   onLeadSaved = null
 }) {
   const { currentTenant } = useAuth();
@@ -83,7 +80,6 @@ export default function AIPhotoEstimateSystem({
   const [saveError, setSaveError] = useState("");
   const [notificationStatus, setNotificationStatus] = useState(null);
   const [compressing, setCompressing] = useState(false);
-  const [paymentResult, setPaymentResult] = useState(null);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -240,29 +236,6 @@ export default function AIPhotoEstimateSystem({
 
   const downloadPDF = () => {
     downloadQuotePDF(formData, aiAnalysis, estimate);
-  };
-
-  const handlePaymentComplete = async (result) => {
-    setPaymentResult(result);
-    
-    // Send payment confirmation email
-    const priceMid = (estimate.priceLow + estimate.priceHigh) / 2;
-    const depositAmount = Math.round(priceMid * 0.25 * 100); // 25% deposit in cents
-    const remainingBalance = Math.round(priceMid * 0.75 * 100); // 75% remaining in cents
-    
-    await sendPaymentConfirmationEmail(formData, {
-      amount: depositAmount,
-      type: 'Deposit',
-      paymentId: result.paymentId,
-      remainingBalance: remainingBalance,
-      createdAt: new Date().toISOString()
-    });
-    
-    setStep("payment-success");
-  };
-
-  const goToPayment = () => {
-    setStep("payment");
   };
 
   if (step === "intake") {
@@ -1048,23 +1021,6 @@ export default function AIPhotoEstimateSystem({
           >
             Download PDF
           </button>
-          {enablePayments && (
-            <button
-              onClick={goToPayment}
-              style={{
-                padding: "12px 24px",
-                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                color: "white",
-                border: "none",
-                borderRadius: 8,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: "pointer"
-              }}
-            >
-              Proceed to Payment
-            </button>
-          )}
           <button
             onClick={() => {
               setStep("intake");
@@ -1072,7 +1028,6 @@ export default function AIPhotoEstimateSystem({
               setPhotoPreviews([]);
               setAiAnalysis(null);
               setEstimate(null);
-              setPaymentResult(null);
               setNotificationStatus(null);
             }}
             style={{
@@ -1089,66 +1044,6 @@ export default function AIPhotoEstimateSystem({
             Create Another Estimate
           </button>
         </div>
-      </div>
-    );
-  }
-
-  if (step === "payment") {
-    return (
-      <div style={{ padding: "24px", maxWidth: 600, margin: "0 auto" }}>
-        <PaymentForm
-          estimate={estimate}
-          formData={formData}
-          onPaymentComplete={handlePaymentComplete}
-          onCancel={() => setStep("results")}
-        />
-      </div>
-    );
-  }
-
-  if (step === "payment-success") {
-    return (
-      <div style={{ padding: "24px", maxWidth: 600, margin: "0 auto", textAlign: "center" }}>
-        <div style={{ fontSize: 64, marginBottom: 16 }}>✅</div>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 16 }}>
-          Payment Successful!
-        </h2>
-        <p style={{ fontSize: 16, color: "#64748b", marginBottom: 24 }}>
-          Your deposit of {formatAmount(paymentResult?.amount || 0)} has been processed.
-        </p>
-        <div style={{
-          padding: 24,
-          background: "#f0fdf4",
-          borderRadius: 12,
-          border: "1px solid #bbf7d0",
-          marginBottom: 24
-        }}>
-          <p style={{ margin: 0, color: "#166534" }}>
-            Payment ID: {paymentResult?.paymentId || 'N/A'}
-          </p>
-        </div>
-        <button
-          onClick={() => {
-            setStep("intake");
-            setPhotoFiles([]);
-            setPhotoPreviews([]);
-            setAiAnalysis(null);
-            setEstimate(null);
-            setPaymentResult(null);
-          }}
-          style={{
-            padding: "12px 24px",
-            background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
-            color: "white",
-            border: "none",
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: "pointer"
-          }}
-        >
-          Create Another Estimate
-        </button>
       </div>
     );
   }
