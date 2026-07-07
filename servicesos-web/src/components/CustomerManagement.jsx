@@ -6,6 +6,7 @@ import {
   getCustomerPortalQuoteRequests,
   updateCustomerPortalQuoteRequestStatus
 } from '../services/customerPortalQuoteRequestService';
+import './CustomerManagement.css';
 
 const DUPLICATE_CUSTOMER_MESSAGE = 'Possible duplicate customer found. A customer with this email or phone already exists. Please review the existing customer before creating another record.';
 
@@ -235,12 +236,16 @@ export default function CustomerManagement() {
   }
 
   return (
-    <div className="v1-page customers-page" style={{ maxWidth: '1200px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1 className="v1-page-title">
-          Customer Management
-        </h1>
+    <div className="v1-page customers-page">
+      <div className="v1-page-header customers-page-header">
+        <div>
+          <h1 className="v1-page-title">
+            Customers
+          </h1>
+          <p className="v1-page-subtitle">Customer records and customer portal requests for the active tenant.</p>
+        </div>
         <button
+          className="v1-button v1-button-primary customers-add-button"
           onClick={() => {
             setEditingCustomer(null);
             setFormError('');
@@ -250,99 +255,88 @@ export default function CustomerManagement() {
             });
             setShowModal(true);
           }}
-          style={{
-            padding: '10px 20px',
-            background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-          }}
         >
           + Add Customer
         </button>
       </div>
 
       {/* Search */}
-      <section style={{ marginBottom: 24, padding: 20, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, textAlign: 'left' }}>
-        <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#0f172a' }}>New Customer Requests</h2>
+      <section className="v1-card customers-requests-panel">
+        <div className="customers-section-header">
+          <h2>Customer requests</h2>
+          <span className="v1-pill">{customerRequests.filter(request => request.requestStatus !== 'archived').length} active</span>
+        </div>
         {customerRequests.filter(request => request.requestStatus !== 'archived').length === 0 ? (
-          <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>No new customer requests.</p>
+          <p className="customers-muted">No new customer requests.</p>
         ) : customerRequests.filter(request => request.requestStatus !== 'archived').map(request => {
           const customer = request.customerSnapshot || request.formData || {};
           const details = request.requestSnapshot || {};
           return (
-            <article key={request.id} style={{ padding: 16, marginTop: 12, background: '#fff', border: '1px solid #dbeafe', borderRadius: 10 }}>
-              <div style={{ fontWeight: 700, color: '#0f172a' }}>{customer.fullName || customer.name || 'Unknown customer'}</div>
-              <div style={{ color: '#475569', fontSize: 13 }}>{[customer.email, customer.phone].filter(Boolean).join(' · ') || 'Contact information not provided'}</div>
-              <div style={{ marginTop: 8, fontSize: 14, color: '#334155' }}><strong>Service:</strong> {details.cleaningType || request.formData?.cleaningType || 'Not specified'}</div>
-              <div style={{ fontSize: 14, color: '#334155' }}><strong>Notes:</strong> {details.specialRequests || details.customerNotes || request.formData?.specialRequests || 'None provided'}</div>
-              <div style={{ fontSize: 14, color: '#334155' }}><strong>Preferred date:</strong> {details.preferredDate || request.appointmentRequest?.preferredDate || 'Not specified'}</div>
-              <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Status: {request.requestStatus || 'new'} · Source: customer portal · Created: {request.createdAt ? new Date(request.createdAt).toLocaleString() : 'Unknown'}</div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                <button type="button" onClick={() => updateRequestStatus(request.id, 'contacted')} disabled={request.requestStatus === 'contacted'}>Mark contacted</button>
-                <button type="button" onClick={() => updateRequestStatus(request.id, 'archived')}>Archive</button>
+            <article key={request.id} className="customers-request-card">
+              <div className="customers-request-topline">
+                <div>
+                  <h3>{customer.fullName || customer.name || 'Unknown customer'}</h3>
+                  <p>{[customer.email, customer.phone].filter(Boolean).join(' · ') || 'Contact information not provided'}</p>
+                </div>
+                <span className="v1-pill v1-pill-payment">{request.requestStatus || 'new'}</span>
+              </div>
+              <dl className="customers-request-details">
+                <dt>Service</dt><dd>{details.cleaningType || request.formData?.cleaningType || 'Not specified'}</dd>
+                <dt>Notes</dt><dd>{details.specialRequests || details.customerNotes || request.formData?.specialRequests || 'None provided'}</dd>
+                <dt>Preferred date</dt><dd>{details.preferredDate || request.appointmentRequest?.preferredDate || 'Not specified'}</dd>
+              </dl>
+              <div className="customers-request-meta">Source: customer portal · Created: {request.createdAt ? new Date(request.createdAt).toLocaleString() : 'Unknown'}</div>
+              <div className="customers-card-actions">
+                <button className="v1-button v1-button-secondary" type="button" onClick={() => updateRequestStatus(request.id, 'contacted')} disabled={request.requestStatus === 'contacted'}>Mark contacted</button>
+                <button className="v1-button v1-button-secondary" type="button" onClick={() => updateRequestStatus(request.id, 'archived')}>Archive</button>
               </div>
             </article>
           );
         })}
       </section>
 
-      <div style={{ marginBottom: '24px' }}>
+      <div className="customers-toolbar">
         <input
+          className="customers-search"
           type="text"
           placeholder="Search customers by name, email, or phone..."
           value={searchTerm}
           onChange={handleSearch}
-          style={{
-            width: '100%',
-            padding: '12px 16px',
-            border: '1px solid #e2e8f0',
-            borderRadius: '8px',
-            fontSize: '14px',
-            outline: 'none',
-            transition: 'border-color 0.2s'
-          }}
-          onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
-          onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
         />
       </div>
 
       {/* Customer List */}
-      <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
+      <div className="v1-card customers-list-card">
         {filteredCustomers.length === 0 ? (
-          <div style={{ padding: '48px', textAlign: 'center', color: '#64748b' }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>👥</div>
-            <div style={{ fontSize: '16px', marginBottom: '8px' }}>No customers found</div>
-            <div style={{ fontSize: '14px' }}>Add your first customer to get started</div>
+          <div className="v1-empty-state customers-empty-state">
+            <div className="customers-empty-icon">👥</div>
+            <div>No customers found</div>
+            <p>Add your first customer to get started</p>
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table className="customers-table">
             <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5' }}>Name</th>
-                <th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5' }}>Email</th>
-                <th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5' }}>Phone</th>
-                <th style={{ padding: '16px', textAlign: 'left', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5' }}>Address</th>
-                <th style={{ padding: '16px', textAlign: 'center', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5' }}>Actions</th>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Address</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredCustomers.map(customer => (
-                <tr key={customer.id} style={{ borderBottom: '1px solid #f1f5f9', '&:hover': { background: '#f8fafc' } }}>
-                  <td style={{ padding: '16px', fontSize: '14px', fontWeight: '500', color: '#1e293b' }}>
+                <tr key={customer.id}>
+                  <td data-label="Name" className="customers-name-cell">
                     {customer.name}
                   </td>
-                  <td style={{ padding: '16px', fontSize: '14px', color: '#64748b' }}>
+                  <td data-label="Email">
                     {customer.email}
                   </td>
-                  <td style={{ padding: '16px', fontSize: '14px', color: '#64748b' }}>
+                  <td data-label="Phone">
                     {customer.phone}
                   </td>
-                  <td style={{ padding: '16px', fontSize: '14px', color: '#64748b' }}>
+                  <td data-label="Address">
                     {customer.address && (
                       <>
                         {customer.address}
@@ -352,38 +346,21 @@ export default function CustomerManagement() {
                       </>
                     )}
                   </td>
-                  <td style={{ padding: '16px', textAlign: 'center' }}>
+                  <td data-label="Actions">
+                    <div className="customers-row-actions">
                     <button
+                      className="v1-button v1-button-secondary"
                       onClick={() => handleEdit(customer)}
-                      style={{
-                        padding: '6px 12px',
-                        background: '#3b82f6',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        cursor: 'pointer',
-                        marginRight: '8px'
-                      }}
                     >
                       Edit
                     </button>
                     <button
+                      className="v1-button customers-delete-button"
                       onClick={() => handleDelete(customer.id)}
-                      style={{
-                        padding: '6px 12px',
-                        background: '#ef4444',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        cursor: 'pointer'
-                      }}
                     >
                       Delete
                     </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -394,26 +371,29 @@ export default function CustomerManagement() {
 
       {/* Modal */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: 'white', borderRadius: '12px', padding: '32px', maxWidth: '500px', width: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', marginBottom: '24px' }}>
-              {editingCustomer ? 'Edit Customer' : 'Add New Customer'}
-            </h2>
+        <div className="v1-modal-overlay customers-modal-overlay">
+          <div className="v1-modal customers-modal">
+            <div className="customers-modal-header">
+              <div>
+                <p>{editingCustomer ? 'Update customer record' : 'Create customer record'}</p>
+                <h2>{editingCustomer ? 'Edit Customer' : 'Add New Customer'}</h2>
+              </div>
+            </div>
             
-            <form onSubmit={handleSubmit}>
+            <form className="customers-form" onSubmit={handleSubmit}>
               {formError && (
-                <div role="alert" style={{ marginBottom: '16px', padding: '12px', border: '1px solid #fde68a', background: '#fffbeb', color: '#92400e', borderRadius: '8px', fontSize: '14px' }}>
+                <div className="customers-form-alert" role="alert">
                   <div>{formError}</div>
                   {findDuplicateCustomer(customers, formData, editingCustomer?.id) && (
-                    <div style={{ marginTop: '8px' }}>
+                    <div className="customers-form-alert-detail">
                       Existing customer: {findDuplicateCustomer(customers, formData, editingCustomer?.id).name || 'Unnamed customer'}
                     </div>
                   )}
                 </div>
               )}
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+              <div className="customers-form-field">
+                <label>
                   Name *
                 </label>
                 <input
@@ -422,19 +402,11 @@ export default function CustomerManagement() {
                   value={formData.name}
                   onChange={handleInputChange}
                   required
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    outline: 'none'
-                  }}
                 />
               </div>
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+              <div className="customers-form-field">
+                <label>
                   Email
                 </label>
                 <input
@@ -442,19 +414,11 @@ export default function CustomerManagement() {
                   name="email"
                   value={formData.email}
                   onChange={handleInputChange}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    outline: 'none'
-                  }}
                 />
               </div>
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+              <div className="customers-form-field">
+                <label>
                   Phone
                 </label>
                 <input
@@ -462,19 +426,11 @@ export default function CustomerManagement() {
                   name="phone"
                   value={formData.phone}
                   onChange={handleInputChange}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    outline: 'none'
-                  }}
                 />
               </div>
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+              <div className="customers-form-field">
+                <label>
                   Address
                 </label>
                 <input
@@ -482,20 +438,12 @@ export default function CustomerManagement() {
                   name="address"
                   value={formData.address}
                   onChange={handleInputChange}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    outline: 'none'
-                  }}
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+              <div className="customers-form-row">
+                <div className="customers-form-field">
+                  <label>
                     City
                   </label>
                   <input
@@ -503,18 +451,10 @@ export default function CustomerManagement() {
                     name="city"
                     value={formData.city}
                     onChange={handleInputChange}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      outline: 'none'
-                    }}
                   />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                <div className="customers-form-field">
+                  <label>
                     State
                   </label>
                   <input
@@ -522,20 +462,12 @@ export default function CustomerManagement() {
                     name="state"
                     value={formData.state}
                     onChange={handleInputChange}
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      outline: 'none'
-                    }}
                   />
                 </div>
               </div>
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+              <div className="customers-form-field">
+                <label>
                   ZIP Code
                 </label>
                 <input
@@ -543,19 +475,11 @@ export default function CustomerManagement() {
                   name="zip"
                   value={formData.zip}
                   onChange={handleInputChange}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    outline: 'none'
-                  }}
                 />
               </div>
 
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+              <div className="customers-form-field">
+                <label>
                   Notes
                 </label>
                 <textarea
@@ -563,20 +487,12 @@ export default function CustomerManagement() {
                   value={formData.notes}
                   onChange={handleInputChange}
                   rows={3}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    outline: 'none',
-                    resize: 'vertical'
-                  }}
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <div className="customers-modal-actions">
                 <button
+                  className="v1-button v1-button-secondary"
                   type="button"
                   onClick={() => {
                     setShowModal(false);
@@ -587,33 +503,13 @@ export default function CustomerManagement() {
                       city: '', state: '', zip: '', notes: ''
                     });
                   }}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#e2e8f0',
-                    color: '#475569',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: 'pointer'
-                  }}
                 >
                   Cancel
                 </button>
                 <button
+                  className="v1-button v1-button-primary"
                   type="submit"
                   disabled={saving}
-                  style={{
-                    padding: '10px 20px',
-                    background: saving ? '#93c5fd' : 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: saving ? 'not-allowed' : 'pointer',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                  }}
                 >
                   {saving ? 'Saving...' : editingCustomer ? 'Update Customer' : 'Add Customer'}
                 </button>
