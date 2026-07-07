@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,12 +19,26 @@ vi.mock('../core/scheduling/schedulingService', () => ({
     deposit_requested: 'Deposit requested',
     deposit_paid: 'Deposit paid',
     final_due: 'Final due',
+    partial: 'Partial',
     paid_in_full: 'Paid in full',
     paid_cash: 'Paid cash',
     paid_check: 'Paid check',
     paid_external_app: 'Paid external app',
     waived_family_discount: 'Waived / family discount',
     payment_issue: 'Payment issue',
+  },
+  BOOKING_PAYMENT_METHOD_LABELS: {
+    cash: 'Cash',
+    check: 'Check',
+    venmo: 'Venmo',
+    cash_app: 'Cash App',
+    zelle: 'Zelle',
+    facebook_pay: 'Facebook Pay',
+    paypal: 'PayPal',
+    card: 'Card',
+    stripe_manual_reference: 'Stripe manual reference',
+    waived: 'Waived',
+    other: 'Other',
   },
   getJobs: mocks.getJobs,
   updateBookingAdminFields: mocks.updateBookingAdminFields,
@@ -44,7 +58,7 @@ describe('read-only Bookings admin list', () => {
     mocks.getJobs.mockResolvedValue({ success: true, data: [] });
     render(<BookingsList />);
 
-    expect(await screen.findByText('Manage booked jobs, details, notes, and payment status.')).toBeInTheDocument();
+    expect(await screen.findByText('Manage booked jobs, details, notes, and manual payment details.')).toBeInTheDocument();
   });
 
   it('loads bookings through the active tenant service boundary', async () => {
@@ -184,8 +198,11 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('555-0630');
     expect(dialog).toHaveTextContent('standard');
     expect(dialog).toHaveTextContent('scheduled');
-    expect(dialog).toHaveTextContent('Payment Status');
+    expect(dialog).toHaveTextContent('Payment status');
     expect(dialog).toHaveTextContent('Paid cash');
+    expect(dialog).toHaveTextContent('Payment details');
+    expect(dialog).toHaveTextContent('Amount received');
+    expect(dialog).toHaveTextContent('Still owed');
     expect(dialog).toHaveTextContent('Jul 2, 2026 at 09:00');
     expect(dialog).toHaveTextContent('630 Display Lane');
     expect(dialog).toHaveTextContent('$205.00');
@@ -193,7 +210,7 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('lead-detail-complete');
 
     expect(screen.getByRole('button', { name: 'Edit Date & Notes' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Edit Payment Status' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit Payment Details' })).toBeInTheDocument();
     expect(screen.queryByLabelText(/payment status/i)).not.toBeInTheDocument();
     ['Delete', 'Pay', 'Assign', 'Refund', 'Reschedule', 'Update status', 'Cancel booking', 'Collect payment', 'Create payment link', 'Stripe checkout', 'Invoice'].forEach(name => {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
@@ -220,7 +237,7 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('Phone not provided');
     expect(dialog).toHaveTextContent('Service not specified');
     expect(dialog).toHaveTextContent('Booked');
-    expect(dialog).toHaveTextContent('Payment Status');
+    expect(dialog).toHaveTextContent('Payment status');
     expect(dialog).toHaveTextContent('Payment status not set');
     expect(dialog).toHaveTextContent('Not scheduled');
     expect(dialog).toHaveTextContent('Address not provided');
@@ -252,18 +269,18 @@ describe('read-only Bookings admin list', () => {
     expect(await screen.findByRole('heading', { name: 'Deposit Requested Customer' })).toBeInTheDocument();
     await user.click(screen.getAllByRole('button', { name: 'View Details' })[0]);
     let dialog = await screen.findByRole('dialog', { name: 'Deposit Requested Customer' });
-    expect(dialog).toHaveTextContent('Payment Status');
+    expect(dialog).toHaveTextContent('Payment status');
     expect(dialog).toHaveTextContent('Deposit requested');
     expect(screen.queryByLabelText(/payment status/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Close booking details' }));
     await user.click(screen.getAllByRole('button', { name: 'View Details' })[1]);
     dialog = await screen.findByRole('dialog', { name: 'Unknown Payment Customer' });
-    expect(dialog).toHaveTextContent('Payment Status');
+    expect(dialog).toHaveTextContent('Payment status');
     expect(dialog).toHaveTextContent('Payment status not set');
   });
 
-  it('opens manual payment status edit UI with only allowed payment status options', async () => {
+  it('opens manual payment details edit UI with only allowed payment status and method options', async () => {
     const user = userEvent.setup();
     mocks.getJobs.mockResolvedValue({
       success: true,
@@ -278,9 +295,9 @@ describe('read-only Bookings admin list', () => {
 
     expect(await screen.findByRole('heading', { name: 'Payment Edit Customer' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'View Details' }));
-    await user.click(screen.getByRole('button', { name: 'Edit Payment Status' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Payment Details' }));
 
-    const form = screen.getByRole('form', { name: 'Edit booking payment status' });
+    const form = screen.getByRole('form', { name: 'Edit booking payment details' });
     expect(form).toBeInTheDocument();
     const paymentSelect = within(form).getByLabelText('Payment status');
     expect(paymentSelect).toHaveValue('deposit_requested');
@@ -289,12 +306,28 @@ describe('read-only Bookings admin list', () => {
       'Deposit requested',
       'Deposit paid',
       'Final due',
+      'Partial',
       'Paid in full',
       'Paid cash',
       'Paid check',
       'Paid external app',
       'Waived / family discount',
       'Payment issue',
+    ].forEach(label => {
+      expect(within(form).getByRole('option', { name: label })).toBeInTheDocument();
+    });
+    [
+      'Cash',
+      'Check',
+      'Venmo',
+      'Cash App',
+      'Zelle',
+      'Facebook Pay',
+      'PayPal',
+      'Card',
+      'Stripe manual reference',
+      'Waived',
+      'Other',
     ].forEach(label => {
       expect(within(form).getByRole('option', { name: label })).toBeInTheDocument();
     });
@@ -309,7 +342,7 @@ describe('read-only Bookings admin list', () => {
     });
   });
 
-  it('saves manual payment status through updateBookingManualPaymentStatus then reloads bookings', async () => {
+  it('saves manual payment details through updateBookingManualPaymentStatus then reloads bookings', async () => {
     const user = userEvent.setup();
     mocks.getJobs
       .mockResolvedValueOnce({
@@ -318,6 +351,7 @@ describe('read-only Bookings admin list', () => {
           id: 'booking-payment-save',
           customerName: 'Payment Save Customer',
           paymentStatus: 'not_paid',
+          agreedPrice: 245,
         }],
       })
       .mockResolvedValueOnce({
@@ -326,6 +360,11 @@ describe('read-only Bookings admin list', () => {
           id: 'booking-payment-save',
           customerName: 'Payment Save Customer',
           paymentStatus: 'paid_cash',
+          paymentMethod: 'cash',
+          amountReceived: 200,
+          receivedAt: '2026-07-07',
+          paymentNote: 'Paid at walkthrough',
+          agreedPrice: 245,
         }],
       });
     mocks.updateBookingManualPaymentStatus.mockResolvedValue({
@@ -333,6 +372,10 @@ describe('read-only Bookings admin list', () => {
       data: {
         id: 'booking-payment-save',
         paymentStatus: 'paid_cash',
+        paymentMethod: 'cash',
+        amountReceived: 200,
+        receivedAt: '2026-07-07',
+        paymentNote: 'Paid at walkthrough',
         paymentStatusUpdatedAt: '2026-06-30T12:00:00.000Z',
       },
     });
@@ -341,23 +384,161 @@ describe('read-only Bookings admin list', () => {
 
     expect(await screen.findByRole('heading', { name: 'Payment Save Customer' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'View Details' }));
-    await user.click(screen.getByRole('button', { name: 'Edit Payment Status' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Payment Details' }));
     await user.selectOptions(screen.getByLabelText('Payment status'), 'paid_cash');
-    await user.click(screen.getByRole('button', { name: 'Save payment status' }));
+    await user.selectOptions(screen.getByLabelText('Payment method'), 'cash');
+    await user.clear(screen.getByLabelText('Amount received'));
+    await user.type(screen.getByLabelText('Amount received'), '200');
+    await user.clear(screen.getByLabelText('Received date'));
+    await user.type(screen.getByLabelText('Received date'), '2026-07-07');
+    await user.type(screen.getByLabelText('Payment note'), '  Paid at walkthrough  ');
+    await user.click(screen.getByRole('button', { name: 'Save payment details' }));
 
     await waitFor(() => {
       expect(mocks.updateBookingManualPaymentStatus).toHaveBeenCalledWith(
         'tenant-a',
         'booking-payment-save',
-        { paymentStatus: 'paid_cash' }
+        {
+          paymentStatus: 'paid_cash',
+          paymentMethod: 'cash',
+          amountReceived: 200,
+          receivedAt: '2026-07-07',
+          paymentNote: 'Paid at walkthrough',
+        }
       );
     });
-    expect(mocks.updateBookingManualPaymentStatus.mock.calls[0][2]).toEqual({ paymentStatus: 'paid_cash' });
-    expect(JSON.stringify(mocks.updateBookingManualPaymentStatus.mock.calls[0][2])).not.toMatch(/amount|deposit|balance|tip|fee|stripe|refund|paymentLink|invoice|lead|customer/i);
+    expect(JSON.stringify(mocks.updateBookingManualPaymentStatus.mock.calls[0][2])).not.toMatch(/deposit|balance|tip|fee|stripe|refund|paymentLink|invoice|lead|customer/i);
     await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole('status')).toHaveTextContent('Booking payment status updated.');
-    expect(screen.queryByRole('form', { name: 'Edit booking payment status' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent('Booking payment details updated.');
+    expect(screen.queryByRole('form', { name: 'Edit booking payment details' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Paid cash').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('$200.00').length).toBeGreaterThan(0);
+    expect(screen.getByText('$45.00')).toBeInTheDocument();
+  });
+
+  it('sends blank optional payment details when admin clears existing values', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-payment-clear',
+        customerName: 'Payment Clear Customer',
+        paymentStatus: 'partial',
+        paymentMethod: 'cash',
+        amountReceived: 75,
+        receivedAt: '2026-07-07',
+        paymentNote: 'Deposit taken',
+        agreedPrice: 245,
+      }],
+    });
+    mocks.updateBookingManualPaymentStatus.mockResolvedValue({
+      success: true,
+      data: {
+        id: 'booking-payment-clear',
+        paymentStatus: 'payment_issue',
+      },
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Payment Clear Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Payment Details' }));
+    await user.selectOptions(screen.getByLabelText('Payment status'), 'payment_issue');
+    await user.selectOptions(screen.getByLabelText('Payment method'), '');
+    await user.clear(screen.getByLabelText('Amount received'));
+    await user.clear(screen.getByLabelText('Received date'));
+    await user.clear(screen.getByLabelText('Payment note'));
+    await user.click(screen.getByRole('button', { name: 'Save payment details' }));
+
+    await waitFor(() => {
+      expect(mocks.updateBookingManualPaymentStatus).toHaveBeenCalledWith(
+        'tenant-a',
+        'booking-payment-clear',
+        {
+          paymentStatus: 'payment_issue',
+          paymentMethod: '',
+          amountReceived: '',
+          receivedAt: '',
+          paymentNote: '',
+        }
+      );
+    });
+  });
+
+  it('shows amount received and owed as unavailable when job price is missing', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-payment-no-price',
+        customerName: 'No Price Payment Customer',
+        paymentStatus: 'partial',
+        paymentMethod: 'venmo',
+        amountReceived: 50,
+        receivedAt: '2026-07-07',
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'No Price Payment Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'No Price Payment Customer' });
+    expect(dialog).toHaveTextContent('Amount received');
+    expect(dialog).toHaveTextContent('$50.00');
+    expect(dialog).toHaveTextContent('Still owed');
+    expect(dialog).toHaveTextContent('Unavailable');
+    expect(dialog).toHaveTextContent('Venmo (manual/outside ServicesOS)');
+  });
+
+  it('defaults amount received and received date when a paid status is selected', async () => {
+    const user = userEvent.setup();
+    const today = new Date();
+    const todayInput = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-payment-defaults',
+        customerName: 'Payment Defaults Customer',
+        paymentStatus: 'not_paid',
+        agreedPrice: 245,
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Payment Defaults Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Payment Details' }));
+    await user.selectOptions(screen.getByLabelText('Payment status'), 'paid_in_full');
+
+    expect(screen.getByLabelText('Amount received')).toHaveValue(245);
+    expect(screen.getByLabelText('Received date')).toHaveValue(todayInput);
+  });
+
+  it('blocks negative amount received before calling updateBookingManualPaymentStatus', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-payment-negative',
+        customerName: 'Negative Payment Customer',
+        paymentStatus: 'not_paid',
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Negative Payment Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Payment Details' }));
+    fireEvent.change(screen.getByLabelText('Amount received'), { target: { value: '-1' } });
+    await user.click(screen.getByRole('button', { name: 'Save payment details' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Amount received must be a non-negative number.');
+    expect(mocks.updateBookingManualPaymentStatus).not.toHaveBeenCalled();
   });
 
   it('keeps payment status edit mode open and displays update failures', async () => {
@@ -380,12 +561,12 @@ describe('read-only Bookings admin list', () => {
 
     expect(await screen.findByRole('heading', { name: 'Payment Failure Customer' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'View Details' }));
-    await user.click(screen.getByRole('button', { name: 'Edit Payment Status' }));
-    await user.click(screen.getByRole('button', { name: 'Save payment status' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Payment Details' }));
+    await user.click(screen.getByRole('button', { name: 'Save payment details' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Booking manual payment status is not allowed.');
-    expect(screen.getByRole('form', { name: 'Edit booking payment status' })).toBeInTheDocument();
-    expect(screen.queryByText('Booking payment status updated.')).not.toBeInTheDocument();
+    expect(screen.getByRole('form', { name: 'Edit booking payment details' })).toBeInTheDocument();
+    expect(screen.queryByText('Booking payment details updated.')).not.toBeInTheDocument();
     expect(mocks.getJobs).toHaveBeenCalledTimes(1);
   });
 
@@ -404,12 +585,12 @@ describe('read-only Bookings admin list', () => {
 
     expect(await screen.findByRole('heading', { name: 'Payment Cancel Customer' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'View Details' }));
-    await user.click(screen.getByRole('button', { name: 'Edit Payment Status' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Payment Details' }));
     await user.selectOptions(screen.getByLabelText('Payment status'), 'paid_cash');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(mocks.updateBookingManualPaymentStatus).not.toHaveBeenCalled();
-    expect(screen.queryByRole('form', { name: 'Edit booking payment status' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Edit booking payment details' })).not.toBeInTheDocument();
     expect(screen.getAllByText('Not paid').length).toBeGreaterThan(0);
   });
 

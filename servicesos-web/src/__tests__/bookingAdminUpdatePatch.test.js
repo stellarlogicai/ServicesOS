@@ -27,6 +27,7 @@ vi.mock('../shared/logging/errorLoggingStandard', () => ({
 
 import {
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS,
+  BOOKING_PAYMENT_METHOD_LABELS,
   buildBookingAdminUpdatePatch,
   buildBookingManualPaymentStatusPatch,
   updateBookingAdminFields,
@@ -374,6 +375,81 @@ describe('booking manual payment status whitelist helper', () => {
     });
   });
 
+  it('allows approved manual payment detail fields and sanitizes values', () => {
+    const result = buildBookingManualPaymentStatusPatch({
+      paymentStatus: 'paid_cash',
+      paymentMethod: 'cash',
+      amountReceived: '205.50',
+      receivedAt: '2026-07-07',
+      paymentNote: '  Paid at walkthrough.  ',
+      paymentStatusUpdatedBy: ' admin-uid ',
+    }, { now });
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        paymentStatus: 'paid_cash',
+        paymentMethod: 'cash',
+        amountReceived: 205.5,
+        receivedAt: '2026-07-07',
+        paymentNote: 'Paid at walkthrough.',
+        paymentStatusUpdatedAt: now,
+        paymentStatusUpdatedBy: 'admin-uid',
+      },
+    });
+  });
+
+  it('allows each approved payment method', () => {
+    Object.keys(BOOKING_PAYMENT_METHOD_LABELS).forEach(paymentMethod => {
+      expect(buildBookingManualPaymentStatusPatch({
+        paymentStatus: 'not_paid',
+        paymentMethod,
+      }, { now })).toMatchObject({
+        success: true,
+        data: {
+          paymentStatus: 'not_paid',
+          paymentMethod,
+          paymentStatusUpdatedAt: now,
+        },
+      });
+    });
+  });
+
+  it('allows amountReceived to be zero', () => {
+    expect(buildBookingManualPaymentStatusPatch({
+      paymentStatus: 'waived_family_discount',
+      paymentMethod: 'waived',
+      amountReceived: 0,
+    }, { now })).toMatchObject({
+      success: true,
+      data: {
+        paymentStatus: 'waived_family_discount',
+        paymentMethod: 'waived',
+        amountReceived: 0,
+      },
+    });
+  });
+
+  it('preserves blank optional payment details so admins can clear stale values', () => {
+    expect(buildBookingManualPaymentStatusPatch({
+      paymentStatus: 'payment_issue',
+      paymentMethod: '',
+      amountReceived: '',
+      receivedAt: '',
+      paymentNote: '',
+    }, { now })).toMatchObject({
+      success: true,
+      data: {
+        paymentStatus: 'payment_issue',
+        paymentMethod: '',
+        amountReceived: '',
+        receivedAt: '',
+        paymentNote: '',
+        paymentStatusUpdatedAt: now,
+      },
+    });
+  });
+
   it('rejects unknown and random manual payment statuses', () => {
     ['paid', 'unpaid', 'refunded', 'stripe_paid', 'random'].forEach(paymentStatus => {
       expect(buildBookingManualPaymentStatusPatch({ paymentStatus }, { now })).toMatchObject({
@@ -407,25 +483,38 @@ describe('booking manual payment status whitelist helper', () => {
     });
   });
 
-  it('rejects unknown, Stripe, payment-intent, payment-link, refund, and invoice fields', () => {
+  it('rejects unknown, Stripe, payment-intent, payment-link, refund, invoice, platform, payroll, tax, and dispute fields', () => {
     [
       'payment',
       'payments',
       'paymentId',
       'paymentIntentId',
+      'stripeCheckoutSessionId',
       'stripePaymentIntentId',
+      'stripePaymentStatus',
+      'stripePaidAt',
+      'stripePaymentLinkUrl',
       'stripe',
       'stripeCustomerId',
       'stripeAccountId',
       'checkoutSessionId',
+      'checkoutUrl',
       'paymentLink',
       'paymentLinkId',
+      'paymentLinkUrl',
       'invoice',
       'invoiceId',
       'refund',
       'refundId',
       'charge',
       'chargeId',
+      'platformFee',
+      'applicationFee',
+      'payout',
+      'dispute',
+      'chargeback',
+      'payroll',
+      'tax',
       'unknownField',
     ].forEach(field => {
       const result = buildBookingManualPaymentStatusPatch({
@@ -450,7 +539,6 @@ describe('booking manual payment status whitelist helper', () => {
       'balanceDue',
       'tip',
       'fee',
-      'platformFee',
       'currency',
     ].forEach(field => {
       expect(buildBookingManualPaymentStatusPatch({
@@ -461,6 +549,63 @@ describe('booking manual payment status whitelist helper', () => {
         error: 'VALIDATION_ERROR',
         message: `Unsupported booking manual payment status field: ${field}.`,
       });
+    });
+  });
+
+  it('rejects invalid amountReceived values', () => {
+    [-1, 'free', Number.NaN, Number.POSITIVE_INFINITY].forEach(amountReceived => {
+      expect(buildBookingManualPaymentStatusPatch({
+        paymentStatus: 'not_paid',
+        amountReceived,
+      }, { now })).toMatchObject({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: 'Booking amount received must be a non-negative number.',
+      });
+    });
+  });
+
+  it('rejects invalid payment methods', () => {
+    ['stripe_paid', 'wire', 'cashapp', 123].forEach(paymentMethod => {
+      expect(buildBookingManualPaymentStatusPatch({
+        paymentStatus: 'not_paid',
+        paymentMethod,
+      }, { now })).toMatchObject({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: 'Booking payment method is not allowed.',
+      });
+    });
+  });
+
+  it('rejects invalid receivedAt values', () => {
+    ['not-a-date', '2026-02-30', 123].forEach(receivedAt => {
+      expect(buildBookingManualPaymentStatusPatch({
+        paymentStatus: 'not_paid',
+        receivedAt,
+      }, { now })).toMatchObject({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: 'Booking receivedAt must be a valid date string.',
+      });
+    });
+  });
+
+  it('rejects non-string and excessive payment notes', () => {
+    expect(buildBookingManualPaymentStatusPatch({
+      paymentStatus: 'not_paid',
+      paymentNote: 123,
+    }, { now })).toMatchObject({
+      success: false,
+      message: 'Booking payment note must be a string.',
+    });
+
+    expect(buildBookingManualPaymentStatusPatch({
+      paymentStatus: 'not_paid',
+      paymentNote: 'x'.repeat(501),
+    }, { now })).toMatchObject({
+      success: false,
+      message: 'Booking payment note must be 500 characters or fewer.',
     });
   });
 
@@ -573,6 +718,10 @@ describe('booking manual payment status write wrapper', () => {
   it('writes only sanitized manual payment status payload to the tenant-scoped booking document path', async () => {
     const result = await updateBookingManualPaymentStatus('tenant-a', 'booking-1', {
       paymentStatus: 'deposit_paid',
+      paymentMethod: 'cash',
+      amountReceived: '100',
+      receivedAt: '2026-07-07',
+      paymentNote: '  Cash deposit.  ',
       paymentStatusUpdatedBy: ' admin-uid ',
     }, { now });
 
@@ -581,6 +730,10 @@ describe('booking manual payment status write wrapper', () => {
       data: {
         id: 'booking-1',
         paymentStatus: 'deposit_paid',
+        paymentMethod: 'cash',
+        amountReceived: 100,
+        receivedAt: '2026-07-07',
+        paymentNote: 'Cash deposit.',
         paymentStatusUpdatedAt: now,
         paymentStatusUpdatedBy: 'admin-uid',
       },
@@ -596,6 +749,10 @@ describe('booking manual payment status write wrapper', () => {
       { db: { id: 'db-test' }, path: ['tenants', 'tenant-a', 'bookings', 'booking-1'] },
       {
         paymentStatus: 'deposit_paid',
+        paymentMethod: 'cash',
+        amountReceived: 100,
+        receivedAt: '2026-07-07',
+        paymentNote: 'Cash deposit.',
         paymentStatusUpdatedAt: now,
         paymentStatusUpdatedBy: 'admin-uid',
       }

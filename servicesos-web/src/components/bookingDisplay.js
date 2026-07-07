@@ -1,4 +1,7 @@
-import { BOOKING_MANUAL_PAYMENT_STATUS_LABELS } from '../core/scheduling/schedulingService';
+import {
+  BOOKING_MANUAL_PAYMENT_STATUS_LABELS,
+  BOOKING_PAYMENT_METHOD_LABELS,
+} from '../core/scheduling/schedulingService';
 
 function firstText(...values) {
   return values.find(value => typeof value === 'string' && value.trim())?.trim() || '';
@@ -99,6 +102,52 @@ export function bookingStatus(booking = {}) {
 
 export function bookingPaymentStatus(booking = {}) {
   return BOOKING_MANUAL_PAYMENT_STATUS_LABELS[firstText(booking.paymentStatus)] || 'Payment status not set';
+}
+
+export function bookingPaymentMethod(booking = {}) {
+  const method = firstText(booking.paymentMethod);
+  if (!method) return '';
+  const label = BOOKING_PAYMENT_METHOD_LABELS[method];
+  if (!label) return '';
+  return method === 'stripe_manual_reference'
+    ? `${label} (owner-entered reference)`
+    : `${label} (manual/outside ServicesOS)`;
+}
+
+function currency(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '';
+  return `$${amount.toFixed(2)}`;
+}
+
+export function bookingAmountReceived(booking = {}) {
+  if (booking.amountReceived === null || booking.amountReceived === undefined || booking.amountReceived === '') {
+    return '';
+  }
+  return currency(booking.amountReceived);
+}
+
+export function bookingStillOwed(booking = {}) {
+  const agreedPrice = Number(booking.agreedPrice ?? booking.price);
+  if (!Number.isFinite(agreedPrice)) return 'Unavailable';
+
+  const amountReceived = Number(booking.amountReceived);
+  if (!Number.isFinite(amountReceived)) return currency(agreedPrice);
+
+  return currency(Math.max(agreedPrice - amountReceived, 0));
+}
+
+export function bookingReceivedDate(booking = {}) {
+  const receivedAt = firstText(booking.receivedAt);
+  if (!receivedAt) return '';
+  const date = toDate(receivedAt);
+  return date
+    ? date.toLocaleDateString('en-US', { dateStyle: 'medium' })
+    : '';
+}
+
+export function bookingPaymentNote(booking = {}) {
+  return firstText(booking.paymentNote);
 }
 
 export function bookingCustomerEmail(booking = {}) {

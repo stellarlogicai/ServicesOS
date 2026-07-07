@@ -28,6 +28,10 @@ const BOOKING_ADMIN_STATUS_VALUES = new Set(['scheduled', 'completed', 'cancelle
 const BOOKING_ADMIN_NOTES_MAX_LENGTH = 1000;
 const BOOKING_MANUAL_PAYMENT_STATUS_ALLOWED_FIELDS = new Set([
   'paymentStatus',
+  'paymentMethod',
+  'amountReceived',
+  'receivedAt',
+  'paymentNote',
   'paymentStatusUpdatedBy',
 ]);
 export const BOOKING_MANUAL_PAYMENT_STATUS_LABELS = {
@@ -35,6 +39,7 @@ export const BOOKING_MANUAL_PAYMENT_STATUS_LABELS = {
   deposit_requested: 'Deposit requested',
   deposit_paid: 'Deposit paid',
   final_due: 'Final due',
+  partial: 'Partial',
   paid_in_full: 'Paid in full',
   paid_cash: 'Paid cash',
   paid_check: 'Paid check',
@@ -42,8 +47,23 @@ export const BOOKING_MANUAL_PAYMENT_STATUS_LABELS = {
   waived_family_discount: 'Waived / family discount',
   payment_issue: 'Payment issue',
 };
+export const BOOKING_PAYMENT_METHOD_LABELS = {
+  cash: 'Cash',
+  check: 'Check',
+  venmo: 'Venmo',
+  cash_app: 'Cash App',
+  zelle: 'Zelle',
+  facebook_pay: 'Facebook Pay',
+  paypal: 'PayPal',
+  card: 'Card',
+  stripe_manual_reference: 'Stripe manual reference',
+  waived: 'Waived',
+  other: 'Other',
+};
 const BOOKING_MANUAL_PAYMENT_STATUS_VALUES = new Set(Object.keys(BOOKING_MANUAL_PAYMENT_STATUS_LABELS));
+const BOOKING_PAYMENT_METHOD_VALUES = new Set(Object.keys(BOOKING_PAYMENT_METHOD_LABELS));
 const BOOKING_MANUAL_PAYMENT_UPDATED_BY_MAX_LENGTH = 128;
+const BOOKING_PAYMENT_NOTE_MAX_LENGTH = 500;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_ONLY_PATTERN = /^\d{2}:\d{2}$/;
 
@@ -77,6 +97,12 @@ function parseValidIsoDate(value) {
   if (Number.isNaN(parsed.getTime())) return null;
   if (parsed.toISOString() !== value) return null;
   return parsed;
+}
+
+function isValidPaymentDateString(value) {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  if (DATE_ONLY_PATTERN.test(value)) return isValidDateOnly(value);
+  return parseValidIsoDate(value) !== null;
 }
 
 function normalizeBookingAdminTimeFields(patch, payload) {
@@ -215,6 +241,57 @@ export function buildBookingManualPaymentStatusPatch(proposedPatch, { now = new 
     paymentStatus: proposedPatch.paymentStatus,
     paymentStatusUpdatedAt: now,
   };
+
+  if (Object.hasOwn(proposedPatch, 'paymentMethod')) {
+    if (proposedPatch.paymentMethod !== '' && proposedPatch.paymentMethod !== null && proposedPatch.paymentMethod !== undefined) {
+      if (typeof proposedPatch.paymentMethod !== 'string' || !BOOKING_PAYMENT_METHOD_VALUES.has(proposedPatch.paymentMethod)) {
+        return bookingAdminValidationError('Booking payment method is not allowed.');
+      }
+      payload.paymentMethod = proposedPatch.paymentMethod;
+    } else {
+      payload.paymentMethod = '';
+    }
+  }
+
+  if (Object.hasOwn(proposedPatch, 'amountReceived')) {
+    if (proposedPatch.amountReceived === '' || proposedPatch.amountReceived === null || proposedPatch.amountReceived === undefined) {
+      payload.amountReceived = '';
+    } else {
+      const amountReceived = Number(proposedPatch.amountReceived);
+      if (!Number.isFinite(amountReceived) || amountReceived < 0) {
+        return bookingAdminValidationError('Booking amount received must be a non-negative number.');
+      }
+      payload.amountReceived = amountReceived;
+    }
+  }
+
+  if (Object.hasOwn(proposedPatch, 'receivedAt')) {
+    if (proposedPatch.receivedAt !== '' && proposedPatch.receivedAt !== null && proposedPatch.receivedAt !== undefined) {
+      if (typeof proposedPatch.receivedAt !== 'string' || !isValidPaymentDateString(proposedPatch.receivedAt.trim())) {
+        return bookingAdminValidationError('Booking receivedAt must be a valid date string.');
+      }
+      payload.receivedAt = proposedPatch.receivedAt.trim();
+    } else {
+      payload.receivedAt = '';
+    }
+  }
+
+  if (Object.hasOwn(proposedPatch, 'paymentNote')) {
+    if (proposedPatch.paymentNote !== '' && proposedPatch.paymentNote !== null && proposedPatch.paymentNote !== undefined) {
+      if (typeof proposedPatch.paymentNote !== 'string') {
+        return bookingAdminValidationError('Booking payment note must be a string.');
+      }
+      const paymentNote = proposedPatch.paymentNote.trim();
+      if (paymentNote.length > BOOKING_PAYMENT_NOTE_MAX_LENGTH) {
+        return bookingAdminValidationError(`Booking payment note must be ${BOOKING_PAYMENT_NOTE_MAX_LENGTH} characters or fewer.`);
+      }
+      if (paymentNote) {
+        payload.paymentNote = paymentNote;
+      }
+    } else {
+      payload.paymentNote = '';
+    }
+  }
 
   if (proposedUpdatedBy !== undefined) {
     if (typeof proposedUpdatedBy !== 'string') {

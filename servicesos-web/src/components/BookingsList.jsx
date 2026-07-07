@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS,
+  BOOKING_PAYMENT_METHOD_LABELS,
   getJobs,
   updateBookingAdminFields,
   updateBookingManualPaymentStatus,
@@ -8,16 +9,21 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import {
   bookingAddress,
+  bookingAmountReceived,
   bookingCustomerEmail,
   bookingCustomerName,
   bookingCustomerPhone,
   bookingNotes,
+  bookingPaymentMethod,
+  bookingPaymentNote,
   bookingPaymentStatus,
   bookingPrice,
   bookingReference,
+  bookingReceivedDate,
   bookingSchedule,
   bookingServiceType,
   bookingStatus,
+  bookingStillOwed,
 } from './bookingDisplay';
 
 export default function BookingsList() {
@@ -31,7 +37,13 @@ export default function BookingsList() {
   const [editError, setEditError] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [isEditingPaymentStatus, setIsEditingPaymentStatus] = useState(false);
-  const [paymentStatusForm, setPaymentStatusForm] = useState('not_paid');
+  const [paymentForm, setPaymentForm] = useState({
+    paymentStatus: 'not_paid',
+    paymentMethod: '',
+    amountReceived: '',
+    receivedAt: '',
+    paymentNote: '',
+  });
   const [paymentStatusError, setPaymentStatusError] = useState('');
   const [savingPaymentStatus, setSavingPaymentStatus] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -121,7 +133,15 @@ export default function BookingsList() {
       BOOKING_MANUAL_PAYMENT_STATUS_LABELS[selectedBooking.paymentStatus]
       ? selectedBooking.paymentStatus
       : 'not_paid';
-    setPaymentStatusForm(currentStatus);
+    setPaymentForm({
+      paymentStatus: currentStatus,
+      paymentMethod: typeof selectedBooking?.paymentMethod === 'string' ? selectedBooking.paymentMethod : '',
+      amountReceived: selectedBooking?.amountReceived !== null && selectedBooking?.amountReceived !== undefined
+        ? String(selectedBooking.amountReceived)
+        : '',
+      receivedAt: paymentDateInputValue(selectedBooking?.receivedAt),
+      paymentNote: typeof selectedBooking?.paymentNote === 'string' ? selectedBooking.paymentNote : '',
+    });
     setPaymentStatusError('');
     setEditError('');
     setSuccessMessage('');
@@ -134,10 +154,31 @@ export default function BookingsList() {
     setPaymentStatusError('');
   };
 
+  const updatePaymentField = (event) => {
+    const { name, value } = event.target;
+    setPaymentForm(current => {
+      const next = { ...current, [name]: value };
+      if (name === 'paymentStatus') {
+        if (isWaivedPaymentStatus(value) && next.amountReceived === '') {
+          next.amountReceived = '0';
+        } else if (isPaidPaymentStatus(value)) {
+          if (next.amountReceived === '') {
+            const agreedPrice = bookingAgreedPrice(selectedBooking);
+            if (Number.isFinite(agreedPrice)) next.amountReceived = String(agreedPrice);
+          }
+          if (next.receivedAt === '') {
+            next.receivedAt = todayDateInputValue();
+          }
+        }
+      }
+      return next;
+    });
+  };
+
   const savePaymentStatusEdit = async (event) => {
     event.preventDefault();
     if (!selectedBooking?.id) {
-      setPaymentStatusError('Booking payment status could not be updated. Please close and try again.');
+      setPaymentStatusError('Booking payment details could not be updated. Please close and try again.');
       return;
     }
 
@@ -145,14 +186,21 @@ export default function BookingsList() {
     setPaymentStatusError('');
     setSuccessMessage('');
 
+    const patch = buildPaymentDetailsPatch(paymentForm);
+    if (!patch.success) {
+      setSavingPaymentStatus(false);
+      setPaymentStatusError(patch.message);
+      return;
+    }
+
     const result = await updateBookingManualPaymentStatus(
       tenantId,
       selectedBooking.id,
-      { paymentStatus: paymentStatusForm }
+      patch.data
     );
     if (!result.success) {
       setSavingPaymentStatus(false);
-      setPaymentStatusError(result.message || 'Booking payment status could not be updated. Please try again.');
+      setPaymentStatusError(result.message || 'Booking payment details could not be updated. Please try again.');
       return;
     }
 
@@ -160,7 +208,7 @@ export default function BookingsList() {
     setSelectedBooking(current => current ? { ...current, ...result.data } : current);
     setSavingPaymentStatus(false);
     setIsEditingPaymentStatus(false);
-    setSuccessMessage('Booking payment status updated.');
+    setSuccessMessage('Booking payment details updated.');
   };
 
   const saveBookingEdit = async (event) => {
@@ -203,7 +251,7 @@ export default function BookingsList() {
     <div className="v1-page bookings-page">
       <div className="v1-page-header">
         <h1 className="v1-page-title">Bookings</h1>
-        <p className="v1-page-subtitle">Manage booked jobs, details, notes, and payment status.</p>
+        <p className="v1-page-subtitle">Manage booked jobs, details, notes, and manual payment details.</p>
       </div>
 
       {loading && <p role="status">Loading bookings…</p>}
@@ -289,12 +337,27 @@ export default function BookingsList() {
               <DetailItem label="Customer phone" value={bookingCustomerPhone(selectedBooking)} />
               <DetailItem label="Service" value={bookingServiceType(selectedBooking)} />
               <DetailItem label="Status" value={bookingStatus(selectedBooking)} />
-              <DetailItem label="Payment Status" value={bookingPaymentStatus(selectedBooking)} />
               <DetailItem label="Scheduled" value={bookingSchedule(selectedBooking)} />
               <DetailItem label="Address" value={bookingAddress(selectedBooking)} />
-              <DetailItem label="Price" value={bookingPrice(selectedBooking)} />
+              <DetailItem label="Job price" value={bookingPrice(selectedBooking)} />
               <DetailItem label="Reference" value={bookingReference(selectedBooking) || 'Reference not provided'} />
             </dl>
+
+            <section style={{ marginTop: 18, padding: 16, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 10 }}>
+              <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18 }}>Payment details</h3>
+              <p style={{ margin: '0 0 14px', color: '#0f766e', fontSize: 13 }}>
+                Manual payment details are owner-entered records. ServicesOS has not confirmed funds.
+              </p>
+              <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, margin: 0 }}>
+                <DetailItem label="Job price" value={bookingPrice(selectedBooking)} />
+                <DetailItem label="Payment status" value={bookingPaymentStatus(selectedBooking)} />
+                <DetailItem label="Payment method" value={bookingPaymentMethod(selectedBooking) || 'Not recorded'} />
+                <DetailItem label="Amount received" value={bookingAmountReceived(selectedBooking) || 'Not recorded'} />
+                <DetailItem label="Still owed" value={bookingStillOwed(selectedBooking)} />
+                <DetailItem label="Received date" value={bookingReceivedDate(selectedBooking) || 'Not recorded'} />
+                <DetailItem label="Payment note" value={bookingPaymentNote(selectedBooking) || 'No payment note'} />
+              </dl>
+            </section>
 
             <div style={{ marginTop: 18 }}>
               <dt style={{ color: '#64748b', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Notes</dt>
@@ -337,7 +400,7 @@ export default function BookingsList() {
                     cursor: 'pointer'
                   }}
                 >
-                  Edit Payment Status
+                  Edit Payment Details
                 </button>
               </div>
             )}
@@ -431,21 +494,75 @@ export default function BookingsList() {
             )}
 
             {isEditingPaymentStatus && (
-              <form onSubmit={savePaymentStatusEdit} aria-label="Edit booking payment status" style={{ marginTop: 22, padding: 16, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 10 }}>
-                <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18 }}>Edit Payment Status</h3>
+              <form noValidate onSubmit={savePaymentStatusEdit} aria-label="Edit booking payment details" style={{ marginTop: 22, padding: 16, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 10 }}>
+                <h3 style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 18 }}>Edit Payment Details</h3>
+                <p style={{ margin: '0 0 14px', color: '#0f766e', fontSize: 13 }}>
+                  Marked paid outside ServicesOS. Do not use this for Stripe-confirmed payments yet.
+                </p>
 
                 <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
                   Payment status
                   <select
                     name="paymentStatus"
-                    value={paymentStatusForm}
-                    onChange={event => setPaymentStatusForm(event.target.value)}
+                    value={paymentForm.paymentStatus}
+                    onChange={updatePaymentField}
                     style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #99f6e4', borderRadius: 8, background: '#fff' }}
                   >
                     {Object.entries(BOOKING_MANUAL_PAYMENT_STATUS_LABELS).map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
                     ))}
                   </select>
+                </label>
+
+                <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
+                  Payment method
+                  <select
+                    name="paymentMethod"
+                    value={paymentForm.paymentMethod}
+                    onChange={updatePaymentField}
+                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #99f6e4', borderRadius: 8, background: '#fff' }}
+                  >
+                    <option value="">Not recorded</option>
+                    {Object.entries(BOOKING_PAYMENT_METHOD_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
+                  Amount received
+                  <input
+                    name="amountReceived"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={paymentForm.amountReceived}
+                    onChange={updatePaymentField}
+                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #99f6e4', borderRadius: 8 }}
+                  />
+                </label>
+
+                <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
+                  Received date
+                  <input
+                    name="receivedAt"
+                    type="date"
+                    value={paymentForm.receivedAt}
+                    onChange={updatePaymentField}
+                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #99f6e4', borderRadius: 8 }}
+                  />
+                </label>
+
+                <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
+                  Payment note
+                  <textarea
+                    name="paymentNote"
+                    value={paymentForm.paymentNote}
+                    onChange={updatePaymentField}
+                    rows={3}
+                    maxLength={500}
+                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #99f6e4', borderRadius: 8 }}
+                  />
                 </label>
 
                 {paymentStatusError && (
@@ -468,7 +585,7 @@ export default function BookingsList() {
                       cursor: savingPaymentStatus ? 'not-allowed' : 'pointer'
                     }}
                   >
-                    {savingPaymentStatus ? 'Saving…' : 'Save payment status'}
+                    {savingPaymentStatus ? 'Saving…' : 'Save payment details'}
                   </button>
                   <button
                     type="button"
@@ -546,6 +663,59 @@ function endTimeForBookingEdit(booking, startTime) {
   const startMinutes = timeToMinutes(startTime);
   if (startMinutes === null) return '';
   return minutesToTime(startMinutes + bookingDurationMinutes(booking));
+}
+
+function todayDateInputValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${padTime(now.getMonth() + 1)}-${padTime(now.getDate())}`;
+}
+
+function paymentDateInputValue(value) {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = toDate(value);
+  return date
+    ? `${date.getFullYear()}-${padTime(date.getMonth() + 1)}-${padTime(date.getDate())}`
+    : '';
+}
+
+function bookingAgreedPrice(booking = {}) {
+  const agreedPrice = Number(booking.agreedPrice ?? booking.price);
+  return Number.isFinite(agreedPrice) && agreedPrice >= 0 ? agreedPrice : null;
+}
+
+function isPaidPaymentStatus(status) {
+  return [
+    'deposit_paid',
+    'paid_in_full',
+    'paid_cash',
+    'paid_check',
+    'paid_external_app',
+    'waived_family_discount',
+  ].includes(status);
+}
+
+function isWaivedPaymentStatus(status) {
+  return status === 'waived_family_discount';
+}
+
+function buildPaymentDetailsPatch(form) {
+  const patch = { paymentStatus: form.paymentStatus };
+
+  patch.paymentMethod = form.paymentMethod;
+  if (form.amountReceived !== '') {
+    const amountReceived = Number(form.amountReceived);
+    if (!Number.isFinite(amountReceived) || amountReceived < 0) {
+      return { success: false, message: 'Amount received must be a non-negative number.' };
+    }
+    patch.amountReceived = amountReceived;
+  } else {
+    patch.amountReceived = '';
+  }
+  patch.receivedAt = form.receivedAt;
+  patch.paymentNote = form.paymentNote.trim();
+
+  return { success: true, data: patch };
 }
 
 function DetailItem({ label, value }) {
