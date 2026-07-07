@@ -2911,3 +2911,15 @@ Deploy the UI polish commits to a Netlify preview and repeat the Dashboard/sideb
 - Calendar exposes no View Details, edit, payment-edit, create, delete, reschedule, assignment, or other booking-management actions. It continues to read only through `getJobs(tenantId)` and performs no writes.
 - Focused Calendar and Bookings coverage verifies the subtitles, schedule fields, absence of price/admin controls in Calendar, and preservation of Bookings management behavior.
 - Recommended next step: Tenant A desktop/mobile visual smoke test of both surfaces, followed by Tenant B schedule isolation verification.
+
+### Field Mode Web V1a — July 6, 2026
+
+**Status:** Implemented, automated validation passed, and Tenant A manual smoke passed. Committed as Field Mode Web V1a.
+
+- Added **Field Mode** to the existing owner/admin navigation safety pattern using the existing `manage_bookings` permission. No auth, tenant, or employee architecture changed.
+- Field Mode reads only through `getJobs(tenantId)`, filters tenant bookings client-side into **Today** and **Upcoming**, omits past/unscheduled records, and performs no writes.
+- Mobile-first cards show schedule, customer, service, address, booking status, and manual payment-status badge. The read-only job packet adds notes and phone.
+- **Call customer** is a `tel:` link only when a real phone exists. **Open in maps** attempts external maps where supported and falls back to copy-address guidance when local/in-app browser behavior would navigate ServicesOS away. Missing values show honest unavailable text.
+- No Arrived/In Progress/Complete controls, checklists, photos, offline queue, GPS, panic, employees, push notifications, routes, payment collection, Stripe, refunds, assignments, rescheduling, or status changes were added.
+- Focused tests cover active-tenant `getJobs`, Today/Upcoming grouping, past exclusion, job packet details, conditional links, missing-value fallbacks, missing tenant, approved navigation, and absence of write/deferred controls.
+- Manual Tenant A Field Mode smoke passed for packet layout, mobile/menu behavior, maps fallback/copy behavior, and honest call messaging. Tenant B isolation is not claimed.

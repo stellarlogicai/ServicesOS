@@ -11,6 +11,7 @@ import StaffScheduling        from "./components/StaffScheduling.jsx";
 import CustomerPortal         from "./components/CustomerPortal.jsx";
 import CustomerManagement     from "./components/CustomerManagement.jsx";
 import BookingsList           from "./components/BookingsList.jsx";
+import FieldMode              from "./components/FieldMode.jsx";
 import TenantManagement       from "./components/TenantManagement.jsx";
 import AIModelTraining        from "./components/AIModelTraining.jsx";
 import CalendarView           from "./components/CalendarView.jsx";
@@ -93,6 +94,13 @@ const NAV_ITEMS = [
     icon: "📅",
     label: "Calendar",
     roles: ["admin", "super-admin"],
+  },
+  {
+    id: "field-mode",
+    icon: "🧰",
+    label: "Field Mode",
+    roles: ["admin", "super-admin"],
+    permission: "manage_bookings",
   },
   {
     id: "business-settings",
@@ -253,7 +261,7 @@ function AuthenticatedApp() {
       height: "100vh",
       boxSizing: "border-box",
       overflowY: "auto",
-      zIndex: 50,
+      zIndex: isMobile ? 130 : 50,
       transform: isMobile ? (mobileMenuOpen ? "translateX(0)" : "translateX(-100%)") : "none",
       transition: isMobile ? "transform 0.3s ease" : "none",
     }}>
@@ -342,6 +350,7 @@ function AuthenticatedApp() {
       case "dashboard":         return <Dashboard />;
       case "customers":         return <CustomerManagement />;
       case "bookings":          return <BookingsList />;
+      case "field-mode":        return <FieldMode />;
       case "staff-scheduling":  return <StaffScheduling tenantId={tenantId} />;
       case "route-optimization": return <RouteOptimization tenantId={tenantId} />;
       case "calendar":          return <CalendarView />;
@@ -373,7 +382,7 @@ function AuthenticatedApp() {
       </button>
 
       {mobileMenuOpen && isMobile && (
-        <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 40 }} />
+        <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 120 }} />
       )}
 
       {sidebar}
