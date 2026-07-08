@@ -76,7 +76,7 @@ function DayBookings({ selectedDate, bookings, onClose }) {
           <button type="button" className="v1-button v1-button-secondary" onClick={onClose}>Close</button>
         </header>
       {bookings.length === 0 ? (
-        <div className="v1-empty-state">No bookings scheduled for this day.</div>
+        <div className="v1-empty-state">No bookings scheduled for this day. New jobs appear here after they are created in Bookings.</div>
       ) : (
         <div className="calendar-day-bookings">
           {bookings.map((booking, index) => (
@@ -185,7 +185,7 @@ export default function CalendarView() {
       <header className="calendar-page-header">
         <div>
           <h1 className="v1-page-title" id="calendar-title">Calendar</h1>
-          <p className="v1-page-subtitle">View your schedule by month and day.</p>
+          <p className="v1-page-subtitle">Read-only schedule view. Change bookings and payment details from Bookings.</p>
         </div>
       </header>
 

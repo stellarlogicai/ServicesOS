@@ -242,7 +242,7 @@ export default function CustomerManagement() {
           <h1 className="v1-page-title">
             Customers
           </h1>
-          <p className="v1-page-subtitle">Customer records and customer portal requests for the active tenant.</p>
+          <p className="v1-page-subtitle">Customer contact records and quote requests that need owner follow-up.</p>
         </div>
         <button
           className="v1-button v1-button-primary customers-add-button"
@@ -267,7 +267,7 @@ export default function CustomerManagement() {
           <span className="v1-pill">{customerRequests.filter(request => request.requestStatus !== 'archived').length} active</span>
         </div>
         {customerRequests.filter(request => request.requestStatus !== 'archived').length === 0 ? (
-          <p className="customers-muted">No new customer requests.</p>
+          <p className="customers-muted">No new customer requests. Quote requests submitted from the customer flow will appear here for follow-up.</p>
         ) : customerRequests.filter(request => request.requestStatus !== 'archived').map(request => {
           const customer = request.customerSnapshot || request.formData || {};
           const details = request.requestSnapshot || {};
@@ -299,7 +299,7 @@ export default function CustomerManagement() {
         <input
           className="customers-search"
           type="text"
-          placeholder="Search customers by name, email, or phone..."
+          placeholder="Search customers by name, email, phone, or address..."
           value={searchTerm}
           onChange={handleSearch}
         />
@@ -311,7 +311,7 @@ export default function CustomerManagement() {
           <div className="v1-empty-state customers-empty-state">
             <div className="customers-empty-icon">👥</div>
             <div>No customers found</div>
-            <p>Add your first customer to get started</p>
+            <p>Add a customer manually, or approve quote requests as they come in.</p>
           </div>
         ) : (
           <table className="customers-table">

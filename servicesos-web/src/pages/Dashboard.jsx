@@ -578,6 +578,12 @@ export default function Dashboard() {
       </div>
 
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
+        <div style={{ marginBottom: 24 }}>
+          <h1 style={{ margin: "0 0 6px", color: "#111827", fontSize: 28, lineHeight: 1.2 }}>Owner dashboard</h1>
+          <p style={{ margin: 0, color: "#64748b", fontSize: 15 }}>
+            Review new quote requests, watch upcoming booked jobs, and track what has been paid.
+          </p>
+        </div>
 
         {/* Stats row */}
         <div style={{ display: "flex", gap: 16, marginBottom: 32, flexWrap: "wrap" }}>
@@ -588,6 +594,10 @@ export default function Dashboard() {
           <StatCard label="Collected Revenue" value={`$${collectedRevenue.toLocaleString()}`} sub="Paid or received" />
           <StatCard label="Outstanding Balance" value={`$${outstandingBalance.toLocaleString()}`} sub="Still owed" />
           <StatCard label="Pipeline value"    value={`$${Math.round(pipeline).toLocaleString()}`} sub="Avg of all ranges" />
+        </div>
+
+        <div style={{ margin: "-18px 0 28px", color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>
+          Expected revenue is scheduled work. Collected revenue is money received. Outstanding balance is the amount still owed.
         </div>
 
         {/* Revenue chart */}
@@ -612,7 +622,7 @@ export default function Dashboard() {
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search name, address, phone…"
+                placeholder="Search customer, address, or phone…"
                 style={{ padding: "8px 14px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, width: 260 }}
               />
             </div>

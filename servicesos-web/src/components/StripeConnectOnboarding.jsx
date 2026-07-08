@@ -80,14 +80,16 @@ export default function StripeConnectOnboarding({ tenantId }) {
   };
 
   const statusText = chargesEnabled
-    ? 'Stripe can create booking payment links for this tenant.'
-    : 'Stripe Connect is not ready yet. Charges must be enabled before sending Stripe payment links.';
+    ? 'Stripe is ready. You can create booking payment links from Bookings.'
+    : 'Stripe is not ready yet. Finish setup before sending online payment links from Bookings.';
 
   return (
     <section className="v1-card" aria-labelledby="stripe-connect-title" style={{ display: 'grid', gap: 14 }}>
       <div>
         <h2 className="v1-section-title" id="stripe-connect-title" style={{ marginBottom: 4 }}>Stripe Connect setup</h2>
-        <p className="v1-muted" style={{ margin: 0 }}>Required before sending Stripe payment links.</p>
+        <p className="v1-muted" style={{ margin: 0 }}>
+          Connect Stripe so customers can pay online from booking payment links. Payment links stay disabled until payments are active.
+        </p>
       </div>
 
       {loading && <p role="status" className="v1-muted" style={{ margin: 0 }}>Checking Stripe Connect status...</p>}
@@ -96,12 +98,12 @@ export default function StripeConnectOnboarding({ tenantId }) {
         <>
           <div style={{ display: 'grid', gap: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-              <span>Charges enabled</span>
-              <strong>{chargesEnabled ? 'Yes' : 'No'}</strong>
+              <span>Online payments active</span>
+              <strong>{chargesEnabled ? 'Ready' : 'Not ready'}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-              <span>Payouts enabled</span>
-              <strong>{payoutsEnabled ? 'Yes' : 'No'}</strong>
+              <span>Payouts active</span>
+              <strong>{payoutsEnabled ? 'Ready' : 'Not ready'}</strong>
             </div>
             <p role="status" className="v1-muted" style={{ margin: 0 }}>{statusText}</p>
           </div>
@@ -131,6 +133,9 @@ export default function StripeConnectOnboarding({ tenantId }) {
               <button className="v1-button v1-button-primary" type="submit" disabled={working}>
                 {working ? 'Opening Stripe...' : 'Continue Stripe onboarding'}
               </button>
+              <p className="v1-muted" style={{ margin: 0 }}>
+                Stripe will ask for business details. Return here and refresh status when setup is complete.
+              </p>
             </form>
           )}
 

@@ -615,7 +615,7 @@ describe('Dashboard null-safety', () => {
 
     expect(await screen.findByText('Search Test Customer')).toBeInTheDocument();
 
-    const searchInput = screen.getByPlaceholderText('Search name, address, phone…');
+    const searchInput = screen.getByPlaceholderText('Search customer, address, or phone…');
     fireEvent.change(searchInput, { target: { value: 'Search' } });
 
     expect(screen.getByText('Search Test Customer')).toBeInTheDocument();

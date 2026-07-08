@@ -70,7 +70,7 @@ describe('read-only Bookings admin list', () => {
     mocks.getJobs.mockResolvedValue({ success: true, data: [] });
     render(<BookingsList />);
 
-    expect(await screen.findByText('Manage booked jobs, details, notes, and manual payment details.')).toBeInTheDocument();
+    expect(await screen.findByText('Your job management page. Update booked job details, send Stripe payment links, and record payments made another way.')).toBeInTheDocument();
   });
 
   it('loads bookings through the active tenant service boundary', async () => {
@@ -85,7 +85,7 @@ describe('read-only Bookings admin list', () => {
     await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a'));
 
     resolveLoad({ success: true, data: [] });
-    expect(await screen.findByText('No bookings yet. Approved quote requests will appear here.')).toBeInTheDocument();
+    expect(await screen.findByText('No bookings yet. Approve a quote request or create a booking from an estimate to schedule the first job.')).toBeInTheDocument();
   });
 
   it('renders a clear retryable error when loading fails', async () => {

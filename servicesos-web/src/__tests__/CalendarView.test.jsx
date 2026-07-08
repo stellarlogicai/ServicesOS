@@ -36,7 +36,7 @@ describe('CalendarView month calendar read-only boundary', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading calendar');
     expect(await screen.findByRole('heading', { name: monthHeading })).toBeInTheDocument();
-    expect(screen.getByText('View your schedule by month and day.')).toBeInTheDocument();
+    expect(screen.getByText('Read-only schedule view. Change bookings and payment details from Bookings.')).toBeInTheDocument();
     expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a');
     ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(day => {
       expect(screen.getByText(day)).toBeInTheDocument();
@@ -78,7 +78,7 @@ describe('CalendarView month calendar read-only boundary', () => {
     await screen.findByRole('heading', { name: monthHeading });
 
     fireEvent.click(screen.getByRole('button', { name: `Select ${dayLabel(emptyDay)}, 0 bookings` }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('No bookings scheduled for this day.');
+    expect(screen.getByRole('dialog')).toHaveTextContent('No bookings scheduled for this day. New jobs appear here after they are created in Bookings.');
   });
 
   it('changes the visible month with Previous Month and Next Month controls', async () => {

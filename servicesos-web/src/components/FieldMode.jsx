@@ -187,7 +187,7 @@ export default function FieldMode() {
     <section className="v1-page field-mode-page" aria-labelledby="field-mode-title">
       <div className="v1-page-header">
         <h1 className="v1-page-title" id="field-mode-title">Field Mode</h1>
-        <p className="v1-page-subtitle">Today and upcoming job packets for use in the field.</p>
+        <p className="v1-page-subtitle">Read-only job packets for today and upcoming work. Use Bookings to change jobs or payment details.</p>
       </div>
       {loading && <p role="status">Loading Field Mode…</p>}
       {!loading && error && <div className="v1-empty-state" role="alert">{error}{tenantId && <><br /><button className="v1-button v1-button-secondary" type="button" onClick={load}>Try again</button></>}</div>}
@@ -195,11 +195,11 @@ export default function FieldMode() {
         <div className="field-mode-sections">
           <section aria-labelledby="today-jobs-title">
             <h2 id="today-jobs-title">Today</h2>
-            {grouped.today.length ? grouped.today.map((booking, index) => <JobCard booking={booking} onOpen={setSelectedBooking} key={booking.id || `today-${index}`} />) : <div className="v1-empty-state">No jobs scheduled for today.</div>}
+            {grouped.today.length ? grouped.today.map((booking, index) => <JobCard booking={booking} onOpen={setSelectedBooking} key={booking.id || `today-${index}`} />) : <div className="v1-empty-state">No jobs scheduled for today. Upcoming job packets will appear below.</div>}
           </section>
           <section aria-labelledby="upcoming-jobs-title">
             <h2 id="upcoming-jobs-title">Upcoming</h2>
-            {grouped.upcoming.length ? grouped.upcoming.map((booking, index) => <JobCard booking={booking} onOpen={setSelectedBooking} key={booking.id || `upcoming-${index}`} />) : <div className="v1-empty-state">No upcoming jobs scheduled.</div>}
+            {grouped.upcoming.length ? grouped.upcoming.map((booking, index) => <JobCard booking={booking} onOpen={setSelectedBooking} key={booking.id || `upcoming-${index}`} />) : <div className="v1-empty-state">No upcoming jobs scheduled. Approved bookings will show here for field reference.</div>}
           </section>
         </div>
       )}

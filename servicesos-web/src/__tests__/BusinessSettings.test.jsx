@@ -72,8 +72,8 @@ describe('BusinessSettings', () => {
     render(<BusinessSettings />);
 
     expect(await screen.findByText('Stripe Connect setup')).toBeInTheDocument();
-    expect(screen.getByText('Required before sending Stripe payment links.')).toBeInTheDocument();
-    expect(await screen.findByText('Stripe Connect is not ready yet. Charges must be enabled before sending Stripe payment links.')).toBeInTheDocument();
+    expect(screen.getByText('Connect Stripe so customers can pay online from booking payment links. Payment links stay disabled until payments are active.')).toBeInTheDocument();
+    expect(await screen.findByText('Stripe is not ready yet. Finish setup before sending online payment links from Bookings.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue Stripe onboarding' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Refresh Stripe status' })).toBeInTheDocument();
     expect(screen.queryByText('Payments ready')).not.toBeInTheDocument();
@@ -90,9 +90,9 @@ describe('BusinessSettings', () => {
 
     render(<BusinessSettings />);
 
-    expect(await screen.findByText('Stripe can create booking payment links for this tenant.')).toBeInTheDocument();
-    expect(screen.getByText('Charges enabled').nextSibling).toHaveTextContent('Yes');
-    expect(screen.getByText('Payouts enabled').nextSibling).toHaveTextContent('Yes');
+    expect(await screen.findByText('Stripe is ready. You can create booking payment links from Bookings.')).toBeInTheDocument();
+    expect(screen.getByText('Online payments active').nextSibling).toHaveTextContent('Ready');
+    expect(screen.getByText('Payouts active').nextSibling).toHaveTextContent('Ready');
   });
 
   it('starts Stripe Connect setup without marking the tenant ready locally', async () => {
@@ -113,7 +113,7 @@ describe('BusinessSettings', () => {
       returnUrl: window.location.href,
       refreshUrl: window.location.href,
     });
-    expect(screen.queryByText('Stripe can create booking payment links for this tenant.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Stripe is ready. You can create booking payment links from Bookings.')).not.toBeInTheDocument();
   });
 
   it('shows actionable backend Stripe Connect setup errors', async () => {

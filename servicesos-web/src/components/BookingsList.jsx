@@ -317,7 +317,7 @@ export default function BookingsList() {
     <div className="v1-page bookings-page">
       <div className="v1-page-header">
         <h1 className="v1-page-title">Bookings</h1>
-        <p className="v1-page-subtitle">Manage booked jobs, details, notes, and manual payment details.</p>
+        <p className="v1-page-subtitle">Your job management page. Update booked job details, send Stripe payment links, and record payments made another way.</p>
       </div>
 
       {loading && <p role="status">Loading bookings…</p>}
@@ -331,7 +331,7 @@ export default function BookingsList() {
 
       {!loading && !error && bookings.length === 0 && (
         <div style={{ padding: 24, border: '1px solid #e2e8f0', borderRadius: 8, color: '#475569' }}>
-          No bookings yet. Approved quote requests will appear here.
+          No bookings yet. Approve a quote request or create a booking from an estimate to schedule the first job.
         </div>
       )}
 
@@ -380,6 +380,9 @@ export default function BookingsList() {
               <div>
                 <p style={{ margin: '0 0 6px', color: '#64748b', fontSize: 13 }}>Booking details</p>
                 <h2 id="booking-detail-title" style={{ margin: 0, color: '#0f172a', fontSize: 24 }}>{bookingCustomerName(selectedBooking)}</h2>
+                <p style={{ margin: '8px 0 0', color: '#64748b', fontSize: 13 }}>
+                  Use this detail view for job notes, schedule changes, and payment follow-up.
+                </p>
               </div>
               <button
                 type="button"
@@ -412,7 +415,7 @@ export default function BookingsList() {
             <section style={{ marginTop: 18, padding: 16, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 10 }}>
               <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18 }}>Payment details</h3>
               <p style={{ margin: '0 0 14px', color: '#0f766e', fontSize: 13 }}>
-                Manual payment details are owner-entered records. ServicesOS has not confirmed funds.
+                Stripe-paid bookings update after Stripe confirms payment. Manual payments are owner-entered records for cash, check, Venmo, Zelle, or another outside method.
               </p>
               <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, margin: 0 }}>
                 <DetailItem label="Job price" value={bookingPrice(selectedBooking)} />
@@ -428,7 +431,7 @@ export default function BookingsList() {
                 <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid #99f6e4' }}>
                   <h4 style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 16 }}>Stripe payment link</h4>
                   <p style={{ margin: '0 0 12px', color: '#0f766e', fontSize: 13 }}>
-                    Create a Stripe-hosted payment link for this booking. ServicesOS will mark it paid only after Stripe confirms payment.
+                    Create a Stripe-hosted payment link for this booking. Creating the link does not mark the booking paid.
                   </p>
                   <button
                     type="button"
@@ -646,7 +649,7 @@ export default function BookingsList() {
               <form noValidate onSubmit={savePaymentStatusEdit} aria-label="Edit booking payment details" style={{ marginTop: 22, padding: 16, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 10 }}>
                 <h3 style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 18 }}>Edit Payment Details</h3>
                 <p style={{ margin: '0 0 14px', color: '#0f766e', fontSize: 13 }}>
-                  Marked paid outside ServicesOS. Do not use this for Stripe-confirmed payments yet.
+                  Use this only for payments received outside ServicesOS. Stripe payments update automatically after Stripe confirms payment.
                 </p>
 
                 <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>

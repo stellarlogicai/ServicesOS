@@ -95,7 +95,7 @@ export default function BusinessSettings() {
     <section className="v1-page business-settings-page" style={{ maxWidth: 820 }} aria-labelledby="business-settings-title">
       <div className="v1-page-header">
         <h1 className="v1-page-title" id="business-settings-title">Business Settings</h1>
-        <p className="v1-page-subtitle">Business contact details and available working days.</p>
+        <p className="v1-page-subtitle">Set the business contact details, working days, and Stripe readiness for online booking payments.</p>
       </div>
       {loading && <p role="status">Loading business settings...</p>}
       {!loading && error && <div role="alert" style={{ color: '#b91c1c', marginBottom: 16 }}>{error}</div>}
@@ -109,6 +109,9 @@ export default function BusinessSettings() {
             <label>Service area<input name="serviceArea" value={form.serviceArea} onChange={updateText} style={fieldStyle} /></label>
             <fieldset style={{ border: '1px solid #cbd5e1', borderRadius: 10, padding: 16 }}>
               <legend>Available working days</legend>
+              <p className="v1-muted" style={{ margin: '0 0 12px' }}>
+                These days are used when checking whether a booking can be scheduled.
+              </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
                 {BUSINESS_DAYS.map(day => (
                   <label key={day} style={{ textTransform: 'capitalize' }}>
