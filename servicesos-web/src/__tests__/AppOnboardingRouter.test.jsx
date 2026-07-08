@@ -90,9 +90,11 @@ vi.mock('../contexts/AuthContext', () => ({
 }));
 
 import App from '../App';
+import { getStripeBookingCheckoutResult } from '../services/stripeCheckoutResult';
 
 describe('App onboarding router context', () => {
   beforeEach(() => {
+    window.history.pushState({}, '', '/');
     authState.logout.mockReset();
     authState.logout.mockResolvedValue({ success: true });
     authState.role = 'admin';
@@ -294,5 +296,34 @@ describe('App onboarding router context', () => {
     expect(screen.queryByText('Payment links')).not.toBeInTheDocument();
 
     expect(screen.getByRole('heading', { name: 'Super Admin Tenant Management Screen' })).toBeInTheDocument();
+  });
+
+  it('detects Stripe booking checkout return query states', () => {
+    expect(getStripeBookingCheckoutResult('?stripe_booking_checkout=success&session_id=cs_test_123')).toBe('success');
+    expect(getStripeBookingCheckoutResult('?stripe_booking_checkout=cancelled')).toBe('cancelled');
+    expect(getStripeBookingCheckoutResult('?stripe_booking_checkout=canceled')).toBe('cancelled');
+    expect(getStripeBookingCheckoutResult('?other=value')).toBeNull();
+  });
+
+  it('renders Stripe checkout success without entering the authenticated shell', () => {
+    window.history.pushState({}, '', '/?stripe_booking_checkout=success&session_id=cs_test_123');
+
+    render(<App />);
+
+    expect(screen.getByRole('heading', { name: 'Payment received. Thank you.' })).toBeInTheDocument();
+    expect(screen.getByText('Payment confirmation may take a moment to appear for the business.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Wife Beta Dashboard' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Customer Portal Screen' })).not.toBeInTheDocument();
+  });
+
+  it('renders Stripe checkout cancellation without entering the authenticated shell', () => {
+    window.history.pushState({}, '', '/?stripe_booking_checkout=cancelled');
+
+    render(<App />);
+
+    expect(screen.getByRole('heading', { name: 'Payment was cancelled.' })).toBeInTheDocument();
+    expect(screen.getByText('You can close this page or contact the business.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Wife Beta Dashboard' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Customer Portal Screen' })).not.toBeInTheDocument();
   });
 });

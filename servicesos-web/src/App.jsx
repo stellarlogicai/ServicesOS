@@ -21,6 +21,7 @@ import ImprovedOnboarding     from "./components/ImprovedOnboarding.jsx";
 import RouteOptimization      from "./components/RouteOptimization.jsx";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
 import { saveLead }           from "./services/crmService.js";
+import { getStripeBookingCheckoutResult } from "./services/stripeCheckoutResult";
 import "./styles/v1.css";
 
 // ─── Window resize hook ───────────────────────────────────────────────────────
@@ -161,6 +162,65 @@ function defaultPage(role) {
   if (role === "customer")    return "customer-portal";
   if (role === "super-admin") return "tenant-management";
   return "dashboard";
+}
+
+function StripeBookingCheckoutResult({ result }) {
+  const isSuccess = result === "success";
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: "#f8fafc",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 24,
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    }}>
+      <main role="main" aria-labelledby="stripe-payment-result-title" style={{
+        width: "100%",
+        maxWidth: 460,
+        background: "#fff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 12,
+        padding: "32px 28px",
+        boxShadow: "0 12px 32px rgba(15, 23, 42, 0.08)",
+        textAlign: "center",
+      }}>
+        <div aria-hidden="true" style={{
+          width: 48,
+          height: 48,
+          borderRadius: 999,
+          background: isSuccess ? "#dcfce7" : "#fef3c7",
+          color: isSuccess ? "#15803d" : "#92400e",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 24,
+          marginBottom: 18,
+        }}>
+          {isSuccess ? "✓" : "!"}
+        </div>
+        <h1 id="stripe-payment-result-title" style={{
+          margin: "0 0 10px",
+          color: "#111827",
+          fontSize: 24,
+          lineHeight: 1.2,
+        }}>
+          {isSuccess ? "Payment received. Thank you." : "Payment was cancelled."}
+        </h1>
+        <p style={{
+          margin: 0,
+          color: "#4b5563",
+          fontSize: 15,
+          lineHeight: 1.6,
+        }}>
+          {isSuccess
+            ? "Payment confirmation may take a moment to appear for the business."
+            : "You can close this page or contact the business."}
+        </p>
+      </main>
+    </div>
+  );
 }
 
 // ─── Tenant switcher (super-admin only) ──────────────────────────────────────
@@ -403,6 +463,11 @@ function AccessDenied() {
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 export default function App() {
+  const stripeBookingCheckoutResult = getStripeBookingCheckoutResult(window.location.search);
+  if (stripeBookingCheckoutResult) {
+    return <StripeBookingCheckoutResult result={stripeBookingCheckoutResult} />;
+  }
+
   return (
     <BrowserRouter>
       <AuthProvider>

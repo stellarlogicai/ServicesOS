@@ -18,6 +18,7 @@ import {
   getRoomSummary,
   isPendingOwnerReview
 } from "../services/quoteLeadDisplay";
+import { calculateDashboardRevenueSnapshot } from "../services/dashboardRevenueSnapshot";
 
 // Helper function to safely access form data from both old and new structures
 function getFormData(lead) {
@@ -355,8 +356,15 @@ function Row({ label, value }) {
 }
 
 // ─── Revenue chart (30-day bar chart) ────────────────────────────────────────
-function RevenueChart({ leads }) {
-  const booked = leads.filter(l => l.status === "booked" && l.booking?.agreedPrice);
+function bookingChartDate(booking = {}) {
+  return booking.scheduledAt || booking.date || booking.appointmentDate || '';
+}
+
+function RevenueChart({ bookings }) {
+  const pricedBookings = (Array.isArray(bookings) ? bookings : []).filter(booking => {
+    const amount = Number(booking.agreedPrice ?? booking.price ?? booking.finalPrice ?? booking.totalAmount ?? booking.total);
+    return Number.isFinite(amount) && amount > 0;
+  });
 
   // Build last-14-days buckets
   const days = Array.from({ length: 14 }, (_, i) => {
@@ -366,9 +374,17 @@ function RevenueChart({ leads }) {
   });
 
   const buckets = days.map(dayStr => {
-    const total = booked
-      .filter(l => l.booking?.scheduledAt && new Date(l.booking.scheduledAt).toDateString() === dayStr)
-      .reduce((sum, l) => sum + (l.booking?.agreedPrice || 0), 0);
+    const total = pricedBookings
+      .filter(booking => {
+        const dateValue = bookingChartDate(booking);
+        if (!dateValue) return false;
+        const parsed = new Date(dateValue);
+        return !Number.isNaN(parsed.getTime()) && parsed.toDateString() === dayStr;
+      })
+      .reduce((sum, booking) => {
+        const amount = Number(booking.agreedPrice ?? booking.price ?? booking.finalPrice ?? booking.totalAmount ?? booking.total);
+        return sum + (Number.isFinite(amount) ? amount : 0);
+      }, 0);
     return { label: new Date(dayStr).toLocaleDateString("en-US", { month: "short", day: "numeric" }), total };
   });
 
@@ -408,6 +424,7 @@ export default function Dashboard() {
   const { currentTenant, user } = useAuth();
   const reviewerUid = user?.uid;
   const [leads, setLeads]             = useState([]);
+  const [bookings, setBookings]       = useState([]);
   const [selectedLead, setSelected]   = useState(null);
   const [bookingLead, setBookingLead] = useState(null);
   const [filter, setFilter]           = useState("all");
@@ -419,6 +436,12 @@ export default function Dashboard() {
       getLeads(currentTenant.id)
         .then(setLeads)
         .catch(err => console.error('Error loading leads:', err));
+      getJobs(currentTenant.id)
+        .then(result => setBookings(result?.success && Array.isArray(result.data) ? result.data : []))
+        .catch(err => {
+          console.error('Error loading bookings:', err);
+          setBookings([]);
+        });
     }
   }, [currentTenant?.id]);
 
@@ -426,7 +449,11 @@ export default function Dashboard() {
   const totalLeads    = leads.length;
   const newLeads      = leads.filter(l => l.status === "new").length;
   const bookedLeads   = leads.filter(l => l.status === "booked");
-  const revenue       = bookedLeads.reduce((s, l) => s + (l.booking?.agreedPrice || 0), 0);
+  const {
+    expectedRevenue,
+    collectedRevenue,
+    outstandingBalance
+  } = calculateDashboardRevenueSnapshot(bookings);
   const pipeline      = leads
     .filter(l => l.status !== "lost")
     .reduce((s, l) => s + (((l.estimate?.priceLow || 0) + (l.estimate?.priceHigh || 0)) / 2), 0);
@@ -455,7 +482,9 @@ export default function Dashboard() {
       });
       // Refresh leads after booking
       const updatedLeads = await getLeads(currentTenant?.id);
+      const updatedBookings = await getJobs(currentTenant?.id);
       setLeads(updatedLeads);
+      setBookings(updatedBookings?.success && Array.isArray(updatedBookings.data) ? updatedBookings.data : []);
       setBookingLead(null);
       setSelected(l => l?.id === lead.id ? { ...l, ...conversion.leadPatch } : l);
       alert(`${getFormData(lead).fullName} booked.`);
@@ -555,7 +584,9 @@ export default function Dashboard() {
           <StatCard label="Total leads"   value={totalLeads}             sub="All time" />
           <StatCard label="New leads"     value={newLeads}               sub="Need follow-up" />
           <StatCard label="Booked jobs"   value={bookedLeads.length}     sub={`${conversionRate}% conversion`} />
-          <StatCard label="Booked revenue" value={`$${revenue.toLocaleString()}`} sub="Expected from booked jobs" accent />
+          <StatCard label="Expected Revenue" value={`$${expectedRevenue.toLocaleString()}`} sub="Expected / booked" accent />
+          <StatCard label="Collected Revenue" value={`$${collectedRevenue.toLocaleString()}`} sub="Paid or received" />
+          <StatCard label="Outstanding Balance" value={`$${outstandingBalance.toLocaleString()}`} sub="Still owed" />
           <StatCard label="Pipeline value"    value={`$${Math.round(pipeline).toLocaleString()}`} sub="Avg of all ranges" />
         </div>
 
@@ -563,12 +594,12 @@ export default function Dashboard() {
         <div className="v1-card" style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, marginBottom: 32 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 600, color: "#111827" }}>Booked revenue (14 days)</div>
+              <div style={{ fontSize: 16, fontWeight: 600, color: "#111827" }}>Expected revenue (14 days)</div>
               <div style={{ fontSize: 13, color: "#9ca3af" }}>Expected revenue by scheduled job date</div>
             </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: "#1d4ed8" }}>${revenue.toLocaleString()}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#1d4ed8" }}>${expectedRevenue.toLocaleString()}</div>
           </div>
-          <RevenueChart leads={leads} />
+          <RevenueChart bookings={bookings} />
         </div>
 
         {/* Leads table */}

@@ -148,6 +148,20 @@ describe('Dashboard pending quote review', () => {
   });
 
   it('shows snapshot data and uses explicit owner approval instead of generic booking status', async () => {
+    dashboardMocks.getJobs
+      .mockResolvedValueOnce({
+        success: true,
+        data: [{
+          id: 'booking-existing',
+          agreedPrice: 245,
+          amountReceived: 100,
+          paymentStatus: 'partial',
+          paymentMethod: 'cash',
+          scheduledAt: '2026-07-15T15:30:00.000Z',
+        }]
+      })
+      .mockResolvedValue({ success: true, data: [] });
+
     const { container } = render(<Dashboard />);
 
     expect(await screen.findByText('Snapshot Customer')).toBeInTheDocument();
@@ -158,9 +172,11 @@ describe('Dashboard pending quote review', () => {
     expect(screen.getByRole('button', { name: 'Approve / Create Booking' })).toBeInTheDocument();
     expect(screen.getByText('Total leads').nextElementSibling).toHaveTextContent('2');
     expect(screen.getByText('Booked jobs').nextElementSibling).toHaveTextContent('1');
-    expect(screen.getByText('Booked revenue').nextElementSibling).toHaveTextContent('$245');
-    expect(screen.getByText('Expected from booked jobs')).toBeInTheDocument();
-    expect(screen.getByText('Booked revenue (14 days)')).toBeInTheDocument();
+    expect(screen.getByText('Expected Revenue').nextElementSibling).toHaveTextContent('$245');
+    expect(screen.getByText('Collected Revenue').nextElementSibling).toHaveTextContent('$100');
+    expect(screen.getByText('Outstanding Balance').nextElementSibling).toHaveTextContent('$145');
+    expect(screen.getByText('Booked jobs')).toBeInTheDocument();
+    expect(screen.getByText('Expected revenue (14 days)')).toBeInTheDocument();
     expect(screen.getByText('Expected revenue by scheduled job date')).toBeInTheDocument();
     expect(screen.queryByText('Confirmed revenue')).not.toBeInTheDocument();
     expect(screen.queryByText('From booked jobs')).not.toBeInTheDocument();
@@ -426,6 +442,7 @@ describe('Dashboard null-safety', () => {
 
     render(<Dashboard />);
     expect(await screen.findByText('Unavailable Day Customer')).toBeInTheDocument();
+    dashboardMocks.getJobs.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
     fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-07-19' } });
     fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
@@ -480,6 +497,7 @@ describe('Dashboard null-safety', () => {
 
     render(<Dashboard />);
     expect(await screen.findByText('Override Day Customer')).toBeInTheDocument();
+    dashboardMocks.getJobs.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
     fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-07-19' } });
     fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
@@ -487,7 +505,7 @@ describe('Dashboard null-safety', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Schedule anyway' }));
 
     await waitFor(() => expect(dashboardMocks.approveQuoteRequestAndCreateBooking).toHaveBeenCalledTimes(1));
-    expect(dashboardMocks.getJobs).toHaveBeenCalledTimes(1);
+    expect(dashboardMocks.getJobs).toHaveBeenCalledTimes(2);
   });
 
   it('blocks booking when business availability cannot be validated', async () => {
@@ -502,6 +520,7 @@ describe('Dashboard null-safety', () => {
 
     render(<Dashboard />);
     expect(await screen.findByText('Availability Failure Customer')).toBeInTheDocument();
+    dashboardMocks.getJobs.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
     fireEvent.change(document.querySelector('input[type="date"]'), { target: { value: '2026-07-20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
