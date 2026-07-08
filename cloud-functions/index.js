@@ -2,6 +2,11 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors')({ origin: true });
+const {
+  createBookingCheckoutSessionHandler,
+  handleBookingCheckoutCompleted,
+  handleBookingPaymentSucceeded,
+} = require('./bookingStripe');
 
 admin.initializeApp();
 
@@ -16,6 +21,15 @@ const PLATFORM_FEE_PERCENTAGE = {
 const getPlatformFee = (subscriptionTier) => {
   return PLATFORM_FEE_PERCENTAGE[subscriptionTier] || PLATFORM_FEE_PERCENTAGE.professional;
 };
+
+exports.createBookingCheckoutSession = functions.https.onRequest(createBookingCheckoutSessionHandler({
+  admin,
+  appUrl: process.env.APP_URL || 'http://localhost:5173',
+  cors,
+  getPlatformFee,
+  secretKey: process.env.STRIPE_SECRET_KEY,
+  stripe,
+}));
 
 /**
  * AI/ML Backend: Analyze cleaning photos for condition assessment
@@ -346,6 +360,15 @@ exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
 
   try {
     switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        await handleBookingCheckoutCompleted(session, {
+          admin,
+          nowIso: new Date().toISOString(),
+        });
+        break;
+      }
+
       case 'payment_intent.succeeded': {
         const paymentIntent = event.data.object;
         await handlePaymentSucceeded(paymentIntent);
@@ -386,6 +409,14 @@ exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
  * Handle successful payment
  */
 async function handlePaymentSucceeded(paymentIntent) {
+  const bookingPaymentResult = await handleBookingPaymentSucceeded(paymentIntent, {
+    admin,
+    nowIso: new Date().toISOString(),
+  });
+  if (bookingPaymentResult.handled) {
+    return;
+  }
+
   const { metadata, amount, id } = paymentIntent;
   const leadId = metadata.leadId;
 

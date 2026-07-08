@@ -107,6 +107,7 @@ export function bookingPaymentStatus(booking = {}) {
 export function bookingPaymentMethod(booking = {}) {
   const method = firstText(booking.paymentMethod);
   if (!method) return '';
+  if (method === 'stripe') return 'Stripe (confirmed by Stripe)';
   const label = BOOKING_PAYMENT_METHOD_LABELS[method];
   if (!label) return '';
   return method === 'stripe_manual_reference'

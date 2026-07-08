@@ -493,6 +493,33 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('Venmo (manual/outside ServicesOS)');
   });
 
+  it('displays Stripe-confirmed payment method without exposing Stripe as a manual method option', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-stripe-confirmed',
+        customerName: 'Stripe Confirmed Customer',
+        paymentStatus: 'paid_in_full',
+        paymentMethod: 'stripe',
+        amountReceived: 190,
+        agreedPrice: 190,
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Stripe Confirmed Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Stripe Confirmed Customer' });
+    expect(dialog).toHaveTextContent('Stripe (confirmed by Stripe)');
+
+    await user.click(screen.getByRole('button', { name: 'Edit Payment Details' }));
+    const methodOptions = Array.from(screen.getByLabelText('Payment method').querySelectorAll('option')).map(option => option.value);
+    expect(methodOptions).not.toContain('stripe');
+  });
+
   it('defaults amount received and received date when a paid status is selected', async () => {
     const user = userEvent.setup();
     const today = new Date();

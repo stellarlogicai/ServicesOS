@@ -4,6 +4,7 @@
 
 import { calculateTransactionFee } from '../lib/subscriptionConfig';
 import { getTenantSubscription } from './tenantService';
+import { auth } from '../firebase';
 
 let stripeInstance = null;
 
@@ -249,6 +250,59 @@ export async function createCheckoutSession(estimate, formData, depositPercentag
     };
   } catch (error) {
     console.error('[Stripe] Error creating checkout session:', error);
+    throw error;
+  }
+}
+
+/**
+ * Create a Stripe Checkout session for an existing booking.
+ * This creates a pending Stripe checkout only. Payment is confirmed by webhook.
+ */
+export async function createBookingCheckoutSession(tenantId, bookingId) {
+  try {
+    if (!tenantId || !bookingId) {
+      throw new Error('tenantId and bookingId are required');
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error('Authentication required');
+    }
+
+    const token = await user.getIdToken();
+    const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+    const region = 'us-central1';
+    const isLocal = import.meta.env.DEV;
+    const functionUrl = isLocal
+      ? 'http://127.0.0.1:5001/cleaning-intake-system/us-central1/createBookingCheckoutSession'
+      : `https://${region}-${projectId}.cloudfunctions.net/createBookingCheckoutSession`;
+
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ tenantId, bookingId }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to create booking checkout session');
+    }
+
+    const { sessionId, url, amount, currency, stripeAccountId, platformFee, platformFeePercentage } = await response.json();
+    return {
+      sessionId,
+      url,
+      amount,
+      currency,
+      stripeAccountId,
+      platformFee,
+      platformFeePercentage,
+    };
+  } catch (error) {
+    console.error('[Stripe] Error creating booking checkout session:', error);
     throw error;
   }
 }
