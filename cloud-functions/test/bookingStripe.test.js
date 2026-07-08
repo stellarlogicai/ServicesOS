@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
   BOOKING_PAYMENT_SOURCE,
+  createBookingCheckoutSessionHandler,
   createBookingCheckoutSessionCore,
   handleBookingCheckoutCompleted,
   handleBookingPaymentSucceeded,
@@ -51,10 +52,38 @@ class MockCollectionRef {
 
 function createMockAdmin(store) {
   return {
+    auth: () => ({
+      verifyIdToken: async () => ({ uid: 'admin-1' }),
+    }),
     firestore: () => ({
       collection: name => new MockCollectionRef(name, store),
     }),
   };
+}
+
+function createResponseMock() {
+  const response = {
+    body: undefined,
+    headers: {},
+    statusCode: undefined,
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+    send(payload) {
+      this.body = payload;
+      return this;
+    },
+    set(name, value) {
+      this.headers[name] = value;
+      return this;
+    },
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+  };
+  return response;
 }
 
 function baseStore(overrides = {}) {
@@ -100,6 +129,85 @@ function createStripeMock(session = {}) {
     },
   };
 }
+
+test('createBookingCheckoutSessionHandler OPTIONS returns CORS headers for deployed ServicesOS origin', async () => {
+  const handler = createBookingCheckoutSessionHandler({
+    admin: createMockAdmin(baseStore()),
+    appUrl: 'https://servicesos.netlify.app',
+    getPlatformFee: () => 0.03,
+    secretKey: 'sk_test_123',
+    stripe: createStripeMock(),
+  });
+  const res = createResponseMock();
+
+  await handler({
+    method: 'OPTIONS',
+    headers: { origin: 'https://servicesos.netlify.app' },
+  }, res);
+
+  assert.equal(res.statusCode, 204);
+  assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://servicesos.netlify.app');
+  assert.equal(res.headers['Access-Control-Allow-Methods'], 'POST, OPTIONS');
+  assert.equal(res.headers['Access-Control-Allow-Headers'], 'Content-Type, Authorization');
+});
+
+test('createBookingCheckoutSessionHandler OPTIONS allows local dev origins', async () => {
+  const handler = createBookingCheckoutSessionHandler({
+    admin: createMockAdmin(baseStore()),
+    appUrl: 'http://localhost:5173',
+    getPlatformFee: () => 0.03,
+    secretKey: 'sk_test_123',
+    stripe: createStripeMock(),
+  });
+
+  for (const origin of ['http://127.0.0.1:5173', 'http://localhost:5173']) {
+    const res = createResponseMock();
+    await handler({ method: 'OPTIONS', headers: { origin } }, res);
+    assert.equal(res.statusCode, 204);
+    assert.equal(res.headers['Access-Control-Allow-Origin'], origin);
+  }
+});
+
+test('createBookingCheckoutSessionHandler does not reflect disallowed origins', async () => {
+  const handler = createBookingCheckoutSessionHandler({
+    admin: createMockAdmin(baseStore()),
+    appUrl: 'https://servicesos.netlify.app',
+    getPlatformFee: () => 0.03,
+    secretKey: 'sk_test_123',
+    stripe: createStripeMock(),
+  });
+  const res = createResponseMock();
+
+  await handler({
+    method: 'OPTIONS',
+    headers: { origin: 'https://evil.example' },
+  }, res);
+
+  assert.equal(res.statusCode, 204);
+  assert.equal(res.headers['Access-Control-Allow-Origin'], undefined);
+  assert.equal(res.headers['Access-Control-Allow-Headers'], 'Content-Type, Authorization');
+});
+
+test('createBookingCheckoutSessionHandler POST still requires Firebase ID token auth', async () => {
+  const handler = createBookingCheckoutSessionHandler({
+    admin: createMockAdmin(baseStore()),
+    appUrl: 'https://servicesos.netlify.app',
+    getPlatformFee: () => 0.03,
+    secretKey: 'sk_test_123',
+    stripe: createStripeMock(),
+  });
+  const res = createResponseMock();
+
+  await handler({
+    body: { tenantId: 'tenant-a', bookingId: 'booking-1' },
+    headers: { origin: 'https://servicesos.netlify.app' },
+    method: 'POST',
+  }, res);
+
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.body.error, 'Authentication required');
+  assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://servicesos.netlify.app');
+});
 
 test('createBookingCheckoutSessionCore rejects missing tenantId or bookingId', async () => {
   const result = await createBookingCheckoutSessionCore({

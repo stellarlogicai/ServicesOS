@@ -1,8 +1,25 @@
 const BOOKING_PAYMENT_SOURCE = 'servicesos_booking_payment';
 const DEFAULT_CURRENCY = 'usd';
+const BOOKING_CHECKOUT_ALLOWED_ORIGINS = new Set([
+  'https://servicesos.netlify.app',
+  'http://127.0.0.1:5173',
+  'http://localhost:5173',
+]);
+const BOOKING_CHECKOUT_ALLOWED_METHODS = 'POST, OPTIONS';
+const BOOKING_CHECKOUT_ALLOWED_HEADERS = 'Content-Type, Authorization';
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function applyBookingCheckoutCors(req, res) {
+  const origin = req.headers?.origin;
+  if (BOOKING_CHECKOUT_ALLOWED_ORIGINS.has(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+  }
+  res.set('Access-Control-Allow-Methods', BOOKING_CHECKOUT_ALLOWED_METHODS);
+  res.set('Access-Control-Allow-Headers', BOOKING_CHECKOUT_ALLOWED_HEADERS);
 }
 
 function centsFromDollars(value) {
@@ -289,42 +306,46 @@ async function createBookingCheckoutSessionCore({
   };
 }
 
-function createBookingCheckoutSessionHandler({ admin, appUrl, cors, getPlatformFee, secretKey, stripe }) {
-  return (req, res) => {
-    return cors(req, res, async () => {
-      try {
-        if (req.method !== 'POST') {
-          return res.status(405).json({ error: 'Method not allowed' });
-        }
+function createBookingCheckoutSessionHandler({ admin, appUrl, getPlatformFee, secretKey, stripe }) {
+  return async (req, res) => {
+    applyBookingCheckoutCors(req, res);
 
-        const auth = await verifyRequestAuth(req, admin);
-        if (!auth.success) {
-          return res.status(auth.status).json({ error: auth.error });
-        }
+    if (req.method === 'OPTIONS') {
+      return res.status(204).send('');
+    }
 
-        const result = await createBookingCheckoutSessionCore({
-          admin,
-          appUrl,
-          bookingId: req.body?.bookingId,
-          currency: req.body?.currency || DEFAULT_CURRENCY,
-          getPlatformFee,
-          nowIso: new Date().toISOString(),
-          secretKey,
-          stripe,
-          tenantId: req.body?.tenantId,
-          uid: auth.uid,
-        });
-
-        if (!result.success) {
-          return res.status(result.status || 500).json({ error: result.error });
-        }
-
-        return res.json(result.data);
-      } catch (error) {
-        console.error('[Booking Stripe] Checkout session error:', error);
-        return res.status(500).json({ error: 'Failed to create booking checkout session' });
+    try {
+      if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
       }
-    });
+
+      const auth = await verifyRequestAuth(req, admin);
+      if (!auth.success) {
+        return res.status(auth.status).json({ error: auth.error });
+      }
+
+      const result = await createBookingCheckoutSessionCore({
+        admin,
+        appUrl,
+        bookingId: req.body?.bookingId,
+        currency: req.body?.currency || DEFAULT_CURRENCY,
+        getPlatformFee,
+        nowIso: new Date().toISOString(),
+        secretKey,
+        stripe,
+        tenantId: req.body?.tenantId,
+        uid: auth.uid,
+      });
+
+      if (!result.success) {
+        return res.status(result.status || 500).json({ error: result.error });
+      }
+
+      return res.json(result.data);
+    } catch (error) {
+      console.error('[Booking Stripe] Checkout session error:', error);
+      return res.status(500).json({ error: 'Failed to create booking checkout session' });
+    }
   };
 }
 
@@ -372,6 +393,7 @@ async function handleBookingCheckoutCompleted(session, { admin, nowIso }) {
 
 module.exports = {
   BOOKING_PAYMENT_SOURCE,
+  applyBookingCheckoutCors,
   bookingAmountCents,
   bookingPaymentMetadata,
   buildBookingCheckoutSessionParams,
