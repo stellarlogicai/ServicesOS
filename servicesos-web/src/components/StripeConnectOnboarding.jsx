@@ -1,247 +1,150 @@
-import { useState, useEffect, useContext, useCallback } from 'react';
-import { AuthContext } from '../contexts/AuthContextValue';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  createConnectedAccount,
+  generateOnboardingLink,
+  getConnectedAccountStatus,
+} from '../services/stripeService';
 
-const StripeConnectOnboarding = () => {
-  const { tenantId } = useContext(AuthContext);
+export default function StripeConnectOnboarding({ tenantId }) {
   const [accountStatus, setAccountStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [onboardingLoading, setOnboardingLoading] = useState(false);
-  const [error, setError] = useState(null);
   const [businessEmail, setBusinessEmail] = useState('');
   const [businessName, setBusinessName] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
 
-  const fetchAccountStatus = useCallback(async () => {
+  const connected = Boolean(accountStatus?.connected);
+  const chargesEnabled = accountStatus?.chargesEnabled === true;
+  const payoutsEnabled = accountStatus?.payoutsEnabled === true;
+
+  const refreshStatus = useCallback(async () => {
+    if (!tenantId) {
+      setError('Stripe Connect setup needs an active tenant.');
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError('');
     try {
-      setLoading(true);
-      const response = await fetch(
-        `${import.meta.env.VITE_FUNCTIONS_URL || 'http://localhost:5001'}/cleaning-intake-system/us-central1/api/stripe-connect/account-status?tenantId=${tenantId}`
-      );
-      const data = await response.json();
-      setAccountStatus(data);
-      setError(null);
-    } catch (err) {
-      console.error('Error fetching account status:', err);
-      setError('Failed to fetch account status');
+      setAccountStatus(await getConnectedAccountStatus(tenantId));
+    } catch {
+      setError('Stripe Connect status could not be refreshed.');
     } finally {
       setLoading(false);
     }
   }, [tenantId]);
 
   useEffect(() => {
-    let isActive = true;
-
-    Promise.resolve().then(() => {
-      if (isActive && tenantId) {
-        fetchAccountStatus();
-      }
+    let active = true;
+    Promise.resolve().then(async () => {
+      if (!active) return;
+      await refreshStatus();
     });
+    return () => { active = false; };
+  }, [refreshStatus]);
 
-    return () => {
-      isActive = false;
-    };
-  }, [tenantId, fetchAccountStatus]);
+  const continueOnboarding = async () => {
+    setWorking(true);
+    setError('');
+    try {
+      const data = await generateOnboardingLink({
+        tenantId,
+        returnUrl: window.location.href,
+        refreshUrl: window.location.href,
+      });
+      window.open(data.url, '_self', 'noopener,noreferrer');
+    } catch {
+      setError('Stripe onboarding could not be opened. Try again or refresh Stripe status.');
+    } finally {
+      setWorking(false);
+    }
+  };
 
-  const handleCreateAccount = async (e) => {
-    e.preventDefault();
-    
+  const startOnboarding = async event => {
+    event.preventDefault();
     if (!businessEmail) {
-      setError('Business email is required');
+      setError('Business email is required for Stripe Connect setup.');
       return;
     }
 
+    setWorking(true);
+    setError('');
     try {
-      setOnboardingLoading(true);
-      setError(null);
-
-      const response = await fetch(
-        `${import.meta.env.VITE_FUNCTIONS_URL || 'http://localhost:5001'}/cleaning-intake-system/us-central1/api/stripe-connect/create-account`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tenantId,
-            businessEmail,
-            businessName
-          })
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create account');
-      }
-
-      // Generate onboarding link
-      await handleGenerateOnboardingLink();
+      await createConnectedAccount({ tenantId, businessEmail, businessName });
+      await continueOnboarding();
     } catch (err) {
-      console.error('Error creating account:', err);
-      setError(err.message);
-    } finally {
-      setOnboardingLoading(false);
+      setError(err.message || 'Stripe Connect account could not be created. Try again or refresh Stripe status.');
+      setWorking(false);
     }
   };
 
-  const handleGenerateOnboardingLink = async () => {
-    try {
-      setOnboardingLoading(true);
-      setError(null);
-
-      const response = await fetch(
-        `${import.meta.env.VITE_FUNCTIONS_URL || 'http://localhost:5001'}/cleaning-intake-system/us-central1/api/stripe-connect/onboarding-link`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tenantId,
-            returnUrl: window.location.href,
-            refreshUrl: window.location.href
-          })
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate onboarding link');
-      }
-
-      // Redirect to Stripe onboarding
-      window.location.href = data.url;
-    } catch (err) {
-      console.error('Error generating onboarding link:', err);
-      setError(err.message);
-    } finally {
-      setOnboardingLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+  const statusText = chargesEnabled
+    ? 'Stripe can create booking payment links for this tenant.'
+    : 'Stripe Connect is not ready yet. Charges must be enabled before sending Stripe payment links.';
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <h2 className="text-2xl font-bold mb-4">Stripe Connect Setup</h2>
-      
-      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <h3 className="font-semibold text-blue-900 mb-2">Why Connect Your Stripe Account?</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>• Receive payments directly to your own Stripe account</li>
-          <li>• You own the chargebacks and refunds</li>
-          <li>• Automatic payouts to your bank account</li>
-          <li>• Platform fee (5%) automatically deducted</li>
-          <li>• Simplified accounting and tax compliance</li>
-        </ul>
+    <section className="v1-card" aria-labelledby="stripe-connect-title" style={{ display: 'grid', gap: 14 }}>
+      <div>
+        <h2 className="v1-section-title" id="stripe-connect-title" style={{ marginBottom: 4 }}>Stripe Connect setup</h2>
+        <p className="v1-muted" style={{ margin: 0 }}>Required before sending Stripe payment links.</p>
       </div>
 
-      {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">
-          {error}
-        </div>
-      )}
+      {loading && <p role="status" className="v1-muted" style={{ margin: 0 }}>Checking Stripe Connect status...</p>}
 
-      {!accountStatus?.connected ? (
-        <div>
-          <p className="text-gray-600 mb-4">
-            Connect your Stripe account to start receiving payments directly.
-          </p>
-          
-          <form onSubmit={handleCreateAccount} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Business Email
-              </label>
-              <input
-                type="email"
-                value={businessEmail}
-                onChange={(e) => setBusinessEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="your-business@example.com"
-                required
-              />
+      {!loading && (
+        <>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <span>Charges enabled</span>
+              <strong>{chargesEnabled ? 'Yes' : 'No'}</strong>
             </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Business Name (Optional)
-              </label>
-              <input
-                type="text"
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Your Cleaning Business"
-              />
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <span>Payouts enabled</span>
+              <strong>{payoutsEnabled ? 'Yes' : 'No'}</strong>
             </div>
-
-            <button
-              type="submit"
-              disabled={onboardingLoading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-            >
-              {onboardingLoading ? 'Processing...' : 'Connect Stripe Account'}
-            </button>
-          </form>
-        </div>
-      ) : (
-        <div>
-          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <div className="flex items-center">
-              <svg className="w-5 h-5 text-green-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-              <span className="font-semibold text-green-900">
-                Stripe Account Connected
-              </span>
-            </div>
+            <p role="status" className="v1-muted" style={{ margin: 0 }}>{statusText}</p>
           </div>
 
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-600">Status:</span>
-              <span className={`font-medium ${accountStatus.status === 'active' ? 'text-green-600' : 'text-yellow-600'}`}>
-                {accountStatus.status === 'active' ? 'Active' : 'Pending'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Charges Enabled:</span>
-              <span className={`font-medium ${accountStatus.chargesEnabled ? 'text-green-600' : 'text-red-600'}`}>
-                {accountStatus.chargesEnabled ? 'Yes' : 'No'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Payouts Enabled:</span>
-              <span className={`font-medium ${accountStatus.payoutsEnabled ? 'text-green-600' : 'text-red-600'}`}>
-                {accountStatus.payoutsEnabled ? 'Yes' : 'No'}
-              </span>
-            </div>
-          </div>
+          {error && <div role="alert" style={{ color: '#b91c1c' }}>{error}</div>}
 
-          {accountStatus.status === 'pending' && (
-            <button
-              onClick={handleGenerateOnboardingLink}
-              disabled={onboardingLoading}
-              className="mt-4 w-full bg-yellow-600 text-white py-2 px-4 rounded-md hover:bg-yellow-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-            >
-              {onboardingLoading ? 'Loading...' : 'Complete Onboarding'}
+          {!connected && (
+            <form onSubmit={startOnboarding} style={{ display: 'grid', gap: 10 }}>
+              <label>
+                Business email
+                <input
+                  type="email"
+                  value={businessEmail}
+                  onChange={event => setBusinessEmail(event.target.value)}
+                  required
+                  style={{ width: '100%', boxSizing: 'border-box', padding: 10, border: '1px solid #cbd5e1', borderRadius: 8 }}
+                />
+              </label>
+              <label>
+                Business name
+                <input
+                  value={businessName}
+                  onChange={event => setBusinessName(event.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: 10, border: '1px solid #cbd5e1', borderRadius: 8 }}
+                />
+              </label>
+              <button className="v1-button v1-button-primary" type="submit" disabled={working}>
+                {working ? 'Opening Stripe...' : 'Continue Stripe onboarding'}
+              </button>
+            </form>
+          )}
+
+          {connected && !chargesEnabled && (
+            <button className="v1-button v1-button-primary" type="button" onClick={continueOnboarding} disabled={working}>
+              {working ? 'Opening Stripe...' : 'Continue Stripe onboarding'}
             </button>
           )}
 
-          <button
-            onClick={fetchAccountStatus}
-            className="mt-4 w-full bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 transition-colors"
-          >
-            Refresh Status
+          <button className="v1-button v1-button-secondary" type="button" onClick={refreshStatus} disabled={working}>
+            Refresh Stripe status
           </button>
-        </div>
+        </>
       )}
-    </div>
+    </section>
   );
-};
-
-export default StripeConnectOnboarding;
+}

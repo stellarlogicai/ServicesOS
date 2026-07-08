@@ -7,6 +7,11 @@ const {
   handleBookingCheckoutCompleted,
   handleBookingPaymentSucceeded,
 } = require('./bookingStripe');
+const {
+  createConnectedAccountHandler,
+  generateOnboardingLinkHandler,
+  getConnectedAccountStatusHandler,
+} = require('./connectStripe');
 
 admin.initializeApp();
 
@@ -345,7 +350,7 @@ exports.confirmPayment = functions.https.onRequest(async (req, res) => {
  * Stripe Webhook Handler (with Stripe Connect support)
  * POST /api/webhooks/stripe
  */
-exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
+exports.stripeWebhook = functions.runWith({ invoker: 'public' }).https.onRequest(async (req, res) => {
   const sig = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -354,7 +359,13 @@ exports.stripeWebhook = functions.https.onRequest(async (req, res) => {
   try {
     event = stripe.webhooks.constructEvent(req.rawBody, sig, webhookSecret);
   } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
+    console.error('[Stripe Webhook] Signature verification failed:', {
+      message: err.message,
+      hasSignature: Boolean(sig),
+      hasWebhookSecret: Boolean(webhookSecret),
+      hasRawBody: Boolean(req.rawBody),
+      rawBodyLength: req.rawBody?.length || 0,
+    });
     return res.status(400).json({ error: 'Webhook signature verification failed' });
   }
 
@@ -745,150 +756,34 @@ exports.getSubscription = functions.https.onRequest((req, res) => {
 
 /**
  * Stripe Connect: Create a connected account for a tenant
- * POST /api/stripe-connect/create-account
+ * POST /createConnectedAccount
  */
 exports.createConnectedAccount = functions.https.onRequest((req, res) => {
-  return cors(req, res, async () => {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method not allowed' });
-    }
-
-    try {
-      const { tenantId, businessEmail, businessName } = req.body;
-
-      if (!tenantId || !businessEmail) {
-        return res.status(400).json({ error: 'tenantId and businessEmail are required' });
-      }
-
-      // Create a connected account
-      const account = await stripe.accounts.create({
-        type: 'express',
-        country: 'US',
-        email: businessEmail,
-        business_profile: {
-          name: businessName || businessEmail.split('@')[0],
-          url: `https://${businessEmail.split('@')[1]}`,
-        },
-        capabilities: {
-          transfers: { requested: true },
-          card_payments: { requested: true },
-        },
-      });
-
-      // Save stripeAccountId to tenant document
-      const db = admin.firestore();
-      await db.collection('tenants').doc(tenantId).update({
-        stripeAccountId: account.id,
-        stripeAccountStatus: 'pending',
-        stripeAccountCreatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      res.json({
-        accountId: account.id,
-        status: account.status
-      });
-    } catch (error) {
-      console.error('[Stripe Connect] Error creating connected account:', error);
-      res.status(500).json({ error: error.message });
-    }
-  });
+  return createConnectedAccountHandler({
+    admin,
+    secretKey: process.env.STRIPE_SECRET_KEY,
+    stripe,
+  })(req, res);
 });
 
 /**
  * Stripe Connect: Generate onboarding link for connected account
- * POST /api/stripe-connect/onboarding-link
+ * POST /generateOnboardingLink
  */
 exports.generateOnboardingLink = functions.https.onRequest((req, res) => {
-  return cors(req, res, async () => {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method not allowed' });
-    }
-
-    try {
-      const { tenantId, returnUrl, refreshUrl } = req.body;
-
-      if (!tenantId) {
-        return res.status(400).json({ error: 'tenantId is required' });
-      }
-
-      const db = admin.firestore();
-      const tenantDoc = await db.collection('tenants').doc(tenantId).get();
-
-      if (!tenantDoc.exists || !tenantDoc.data().stripeAccountId) {
-        return res.status(400).json({ error: 'Tenant does not have a connected account' });
-      }
-
-      const stripeAccountId = tenantDoc.data().stripeAccountId;
-
-      // Generate onboarding link
-      const accountLink = await stripe.accountLinks.create({
-        account: stripeAccountId,
-        refresh_url: refreshUrl || `${process.env.APP_URL || 'http://localhost:5173'}/settings/payments`,
-        return_url: returnUrl || `${process.env.APP_URL || 'http://localhost:5173'}/settings/payments`,
-        type: 'account_onboarding',
-      });
-
-      res.json({
-        url: accountLink.url,
-        expiresAt: accountLink.expires_at
-      });
-    } catch (error) {
-      console.error('[Stripe Connect] Error generating onboarding link:', error);
-      res.status(500).json({ error: error.message });
-    }
-  });
+  return generateOnboardingLinkHandler({
+    admin,
+    appUrl: process.env.APP_URL || 'http://localhost:5173',
+    stripe,
+  })(req, res);
 });
 
 /**
  * Stripe Connect: Get connected account status
- * GET /api/stripe-connect/account-status?tenantId=xxx
+ * GET /getConnectedAccountStatus?tenantId=xxx
  */
 exports.getConnectedAccountStatus = functions.https.onRequest((req, res) => {
-  return cors(req, res, async () => {
-    if (req.method !== 'GET') {
-      return res.status(405).json({ error: 'Method not allowed' });
-    }
-
-    try {
-      const { tenantId } = req.query;
-
-      if (!tenantId) {
-        return res.status(400).json({ error: 'tenantId is required' });
-      }
-
-      const db = admin.firestore();
-      const tenantDoc = await db.collection('tenants').doc(tenantId).get();
-
-      if (!tenantDoc.exists) {
-        return res.status(404).json({ error: 'Tenant not found' });
-      }
-
-      const tenantData = tenantDoc.data();
-      const stripeAccountId = tenantData.stripeAccountId;
-
-      if (!stripeAccountId) {
-        return res.json({
-          connected: false,
-          status: 'not_connected'
-        });
-      }
-
-      // Retrieve account details from Stripe
-      const account = await stripe.accounts.retrieve(stripeAccountId);
-
-      res.json({
-        connected: true,
-        accountId: stripeAccountId,
-        status: account.details_submitted ? 'active' : 'pending',
-        chargesEnabled: account.charges_enabled,
-        payoutsEnabled: account.payouts_enabled,
-        requirements: account.requirements
-      });
-    } catch (error) {
-      console.error('[Stripe Connect] Error getting account status:', error);
-      res.status(500).json({ error: error.message });
-    }
-  });
+  return getConnectedAccountStatusHandler({ admin, stripe })(req, res);
 });
 
 /**

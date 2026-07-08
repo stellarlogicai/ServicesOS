@@ -130,6 +130,16 @@ function createStripeMock(session = {}) {
   };
 }
 
+function createStripeCheckoutErrorMock(error) {
+  return {
+    checkout: {
+      sessions: {
+        create: async () => { throw error; },
+      },
+    },
+  };
+}
+
 test('createBookingCheckoutSessionHandler OPTIONS returns CORS headers for deployed ServicesOS origin', async () => {
   const handler = createBookingCheckoutSessionHandler({
     admin: createMockAdmin(baseStore()),
@@ -291,6 +301,60 @@ test('createBookingCheckoutSessionCore creates checkout metadata and does not ma
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentStatus, 'final_due');
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].stripePaymentStatus, 'checkout_created');
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].amountReceived, undefined);
+});
+
+test('createBookingCheckoutSessionCore returns clean error for non-platform Stripe key', async () => {
+  const store = baseStore();
+  const error = new Error('Only Stripe Connect platforms can work with other accounts.');
+  error.type = 'StripePermissionError';
+  error.code = 'platform_account_required';
+  error.statusCode = 403;
+
+  const result = await createBookingCheckoutSessionCore({
+    admin: createMockAdmin(store),
+    appUrl: 'https://servicesos.netlify.app',
+    bookingId: 'booking-1',
+    getPlatformFee: () => 0.03,
+    nowIso,
+    secretKey: 'sk_test_123',
+    stripe: createStripeCheckoutErrorMock(error),
+    tenantId: 'tenant-a',
+    uid: 'admin-1',
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.status, 409);
+  assert.equal(result.error.includes('Stripe Connect platform setup is not ready'), true);
+  assert.equal(result.error.includes('sk_'), false);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentStatus, undefined);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].stripePaymentStatus, undefined);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].amountReceived, undefined);
+});
+
+test('createBookingCheckoutSessionCore returns clean error for inaccessible connected account', async () => {
+  const store = baseStore();
+  const error = new Error('No such account: acct_missing');
+  error.type = 'StripeInvalidRequestError';
+  error.code = 'resource_missing';
+  error.statusCode = 404;
+
+  const result = await createBookingCheckoutSessionCore({
+    admin: createMockAdmin(store),
+    appUrl: 'https://servicesos.netlify.app',
+    bookingId: 'booking-1',
+    getPlatformFee: () => 0.03,
+    nowIso,
+    secretKey: 'sk_test_123',
+    stripe: createStripeCheckoutErrorMock(error),
+    tenantId: 'tenant-a',
+    uid: 'admin-1',
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.status, 409);
+  assert.equal(result.error.includes('not accessible'), true);
+  assert.equal(result.error.includes('sk_'), false);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentStatus, undefined);
 });
 
 test('booking webhook metadata guard ignores unrelated metadata', () => {

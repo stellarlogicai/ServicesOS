@@ -270,12 +270,7 @@ export async function createBookingCheckoutSession(tenantId, bookingId) {
     }
 
     const token = await user.getIdToken();
-    const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-    const region = 'us-central1';
-    const isLocal = import.meta.env.DEV;
-    const functionUrl = isLocal
-      ? 'http://127.0.0.1:5001/cleaning-intake-system/us-central1/createBookingCheckoutSession'
-      : `https://${region}-${projectId}.cloudfunctions.net/createBookingCheckoutSession`;
+    const functionUrl = getFirebaseFunctionUrl('createBookingCheckoutSession');
 
     const response = await fetch(functionUrl, {
       method: 'POST',
@@ -305,6 +300,95 @@ export async function createBookingCheckoutSession(tenantId, bookingId) {
     console.error('[Stripe] Error creating booking checkout session:', error);
     throw error;
   }
+}
+
+export function getFirebaseFunctionUrl(functionName) {
+  const configuredBaseUrl = import.meta.env.VITE_FUNCTIONS_URL?.replace(/\/+$/, '');
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'cleaning-intake-system';
+  const region = 'us-central1';
+
+  if (configuredBaseUrl) {
+    return `${configuredBaseUrl}/${functionName}`;
+  }
+
+  if (import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === 'true') {
+    return `http://127.0.0.1:5001/${projectId}/${region}/${functionName}`;
+  }
+
+  return `https://${region}-${projectId}.cloudfunctions.net/${functionName}`;
+}
+
+async function authorizedFunctionFetch(functionName, options = {}) {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error('Authentication required');
+  }
+
+  const token = await user.getIdToken();
+  const response = await fetch(getFirebaseFunctionUrl(functionName), {
+    ...options,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Stripe Connect request failed');
+  }
+
+  return data;
+}
+
+export async function getConnectedAccountStatus(tenantId) {
+  if (!tenantId) {
+    throw new Error('tenantId is required');
+  }
+
+  const query = new URLSearchParams({ tenantId });
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error('Authentication required');
+  }
+
+  const token = await user.getIdToken();
+  const response = await fetch(`${getFirebaseFunctionUrl('getConnectedAccountStatus')}?${query.toString()}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to get Stripe Connect status');
+  }
+
+  return data;
+}
+
+export async function createConnectedAccount({ tenantId, businessEmail, businessName }) {
+  if (!tenantId || !businessEmail) {
+    throw new Error('tenantId and businessEmail are required');
+  }
+
+  return authorizedFunctionFetch('createConnectedAccount', {
+    method: 'POST',
+    body: JSON.stringify({ tenantId, businessEmail, businessName }),
+  });
+}
+
+export async function generateOnboardingLink({ tenantId, returnUrl, refreshUrl }) {
+  if (!tenantId) {
+    throw new Error('tenantId is required');
+  }
+
+  return authorizedFunctionFetch('generateOnboardingLink', {
+    method: 'POST',
+    body: JSON.stringify({ tenantId, returnUrl, refreshUrl }),
+  });
 }
 
 /**

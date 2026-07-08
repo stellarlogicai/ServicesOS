@@ -77,6 +77,43 @@ function buildCheckoutCreatedPatch(session, { nowIso }) {
   };
 }
 
+function isStripePlatformAccountRequiredError(error) {
+  return error?.code === 'platform_account_required'
+    || (
+      error?.type === 'StripePermissionError'
+      && typeof error.message === 'string'
+      && error.message.includes('Only Stripe Connect platforms can work with other accounts')
+    );
+}
+
+function isStripeConnectedAccountAccessError(error) {
+  const message = typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+  return error?.code === 'account_invalid'
+    || error?.code === 'resource_missing'
+    || message.includes('no such account')
+    || message.includes('does not have access to account');
+}
+
+function stripeSetupFailureResult(error) {
+  if (isStripePlatformAccountRequiredError(error)) {
+    return {
+      success: false,
+      status: 409,
+      error: 'Stripe Connect platform setup is not ready for booking checkout. Use the Stripe test secret key for the platform account that owns this connected account.',
+    };
+  }
+
+  if (isStripeConnectedAccountAccessError(error)) {
+    return {
+      success: false,
+      status: 409,
+      error: 'Stripe connected account is not accessible from the configured Stripe test key. Confirm the tenant stripeAccountId belongs to this Stripe platform in test mode.',
+    };
+  }
+
+  return null;
+}
+
 function buildStripeConfirmedBookingPatch(paymentIntent, { nowIso }) {
   const amountReceived = dollarsFromCents(paymentIntent.amount_received ?? paymentIntent.amount);
   const paidAt = paymentIntent.created
@@ -285,10 +322,28 @@ async function createBookingCheckoutSessionCore({
     appUrl,
   });
 
-  const session = await stripe.checkout.sessions.create(
-    sessionParams,
-    { stripeAccount: stripeAccountId }
-  );
+  let session;
+  try {
+    session = await stripe.checkout.sessions.create(
+      sessionParams,
+      { stripeAccount: stripeAccountId }
+    );
+  } catch (error) {
+    const setupFailure = stripeSetupFailureResult(error);
+    if (setupFailure) return setupFailure;
+
+    console.error('[Booking Stripe] Checkout session Stripe error:', {
+      type: error?.type || error?.rawType || 'unknown',
+      code: error?.code,
+      statusCode: error?.statusCode || error?.raw?.statusCode,
+      requestId: error?.requestId || error?.raw?.requestId,
+    });
+    return {
+      success: false,
+      status: 502,
+      error: 'Stripe checkout could not be created. Check Stripe test-mode setup and try again.',
+    };
+  }
 
   await bookingRef.update(buildCheckoutCreatedPatch(session, { nowIso }));
 

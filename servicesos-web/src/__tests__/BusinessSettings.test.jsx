@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BusinessSettings from '../components/BusinessSettings';
 
@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   tenantId: 'tenant-a',
   getBusinessSettings: vi.fn(),
   saveBusinessSettings: vi.fn(),
+  getConnectedAccountStatus: vi.fn(),
+  createConnectedAccount: vi.fn(),
+  generateOnboardingLink: vi.fn(),
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
@@ -16,6 +19,12 @@ vi.mock('../services/businessSettingsService', () => ({
   BUSINESS_DAYS: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
   getBusinessSettings: mocks.getBusinessSettings,
   saveBusinessSettings: mocks.saveBusinessSettings,
+}));
+
+vi.mock('../services/stripeService', () => ({
+  getConnectedAccountStatus: mocks.getConnectedAccountStatus,
+  createConnectedAccount: mocks.createConnectedAccount,
+  generateOnboardingLink: mocks.generateOnboardingLink,
 }));
 
 const settings = {
@@ -31,6 +40,13 @@ describe('BusinessSettings', () => {
     mocks.tenantId = 'tenant-a';
     mocks.getBusinessSettings.mockReset().mockResolvedValue(settings);
     mocks.saveBusinessSettings.mockReset().mockImplementation(async (_tenantId, form) => form);
+    mocks.getConnectedAccountStatus.mockReset().mockResolvedValue({
+      connected: false,
+      status: 'not_connected',
+    });
+    mocks.createConnectedAccount.mockReset().mockResolvedValue({ accountId: 'acct_test_123' });
+    mocks.generateOnboardingLink.mockReset().mockResolvedValue({ url: 'https://connect.stripe.test/onboarding' });
+    vi.stubGlobal('open', vi.fn());
   });
 
   it('loads active-tenant business settings without unsafe fields', async () => {
@@ -40,9 +56,80 @@ describe('BusinessSettings', () => {
     expect(mocks.getBusinessSettings).toHaveBeenCalledWith('tenant-a');
     expect(screen.getByLabelText('Monday')).toBeChecked();
     expect(screen.getByLabelText('Saturday')).not.toBeChecked();
-    for (const unsafe of ['Stripe', 'Payment', 'Staff', 'Portal', 'Pricing', 'API key']) {
+    for (const unsafe of ['Staff', 'Portal', 'Pricing', 'API key', 'Payment Links', 'PaymentForm']) {
       expect(screen.queryByText(unsafe)).not.toBeInTheDocument();
     }
+  });
+
+  it('shows only Stripe Connect setup actions and a not-ready status when charges are disabled', async () => {
+    mocks.getConnectedAccountStatus.mockResolvedValue({
+      connected: true,
+      status: 'pending',
+      chargesEnabled: false,
+      payoutsEnabled: false,
+    });
+
+    render(<BusinessSettings />);
+
+    expect(await screen.findByText('Stripe Connect setup')).toBeInTheDocument();
+    expect(screen.getByText('Required before sending Stripe payment links.')).toBeInTheDocument();
+    expect(await screen.findByText('Stripe Connect is not ready yet. Charges must be enabled before sending Stripe payment links.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue Stripe onboarding' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh Stripe status' })).toBeInTheDocument();
+    expect(screen.queryByText('Payments ready')).not.toBeInTheDocument();
+    expect(screen.queryByText('Payment Links')).not.toBeInTheDocument();
+  });
+
+  it('shows ready only when backend reports chargesEnabled true', async () => {
+    mocks.getConnectedAccountStatus.mockResolvedValue({
+      connected: true,
+      status: 'active',
+      chargesEnabled: true,
+      payoutsEnabled: true,
+    });
+
+    render(<BusinessSettings />);
+
+    expect(await screen.findByText('Stripe can create booking payment links for this tenant.')).toBeInTheDocument();
+    expect(screen.getByText('Charges enabled').nextSibling).toHaveTextContent('Yes');
+    expect(screen.getByText('Payouts enabled').nextSibling).toHaveTextContent('Yes');
+  });
+
+  it('starts Stripe Connect setup without marking the tenant ready locally', async () => {
+    render(<BusinessSettings />);
+
+    const panel = await screen.findByRole('region', { name: 'Stripe Connect setup' });
+    fireEvent.change(await within(panel).findByLabelText('Business email'), { target: { value: 'owner@example.com' } });
+    fireEvent.change(within(panel).getByLabelText('Business name'), { target: { value: 'Aunt B Cleaning' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue Stripe onboarding' }));
+
+    await waitFor(() => expect(mocks.createConnectedAccount).toHaveBeenCalledWith({
+      tenantId: 'tenant-a',
+      businessEmail: 'owner@example.com',
+      businessName: 'Aunt B Cleaning',
+    }));
+    expect(mocks.generateOnboardingLink).toHaveBeenCalledWith({
+      tenantId: 'tenant-a',
+      returnUrl: window.location.href,
+      refreshUrl: window.location.href,
+    });
+    expect(screen.queryByText('Stripe can create booking payment links for this tenant.')).not.toBeInTheDocument();
+  });
+
+  it('shows actionable backend Stripe Connect setup errors', async () => {
+    mocks.createConnectedAccount.mockRejectedValue(new Error(
+      'Stripe Connect platform setup is not ready. Confirm you are using the sk_test key from the Stellar Logic AI onboarding sandbox with Connect enabled.'
+    ));
+    render(<BusinessSettings />);
+
+    const panel = await screen.findByRole('region', { name: 'Stripe Connect setup' });
+    fireEvent.change(await within(panel).findByLabelText('Business email'), { target: { value: 'owner@example.com' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue Stripe onboarding' }));
+
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+      'Stripe Connect platform setup is not ready. Confirm you are using the sk_test key from the Stellar Logic AI onboarding sandbox with Connect enabled.'
+    );
+    expect(mocks.generateOnboardingLink).not.toHaveBeenCalled();
   });
 
   it('changes available days and saves only through the tenant service', async () => {

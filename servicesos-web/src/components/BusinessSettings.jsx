@@ -5,6 +5,7 @@ import {
   getBusinessSettings,
   saveBusinessSettings,
 } from '../services/businessSettingsService';
+import StripeConnectOnboarding from './StripeConnectOnboarding';
 
 const emptyForm = {
   businessName: '',
@@ -100,31 +101,35 @@ export default function BusinessSettings() {
       {!loading && error && <div role="alert" style={{ color: '#b91c1c', marginBottom: 16 }}>{error}</div>}
       {!loading && error && tenantId && <button type="button" onClick={load}>Try again</button>}
       {!loading && !error && (
-        <form className="v1-card business-settings-form" onSubmit={save} style={{ display: 'grid', gap: 18 }}>
-          <label>Business name<input name="businessName" value={form.businessName} onChange={updateText} style={fieldStyle} /></label>
-          <label>Business phone<input name="businessPhone" value={form.businessPhone} onChange={updateText} style={fieldStyle} /></label>
-          <label>Business email<input name="businessEmail" type="email" value={form.businessEmail} onChange={updateText} style={fieldStyle} /></label>
-          <label>Service area<input name="serviceArea" value={form.serviceArea} onChange={updateText} style={fieldStyle} /></label>
-          <fieldset style={{ border: '1px solid #cbd5e1', borderRadius: 10, padding: 16 }}>
-            <legend>Available working days</legend>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
-              {BUSINESS_DAYS.map(day => (
-                <label key={day} style={{ textTransform: 'capitalize' }}>
-                  <input
-                    type="checkbox"
-                    checked={form.availability.availableDays.includes(day)}
-                    onChange={() => toggleDay(day)}
-                  />{' '}{day.charAt(0).toUpperCase() + day.slice(1)}
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          {error && <div role="alert" style={{ color: '#b91c1c' }}>{error}</div>}
-          {success && <div role="status" style={{ color: '#15803d' }}>{success}</div>}
-          <button className="v1-button v1-button-primary" type="submit" disabled={saving || form.availability.availableDays.length === 0}>
-            {saving ? 'Saving…' : 'Save Business Settings'}
-          </button>
-        </form>
+        <div style={{ display: 'grid', gap: 18 }}>
+          <form className="v1-card business-settings-form" onSubmit={save} style={{ display: 'grid', gap: 18 }}>
+            <label>Business name<input name="businessName" value={form.businessName} onChange={updateText} style={fieldStyle} /></label>
+            <label>Business phone<input name="businessPhone" value={form.businessPhone} onChange={updateText} style={fieldStyle} /></label>
+            <label>Business email<input name="businessEmail" type="email" value={form.businessEmail} onChange={updateText} style={fieldStyle} /></label>
+            <label>Service area<input name="serviceArea" value={form.serviceArea} onChange={updateText} style={fieldStyle} /></label>
+            <fieldset style={{ border: '1px solid #cbd5e1', borderRadius: 10, padding: 16 }}>
+              <legend>Available working days</legend>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+                {BUSINESS_DAYS.map(day => (
+                  <label key={day} style={{ textTransform: 'capitalize' }}>
+                    <input
+                      type="checkbox"
+                      checked={form.availability.availableDays.includes(day)}
+                      onChange={() => toggleDay(day)}
+                    />{' '}{day.charAt(0).toUpperCase() + day.slice(1)}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            {error && <div role="alert" style={{ color: '#b91c1c' }}>{error}</div>}
+            {success && <div role="status" style={{ color: '#15803d' }}>{success}</div>}
+            <button className="v1-button v1-button-primary" type="submit" disabled={saving || form.availability.availableDays.length === 0}>
+              {saving ? 'Saving…' : 'Save Business Settings'}
+            </button>
+          </form>
+
+          <StripeConnectOnboarding tenantId={tenantId} />
+        </div>
       )}
     </section>
   );
