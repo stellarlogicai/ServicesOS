@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getJobs: vi.fn(),
+  createBookingCheckoutSession: vi.fn(),
   updateBookingAdminFields: vi.fn(),
   updateBookingManualPaymentStatus: vi.fn(),
 }));
@@ -45,13 +46,24 @@ vi.mock('../core/scheduling/schedulingService', () => ({
   updateBookingManualPaymentStatus: mocks.updateBookingManualPaymentStatus,
 }));
 
+vi.mock('../services/stripeService', () => ({
+  createBookingCheckoutSession: mocks.createBookingCheckoutSession,
+}));
+
 import BookingsList from '../components/BookingsList';
 
 describe('read-only Bookings admin list', () => {
   beforeEach(() => {
     mocks.getJobs.mockReset();
+    mocks.createBookingCheckoutSession.mockReset();
     mocks.updateBookingAdminFields.mockReset();
     mocks.updateBookingManualPaymentStatus.mockReset();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
   });
 
   it('identifies Bookings as the job management surface', async () => {
@@ -211,6 +223,7 @@ describe('read-only Bookings admin list', () => {
 
     expect(screen.getByRole('button', { name: 'Edit Date & Notes' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit Payment Details' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create Stripe payment link' })).toBeInTheDocument();
     expect(screen.queryByLabelText(/payment status/i)).not.toBeInTheDocument();
     ['Delete', 'Pay', 'Assign', 'Refund', 'Reschedule', 'Update status', 'Cancel booking', 'Collect payment', 'Create payment link', 'Stripe checkout', 'Invoice'].forEach(name => {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
@@ -244,6 +257,125 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('Price not set');
     expect(dialog).toHaveTextContent('No notes provided');
     expect(dialog).toHaveTextContent('booking-partial');
+  });
+
+  it('creates a booking-scoped Stripe payment link and does not mark the booking paid in frontend', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-stripe-link',
+        customerName: 'Stripe Link Customer',
+        paymentStatus: 'final_due',
+        agreedPrice: 205,
+      }],
+    });
+    mocks.createBookingCheckoutSession.mockResolvedValue({
+      sessionId: 'cs_test_booking',
+      url: 'https://checkout.stripe.test/pay/cs_test_booking',
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Stripe Link Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Create Stripe payment link' }));
+
+    expect(mocks.createBookingCheckoutSession).toHaveBeenCalledWith('tenant-a', 'booking-stripe-link');
+    expect(await screen.findByText('Payment link created. This booking will be marked paid after Stripe confirms payment.')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('https://checkout.stripe.test/pay/cs_test_booking')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open payment link' })).toHaveAttribute('href', 'https://checkout.stripe.test/pay/cs_test_booking');
+    expect(screen.getByRole('button', { name: 'Copy payment link' })).toBeInTheDocument();
+    expect(screen.queryByText('Paid in full')).not.toBeInTheDocument();
+    expect(mocks.updateBookingManualPaymentStatus).not.toHaveBeenCalled();
+  });
+
+  it('copies a created Stripe payment link when clipboard is available', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-stripe-copy',
+        customerName: 'Stripe Copy Customer',
+        paymentStatus: 'final_due',
+        agreedPrice: 205,
+      }],
+    });
+    mocks.createBookingCheckoutSession.mockResolvedValue({
+      sessionId: 'cs_test_copy',
+      url: 'https://checkout.stripe.test/pay/cs_test_copy',
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Stripe Copy Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Create Stripe payment link' }));
+    await user.click(await screen.findByRole('button', { name: 'Copy payment link' }));
+
+    expect(writeText).toHaveBeenCalledWith('https://checkout.stripe.test/pay/cs_test_copy');
+    expect(await screen.findByText('Payment link copied.')).toBeInTheDocument();
+  });
+
+  it('handles clipboard failure without claiming copy success', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockRejectedValueOnce(new Error('blocked'));
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-stripe-copy-fail',
+        customerName: 'Stripe Copy Fail Customer',
+        paymentStatus: 'final_due',
+        agreedPrice: 205,
+      }],
+    });
+    mocks.createBookingCheckoutSession.mockResolvedValue({
+      sessionId: 'cs_test_copy_fail',
+      url: 'https://checkout.stripe.test/pay/cs_test_copy_fail',
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Stripe Copy Fail Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Create Stripe payment link' }));
+    await user.click(await screen.findByRole('button', { name: 'Copy payment link' }));
+
+    expect(await screen.findByText('Payment link could not be copied automatically. You can copy it from the field above.')).toBeInTheDocument();
+    expect(screen.queryByText('Payment link copied.')).not.toBeInTheDocument();
+  });
+
+  it('shows an honest Stripe payment link error without exposing backend details', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-stripe-error',
+        customerName: 'Stripe Error Customer',
+        paymentStatus: 'final_due',
+        agreedPrice: 205,
+      }],
+    });
+    mocks.createBookingCheckoutSession.mockRejectedValue(new Error('sk_test_secret backend failure'));
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Stripe Error Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Create Stripe payment link' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Stripe payment link could not be created. You can still mark this booking paid another way.');
+    expect(screen.queryByText(/sk_test_secret/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/backend failure/)).not.toBeInTheDocument();
   });
 
   it('renders known manual payment status labels and falls back for unknown values', async () => {

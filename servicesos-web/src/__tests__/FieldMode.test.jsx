@@ -156,7 +156,7 @@ describe('FieldMode read-only field surface', () => {
     await screen.findByText('Safe Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
 
-    for (const name of ['Arrived', 'In Progress', 'Complete', 'Edit', 'Edit Payment Details', 'Delete', 'Pay', 'Collect payment', 'Refund', 'Assign', 'Reschedule', 'Upload photo', 'Start route', 'Panic']) {
+    for (const name of ['Arrived', 'In Progress', 'Complete', 'Edit', 'Edit Payment Details', 'Create Stripe payment link', 'Delete', 'Pay', 'Collect payment', 'Refund', 'Assign', 'Reschedule', 'Upload photo', 'Start route', 'Panic']) {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     }
   });

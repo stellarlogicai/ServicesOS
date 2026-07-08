@@ -25,6 +25,7 @@ import {
   bookingStatus,
   bookingStillOwed,
 } from './bookingDisplay';
+import { createBookingCheckoutSession } from '../services/stripeService';
 
 export default function BookingsList() {
   const { tenantId } = useAuth();
@@ -47,6 +48,12 @@ export default function BookingsList() {
   const [paymentStatusError, setPaymentStatusError] = useState('');
   const [savingPaymentStatus, setSavingPaymentStatus] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [stripeLinkState, setStripeLinkState] = useState({
+    creating: false,
+    url: '',
+    error: '',
+    copyMessage: '',
+  });
 
   const loadBookings = useCallback(async () => {
     setLoading(true);
@@ -94,6 +101,7 @@ export default function BookingsList() {
     setEditError('');
     setPaymentStatusError('');
     setSuccessMessage('');
+    setStripeLinkState({ creating: false, url: '', error: '', copyMessage: '' });
   };
 
   const closeBookingDetails = () => {
@@ -103,6 +111,7 @@ export default function BookingsList() {
     setEditError('');
     setPaymentStatusError('');
     setSuccessMessage('');
+    setStripeLinkState({ creating: false, url: '', error: '', copyMessage: '' });
   };
 
   const startBookingEdit = () => {
@@ -209,6 +218,63 @@ export default function BookingsList() {
     setSavingPaymentStatus(false);
     setIsEditingPaymentStatus(false);
     setSuccessMessage('Booking payment details updated.');
+  };
+
+  const createStripePaymentLink = async () => {
+    if (!tenantId || !selectedBooking?.id) {
+      setStripeLinkState({
+        creating: false,
+        url: '',
+        error: 'Stripe payment link could not be created. You can still mark this booking paid another way.',
+        copyMessage: '',
+      });
+      return;
+    }
+
+    setStripeLinkState(current => ({
+      ...current,
+      creating: true,
+      error: '',
+      copyMessage: '',
+    }));
+
+    try {
+      const result = await createBookingCheckoutSession(tenantId, selectedBooking.id);
+      setStripeLinkState({
+        creating: false,
+        url: result?.url || '',
+        error: '',
+        copyMessage: '',
+      });
+    } catch {
+      setStripeLinkState({
+        creating: false,
+        url: '',
+        error: 'Stripe payment link could not be created. You can still mark this booking paid another way.',
+        copyMessage: '',
+      });
+    }
+  };
+
+  const copyStripePaymentLink = async () => {
+    if (!stripeLinkState.url) return;
+
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error('Clipboard unavailable');
+      }
+      await navigator.clipboard.writeText(stripeLinkState.url);
+      setStripeLinkState(current => ({
+        ...current,
+        copyMessage: 'Payment link copied.',
+        error: '',
+      }));
+    } catch {
+      setStripeLinkState(current => ({
+        ...current,
+        copyMessage: 'Payment link could not be copied automatically. You can copy it from the field above.',
+      }));
+    }
   };
 
   const saveBookingEdit = async (event) => {
@@ -357,6 +423,89 @@ export default function BookingsList() {
                 <DetailItem label="Received date" value={bookingReceivedDate(selectedBooking) || 'Not recorded'} />
                 <DetailItem label="Payment note" value={bookingPaymentNote(selectedBooking) || 'No payment note'} />
               </dl>
+
+              {!isEditingBooking && !isEditingPaymentStatus && (
+                <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid #99f6e4' }}>
+                  <h4 style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 16 }}>Stripe payment link</h4>
+                  <p style={{ margin: '0 0 12px', color: '#0f766e', fontSize: 13 }}>
+                    Create a Stripe-hosted payment link for this booking. ServicesOS will mark it paid only after Stripe confirms payment.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={createStripePaymentLink}
+                    disabled={stripeLinkState.creating}
+                    style={{
+                      border: '1px solid #0f766e',
+                      background: stripeLinkState.creating ? '#5eead4' : '#0f766e',
+                      color: '#fff',
+                      borderRadius: 8,
+                      padding: '9px 14px',
+                      fontWeight: 700,
+                      cursor: stripeLinkState.creating ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {stripeLinkState.creating ? 'Creating link…' : 'Create Stripe payment link'}
+                  </button>
+
+                  {stripeLinkState.error && (
+                    <div role="alert" style={{ marginTop: 12, padding: 10, border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, color: '#991b1b' }}>
+                      {stripeLinkState.error}
+                    </div>
+                  )}
+
+                  {stripeLinkState.url && (
+                    <div role="status" style={{ marginTop: 12, padding: 12, border: '1px solid #bbf7d0', background: '#f0fdf4', borderRadius: 8, color: '#166534' }}>
+                      <p style={{ margin: '0 0 10px' }}>Payment link created. This booking will be marked paid after Stripe confirms payment.</p>
+                      <label style={{ display: 'block', color: '#0f172a', fontWeight: 600 }}>
+                        Payment link
+                        <input
+                          readOnly
+                          value={stripeLinkState.url}
+                          style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #bbf7d0', borderRadius: 8 }}
+                        />
+                      </label>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 10 }}>
+                        <a
+                          href={stripeLinkState.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            border: '1px solid #166534',
+                            background: '#166534',
+                            color: '#fff',
+                            borderRadius: 8,
+                            padding: '9px 14px',
+                            fontWeight: 700,
+                            textDecoration: 'none'
+                          }}
+                        >
+                          Open payment link
+                        </a>
+                        <button
+                          type="button"
+                          onClick={copyStripePaymentLink}
+                          style={{
+                            border: '1px solid #bbf7d0',
+                            background: '#fff',
+                            color: '#0f172a',
+                            borderRadius: 8,
+                            padding: '9px 14px',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Copy payment link
+                        </button>
+                      </div>
+                      {stripeLinkState.copyMessage && (
+                        <p style={{ margin: '10px 0 0', color: '#166534' }}>{stripeLinkState.copyMessage}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             <div style={{ marginTop: 18 }}>

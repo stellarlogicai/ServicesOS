@@ -140,6 +140,7 @@ describe('CalendarView month calendar read-only boundary', () => {
     expect(screen.queryByRole('button', { name: 'Edit Date & Notes' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit Payment Status' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit Payment Details' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create Stripe payment link' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'View Details' })).not.toBeInTheDocument();
   });
 });
