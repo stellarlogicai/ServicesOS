@@ -330,8 +330,10 @@ export default function BookingsList() {
       )}
 
       {!loading && !error && bookings.length === 0 && (
-        <div style={{ padding: 24, border: '1px solid #e2e8f0', borderRadius: 8, color: '#475569' }}>
-          No bookings yet. Approve a quote request or create a booking from an estimate to schedule the first job.
+        <div className="v1-empty-state" style={{ padding: 48, textAlign: 'center', border: '1px solid #e2e8f0', borderRadius: 12, color: '#64748b' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📅</div>
+          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No bookings yet</div>
+          <div style={{ fontSize: 14 }}>Approve a quote request or create a booking from an estimate to schedule the first job.</div>
         </div>
       )}
 
@@ -376,11 +378,11 @@ export default function BookingsList() {
           }}
         >
           <div className="v1-modal" style={{ width: 'min(680px, 100%)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', marginBottom: 20 }}>
               <div>
-                <p style={{ margin: '0 0 6px', color: '#64748b', fontSize: 13 }}>Booking details</p>
-                <h2 id="booking-detail-title" style={{ margin: 0, color: '#0f172a', fontSize: 24 }}>{bookingCustomerName(selectedBooking)}</h2>
-                <p style={{ margin: '8px 0 0', color: '#64748b', fontSize: 13 }}>
+                <p style={{ margin: '0 0 6px', color: '#64748b', fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Booking details</p>
+                <h2 id="booking-detail-title" style={{ margin: 0, color: '#0f172a', fontSize: 24, fontWeight: 700 }}>{bookingCustomerName(selectedBooking)}</h2>
+                <p style={{ margin: '8px 0 0', color: '#64748b', fontSize: 14, lineHeight: 1.5 }}>
                   Use this detail view for job notes, schedule changes, and payment follow-up.
                 </p>
               </div>
@@ -392,16 +394,18 @@ export default function BookingsList() {
                   border: '1px solid #cbd5e1',
                   background: '#fff',
                   borderRadius: 8,
-                  padding: '7px 10px',
+                  padding: '8px 12px',
                   cursor: 'pointer',
-                  color: '#0f172a'
+                  color: '#0f172a',
+                  fontWeight: 600,
+                  fontSize: 14
                 }}
               >
                 Close
               </button>
             </div>
 
-            <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, margin: '22px 0 0' }}>
+            <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, margin: '24px 0 0', padding: '20px', background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0' }}>
               <DetailItem label="Customer email" value={bookingCustomerEmail(selectedBooking)} />
               <DetailItem label="Customer phone" value={bookingCustomerPhone(selectedBooking)} />
               <DetailItem label="Service" value={bookingServiceType(selectedBooking)} />
@@ -412,9 +416,9 @@ export default function BookingsList() {
               <DetailItem label="Reference" value={bookingReference(selectedBooking) || 'Reference not provided'} />
             </dl>
 
-            <section style={{ marginTop: 18, padding: 16, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 10 }}>
-              <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18 }}>Payment details</h3>
-              <p style={{ margin: '0 0 14px', color: '#0f766e', fontSize: 13 }}>
+            <section style={{ marginTop: 24, padding: 20, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 12 }}>
+              <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18, fontWeight: 600 }}>Payment details</h3>
+              <p style={{ margin: '0 0 16px', color: '#0f766e', fontSize: 14, lineHeight: 1.5 }}>
                 Stripe-paid bookings update after Stripe confirms payment. Manual payments are owner-entered records for cash, check, Venmo, Zelle, or another outside method.
               </p>
               <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, margin: 0 }}>

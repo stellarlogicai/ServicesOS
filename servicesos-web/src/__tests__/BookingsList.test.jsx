@@ -85,7 +85,8 @@ describe('read-only Bookings admin list', () => {
     await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a'));
 
     resolveLoad({ success: true, data: [] });
-    expect(await screen.findByText('No bookings yet. Approve a quote request or create a booking from an estimate to schedule the first job.')).toBeInTheDocument();
+    expect(await screen.findByText('No bookings yet')).toBeInTheDocument();
+    expect(await screen.findByText('Approve a quote request or create a booking from an estimate to schedule the first job.')).toBeInTheDocument();
   });
 
   it('renders a clear retryable error when loading fails', async () => {

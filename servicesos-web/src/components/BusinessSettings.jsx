@@ -93,7 +93,7 @@ export default function BusinessSettings() {
 
   return (
     <section className="v1-page business-settings-page" style={{ maxWidth: 820 }} aria-labelledby="business-settings-title">
-      <div className="v1-page-header">
+      <div className="v1-page-header" style={{ marginBottom: 32 }}>
         <h1 className="v1-page-title" id="business-settings-title">Business Settings</h1>
         <p className="v1-page-subtitle">Set the business contact details, working days, and Stripe readiness for online booking payments.</p>
       </div>
@@ -101,32 +101,50 @@ export default function BusinessSettings() {
       {!loading && error && <div role="alert" style={{ color: '#b91c1c', marginBottom: 16 }}>{error}</div>}
       {!loading && error && tenantId && <button type="button" onClick={load}>Try again</button>}
       {!loading && !error && (
-        <div style={{ display: 'grid', gap: 18 }}>
-          <form className="v1-card business-settings-form" onSubmit={save} style={{ display: 'grid', gap: 18 }}>
-            <label>Business name<input name="businessName" value={form.businessName} onChange={updateText} style={fieldStyle} /></label>
-            <label>Business phone<input name="businessPhone" value={form.businessPhone} onChange={updateText} style={fieldStyle} /></label>
-            <label>Business email<input name="businessEmail" type="email" value={form.businessEmail} onChange={updateText} style={fieldStyle} /></label>
-            <label>Service area<input name="serviceArea" value={form.serviceArea} onChange={updateText} style={fieldStyle} /></label>
-            <fieldset style={{ border: '1px solid #cbd5e1', borderRadius: 10, padding: 16 }}>
-              <legend>Available working days</legend>
-              <p className="v1-muted" style={{ margin: '0 0 12px' }}>
+        <div style={{ display: 'grid', gap: 24 }}>
+          <form className="v1-card business-settings-form" onSubmit={save} style={{ display: 'grid', gap: 20, padding: 24 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Contact information</div>
+            <label style={{ display: 'block', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Business name</div>
+              <input name="businessName" value={form.businessName} onChange={updateText} style={fieldStyle} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Business phone</div>
+              <input name="businessPhone" value={form.businessPhone} onChange={updateText} style={fieldStyle} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Business email</div>
+              <input name="businessEmail" type="email" value={form.businessEmail} onChange={updateText} style={fieldStyle} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Service area</div>
+              <input name="serviceArea" value={form.serviceArea} onChange={updateText} style={fieldStyle} />
+            </label>
+            
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 8, marginTop: 8 }}>Availability</div>
+            <fieldset style={{ border: '1px solid #cbd5e1', borderRadius: 12, padding: 20 }}>
+              <legend style={{ fontSize: 14, fontWeight: 600, color: '#374151', padding: '0 8px' }}>Available working days</legend>
+              <p className="v1-muted" style={{ margin: '0 0 16px', fontSize: 13, color: '#64748b', lineHeight: 1.5 }}>
                 These days are used when checking whether a booking can be scheduled.
               </p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
                 {BUSINESS_DAYS.map(day => (
-                  <label key={day} style={{ textTransform: 'capitalize' }}>
+                  <label key={day} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, color: '#374151' }}>
                     <input
                       type="checkbox"
                       checked={form.availability.availableDays.includes(day)}
                       onChange={() => toggleDay(day)}
-                    />{' '}{day.charAt(0).toUpperCase() + day.slice(1)}
+                      style={{ width: 18, height: 18 }}
+                    />
+                    {day.charAt(0).toUpperCase() + day.slice(1)}
                   </label>
                 ))}
               </div>
             </fieldset>
-            {error && <div role="alert" style={{ color: '#b91c1c' }}>{error}</div>}
-            {success && <div role="status" style={{ color: '#15803d' }}>{success}</div>}
-            <button className="v1-button v1-button-primary" type="submit" disabled={saving || form.availability.availableDays.length === 0}>
+            
+            {error && <div role="alert" style={{ marginTop: 16, padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#991b1b', fontSize: 14 }}>{error}</div>}
+            {success && <div role="status" style={{ marginTop: 16, padding: 12, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, color: '#166534', fontSize: 14 }}>{success}</div>}
+            <button className="v1-button v1-button-primary" type="submit" disabled={saving || form.availability.availableDays.length === 0} style={{ marginTop: 8 }}>
               {saving ? 'Saving…' : 'Save Business Settings'}
             </button>
           </form>

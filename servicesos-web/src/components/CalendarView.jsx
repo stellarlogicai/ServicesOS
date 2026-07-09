@@ -76,7 +76,11 @@ function DayBookings({ selectedDate, bookings, onClose }) {
           <button type="button" className="v1-button v1-button-secondary" onClick={onClose}>Close</button>
         </header>
       {bookings.length === 0 ? (
-        <div className="v1-empty-state">No bookings scheduled for this day. New jobs appear here after they are created in Bookings.</div>
+        <div className="v1-empty-state" style={{ padding: 48, textAlign: 'center', color: '#64748b' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📅</div>
+          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No bookings scheduled</div>
+          <div style={{ fontSize: 14 }}>New jobs appear here after they are created in Bookings.</div>
+        </div>
       ) : (
         <div className="calendar-day-bookings">
           {bookings.map((booking, index) => (
@@ -182,7 +186,7 @@ export default function CalendarView() {
 
   return (
     <section className="v1-page calendar-page" aria-labelledby="calendar-title">
-      <header className="calendar-page-header">
+      <header className="calendar-page-header" style={{ marginBottom: 32 }}>
         <div>
           <h1 className="v1-page-title" id="calendar-title">Calendar</h1>
           <p className="v1-page-subtitle">Read-only schedule view. Change bookings and payment details from Bookings.</p>
@@ -192,9 +196,9 @@ export default function CalendarView() {
       {loading && <p role="status">Loading calendar...</p>}
 
       {!loading && error && (
-        <div role="alert" className="calendar-error">
+        <div role="alert" className="calendar-error" style={{ padding: 16, border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, color: '#991b1b' }}>
           <p>{error}</p>
-          {tenantId && <button type="button" onClick={loadBookings}>Try again</button>}
+          {tenantId && <button type="button" onClick={loadBookings} style={{ marginTop: 10, padding: '8px 12px', background: '#b91c1c', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>Try again</button>}
         </div>
       )}
 

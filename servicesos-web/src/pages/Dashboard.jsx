@@ -577,93 +577,101 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
-        <div style={{ marginBottom: 24 }}>
-          <h1 style={{ margin: "0 0 6px", color: "#111827", fontSize: 28, lineHeight: 1.2 }}>Owner dashboard</h1>
-          <p style={{ margin: 0, color: "#64748b", fontSize: 15 }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "40px 24px" }}>
+        {/* Page intro */}
+        <div style={{ marginBottom: 32, paddingBottom: 24, borderBottom: "1px solid #f3f4f6" }}>
+          <h1 style={{ margin: "0 0 8px", color: "#111827", fontSize: 32, fontWeight: 700, lineHeight: 1.2 }}>Owner dashboard</h1>
+          <p style={{ margin: 0, color: "#64748b", fontSize: 16, lineHeight: 1.5 }}>
             Review new quote requests, watch upcoming booked jobs, and track what has been paid.
           </p>
         </div>
 
         {/* Stats row */}
-        <div style={{ display: "flex", gap: 16, marginBottom: 32, flexWrap: "wrap" }}>
-          <StatCard label="Total leads"   value={totalLeads}             sub="All time" />
-          <StatCard label="New leads"     value={newLeads}               sub="Need follow-up" />
-          <StatCard label="Booked jobs"   value={bookedLeads.length}     sub={`${conversionRate}% conversion`} />
-          <StatCard label="Expected Revenue" value={`$${expectedRevenue.toLocaleString()}`} sub="Expected / booked" accent />
-          <StatCard label="Collected Revenue" value={`$${collectedRevenue.toLocaleString()}`} sub="Paid or received" />
-          <StatCard label="Outstanding Balance" value={`$${outstandingBalance.toLocaleString()}`} sub="Still owed" />
-          <StatCard label="Pipeline value"    value={`$${Math.round(pipeline).toLocaleString()}`} sub="Avg of all ranges" />
-        </div>
-
-        <div style={{ margin: "-18px 0 28px", color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>
-          Expected revenue is scheduled work. Collected revenue is money received. Outstanding balance is the amount still owed.
+        <div style={{ marginBottom: 40 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#374151", marginBottom: 16 }}>Revenue snapshot</div>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            <StatCard label="Total leads"   value={totalLeads}             sub="All time" />
+            <StatCard label="New leads"     value={newLeads}               sub="Need follow-up" />
+            <StatCard label="Booked jobs"   value={bookedLeads.length}     sub={`${conversionRate}% conversion`} />
+            <StatCard label="Expected Revenue" value={`$${expectedRevenue.toLocaleString()}`} sub="Expected / booked" accent />
+            <StatCard label="Collected Revenue" value={`$${collectedRevenue.toLocaleString()}`} sub="Paid or received" />
+            <StatCard label="Outstanding Balance" value={`$${outstandingBalance.toLocaleString()}`} sub="Still owed" />
+            <StatCard label="Pipeline value"    value={`$${Math.round(pipeline).toLocaleString()}`} sub="Avg of all ranges" />
+          </div>
+          <div style={{ marginTop: 16, padding: "12px 16px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>
+            <strong>Revenue guide:</strong> Expected revenue is scheduled work. Collected revenue is money received. Outstanding balance is the amount still owed.
+          </div>
         </div>
 
         {/* Revenue chart */}
-        <div className="v1-card" style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, marginBottom: 32 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 600, color: "#111827" }}>Expected revenue (14 days)</div>
-              <div style={{ fontSize: 13, color: "#9ca3af" }}>Expected revenue by scheduled job date</div>
+        <div style={{ marginBottom: 40 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#374151", marginBottom: 16 }}>Revenue trend (14 days)</div>
+          <div className="v1-card" style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "#111827" }}>Expected revenue (14 days)</div>
+                <div style={{ fontSize: 13, color: "#9ca3af" }}>Expected revenue by scheduled job date</div>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: "#1d4ed8" }}>${expectedRevenue.toLocaleString()}</div>
             </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: "#1d4ed8" }}>${expectedRevenue.toLocaleString()}</div>
+            <RevenueChart bookings={bookings} />
           </div>
-          <RevenueChart bookings={bookings} />
         </div>
 
         {/* Leads table */}
-        <div className="v1-card" style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden" }}>
-          
-          {/* Table header */}
-          <div style={{ padding: "20px 24px", borderBottom: "1px solid #f3f4f6" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
-              <div style={{ fontSize: 16, fontWeight: 600, color: "#111827" }}>All leads</div>
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search customer, address, or phone…"
-                style={{ padding: "8px 14px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, width: 260 }}
-              />
-            </div>
+        <div style={{ marginBottom: 40 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#374151", marginBottom: 16 }}>Quote requests & leads</div>
+          <div className="v1-card" style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden" }}>
             
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {filterBtns.map(b => (
-                <button key={b.key} onClick={() => setFilter(b.key)} style={{ padding: "6px 14px", background: filter === b.key ? "#eff6ff" : "transparent", color: filter === b.key ? "#1d4ed8" : "#6b7280", border: filter === b.key ? "1px solid #bfdbfe" : "1px solid transparent", borderRadius: 20, fontSize: 13, fontWeight: filter === b.key ? 600 : 400, cursor: "pointer" }}>
-                  {b.label}
-                </button>
-              ))}
+            {/* Table header */}
+            <div style={{ padding: "20px 24px", borderBottom: "1px solid #f3f4f6" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "#111827" }}>All leads</div>
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search customer, address, or phone…"
+                  style={{ padding: "8px 14px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, width: 260 }}
+                />
+              </div>
+              
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {filterBtns.map(b => (
+                  <button key={b.key} onClick={() => setFilter(b.key)} style={{ padding: "6px 14px", background: filter === b.key ? "#eff6ff" : "transparent", color: filter === b.key ? "#1d4ed8" : "#6b7280", border: filter === b.key ? "1px solid #bfdbfe" : "1px solid transparent", borderRadius: 20, fontSize: 13, fontWeight: filter === b.key ? 600 : 400, cursor: "pointer" }}>
+                    {b.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* Table */}
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", minWidth: 1050, borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#f9fafb" }}>
-                  {["Client", "Service", "Property", "Estimate", "Status", "Date", "Actions"].map(h => (
-                    <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid #f3f4f6" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>
-                      No leads found
-                    </td>
+            {/* Table */}
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", minWidth: 1050, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#f9fafb" }}>
+                    {["Client", "Service", "Property", "Estimate", "Status", "Date", "Actions"].map(h => (
+                      <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid #f3f4f6" }}>{h}</th>
+                    ))}
                   </tr>
-                ) : filtered.map(lead => (
-                  <tr
-                    key={lead.id}
-                    onClick={() => setSelected(lead)}
-                    style={{ borderBottom: "1px solid #f3f4f6", cursor: "pointer", transition: "background 0.15s" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#f9fafb"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                  >
-                    <td style={{ padding: "14px 16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "#1d4ed8", flexShrink: 0 }}>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>
+                        No leads found
+                      </td>
+                    </tr>
+                  ) : filtered.map(lead => (
+                    <tr
+                      key={lead.id}
+                      onClick={() => setSelected(lead)}
+                      style={{ borderBottom: "1px solid #f3f4f6", cursor: "pointer", transition: "background 0.15s" }}
+                      onMouseEnter={e => e.currentTarget.style.background = "#f9fafb"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                    >
+                      <td style={{ padding: "14px 16px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "#1d4ed8", flexShrink: 0 }}>
                           {getFormData(lead).fullName ? getFormData(lead).fullName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "NA"}
                         </div>
                         <div>
@@ -723,6 +731,7 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       </div>
 

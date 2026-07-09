@@ -78,7 +78,8 @@ describe('CalendarView month calendar read-only boundary', () => {
     await screen.findByRole('heading', { name: monthHeading });
 
     fireEvent.click(screen.getByRole('button', { name: `Select ${dayLabel(emptyDay)}, 0 bookings` }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('No bookings scheduled for this day. New jobs appear here after they are created in Bookings.');
+    expect(screen.getByRole('dialog')).toHaveTextContent('No bookings scheduled');
+    expect(screen.getByRole('dialog')).toHaveTextContent('New jobs appear here after they are created in Bookings.');
   });
 
   it('changes the visible month with Previous Month and Next Month controls', async () => {

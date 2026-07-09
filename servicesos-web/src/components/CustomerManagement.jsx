@@ -237,7 +237,7 @@ export default function CustomerManagement() {
 
   return (
     <div className="v1-page customers-page">
-      <div className="v1-page-header customers-page-header">
+      <div className="v1-page-header customers-page-header" style={{ marginBottom: 32 }}>
         <div>
           <h1 className="v1-page-title">
             Customers
@@ -261,13 +261,13 @@ export default function CustomerManagement() {
       </div>
 
       {/* Search */}
-      <section className="v1-card customers-requests-panel">
+      <section className="v1-card customers-requests-panel" style={{ marginBottom: 24 }}>
         <div className="customers-section-header">
-          <h2>Customer requests</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: '#374151' }}>Customer requests</h2>
           <span className="v1-pill">{customerRequests.filter(request => request.requestStatus !== 'archived').length} active</span>
         </div>
         {customerRequests.filter(request => request.requestStatus !== 'archived').length === 0 ? (
-          <p className="customers-muted">No new customer requests. Quote requests submitted from the customer flow will appear here for follow-up.</p>
+          <p className="customers-muted" style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>No new customer requests. Quote requests submitted from the customer flow will appear here for follow-up.</p>
         ) : customerRequests.filter(request => request.requestStatus !== 'archived').map(request => {
           const customer = request.customerSnapshot || request.formData || {};
           const details = request.requestSnapshot || {};
