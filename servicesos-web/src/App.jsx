@@ -20,7 +20,8 @@ import InsuranceTracking      from "./components/InsuranceTracking.jsx";
 import ImprovedOnboarding     from "./components/ImprovedOnboarding.jsx";
 import RouteOptimization      from "./components/RouteOptimization.jsx";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
-import { saveLead }           from "./services/crmService.js";\nimport GrowthAIPage           from "./modules/growthAI/GrowthAIPage.jsx";
+import { saveLead }           from "./services/crmService.js";
+import GrowthAIPage           from "./modules/growthAI/GrowthAIPage.jsx";
 import { getStripeBookingCheckoutResult } from "./services/stripeCheckoutResult";
 import "./styles/v1.css";
 
