@@ -2,25 +2,35 @@
  * emailService.js
  * Automated quote + booking email delivery service.
  *
- * Uses Resend (https://resend.com) — the simplest modern email API for React/Node apps.
- * Swap the send function for Nodemailer / SendGrid if you prefer.
+ * SECURITY: Email sending is now server-side only through cloud-functions.
+ * Resend API keys must NEVER be exposed to the browser (VITE_RESEND_* variables).
  *
- * SETUP:
- *   1. npm install resend
- *   2. Add to your .env file:
- *        RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
- *        EMAIL_FROM=quotes@yourdomain.com
- *        BUSINESS_NAME="Sparkle Clean Pro"
- *        BUSINESS_PHONE="(555) 123-4567"
- *        BOOKING_URL=https://yourdomain.com/book
- *   3. Call from a server-side route / serverless function — never expose API keys to the browser.
+ * Current status: Frontend calls cloud function sendCustomerEmail.
+ * - HTML builders remain in frontend for template generation
+ * - Send functions call server-side cloud function with auth token
+ * - Cloud function validates auth, tenant access, and controls sender/from address
+ * - No browser-side Resend API calls
  *
- * USAGE:
- *   import { sendQuoteEmail, sendBookingConfirmationEmail } from './emailService.js';
- *   await sendQuoteEmail(lead, estimate);
+ * Server-side requirements:
+ * - RESEND_API_KEY must be set in cloud-functions environment
+ * - Cloud function validates emailType against allowlist
+ * - Cloud function controls sender/from address server-side
  */
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+import { auth } from '../firebase';
+
+async function getAuthToken() {
+  const user = auth.currentUser;
+  if (!user) return null;
+  try {
+    return await user.getIdToken();
+  } catch (error) {
+    console.error('[EMAIL] Error getting auth token:', error);
+    return null;
+  }
+}
 
 function serviceLabel(cleaningType) {
   return {
@@ -219,33 +229,32 @@ export function buildConfirmationEmailHTML(lead, booking) {
  */
 export async function sendQuoteEmail(lead, estimate) {
   try {
-    const biz = import.meta.env.VITE_BUSINESS_NAME || 'Cleaning Pro';
-    const from = import.meta.env.VITE_EMAIL_FROM || `quotes@yourdomain.com`;
-
-    // Skip email if no API key or in development mode
-    if (!import.meta.env.VITE_RESEND_API_KEY || import.meta.env.VITE_RESEND_API_KEY === 'your_resend_api_key_here') {
-      console.log('[EMAIL] Skipping email (no API key configured)');
-      return { success: null, reason: 'not_configured' };
+    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
+    if (!functionsUrl) {
+      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
+      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
     }
 
-    const response = await fetch('https://api.resend.com/emails', {
+    const html = buildQuoteEmailHTML(lead, estimate);
+    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_RESEND_API_KEY}`
+        'Authorization': `Bearer ${await getAuthToken()}`
       },
       body: JSON.stringify({
-        from: `${biz} <${from}>`,
-        to: [lead.email],
+        emailType: 'quote',
+        recipientEmail: lead.email,
         subject: `Your cleaning estimate: $${estimate.priceLow}–$${estimate.priceHigh}`,
-        html: buildQuoteEmailHTML(lead, estimate),
+        html,
+        relatedEntityId: lead.id
       })
     });
 
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to send email');
+    if (!response.ok) throw new Error(data.error || 'Failed to send email');
 
-    console.log(`[EMAIL] Quote sent to ${lead.email} | ID: ${data.id}`);
+    console.log(`[EMAIL] Quote sent to ${lead.email} via cloud function`);
     return { success: true, id: data.id };
 
   } catch (err) {
@@ -362,33 +371,32 @@ export function buildPaymentConfirmationHTML(lead, payment) {
  */
 export async function sendPaymentConfirmationEmail(lead, payment) {
   try {
-    const biz  = import.meta.env.VITE_BUSINESS_NAME || 'Cleaning Pro';
-    const from = import.meta.env.VITE_EMAIL_FROM || `quotes@yourdomain.com`;
-
-    // Skip email if no API key or in development mode
-    if (!import.meta.env.VITE_RESEND_API_KEY || import.meta.env.VITE_RESEND_API_KEY === 'your_resend_api_key_here') {
-      console.log('[EMAIL] Skipping email (no API key configured)');
-      return { success: true, id: 'skipped' };
+    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
+    if (!functionsUrl) {
+      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
+      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
     }
 
-    const response = await fetch('https://api.resend.com/emails', {
+    const html = buildPaymentConfirmationHTML(lead, payment);
+    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_RESEND_API_KEY}`
+        'Authorization': `Bearer ${await getAuthToken()}`
       },
       body: JSON.stringify({
-        from: `${biz} <${from}>`,
-        to: [lead.email],
+        emailType: 'payment_confirmation',
+        recipientEmail: lead.email,
         subject: `Payment Confirmed: ${payment.type || 'Deposit'}`,
-        html: buildPaymentConfirmationHTML(lead, payment),
+        html,
+        relatedEntityId: payment.paymentId
       })
     });
 
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to send email');
+    if (!response.ok) throw new Error(data.error || 'Failed to send email');
 
-    console.log(`[EMAIL] Payment confirmation sent to ${lead.email} | ID: ${data.id}`);
+    console.log(`[EMAIL] Payment confirmation sent to ${lead.email} via cloud function`);
     return { success: true, id: data.id };
 
   } catch (err) {
@@ -406,34 +414,33 @@ export async function sendPaymentConfirmationEmail(lead, payment) {
  */
 export async function sendBookingConfirmationEmail(lead, booking) {
   try {
-    const biz  = import.meta.env.VITE_BUSINESS_NAME || 'Cleaning Pro';
-    const from = import.meta.env.VITE_EMAIL_FROM || `quotes@yourdomain.com`;
-    const date = new Date(booking.scheduledAt).toLocaleDateString('en-US', { month:'long', day:'numeric' });
-
-    // Skip email if no API key or in development mode
-    if (!import.meta.env.VITE_RESEND_API_KEY || import.meta.env.VITE_RESEND_API_KEY === 'your_resend_api_key_here') {
-      console.log('[EMAIL] Skipping email (no API key configured)');
-      return { success: true, id: 'skipped' };
+    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
+    if (!functionsUrl) {
+      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
+      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
     }
 
-    const response = await fetch('https://api.resend.com/emails', {
+    const html = buildConfirmationEmailHTML(lead, booking);
+    const date = new Date(booking.scheduledAt).toLocaleDateString('en-US', { month:'long', day:'numeric' });
+    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_RESEND_API_KEY}`
+        'Authorization': `Bearer ${await getAuthToken()}`
       },
       body: JSON.stringify({
-        from: `${biz} <${from}>`,
-        to: [lead.email],
+        emailType: 'booking_confirmation',
+        recipientEmail: lead.email,
         subject: `Booking Confirmed: ${date}`,
-        html: buildConfirmationEmailHTML(lead, booking),
+        html,
+        relatedEntityId: booking.id
       })
     });
 
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to send email');
+    if (!response.ok) throw new Error(data.error || 'Failed to send email');
 
-    console.log(`[EMAIL] Confirmation sent to ${lead.email} | ID: ${data.id}`);
+    console.log(`[EMAIL] Confirmation sent to ${lead.email} via cloud function`);
     return { success: true, id: data.id };
 
   } catch (err) {
@@ -503,33 +510,32 @@ export function buildFollowUpEmailHTML(lead, estimate) {
  */
 export async function sendFollowUpEmail(lead, estimate) {
   try {
-    const biz  = import.meta.env.VITE_BUSINESS_NAME || 'Cleaning Pro';
-    const from = import.meta.env.VITE_EMAIL_FROM || `quotes@yourdomain.com`;
-
-    // Skip email if no API key or in development mode
-    if (!import.meta.env.VITE_RESEND_API_KEY || import.meta.env.VITE_RESEND_API_KEY === 'your_resend_api_key_here') {
-      console.log('[EMAIL] Skipping email (no API key configured)');
-      return { success: true, id: 'skipped' };
+    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
+    if (!functionsUrl) {
+      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
+      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
     }
 
-    const response = await fetch('https://api.resend.com/emails', {
+    const html = buildFollowUpEmailHTML(lead, estimate);
+    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_RESEND_API_KEY}`
+        'Authorization': `Bearer ${await getAuthToken()}`
       },
       body: JSON.stringify({
-        from: `${biz} <${from}>`,
-        to: [lead.email],
+        emailType: 'follow_up',
+        recipientEmail: lead.email,
         subject: `Following up on your cleaning estimate`,
-        html: buildFollowUpEmailHTML(lead, estimate),
+        html,
+        relatedEntityId: lead.id
       })
     });
 
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to send email');
+    if (!response.ok) throw new Error(data.error || 'Failed to send email');
 
-    console.log(`[EMAIL] Follow-up sent to ${lead.email} | ID: ${data.id}`);
+    console.log(`[EMAIL] Follow-up sent to ${lead.email} via cloud function`);
     return { success: true, id: data.id };
 
   } catch (err) {
@@ -612,33 +618,32 @@ export function buildAppointmentReminderHTML(lead, booking) {
  */
 export async function sendAppointmentReminderEmail(lead, booking) {
   try {
-    const biz  = import.meta.env.VITE_BUSINESS_NAME || 'Cleaning Pro';
-    const from = import.meta.env.VITE_EMAIL_FROM || `quotes@yourdomain.com`;
-
-    // Skip email if no API key or in development mode
-    if (!import.meta.env.VITE_RESEND_API_KEY || import.meta.env.VITE_RESEND_API_KEY === 'your_resend_api_key_here') {
-      console.log('[EMAIL] Skipping email (no API key configured)');
-      return { success: true, id: 'skipped' };
+    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
+    if (!functionsUrl) {
+      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
+      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
     }
 
-    const response = await fetch('https://api.resend.com/emails', {
+    const html = buildAppointmentReminderHTML(lead, booking);
+    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_RESEND_API_KEY}`
+        'Authorization': `Bearer ${await getAuthToken()}`
       },
       body: JSON.stringify({
-        from: `${biz} <${from}>`,
-        to: [lead.email],
+        emailType: 'appointment_reminder',
+        recipientEmail: lead.email,
         subject: `Appointment Reminder: ${new Date(booking.scheduledAt).toLocaleDateString('en-US', { month:'long', day:'numeric' })}`,
-        html: buildAppointmentReminderHTML(lead, booking),
+        html,
+        relatedEntityId: booking.id
       })
     });
 
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to send email');
+    if (!response.ok) throw new Error(data.error || 'Failed to send email');
 
-    console.log(`[EMAIL] Reminder sent to ${lead.email} | ID: ${data.id}`);
+    console.log(`[EMAIL] Reminder sent to ${lead.email} via cloud function`);
     return { success: true, id: data.id };
 
   } catch (err) {
@@ -731,30 +736,30 @@ export function buildServiceAgreementHTML(lead, estimate, contract) {
  */
 export async function sendServiceAgreementEmail(lead, estimate, contract, pdfBlob) {
   try {
-    const biz  = import.meta.env.VITE_BUSINESS_NAME || 'Cleaning Pro';
-    const from = import.meta.env.VITE_EMAIL_FROM || `quotes@yourdomain.com`;
-
-    // Skip email if no API key or in development mode
-    if (!import.meta.env.VITE_RESEND_API_KEY || import.meta.env.VITE_RESEND_API_KEY === 'your_resend_api_key_here') {
-      console.log('[EMAIL] Skipping email (no API key configured)');
-      return { success: true, id: 'skipped' };
+    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
+    if (!functionsUrl) {
+      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
+      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
     }
 
+    const html = buildServiceAgreementHTML(lead, estimate, contract);
+    
     // Convert blob to base64 for attachment
     const arrayBuffer = await pdfBlob.arrayBuffer();
     const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
 
-    const response = await fetch('https://api.resend.com/emails', {
+    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_RESEND_API_KEY}`
+        'Authorization': `Bearer ${await getAuthToken()}`
       },
       body: JSON.stringify({
-        from: `${biz} <${from}>`,
-        to: [lead.email],
+        emailType: 'service_agreement',
+        recipientEmail: lead.email,
         subject: 'Service Agreement Signed',
-        html: buildServiceAgreementHTML(lead, estimate, contract),
+        html,
+        relatedEntityId: contract.id,
         attachments: [
           {
             filename: `Service_Agreement_${lead.lastName}_${Date.now()}.pdf`,
@@ -766,9 +771,9 @@ export async function sendServiceAgreementEmail(lead, estimate, contract, pdfBlo
     });
 
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to send email');
+    if (!response.ok) throw new Error(data.error || 'Failed to send email');
 
-    console.log(`[EMAIL] Service agreement sent to ${lead.email} | ID: ${data.id}`);
+    console.log(`[EMAIL] Service agreement sent to ${lead.email} via cloud function`);
     return { success: true, id: data.id };
 
   } catch (err) {

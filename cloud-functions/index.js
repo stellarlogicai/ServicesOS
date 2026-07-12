@@ -12,6 +12,9 @@ const {
   generateOnboardingLinkHandler,
   getConnectedAccountStatusHandler,
 } = require('./connectStripe');
+const {
+  createSendCustomerEmailHandler,
+} = require('./sendCustomerEmail');
 
 admin.initializeApp();
 
@@ -785,6 +788,14 @@ exports.generateOnboardingLink = functions.https.onRequest((req, res) => {
 exports.getConnectedAccountStatus = functions.https.onRequest((req, res) => {
   return getConnectedAccountStatusHandler({ admin, stripe })(req, res);
 });
+
+/**
+ * Send customer email via Resend
+ * POST /sendCustomerEmail
+ */
+exports.sendCustomerEmail = functions.https.onRequest(
+  createSendCustomerEmailHandler({ admin, cors })
+);
 
 /**
  * Stripe webhook handler for subscription events
