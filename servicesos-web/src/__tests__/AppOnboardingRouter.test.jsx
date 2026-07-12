@@ -108,11 +108,13 @@ describe('App onboarding router context', () => {
     authState.userProfile = { uid: 'admin-test', onboardingCompleted: false };
   });
 
-  it('renders admin onboarding inside the app router', () => {
+  it('bypasses legacy onboarding for current ServicesOS beta', () => {
     render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'Welcome to CleanOps' })).toBeInTheDocument();
-    expect(screen.getByText('Step 1 of 7 • 14% Complete')).toBeInTheDocument();
+    // Legacy onboarding is disabled for beta - admin should land on Dashboard
+    expect(screen.queryByRole('heading', { name: 'Welcome to CleanOps' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Step 1 of 7 • 14% Complete')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Wife Beta Dashboard' })).toBeInTheDocument();
   });
 
   it('skips onboarding for an admin whose tenant is complete', () => {

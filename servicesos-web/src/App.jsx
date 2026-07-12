@@ -17,11 +17,10 @@ import AIModelTraining        from "./components/AIModelTraining.jsx";
 import CalendarView           from "./components/CalendarView.jsx";
 import DataExport             from "./components/DataExport.jsx";
 import InsuranceTracking      from "./components/InsuranceTracking.jsx";
-import ImprovedOnboarding     from "./components/ImprovedOnboarding.jsx";
+// import ImprovedOnboarding     from "./components/ImprovedOnboarding.jsx"; // Legacy onboarding disabled for beta
 import RouteOptimization      from "./components/RouteOptimization.jsx";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
 import { saveLead }           from "./services/crmService.js";
-import GrowthAIPage           from "./modules/growthAI/GrowthAIPage.jsx";
 import { getStripeBookingCheckoutResult } from "./services/stripeCheckoutResult";
 import "./styles/v1.css";
 
@@ -255,7 +254,7 @@ function TenantSwitcher() {
 
 // ─── Authenticated shell ──────────────────────────────────────────────────────
 function AuthenticatedApp() {
-  const { user, userProfile, role, logout, currentTenant, isSuperAdmin } = useAuth();
+  const { user, role, logout, currentTenant, isSuperAdmin } = useAuth();
   const { width } = useWindowSize();
   const isMobile  = width < 768;
   const canView   = useCanView();
@@ -286,13 +285,18 @@ function AuthenticatedApp() {
     };
   }, [role]); // eslint-disable-line
 
-  // Show onboarding if tenant hasn't completed it
-  const onboardingCompleted =
-    currentTenant?.onboardingCompleted || userProfile?.onboardingCompleted;
-
-  if (currentTenant && !onboardingCompleted && role === 'admin') {
-    return <ImprovedOnboarding onComplete={() => setPage("dashboard")} />;
-  }
+  // Legacy onboarding disabled for current ServicesOS beta
+  // The ImprovedOnboarding flow uses stale CleanOps branding, is a 7-step blocking flow,
+  // and references deferred concepts (employees, import, templates) that are not in scope.
+  // Admin users should land in Dashboard even if onboardingCompleted is false.
+  // Onboarding components are left intact for possible future redesign.
+  //
+  // Original blocking guard (disabled):
+  // const onboardingCompleted =
+  //   currentTenant?.onboardingCompleted || userProfile?.onboardingCompleted;
+  // if (currentTenant && !onboardingCompleted && role === 'admin') {
+  //   return <ImprovedOnboarding onComplete={() => setPage("dashboard")} />;
+  // }
 
   const navigate = (id) => {
     if (!canView(NAV_ITEMS.find(n => n.id === id) ?? {})) return;
