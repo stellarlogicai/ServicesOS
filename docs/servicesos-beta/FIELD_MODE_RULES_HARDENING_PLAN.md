@@ -231,14 +231,33 @@ Manual permission smoke after emulator tests:
 4. Attempt cross-tenant booking update and confirm denial.
 5. Confirm Booking Detail still reads field completion data.
 
-## Do not change yet
+## Lab implementation notes
 
-This is a planning document only.
+Branch: `v1-lab-field-rules-hardening`
+
+This lab branch hardens the deploy-source booking rule in `cloud-functions/firestore.rules` and mirrors the same booking rule in `shared/firestore.rules` to avoid repo drift.
+
+Implemented rule shape:
+
+- Super admin can manage bookings.
+- Tenant admin can manage bookings.
+- Tenant users/employees can update only the approved Field Mode execution keys.
+- Customer-role users are excluded from the employee Field Mode update path.
+- Unauthenticated and cross-tenant users cannot update bookings.
+- Employee Field Mode updates are restricted by `request.resource.data.diff(resource.data).affectedKeys().hasOnly([...])`.
+
+The broad booking rule `allow update: if isSuperAdmin() || isAuthenticated();` was removed from the deploy-source rules file.
+
+Assignment-level enforcement is deferred to V1.1 because current assignment fields are not canonical across the codebase (`assignedEmployeeId`, `assignedToId`, `assignedToUid`, `assignedEmployeeUid`, and older `assignedEmployees` patterns all appear). The V1 hardening path requires tenant membership plus the narrow field allowlist.
+
+No existing Firebase rules unit-test harness was found in this repo. The current `cloud-functions` emulator script starts Functions only, not Firestore rules tests. Automated Firestore rules tests remain a TODO before promotion or deployment.
+
+## Do not deploy yet
+
+This is lab-only until emulator/manual permission testing passes and Jamie approves.
 
 Do not edit:
 
-- `cloud-functions/firestore.rules`
-- `shared/firestore.rules`
 - app code
 - Cloud Functions
 - Stripe/payment code

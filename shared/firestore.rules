@@ -24,9 +24,38 @@ service cloud.firestore {
       return isAuthenticated() && 
              request.auth.uid in get(/databases/$(database)/documents/tenants/$(tenantId)).data.users;
     }
+
+    function isCustomerOnlyUser() {
+      return isAuthenticated() &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'customer';
+    }
+
+    function isTenantFieldUser(tenantId) {
+      return isTenantUser(tenantId) && !isCustomerOnlyUser();
+    }
     
     function hasTenantAccess(tenantId) {
       return isTenantAdmin(tenantId) || isTenantUser(tenantId);
+    }
+
+    function fieldModeBookingUpdateKeysOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'fieldStatus',
+        'fieldStatusUpdatedAt',
+        'fieldStartedAt',
+        'fieldStartedByUid',
+        'fieldChecklist',
+        'fieldChecklistSummary',
+        'fieldNotes',
+        'fieldIssue',
+        'completedAt',
+        'completedByUid',
+        'updatedAt'
+      ]);
+    }
+
+    function isFieldModeBookingUpdate(tenantId) {
+      return isTenantFieldUser(tenantId) && fieldModeBookingUpdateKeysOnly();
     }
     
     // Tenants collection - allow create for testing, will restrict later
@@ -68,7 +97,7 @@ service cloud.firestore {
     match /tenants/{tenantId}/bookings/{bookingId} {
       allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
       allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
-      allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow update: if isSuperAdmin() || isTenantAdmin(tenantId) || isFieldModeBookingUpdate(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
     }
     
