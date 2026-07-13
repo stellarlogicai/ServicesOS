@@ -21,6 +21,9 @@ import {
   generateDraft, regenerateCaption, generateImagePromptOnly,
 } from './growthAIService';
 import {
+  RESPONSE_CHANNELS, RESPONSE_SCENARIOS, buildResponseTemplate,
+} from './responseTemplates';
+import {
   loadDrafts, createDraftRecord, updateDraftRecord, addGenerationEvent,
   insertDraft, upsertDraft, removeDraft, duplicateDraft, patchDraftStatus,
 } from './draftStorage';
@@ -63,9 +66,10 @@ function FieldInput({ value, onChange, placeholder, multiline, rows = 3, disable
     : <input type="text" value={value} onChange={onChange} placeholder={placeholder} disabled={disabled} style={base} />;
 }
 
-function FieldSelect({ value, onChange, options, disabled }) {
+function FieldSelect({ value, onChange, options, disabled, ariaLabel }) {
   return (
     <select
+      aria-label={ariaLabel}
       value={value} onChange={onChange} disabled={disabled}
       style={{ width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, color: C.text, background: disabled ? '#f9fafb' : '#fff', boxSizing: 'border-box' }}
     >
@@ -440,6 +444,74 @@ function ContentIdeas({ brandKey, onApplyIdea }) {
   );
 }
 
+function CustomerResponseHelper({ brandKey, onSaveResponseDraft }) {
+  const scenarios = RESPONSE_SCENARIOS[brandKey] || RESPONSE_SCENARIOS.auntbs;
+  const [scenarioId, setScenarioId] = useState(scenarios[0]?.id || '');
+  const [channelId, setChannelId] = useState('sms');
+
+  const activeScenario = scenarios.find(item => item.id === scenarioId) || scenarios[0];
+  const responseTemplate = buildResponseTemplate({
+    brandKey,
+    scenarioId: activeScenario?.id,
+    channelId,
+  });
+
+  return (
+    <Card>
+      <SectionHead>Customer response draft helper</SectionHead>
+      <div style={{ padding: '10px 12px', background: '#eff6ff', border: `1px solid ${C.border}`, borderRadius: 8, color: '#1e40af', fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
+        Response drafts are local templates only. Nothing is sent automatically. Review and edit before sending.
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <Label>Response scenario</Label>
+        <FieldSelect
+          ariaLabel="Response scenario"
+          value={scenarioId}
+          onChange={e => setScenarioId(e.target.value)}
+          options={scenarios.map(item => ({ value: item.id, label: item.scenario }))}
+        />
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <Label>Channel</Label>
+        <FieldSelect
+          ariaLabel="Response channel"
+          value={channelId}
+          onChange={e => setChannelId(e.target.value)}
+          options={RESPONSE_CHANNELS.map(channel => ({ value: channel.id, label: channel.label }))}
+        />
+      </div>
+      <div style={{ background: '#f8fafc', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', marginBottom: 8 }}>
+          <div>
+            <div style={{ fontWeight: 700, color: C.text, fontSize: 14 }}>{responseTemplate.title}</div>
+            <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
+              {responseTemplate.scenario} · {responseTemplate.channel} · {responseTemplate.tone}
+            </div>
+          </div>
+          <CreditBadge cost={responseTemplate.estimatedCredits} label="estimated" />
+        </div>
+        {responseTemplate.subjectLine && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', marginBottom: 4 }}>Subject</div>
+            <div style={{ fontSize: 13, color: C.text }}>{responseTemplate.subjectLine}</div>
+          </div>
+        )}
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', marginBottom: 4 }}>Message</div>
+        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, color: C.text, lineHeight: 1.6 }}>
+          {responseTemplate.messageTemplate}
+        </pre>
+      </div>
+      <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.5, marginBottom: 12 }}>{responseTemplate.notes}</div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <CopyBtn text={responseTemplate.messageTemplate} label="Copy response" />
+        <Btn onClick={() => onSaveResponseDraft(responseTemplate)} variant="secondary" small>
+          💾 Save response draft
+        </Btn>
+      </div>
+    </Card>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function GrowthAIPage() {
   // Brand + post type selection
@@ -558,6 +630,46 @@ export default function GrowthAIPage() {
     setActiveDraftId(record.id);
   }, [activeDraft, brandKey, postTypeId, inputs, drafts]);
 
+  const handleSaveResponseDraft = useCallback((responseTemplate) => {
+    const generated = {
+      fullCaption: responseTemplate.messageTemplate,
+      shortCaption: responseTemplate.subjectLine || responseTemplate.messageTemplate.slice(0, 140),
+      callToAction: 'Review and send manually',
+      hashtags: '',
+      imagePrompt: '',
+    };
+    const record = createDraftRecord({
+      brandKey: responseTemplate.brand,
+      postTypeId: 'customer-response',
+      platform: responseTemplate.channel,
+      title: `[Customer response] ${responseTemplate.title}`,
+      inputSnapshot: {
+        draftKind: 'customer_response',
+        responseTemplateId: responseTemplate.id,
+        responseScenario: responseTemplate.scenario,
+        responseChannel: responseTemplate.channel,
+        responseTone: responseTemplate.tone,
+        responseNotes: responseTemplate.notes,
+        responseSubjectLine: responseTemplate.subjectLine,
+      },
+      generated,
+      creditsEstimated: responseTemplate.estimatedCredits,
+    });
+    const updated = insertDraft(drafts, record);
+    setDrafts(updated);
+    setActiveDraft({
+      title: record.title,
+      fullCaption: record.fullCaption,
+      shortCaption: record.shortCaption,
+      callToAction: record.callToAction,
+      hashtags: record.hashtags,
+      imagePrompt: record.imagePrompt,
+      status: record.status,
+      creditsEstimated: record.creditsEstimated,
+    });
+    setActiveDraftId(record.id);
+  }, [drafts]);
+
   // ── Update current draft ──
   const handleUpdateCurrent = useCallback(() => {
     if (!activeDraftId || !activeDraft.fullCaption) return;
@@ -620,7 +732,7 @@ export default function GrowthAIPage() {
       <div style={{ background: '#fefce8', borderBottom: '1px solid #fde047', padding: '10px 24px' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: '#713f12' }}>⚠️ Internal Phase 0 shell</span>
-          <span style={{ fontSize: 12, color: '#854d0e' }}>Placeholder/local generation only · Credits estimated, never deducted · No auto-posting · No real AI or image API call · super-admin only</span>
+          <span style={{ fontSize: 12, color: '#854d0e' }}>Phase 0 local helper. Drafts, templates, and content packs are saved or generated locally in this browser. No real AI calls, posting, or credit deduction yet. Super-admin only.</span>
         </div>
       </div>
 
@@ -716,6 +828,8 @@ export default function GrowthAIPage() {
 
           {/* 5. Content ideas */}
           <ContentIdeas brandKey={brandKey} onApplyIdea={handleApplyIdea} />
+
+          <CustomerResponseHelper key={brandKey} brandKey={brandKey} onSaveResponseDraft={handleSaveResponseDraft} />
         </div>
 
         {/* RIGHT column */}
