@@ -261,8 +261,47 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('Not scheduled');
     expect(dialog).toHaveTextContent('Address not provided');
     expect(dialog).toHaveTextContent('Price not set');
+    expect(dialog).toHaveTextContent('No field completion details recorded yet.');
     expect(dialog).toHaveTextContent('No notes provided');
     expect(dialog).toHaveTextContent('booking-partial');
+  });
+
+  it('shows in-progress field completion details for owner review', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-field-progress',
+        customerName: 'Field Progress Customer',
+        date: '2026-07-02',
+        startTime: '09:00',
+        fieldStatus: 'in_progress',
+        fieldStartedAt: '2026-07-02T14:00:00.000Z',
+        fieldStatusUpdatedAt: '2026-07-02T14:05:00.000Z',
+        fieldChecklist: [
+          { id: 'kitchen', label: 'Kitchen', completed: true },
+          { id: 'bathrooms', label: 'Bathrooms', completed: false },
+        ],
+        fieldNotes: 'Kitchen finished. Bathrooms in progress.',
+        paymentStatus: 'final_due',
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Field Progress Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Field Progress Customer' });
+    expect(dialog).toHaveTextContent('Field status');
+    expect(dialog).toHaveTextContent('In progress');
+    expect(dialog).toHaveTextContent('Started');
+    expect(dialog).toHaveTextContent('Last field update');
+    expect(dialog).toHaveTextContent('1 of 2 complete');
+    expect(dialog).toHaveTextContent('Kitchen finished. Bathrooms in progress.');
+    expect(dialog).toHaveTextContent('No issue flagged');
+    expect(dialog).toHaveTextContent('Final due');
+    expect(dialog).not.toHaveTextContent('Issue flagged by field worker');
   });
 
   it('shows read-only field completion details for owner review', async () => {
@@ -275,6 +314,8 @@ describe('read-only Bookings admin list', () => {
         date: '2026-07-02',
         startTime: '09:00',
         fieldStatus: 'completed',
+        fieldStartedAt: '2026-07-02T14:00:00.000Z',
+        fieldStatusUpdatedAt: '2026-07-02T16:30:00.000Z',
         completedAt: '2026-07-02T16:30:00.000Z',
         fieldChecklistSummary: { completed: 2, total: 3 },
         fieldNotes: 'Finished upstairs first.',
@@ -291,8 +332,11 @@ describe('read-only Bookings admin list', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Field Complete Customer' });
     expect(dialog).toHaveTextContent('Field completion');
     expect(dialog).toHaveTextContent('Completed');
+    expect(dialog).toHaveTextContent('Started');
+    expect(dialog).toHaveTextContent('Last field update');
     expect(dialog).toHaveTextContent('2 of 3 complete');
     expect(dialog).toHaveTextContent('Finished upstairs first.');
+    expect(dialog).toHaveTextContent('Issue flagged by field worker');
     expect(dialog).toHaveTextContent('Back door lock sticks.');
     expect(dialog).toHaveTextContent('Field completion is worker-entered job progress. It does not change payment status.');
     expect(dialog).toHaveTextContent('Not paid');

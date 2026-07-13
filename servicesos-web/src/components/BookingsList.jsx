@@ -495,13 +495,28 @@ export default function BookingsList() {
               <p style={{ margin: '0 0 16px', color: '#1d4ed8', fontSize: 14, lineHeight: 1.5 }}>
                 Field completion is worker-entered job progress. It does not change payment status.
               </p>
-              <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, margin: 0 }}>
-                <DetailItem label="Field status" value={bookingFieldStatus(selectedBooking)} />
-                <DetailItem label="Completed" value={bookingCompletedAt(selectedBooking)} />
-                <DetailItem label="Checklist" value={bookingChecklistSummary(selectedBooking)} />
-                <DetailItem label="Employee notes" value={bookingFieldNotes(selectedBooking)} />
-                <DetailItem label="Issue/problem" value={bookingFieldIssue(selectedBooking)} />
-              </dl>
+              {!hasFieldExecutionData(selectedBooking) ? (
+                <div style={{ padding: 14, border: '1px solid #bfdbfe', background: '#fff', borderRadius: 10, color: '#475569', fontSize: 14 }}>
+                  No field completion details recorded yet.
+                </div>
+              ) : (
+                <>
+                  {hasFieldIssue(selectedBooking) && (
+                    <div role="status" style={{ marginBottom: 14, padding: '10px 12px', border: '1px solid #fbbf24', background: '#fffbeb', borderRadius: 10, color: '#92400e', fontSize: 13, fontWeight: 700 }}>
+                      Issue flagged by field worker
+                    </div>
+                  )}
+                  <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, margin: 0 }}>
+                    <DetailItem label="Field status" value={bookingFieldStatus(selectedBooking)} />
+                    <DetailItem label="Started" value={bookingStartedAt(selectedBooking)} />
+                    <DetailItem label="Completed" value={bookingCompletedAt(selectedBooking)} />
+                    <DetailItem label="Last field update" value={bookingFieldUpdatedAt(selectedBooking)} />
+                    <DetailItem label="Checklist" value={bookingChecklistSummary(selectedBooking)} />
+                    <DetailItem label="Employee notes" value={bookingFieldNotes(selectedBooking)} />
+                    <DetailItem label="Issue/problem" value={bookingFieldIssue(selectedBooking)} />
+                  </dl>
+                </>
+              )}
             </section>
 
             <section style={{ marginTop: 24, padding: 20, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 12 }}>
@@ -1013,11 +1028,41 @@ function bookingFieldStatus(booking = {}) {
   return BOOKING_FIELD_STATUS_LABELS[status] || BOOKING_FIELD_STATUS_LABELS.not_started;
 }
 
+function formatFieldTimestamp(value, fallback) {
+  const date = toDate(value);
+  return date
+    ? date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+    : fallback;
+}
+
+function hasFieldIssue(booking = {}) {
+  return typeof booking.fieldIssue === 'string' && booking.fieldIssue.trim().length > 0;
+}
+
+function hasFieldExecutionData(booking = {}) {
+  const fieldStatus = typeof booking.fieldStatus === 'string' ? booking.fieldStatus.trim() : '';
+  return Boolean(
+    (fieldStatus && fieldStatus !== 'not_started') ||
+    toDate(booking.fieldStatusUpdatedAt) ||
+    toDate(booking.fieldStartedAt) ||
+    toDate(booking.completedAt) ||
+    Array.isArray(booking.fieldChecklist) ||
+    booking.fieldChecklistSummary ||
+    (typeof booking.fieldNotes === 'string' && booking.fieldNotes.trim()) ||
+    hasFieldIssue(booking)
+  );
+}
+
+function bookingStartedAt(booking = {}) {
+  return formatFieldTimestamp(booking.fieldStartedAt, 'Not started yet');
+}
+
 function bookingCompletedAt(booking = {}) {
-  const completedAt = toDate(booking.completedAt);
-  return completedAt
-    ? completedAt.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
-    : 'Not completed yet';
+  return formatFieldTimestamp(booking.completedAt, 'Not completed yet');
+}
+
+function bookingFieldUpdatedAt(booking = {}) {
+  return formatFieldTimestamp(booking.fieldStatusUpdatedAt || booking.updatedAt, 'No field update recorded');
 }
 
 function bookingChecklistSummary(booking = {}) {
