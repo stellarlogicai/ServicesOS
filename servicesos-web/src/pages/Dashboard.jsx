@@ -655,13 +655,32 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} style={{ padding: "48px 24px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>
-                        No leads found
-                      </td>
-                    </tr>
-                  ) : filtered.map(lead => (
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: "48px 24px", textAlign: "center" }}>
+                      {leads.length === 0 ? (
+                        <div style={{ maxWidth: 420, margin: "0 auto" }}>
+                          <div style={{ fontSize: 36, marginBottom: 12 }}>📋</div>
+                          <div style={{ fontSize: 16, fontWeight: 600, color: "#111827", marginBottom: 8 }}>
+                            No leads or quote requests yet.
+                          </div>
+                          <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.7 }}>
+                            <p style={{ margin: "0 0 8px" }}>
+                              When customers request a quote, they'll appear here for owner review.
+                            </p>
+                            <p style={{ margin: 0 }}>
+                              For now, you can create estimates manually from the Create Estimate page.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 14, color: "#9ca3af" }}>
+                          No leads match this filter.
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ) : filtered.map(lead => (
                     <tr
                       key={lead.id}
                       onClick={() => setSelected(lead)}

@@ -48,6 +48,8 @@ export default function BookingsList() {
   const [paymentStatusError, setPaymentStatusError] = useState('');
   const [savingPaymentStatus, setSavingPaymentStatus] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [cancellingBooking, setCancellingBooking] = useState(false);
+  const [cancelError, setCancelError] = useState('');
   const [stripeLinkState, setStripeLinkState] = useState({
     creating: false,
     url: '',
@@ -98,8 +100,10 @@ export default function BookingsList() {
     setSelectedBooking(booking);
     setIsEditingBooking(false);
     setIsEditingPaymentStatus(false);
+    setCancellingBooking(false);
     setEditError('');
     setPaymentStatusError('');
+    setCancelError('');
     setSuccessMessage('');
     setStripeLinkState({ creating: false, url: '', error: '', copyMessage: '' });
   };
@@ -108,13 +112,17 @@ export default function BookingsList() {
     setSelectedBooking(null);
     setIsEditingBooking(false);
     setIsEditingPaymentStatus(false);
+    setCancellingBooking(false);
     setEditError('');
     setPaymentStatusError('');
+    setCancelError('');
     setSuccessMessage('');
     setStripeLinkState({ creating: false, url: '', error: '', copyMessage: '' });
   };
 
   const startBookingEdit = () => {
+    setCancellingBooking(false);
+    setCancelError('');
     setEditForm({
       date: bookingDateInputValue(selectedBooking),
       startTime: bookingStartTimeInputValue(selectedBooking),
@@ -138,6 +146,8 @@ export default function BookingsList() {
   };
 
   const startPaymentStatusEdit = () => {
+    setCancellingBooking(false);
+    setCancelError('');
     const currentStatus = typeof selectedBooking?.paymentStatus === 'string' &&
       BOOKING_MANUAL_PAYMENT_STATUS_LABELS[selectedBooking.paymentStatus]
       ? selectedBooking.paymentStatus
@@ -277,6 +287,56 @@ export default function BookingsList() {
     }
   };
 
+  const copyPaymentMessage = async () => {
+    if (!stripeLinkState.url) return;
+
+    const name = bookingCustomerName(selectedBooking);
+    const greeting = name && name !== 'Unknown customer' ? `Hi ${name}` : 'Hi';
+    const message = `${greeting}, here is your payment link for your upcoming cleaning: ${stripeLinkState.url}`;
+
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error('Clipboard unavailable');
+      }
+      await navigator.clipboard.writeText(message);
+      setStripeLinkState(current => ({
+        ...current,
+        copyMessage: 'Payment message copied.',
+        error: '',
+      }));
+    } catch {
+      setStripeLinkState(current => ({
+        ...current,
+        copyMessage: 'Payment message could not be copied automatically.',
+      }));
+    }
+  };
+
+  const cancelBooking = async () => {
+    if (!tenantId || !selectedBooking?.id) return;
+
+    setCancellingBooking(false);
+    setCancelError('');
+    setSuccessMessage('');
+
+    const result = await updateBookingAdminFields(
+      tenantId,
+      selectedBooking.id,
+      { status: 'cancelled' }
+    );
+
+    if (!result.success) {
+      setCancelError(result.message || 'Booking could not be cancelled. Please try again.');
+      return;
+    }
+
+    await loadBookings();
+    setSelectedBooking(current =>
+      current ? { ...current, status: 'cancelled', ...(result.data || {}) } : current
+    );
+    setSuccessMessage('Booking cancelled. Payment history was preserved.');
+  };
+
   const saveBookingEdit = async (event) => {
     event.preventDefault();
     if (!selectedBooking?.id) {
@@ -350,7 +410,14 @@ export default function BookingsList() {
                 <div className="booking-list-address">{bookingAddress(booking)}</div>
                 <div className="booking-list-price">{bookingPrice(booking)}</div>
                 <div className="booking-list-badges">
-                  <span className="v1-pill">{bookingStatus(booking)}</span>
+                  <span
+                    className="v1-pill"
+                    style={booking.status === 'cancelled'
+                      ? { background: '#f1f5f9', borderColor: '#cbd5e1', color: '#64748b' }
+                      : {}}
+                  >
+                    {bookingStatus(booking)}
+                  </span>
                   <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>
                 </div>
                 <button type="button" className="v1-button v1-button-secondary" onClick={() => openBookingDetails(booking)}>View Details</button>
@@ -404,6 +471,12 @@ export default function BookingsList() {
                 Close
               </button>
             </div>
+
+            {selectedBooking?.status === 'cancelled' && (
+              <div role="status" style={{ marginTop: 14, padding: '10px 14px', border: '1px solid #fca5a5', background: '#fff5f5', borderRadius: 8, color: '#991b1b', fontSize: 13, fontWeight: 600 }}>
+                This booking is cancelled. Payment history and notes have been preserved.
+              </div>
+            )}
 
             <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, margin: '24px 0 0', padding: '20px', background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0' }}>
               <DetailItem label="Customer email" value={bookingCustomerEmail(selectedBooking)} />
@@ -505,6 +578,21 @@ export default function BookingsList() {
                         >
                           Copy payment link
                         </button>
+                        <button
+                          type="button"
+                          onClick={copyPaymentMessage}
+                          style={{
+                            border: '1px solid #a5b4fc',
+                            background: '#fff',
+                            color: '#3730a3',
+                            borderRadius: 8,
+                            padding: '9px 14px',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Copy message
+                        </button>
                       </div>
                       {stripeLinkState.copyMessage && (
                         <p style={{ margin: '10px 0 0', color: '#166534' }}>{stripeLinkState.copyMessage}</p>
@@ -558,6 +646,76 @@ export default function BookingsList() {
                 >
                   Edit Payment Details
                 </button>
+                {selectedBooking?.status !== 'cancelled' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCancelError('');
+                      setCancellingBooking(true);
+                    }}
+                    style={{
+                      border: '1px solid #dc2626',
+                      background: 'transparent',
+                      color: '#dc2626',
+                      borderRadius: 8,
+                      padding: '9px 14px',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel Booking
+                  </button>
+                )}
+              </div>
+            )}
+
+            {cancelError && (
+              <div role="alert" style={{ marginTop: 16, padding: 12, border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, color: '#991b1b' }}>
+                {cancelError}
+              </div>
+            )}
+
+            {cancellingBooking && (
+              <div style={{ marginTop: 16, padding: 16, border: '1px solid #fca5a5', background: '#fff5f5', borderRadius: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: '#991b1b', marginBottom: 8 }}>
+                  Cancel this booking?
+                </div>
+                <p style={{ fontSize: 13, color: '#7f1d1d', margin: '0 0 16px', lineHeight: 1.6 }}>
+                  This will mark the booking as cancelled.<br />
+                  Payment history and notes will be preserved.
+                </p>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={cancelBooking}
+                    style={{
+                      border: 'none',
+                      background: '#dc2626',
+                      color: '#fff',
+                      borderRadius: 8,
+                      padding: '9px 16px',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel Booking
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCancellingBooking(false)}
+                    style={{
+                      border: '1px solid #d1d5db',
+                      background: '#fff',
+                      color: '#374151',
+                      borderRadius: 8,
+                      padding: '9px 16px',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Keep Booking
+                  </button>
+                </div>
               </div>
             )}
 
