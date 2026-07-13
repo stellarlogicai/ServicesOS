@@ -29,8 +29,10 @@ import {
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS,
   BOOKING_PAYMENT_METHOD_LABELS,
   buildBookingAdminUpdatePatch,
+  buildBookingFieldExecutionPatch,
   buildBookingManualPaymentStatusPatch,
   updateBookingAdminFields,
+  updateBookingFieldExecution,
   updateBookingManualPaymentStatus,
 } from '../core/scheduling/schedulingService';
 
@@ -359,6 +361,140 @@ describe('booking admin update write wrapper', () => {
       'bookings',
       'booking-1',
     ]]);
+  });
+});
+
+describe('booking field execution whitelist helper', () => {
+  it('allows field status, checklist, notes, and issues without payment fields', () => {
+    const result = buildBookingFieldExecutionPatch({
+      fieldStatus: 'completed',
+      fieldChecklist: [
+        { id: 'walkthrough', label: 'Walk through', completed: true },
+        { id: 'final', label: 'Final check', completed: false },
+      ],
+      fieldNotes: '  Finished upstairs first.  ',
+      fieldIssue: ' Back door lock sticks. ',
+    }, { now, updatedBy: ' field-user-1 ' });
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        fieldStatus: 'completed',
+        fieldStatusUpdatedAt: now,
+        completedAt: now,
+        completedByUid: 'field-user-1',
+        fieldChecklist: [
+          { id: 'walkthrough', label: 'Walk through', completed: true },
+          { id: 'final', label: 'Final check', completed: false },
+        ],
+        fieldChecklistSummary: { completed: 1, total: 2 },
+        fieldNotes: 'Finished upstairs first.',
+        fieldIssue: 'Back door lock sticks.',
+        updatedAt: now,
+      },
+    });
+    expect(result.data).not.toHaveProperty('paymentStatus');
+    expect(result.data).not.toHaveProperty('amountReceived');
+    expect(result.data).not.toHaveProperty('stripeCheckoutSessionId');
+  });
+
+  it('records start metadata without touching booking or payment status', () => {
+    const result = buildBookingFieldExecutionPatch({ fieldStatus: 'in_progress' }, { now, updatedBy: 'field-user-1' });
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        fieldStatus: 'in_progress',
+        fieldStartedAt: now,
+        fieldStartedByUid: 'field-user-1',
+        updatedAt: now,
+      },
+    });
+    expect(result.data).not.toHaveProperty('status');
+    expect(result.data).not.toHaveProperty('paymentStatus');
+  });
+
+  it('rejects payment, stripe, customer, and broad booking fields', () => {
+    [
+      'paymentStatus',
+      'paymentMethod',
+      'amountReceived',
+      'stripeCheckoutSessionId',
+      'stripePaymentIntentId',
+      'customerId',
+      'leadId',
+      'status',
+      'delete',
+      'assignedEmployeeId',
+    ].forEach(field => {
+      expect(buildBookingFieldExecutionPatch({
+        fieldStatus: 'in_progress',
+        [field]: 'unsafe',
+      }, { now })).toMatchObject({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: `Unsupported booking field execution field: ${field}.`,
+      });
+    });
+  });
+
+  it('rejects invalid field status and unsafe checklist input', () => {
+    expect(buildBookingFieldExecutionPatch({ fieldStatus: 'paid' }, { now })).toMatchObject({
+      success: false,
+      message: 'Booking field status is not allowed.',
+    });
+    expect(buildBookingFieldExecutionPatch({ fieldChecklist: [{ id: '', label: 'Missing id' }] }, { now })).toMatchObject({
+      success: false,
+      message: 'Booking field checklist items require id and label.',
+    });
+  });
+});
+
+describe('booking field execution write wrapper', () => {
+  beforeEach(() => {
+    firestoreMocks.updateDoc.mockClear();
+    firestoreMocks.doc.mockClear();
+    firestoreMocks.updateDoc.mockResolvedValue(undefined);
+    firestoreMocks.doc.mockImplementation((db, ...path) => ({ db, path }));
+  });
+
+  it('writes only sanitized field execution payload to the tenant-scoped booking document path', async () => {
+    const result = await updateBookingFieldExecution('tenant-a', 'booking-1', {
+      fieldStatus: 'completed',
+      fieldChecklist: [{ id: 'final', label: 'Final check', completed: true }],
+      fieldNotes: 'Done',
+    }, { now, updatedBy: 'field-user-1' });
+
+    expect(result.success).toBe(true);
+    expect(firestoreMocks.doc).toHaveBeenCalledWith(
+      { id: 'db-test' },
+      'tenants',
+      'tenant-a',
+      'bookings',
+      'booking-1'
+    );
+    expect(firestoreMocks.updateDoc).toHaveBeenCalledWith(
+      { db: { id: 'db-test' }, path: ['tenants', 'tenant-a', 'bookings', 'booking-1'] },
+      expect.objectContaining({
+        fieldStatus: 'completed',
+        completedAt: now,
+        completedByUid: 'field-user-1',
+        fieldChecklistSummary: { completed: 1, total: 1 },
+        fieldNotes: 'Done',
+        updatedAt: now,
+      })
+    );
+    expect(JSON.stringify(firestoreMocks.updateDoc.mock.calls[0][1])).not.toMatch(/payment|stripe|customer|lead/i);
+  });
+
+  it('does not write when field execution patch includes unsafe fields', async () => {
+    const result = await updateBookingFieldExecution('tenant-a', 'booking-1', {
+      fieldStatus: 'completed',
+      paymentStatus: 'paid_in_full',
+    }, { now });
+
+    expect(result.success).toBe(false);
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
   });
 });
 

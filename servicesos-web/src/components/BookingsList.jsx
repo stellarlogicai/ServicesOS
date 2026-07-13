@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  BOOKING_FIELD_STATUS_LABELS,
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS,
   BOOKING_PAYMENT_METHOD_LABELS,
   getJobs,
@@ -488,6 +489,20 @@ export default function BookingsList() {
               <DetailItem label="Job price" value={bookingPrice(selectedBooking)} />
               <DetailItem label="Reference" value={bookingReference(selectedBooking) || 'Reference not provided'} />
             </dl>
+
+            <section style={{ marginTop: 24, padding: 20, border: '1px solid #dbeafe', background: '#eff6ff', borderRadius: 12 }}>
+              <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18, fontWeight: 600 }}>Field completion</h3>
+              <p style={{ margin: '0 0 16px', color: '#1d4ed8', fontSize: 14, lineHeight: 1.5 }}>
+                Field completion is worker-entered job progress. It does not change payment status.
+              </p>
+              <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, margin: 0 }}>
+                <DetailItem label="Field status" value={bookingFieldStatus(selectedBooking)} />
+                <DetailItem label="Completed" value={bookingCompletedAt(selectedBooking)} />
+                <DetailItem label="Checklist" value={bookingChecklistSummary(selectedBooking)} />
+                <DetailItem label="Employee notes" value={bookingFieldNotes(selectedBooking)} />
+                <DetailItem label="Issue/problem" value={bookingFieldIssue(selectedBooking)} />
+              </dl>
+            </section>
 
             <section style={{ marginTop: 24, padding: 20, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 12 }}>
               <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18, fontWeight: 600 }}>Payment details</h3>
@@ -991,6 +1006,42 @@ function paymentDateInputValue(value) {
   return date
     ? `${date.getFullYear()}-${padTime(date.getMonth() + 1)}-${padTime(date.getDate())}`
     : '';
+}
+
+function bookingFieldStatus(booking = {}) {
+  const status = typeof booking.fieldStatus === 'string' ? booking.fieldStatus.trim() : '';
+  return BOOKING_FIELD_STATUS_LABELS[status] || BOOKING_FIELD_STATUS_LABELS.not_started;
+}
+
+function bookingCompletedAt(booking = {}) {
+  const completedAt = toDate(booking.completedAt);
+  return completedAt
+    ? completedAt.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+    : 'Not completed yet';
+}
+
+function bookingChecklistSummary(booking = {}) {
+  const summary = booking.fieldChecklistSummary;
+  if (summary && Number.isFinite(Number(summary.completed)) && Number.isFinite(Number(summary.total))) {
+    return `${Number(summary.completed)} of ${Number(summary.total)} complete`;
+  }
+  if (Array.isArray(booking.fieldChecklist) && booking.fieldChecklist.length > 0) {
+    const completed = booking.fieldChecklist.filter(item => item?.completed === true).length;
+    return `${completed} of ${booking.fieldChecklist.length} complete`;
+  }
+  return 'No checklist saved';
+}
+
+function bookingFieldNotes(booking = {}) {
+  return typeof booking.fieldNotes === 'string' && booking.fieldNotes.trim()
+    ? booking.fieldNotes.trim()
+    : 'No employee notes saved';
+}
+
+function bookingFieldIssue(booking = {}) {
+  return typeof booking.fieldIssue === 'string' && booking.fieldIssue.trim()
+    ? booking.fieldIssue.trim()
+    : 'No issue flagged';
 }
 
 function bookingAgreedPrice(booking = {}) {

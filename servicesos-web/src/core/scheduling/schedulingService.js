@@ -34,6 +34,12 @@ const BOOKING_MANUAL_PAYMENT_STATUS_ALLOWED_FIELDS = new Set([
   'paymentNote',
   'paymentStatusUpdatedBy',
 ]);
+const BOOKING_FIELD_EXECUTION_ALLOWED_FIELDS = new Set([
+  'fieldStatus',
+  'fieldChecklist',
+  'fieldNotes',
+  'fieldIssue',
+]);
 export const BOOKING_MANUAL_PAYMENT_STATUS_LABELS = {
   not_paid: 'Not paid',
   deposit_requested: 'Deposit requested',
@@ -46,6 +52,11 @@ export const BOOKING_MANUAL_PAYMENT_STATUS_LABELS = {
   paid_external_app: 'Paid external app',
   waived_family_discount: 'Waived / family discount',
   payment_issue: 'Payment issue',
+};
+export const BOOKING_FIELD_STATUS_LABELS = {
+  not_started: 'Scheduled / not started',
+  in_progress: 'In progress',
+  completed: 'Completed',
 };
 export const BOOKING_PAYMENT_METHOD_LABELS = {
   cash: 'Cash',
@@ -61,9 +72,14 @@ export const BOOKING_PAYMENT_METHOD_LABELS = {
   other: 'Other',
 };
 const BOOKING_MANUAL_PAYMENT_STATUS_VALUES = new Set(Object.keys(BOOKING_MANUAL_PAYMENT_STATUS_LABELS));
+const BOOKING_FIELD_STATUS_VALUES = new Set(Object.keys(BOOKING_FIELD_STATUS_LABELS));
 const BOOKING_PAYMENT_METHOD_VALUES = new Set(Object.keys(BOOKING_PAYMENT_METHOD_LABELS));
 const BOOKING_MANUAL_PAYMENT_UPDATED_BY_MAX_LENGTH = 128;
 const BOOKING_PAYMENT_NOTE_MAX_LENGTH = 500;
+const BOOKING_FIELD_NOTE_MAX_LENGTH = 1000;
+const BOOKING_FIELD_ISSUE_MAX_LENGTH = 750;
+const BOOKING_FIELD_CHECKLIST_MAX_ITEMS = 25;
+const BOOKING_FIELD_CHECKLIST_LABEL_MAX_LENGTH = 120;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_ONLY_PATTERN = /^\d{2}:\d{2}$/;
 
@@ -310,6 +326,124 @@ export function buildBookingManualPaymentStatusPatch(proposedPatch, { now = new 
   return successResponse(payload);
 }
 
+function normalizeFieldUpdatedBy(value, fieldLabel) {
+  if (value === undefined || value === null || value === '') return { success: true, data: undefined };
+  if (typeof value !== 'string') {
+    return bookingAdminValidationError(`${fieldLabel} must be a string.`);
+  }
+  const normalized = value.trim();
+  if (!normalized) {
+    return bookingAdminValidationError(`${fieldLabel} must not be empty.`);
+  }
+  if (normalized.length > BOOKING_MANUAL_PAYMENT_UPDATED_BY_MAX_LENGTH) {
+    return bookingAdminValidationError(`${fieldLabel} must be ${BOOKING_MANUAL_PAYMENT_UPDATED_BY_MAX_LENGTH} characters or fewer.`);
+  }
+  return successResponse(normalized);
+}
+
+function normalizeFieldChecklist(fieldChecklist) {
+  if (!Array.isArray(fieldChecklist)) {
+    return bookingAdminValidationError('Booking field checklist must be an array.');
+  }
+  if (fieldChecklist.length > BOOKING_FIELD_CHECKLIST_MAX_ITEMS) {
+    return bookingAdminValidationError(`Booking field checklist must include ${BOOKING_FIELD_CHECKLIST_MAX_ITEMS} items or fewer.`);
+  }
+
+  const normalized = [];
+  for (const item of fieldChecklist) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return bookingAdminValidationError('Booking field checklist items must be objects.');
+    }
+    const id = typeof item.id === 'string' ? item.id.trim() : '';
+    const label = typeof item.label === 'string' ? item.label.trim() : '';
+    if (!id || !label) {
+      return bookingAdminValidationError('Booking field checklist items require id and label.');
+    }
+    if (label.length > BOOKING_FIELD_CHECKLIST_LABEL_MAX_LENGTH) {
+      return bookingAdminValidationError(`Booking field checklist labels must be ${BOOKING_FIELD_CHECKLIST_LABEL_MAX_LENGTH} characters or fewer.`);
+    }
+    normalized.push({
+      id,
+      label,
+      completed: item.completed === true,
+    });
+  }
+
+  return successResponse(normalized);
+}
+
+export function buildBookingFieldExecutionPatch(proposedPatch, { now = new Date().toISOString(), updatedBy } = {}) {
+  if (!proposedPatch || typeof proposedPatch !== 'object' || Array.isArray(proposedPatch)) {
+    return bookingAdminValidationError('Booking field execution patch must be an object.');
+  }
+
+  const incomingFields = Object.keys(proposedPatch);
+  if (incomingFields.length === 0) {
+    return bookingAdminValidationError('Booking field execution patch must include at least one supported field.');
+  }
+
+  const unknownFields = incomingFields.filter(field => !BOOKING_FIELD_EXECUTION_ALLOWED_FIELDS.has(field));
+  if (unknownFields.length > 0) {
+    return bookingAdminValidationError(`Unsupported booking field execution field: ${unknownFields[0]}.`);
+  }
+
+  const payload = {};
+  const normalizedUpdatedBy = normalizeFieldUpdatedBy(updatedBy, 'Booking field execution updatedBy');
+  if (!normalizedUpdatedBy.success) return normalizedUpdatedBy;
+
+  if (Object.hasOwn(proposedPatch, 'fieldStatus')) {
+    if (!BOOKING_FIELD_STATUS_VALUES.has(proposedPatch.fieldStatus)) {
+      return bookingAdminValidationError('Booking field status is not allowed.');
+    }
+    payload.fieldStatus = proposedPatch.fieldStatus;
+    payload.fieldStatusUpdatedAt = now;
+    if (proposedPatch.fieldStatus === 'in_progress') {
+      payload.fieldStartedAt = now;
+      if (normalizedUpdatedBy.data) payload.fieldStartedByUid = normalizedUpdatedBy.data;
+    }
+    if (proposedPatch.fieldStatus === 'completed') {
+      payload.completedAt = now;
+      if (normalizedUpdatedBy.data) payload.completedByUid = normalizedUpdatedBy.data;
+    }
+  }
+
+  if (Object.hasOwn(proposedPatch, 'fieldChecklist')) {
+    const checklist = normalizeFieldChecklist(proposedPatch.fieldChecklist);
+    if (!checklist.success) return checklist;
+    const completed = checklist.data.filter(item => item.completed).length;
+    payload.fieldChecklist = checklist.data;
+    payload.fieldChecklistSummary = {
+      completed,
+      total: checklist.data.length,
+    };
+  }
+
+  if (Object.hasOwn(proposedPatch, 'fieldNotes')) {
+    if (typeof proposedPatch.fieldNotes !== 'string') {
+      return bookingAdminValidationError('Booking field notes must be a string.');
+    }
+    const fieldNotes = proposedPatch.fieldNotes.trim();
+    if (fieldNotes.length > BOOKING_FIELD_NOTE_MAX_LENGTH) {
+      return bookingAdminValidationError(`Booking field notes must be ${BOOKING_FIELD_NOTE_MAX_LENGTH} characters or fewer.`);
+    }
+    payload.fieldNotes = fieldNotes;
+  }
+
+  if (Object.hasOwn(proposedPatch, 'fieldIssue')) {
+    if (typeof proposedPatch.fieldIssue !== 'string') {
+      return bookingAdminValidationError('Booking field issue must be a string.');
+    }
+    const fieldIssue = proposedPatch.fieldIssue.trim();
+    if (fieldIssue.length > BOOKING_FIELD_ISSUE_MAX_LENGTH) {
+      return bookingAdminValidationError(`Booking field issue must be ${BOOKING_FIELD_ISSUE_MAX_LENGTH} characters or fewer.`);
+    }
+    payload.fieldIssue = fieldIssue;
+  }
+
+  payload.updatedAt = now;
+  return successResponse(payload);
+}
+
 export async function updateBookingAdminFields(tenantId, bookingId, proposedPatch, options = {}) {
   try {
     if (!tenantId) {
@@ -341,6 +475,40 @@ export async function updateBookingAdminFields(tenantId, bookingId, proposedPatc
       error
     });
     return errorResponse('Failed to update booking admin fields', ERROR_CODES.FIRESTORE_ERROR, error);
+  }
+}
+
+export async function updateBookingFieldExecution(tenantId, bookingId, proposedPatch, options = {}) {
+  try {
+    if (!tenantId) {
+      return errorResponse('Tenant ID is required', 'VALIDATION_ERROR');
+    }
+    if (!bookingId) {
+      return errorResponse('Booking ID is required', 'VALIDATION_ERROR');
+    }
+
+    const builtPatch = buildBookingFieldExecutionPatch(proposedPatch, options);
+    if (!builtPatch.success) {
+      return builtPatch;
+    }
+
+    const bookingRef = doc(db, 'tenants', tenantId, COLLECTION_NAME, bookingId);
+    await updateDoc(bookingRef, builtPatch.data);
+
+    return successResponse(
+      { id: bookingId, ...builtPatch.data },
+      'Booking field execution updated successfully'
+    );
+  } catch (error) {
+    logError({
+      message: 'Failed to update booking field execution',
+      module: 'core',
+      feature: 'scheduling',
+      severity: SEVERITY.HIGH,
+      tenantId,
+      error
+    });
+    return errorResponse('Failed to update booking field execution', ERROR_CODES.FIRESTORE_ERROR, error);
   }
 }
 

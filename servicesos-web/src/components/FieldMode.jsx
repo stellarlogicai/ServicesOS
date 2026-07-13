@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getJobs } from '../core/scheduling/schedulingService';
+import {
+  BOOKING_FIELD_STATUS_LABELS,
+  getJobs,
+  updateBookingFieldExecution,
+} from '../core/scheduling/schedulingService';
 import { useAuth } from '../contexts/AuthContext';
 import {
   bookingAddress,
@@ -42,6 +46,36 @@ function shouldUseMapsFallback() {
   return host === 'localhost' || host === '127.0.0.1' || host === '';
 }
 
+const DEFAULT_FIELD_CHECKLIST = [
+  { id: 'walkthrough', label: 'Walk through the home before starting', completed: false },
+  { id: 'service-areas', label: 'Complete the requested cleaning areas', completed: false },
+  { id: 'final-check', label: 'Do a final quality check before leaving', completed: false },
+];
+
+function fieldStatusValue(booking = {}) {
+  const status = typeof booking.fieldStatus === 'string' && booking.fieldStatus.trim()
+    ? booking.fieldStatus.trim()
+    : 'not_started';
+  return BOOKING_FIELD_STATUS_LABELS[status] ? status : 'not_started';
+}
+
+function fieldStatusLabel(booking = {}) {
+  return BOOKING_FIELD_STATUS_LABELS[fieldStatusValue(booking)];
+}
+
+function normalizeChecklist(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return DEFAULT_FIELD_CHECKLIST.map(item => ({ ...item }));
+  }
+  return items
+    .filter(item => item && typeof item === 'object')
+    .map((item, index) => ({
+      id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `item-${index + 1}`,
+      label: typeof item.label === 'string' && item.label.trim() ? item.label.trim() : `Checklist item ${index + 1}`,
+      completed: item.completed === true,
+    }));
+}
+
 function JobCard({ booking, onOpen }) {
   return (
     <article className="v1-card field-job-card">
@@ -53,6 +87,7 @@ function JobCard({ booking, onOpen }) {
         </div>
         <div className="field-job-badges">
           <span className="v1-pill">{bookingStatus(booking)}</span>
+          <span className="v1-pill">{fieldStatusLabel(booking)}</span>
           <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>
         </div>
       </div>
@@ -62,8 +97,15 @@ function JobCard({ booking, onOpen }) {
   );
 }
 
-function JobPacket({ booking, onClose }) {
+function JobPacket({ booking, tenantId, userId, onClose, onBookingPatch }) {
   const [actionMessage, setActionMessage] = useState('');
+  const [executionMessage, setExecutionMessage] = useState('');
+  const [executionError, setExecutionError] = useState('');
+  const [savingAction, setSavingAction] = useState('');
+  const [fieldStatus, setFieldStatus] = useState(fieldStatusValue(booking));
+  const [checklist, setChecklist] = useState(() => normalizeChecklist(booking.fieldChecklist));
+  const [fieldNotes, setFieldNotes] = useState(typeof booking.fieldNotes === 'string' ? booking.fieldNotes : '');
+  const [fieldIssue, setFieldIssue] = useState(typeof booking.fieldIssue === 'string' ? booking.fieldIssue : '');
   const phone = bookingCustomerPhone(booking);
   const address = bookingAddress(booking);
   const hasPhone = phone !== 'Phone not provided';
@@ -73,6 +115,9 @@ function JobPacket({ booking, onClose }) {
   const mapsFallbackMessage = 'Maps could not open automatically. Copy the address and open it in your maps app.';
   const callFallbackMessage = 'If nothing opened, your device/browser may not support phone calls from this page.';
   const displayedActionMessage = actionMessage || defaultActionMessage;
+  const completedCount = checklist.filter(item => item.completed).length;
+  const saving = Boolean(savingAction);
+
   const handleCallCustomer = event => {
     event.stopPropagation();
     setActionMessage(callFallbackMessage);
@@ -100,19 +145,56 @@ function JobPacket({ booking, onClose }) {
       setActionMessage(mapsFallbackMessage);
     }
   };
+  const saveFieldExecution = async (patch, successMessage, actionName) => {
+    setExecutionError('');
+    setExecutionMessage('');
+    if (!tenantId || !booking.id) {
+      setExecutionError('Job update could not be saved. The tenant or booking is unavailable.');
+      return;
+    }
+
+    setSavingAction(actionName);
+    try {
+      const result = await updateBookingFieldExecution(tenantId, booking.id, patch, { updatedBy: userId });
+      if (!result?.success) {
+        throw new Error(result?.message || 'field-update-failed');
+      }
+      const updatedBooking = { ...booking, ...result.data };
+      onBookingPatch(updatedBooking);
+      if (result.data?.fieldStatus) setFieldStatus(result.data.fieldStatus);
+      if (Array.isArray(result.data?.fieldChecklist)) setChecklist(result.data.fieldChecklist);
+      if (Object.hasOwn(result.data || {}, 'fieldNotes')) setFieldNotes(result.data.fieldNotes);
+      if (Object.hasOwn(result.data || {}, 'fieldIssue')) setFieldIssue(result.data.fieldIssue);
+      setExecutionMessage(successMessage);
+    } catch {
+      setExecutionError('Job update could not be saved. Please try again.');
+    } finally {
+      setSavingAction('');
+    }
+  };
+  const startJob = () => saveFieldExecution({ fieldStatus: 'in_progress' }, 'Job started.', 'start');
+  const saveChecklist = () => saveFieldExecution({ fieldChecklist: checklist }, 'Checklist saved.', 'checklist');
+  const saveNotes = () => saveFieldExecution({ fieldNotes, fieldIssue }, 'Notes saved.', 'notes');
+  const markComplete = () => saveFieldExecution({
+    fieldStatus: 'completed',
+    fieldChecklist: checklist,
+    fieldNotes,
+    fieldIssue,
+  }, 'Job marked complete.', 'complete');
 
   return (
     <div className="v1-modal-overlay" onClick={onClose}>
       <section className="v1-modal field-job-packet" role="dialog" aria-modal="true" aria-labelledby="field-job-title" onClick={event => event.stopPropagation()}>
         <header className="field-job-packet-header">
           <div>
-            <p>Read-only job packet</p>
+            <p>Field job packet</p>
             <h2 id="field-job-title">{bookingCustomerName(booking)}</h2>
           </div>
           <button className="v1-button v1-button-secondary" type="button" onClick={onClose}>Close</button>
         </header>
         <div className="field-job-badges">
           <span className="v1-pill">{bookingStatus(booking)}</span>
+          <span className="v1-pill">{BOOKING_FIELD_STATUS_LABELS[fieldStatus] || BOOKING_FIELD_STATUS_LABELS.not_started}</span>
           <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>
         </div>
         <dl className="field-job-details">
@@ -135,17 +217,109 @@ function JobPacket({ booking, onClose }) {
           </div>
           <div className="field-job-action-status" role="status">{displayedActionMessage}</div>
         </section>
+        <section className="field-job-execution" aria-labelledby="field-job-execution-title">
+          <div className="field-job-execution-header">
+            <div>
+              <h3 id="field-job-execution-title">Job execution</h3>
+              <p>Job completion is separate from payment status.</p>
+            </div>
+            <span className="v1-pill">{BOOKING_FIELD_STATUS_LABELS[fieldStatus] || BOOKING_FIELD_STATUS_LABELS.not_started}</span>
+          </div>
+          <div className="field-job-execution-controls">
+            <button
+              className="v1-button v1-button-primary"
+              type="button"
+              onClick={startJob}
+              disabled={saving || fieldStatus === 'in_progress' || fieldStatus === 'completed'}
+            >
+              {savingAction === 'start' ? 'Starting...' : 'Start Job'}
+            </button>
+            <button
+              className="v1-button v1-button-secondary"
+              type="button"
+              onClick={markComplete}
+              disabled={saving || fieldStatus === 'completed'}
+            >
+              {savingAction === 'complete' ? 'Completing...' : 'Mark Complete'}
+            </button>
+          </div>
+          <div className="field-job-checklist">
+            <h4>Checklist</h4>
+            <p>{completedCount} of {checklist.length} complete</p>
+            <div className="field-job-checklist-items">
+              {checklist.map(item => (
+                <label key={item.id} className="field-job-checklist-item">
+                  <input
+                    type="checkbox"
+                    checked={item.completed}
+                    onChange={event => {
+                      const checked = event.target.checked;
+                      setChecklist(current => current.map(existing => (
+                        existing.id === item.id ? { ...existing, completed: checked } : existing
+                      )));
+                    }}
+                  />
+                  <span>{item.label}</span>
+                </label>
+              ))}
+            </div>
+            <button
+              className="v1-button v1-button-secondary"
+              type="button"
+              onClick={saveChecklist}
+              disabled={saving}
+            >
+              {savingAction === 'checklist' ? 'Saving...' : 'Save checklist'}
+            </button>
+          </div>
+          <div className="field-job-notes">
+            <label>
+              Employee notes
+              <textarea
+                value={fieldNotes}
+                onChange={event => setFieldNotes(event.target.value)}
+                rows={3}
+                placeholder="Add job notes for owner review."
+              />
+            </label>
+            <label>
+              Issue/problem to flag
+              <textarea
+                value={fieldIssue}
+                onChange={event => setFieldIssue(event.target.value)}
+                rows={2}
+                placeholder="Optional issue to review later."
+              />
+            </label>
+            <button
+              className="v1-button v1-button-secondary"
+              type="button"
+              onClick={saveNotes}
+              disabled={saving}
+            >
+              {savingAction === 'notes' ? 'Saving...' : 'Save notes'}
+            </button>
+          </div>
+          {executionMessage && <div className="field-job-execution-status" role="status">{executionMessage}</div>}
+          {executionError && <div className="field-job-execution-error" role="alert">{executionError}</div>}
+        </section>
       </section>
     </div>
   );
 }
 
 export default function FieldMode() {
-  const { tenantId } = useAuth();
+  const { tenantId, user } = useAuth();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const patchSelectedBooking = (updatedBooking) => {
+    setSelectedBooking(updatedBooking);
+    setBookings(current => current.map(booking => (
+      booking.id === updatedBooking.id ? { ...booking, ...updatedBooking } : booking
+    )));
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -187,7 +361,7 @@ export default function FieldMode() {
     <section className="v1-page field-mode-page" aria-labelledby="field-mode-title">
       <div className="v1-page-header" style={{ marginBottom: 32 }}>
         <h1 className="v1-page-title" id="field-mode-title">Field Mode</h1>
-        <p className="v1-page-subtitle">Read-only job packets for today and upcoming work. Use Bookings to change jobs or payment details.</p>
+        <p className="v1-page-subtitle">Job packets for today and upcoming work. Use Bookings to change schedules or payment details.</p>
       </div>
       {loading && <p role="status">Loading Field Mode…</p>}
       {!loading && error && <div className="v1-empty-state" role="alert">{error}{tenantId && <><br /><button className="v1-button v1-button-secondary" type="button" onClick={load}>Try again</button></>}</div>}
@@ -203,7 +377,16 @@ export default function FieldMode() {
           </section>
         </div>
       )}
-      {selectedBooking && <JobPacket booking={selectedBooking} onClose={() => setSelectedBooking(null)} />}
+      {selectedBooking && (
+        <JobPacket
+          key={selectedBooking.id || 'selected-job'}
+          booking={selectedBooking}
+          tenantId={tenantId}
+          userId={user?.uid}
+          onBookingPatch={patchSelectedBooking}
+          onClose={() => setSelectedBooking(null)}
+        />
+      )}
     </section>
   );
 }

@@ -1,15 +1,26 @@
-import { createEvent, fireEvent, render, screen, within } from '@testing-library/react';
+import { createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FieldMode from '../components/FieldMode';
 
-const mocks = vi.hoisted(() => ({ getJobs: vi.fn(), tenantId: 'tenant-a' }));
-
-vi.mock('../core/scheduling/schedulingService', () => ({
-  BOOKING_MANUAL_PAYMENT_STATUS_LABELS: { not_paid: 'Not paid', paid_cash: 'Paid cash' },
-  getJobs: mocks.getJobs,
+const mocks = vi.hoisted(() => ({
+  getJobs: vi.fn(),
+  updateBookingFieldExecution: vi.fn(),
+  tenantId: 'tenant-a',
+  user: { uid: 'field-user-1' },
 }));
 
-vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ tenantId: mocks.tenantId }) }));
+vi.mock('../core/scheduling/schedulingService', () => ({
+  BOOKING_FIELD_STATUS_LABELS: {
+    not_started: 'Scheduled / not started',
+    in_progress: 'In progress',
+    completed: 'Completed',
+  },
+  BOOKING_MANUAL_PAYMENT_STATUS_LABELS: { not_paid: 'Not paid', paid_cash: 'Paid cash' },
+  getJobs: mocks.getJobs,
+  updateBookingFieldExecution: mocks.updateBookingFieldExecution,
+}));
+
+vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ tenantId: mocks.tenantId, user: mocks.user }) }));
 
 const pad = value => String(value).padStart(2, '0');
 const dateKey = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -20,7 +31,13 @@ const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate(
 describe('FieldMode read-only field surface', () => {
   beforeEach(() => {
     mocks.tenantId = 'tenant-a';
+    mocks.user = { uid: 'field-user-1' };
     mocks.getJobs.mockReset();
+    mocks.updateBookingFieldExecution.mockReset();
+    mocks.updateBookingFieldExecution.mockImplementation(async (_tenantId, bookingId, patch) => ({
+      success: true,
+      data: { id: bookingId, ...patch },
+    }));
     delete window.__SERVICESOS_ALLOW_MAPS_AUTO_OPEN__;
   });
 
@@ -143,6 +160,94 @@ describe('FieldMode read-only field surface', () => {
     expect(within(dialog).queryByRole('button', { name: 'Copy address' })).not.toBeInTheDocument();
   });
 
+  it('starts a job through the tenant-scoped field execution update path', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'start-job', customerName: 'Start Customer', date: dateKey(today), paymentStatus: 'not_paid',
+    }] });
+    render(<FieldMode />);
+    await screen.findByText('Start Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Job' }));
+
+    await waitFor(() => expect(mocks.updateBookingFieldExecution).toHaveBeenCalledWith(
+      'tenant-a',
+      'start-job',
+      { fieldStatus: 'in_progress' },
+      { updatedBy: 'field-user-1' },
+    ));
+    expect(await screen.findByText('Job started.')).toBeInTheDocument();
+    expect(JSON.stringify(mocks.updateBookingFieldExecution.mock.calls[0][2])).not.toMatch(/payment|stripe|customer/i);
+  });
+
+  it('saves checklist progress without changing payment status', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'checklist-job', customerName: 'Checklist Customer', date: dateKey(today), paymentStatus: 'not_paid',
+    }] });
+    render(<FieldMode />);
+    await screen.findByText('Checklist Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    fireEvent.click(screen.getByLabelText('Walk through the home before starting'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save checklist' }));
+
+    await waitFor(() => expect(mocks.updateBookingFieldExecution).toHaveBeenCalled());
+    const patch = mocks.updateBookingFieldExecution.mock.calls[0][2];
+    expect(patch.fieldChecklist[0]).toMatchObject({
+      id: 'walkthrough',
+      label: 'Walk through the home before starting',
+      completed: true,
+    });
+    expect(patch).not.toHaveProperty('paymentStatus');
+    expect(await screen.findByText('Checklist saved.')).toBeInTheDocument();
+  });
+
+  it('saves employee notes and issue text for owner review', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'notes-job', customerName: 'Notes Customer', date: dateKey(today), paymentStatus: 'not_paid',
+    }] });
+    render(<FieldMode />);
+    await screen.findByText('Notes Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    fireEvent.change(screen.getByLabelText('Employee notes'), { target: { value: 'Finished upstairs first.' } });
+    fireEvent.change(screen.getByLabelText('Issue/problem to flag'), { target: { value: 'Back door lock sticks.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save notes' }));
+
+    await waitFor(() => expect(mocks.updateBookingFieldExecution).toHaveBeenCalledWith(
+      'tenant-a',
+      'notes-job',
+      { fieldNotes: 'Finished upstairs first.', fieldIssue: 'Back door lock sticks.' },
+      { updatedBy: 'field-user-1' },
+    ));
+    expect(await screen.findByText('Notes saved.')).toBeInTheDocument();
+  });
+
+  it('marks a job complete without marking it paid', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'complete-job', customerName: 'Complete Customer', date: dateKey(today), paymentStatus: 'not_paid',
+    }] });
+    render(<FieldMode />);
+    await screen.findByText('Complete Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    fireEvent.click(screen.getByLabelText('Complete the requested cleaning areas'));
+    fireEvent.change(screen.getByLabelText('Employee notes'), { target: { value: 'Ready for owner review.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
+
+    await waitFor(() => expect(mocks.updateBookingFieldExecution).toHaveBeenCalled());
+    const patch = mocks.updateBookingFieldExecution.mock.calls[0][2];
+    expect(patch).toMatchObject({
+      fieldStatus: 'completed',
+      fieldNotes: 'Ready for owner review.',
+      fieldIssue: '',
+    });
+    expect(patch.fieldChecklist.some(item => item.id === 'service-areas' && item.completed)).toBe(true);
+    expect(patch).not.toHaveProperty('paymentStatus');
+    expect(patch).not.toHaveProperty('amountReceived');
+    expect(await screen.findByText('Job marked complete.')).toBeInTheDocument();
+  });
+
   it('requires an active tenant and performs no booking read without one', async () => {
     mocks.tenantId = '';
     render(<FieldMode />);
@@ -150,13 +255,16 @@ describe('FieldMode read-only field surface', () => {
     expect(mocks.getJobs).not.toHaveBeenCalled();
   });
 
-  it('exposes no write, payment collection, employee, route, or safety controls', async () => {
+  it('exposes no payment collection, admin edit, route, or safety controls', async () => {
     mocks.getJobs.mockResolvedValue({ success: true, data: [{ id: 'today', customerName: 'Safe Customer', date: dateKey(today) }] });
     render(<FieldMode />);
     await screen.findByText('Safe Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
 
-    for (const name of ['Arrived', 'In Progress', 'Complete', 'Edit', 'Edit Payment Details', 'Create Stripe payment link', 'Delete', 'Pay', 'Collect payment', 'Refund', 'Assign', 'Reschedule', 'Upload photo', 'Start route', 'Panic']) {
+    expect(screen.getByRole('button', { name: 'Start Job' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark Complete' })).toBeInTheDocument();
+
+    for (const name of ['Arrived', 'In Progress', 'Edit', 'Edit Payment Details', 'Create Stripe payment link', 'Delete', 'Pay', 'Collect payment', 'Refund', 'Assign', 'Reschedule', 'Upload photo', 'Start route', 'Panic']) {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     }
   });

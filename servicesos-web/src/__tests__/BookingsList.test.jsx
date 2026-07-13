@@ -15,6 +15,11 @@ vi.mock('../contexts/AuthContext', () => ({
 }));
 
 vi.mock('../core/scheduling/schedulingService', () => ({
+  BOOKING_FIELD_STATUS_LABELS: {
+    not_started: 'Scheduled / not started',
+    in_progress: 'In progress',
+    completed: 'Completed',
+  },
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS: {
     not_paid: 'Not paid',
     deposit_requested: 'Deposit requested',
@@ -258,6 +263,40 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('Price not set');
     expect(dialog).toHaveTextContent('No notes provided');
     expect(dialog).toHaveTextContent('booking-partial');
+  });
+
+  it('shows read-only field completion details for owner review', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-field-complete',
+        customerName: 'Field Complete Customer',
+        date: '2026-07-02',
+        startTime: '09:00',
+        fieldStatus: 'completed',
+        completedAt: '2026-07-02T16:30:00.000Z',
+        fieldChecklistSummary: { completed: 2, total: 3 },
+        fieldNotes: 'Finished upstairs first.',
+        fieldIssue: 'Back door lock sticks.',
+        paymentStatus: 'not_paid',
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Field Complete Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Field Complete Customer' });
+    expect(dialog).toHaveTextContent('Field completion');
+    expect(dialog).toHaveTextContent('Completed');
+    expect(dialog).toHaveTextContent('2 of 3 complete');
+    expect(dialog).toHaveTextContent('Finished upstairs first.');
+    expect(dialog).toHaveTextContent('Back door lock sticks.');
+    expect(dialog).toHaveTextContent('Field completion is worker-entered job progress. It does not change payment status.');
+    expect(dialog).toHaveTextContent('Not paid');
+    expect(screen.queryByRole('button', { name: 'Mark Complete' })).not.toBeInTheDocument();
   });
 
   it('creates a booking-scoped Stripe payment link and does not mark the booking paid in frontend', async () => {
