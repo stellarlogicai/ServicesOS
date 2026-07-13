@@ -63,6 +63,15 @@ vi.mock('../components/BusinessSettings', () => ({
   default: () => <h1>Business Settings Screen</h1>
 }));
 
+vi.mock('../modules/growthAI/GrowthAIPage', () => ({
+  default: () => (
+    <main>
+      <h1>GrowthAI — Marketing Helper</h1>
+      <p>Placeholder/local generation only · Credits estimated, never deducted · No auto-posting · No real AI or image API call · super-admin only</p>
+    </main>
+  )
+}));
+
 vi.mock('../components/CustomerPortal', () => ({
   default: () => <h1>Customer Portal Screen</h1>
 }));
@@ -136,7 +145,8 @@ describe('App onboarding router context', () => {
       'Backup',
       'Settings',
       'Tenant management',
-      'AI training'
+      'AI training',
+      'GrowthAI'
     ].forEach(label => {
       expect(screen.queryByText(label)).not.toBeInTheDocument();
     });
@@ -225,7 +235,9 @@ describe('App onboarding router context', () => {
       '/route-optimization',
       '/payroll',
       '/training',
-      '/tap-to-pay'
+      '/tap-to-pay',
+      '/growth-ai',
+      '/growthai'
     ].forEach(path => {
       window.history.pushState({}, '', path);
       const { unmount } = render(<App />);
@@ -244,7 +256,8 @@ describe('App onboarding router context', () => {
         'Backup',
         'Settings',
         'Tenant management',
-        'AI training'
+        'AI training',
+        'GrowthAI'
       ].forEach(label => {
         expect(screen.queryByText(label)).not.toBeInTheDocument();
       });
@@ -257,7 +270,8 @@ describe('App onboarding router context', () => {
         'Deferred Data Export Screen',
         'Deferred Backup Screen',
         'Deferred Settings Screen',
-        'Deferred AI Training Screen'
+        'Deferred AI Training Screen',
+        'GrowthAI — Marketing Helper'
       ].forEach(heading => {
         expect(screen.queryByRole('heading', { name: heading })).not.toBeInTheDocument();
       });
@@ -290,6 +304,7 @@ describe('App onboarding router context', () => {
       'Data export',
       'Tenant management',
       'AI training',
+      'GrowthAI',
       'Backup',
       'Settings'
     ].forEach(label => {
@@ -298,6 +313,39 @@ describe('App onboarding router context', () => {
     expect(screen.queryByText('Payment links')).not.toBeInTheDocument();
 
     expect(screen.getByRole('heading', { name: 'Super Admin Tenant Management Screen' })).toBeInTheDocument();
+  });
+
+  it('allows super-admin to open GrowthAI while keeping the Phase 0 honesty banner visible', () => {
+    authState.role = 'super-admin';
+    authState.isSuperAdmin = () => true;
+    authState.userProfile = { uid: 'super-admin-test', onboardingCompleted: true };
+    authState.currentTenant = null;
+
+    render(<App />);
+
+    fireEvent.click(screen.getByText('GrowthAI'));
+
+    expect(screen.getByRole('heading', { name: 'GrowthAI — Marketing Helper' })).toBeInTheDocument();
+    expect(screen.getByText(/Placeholder\/local generation only/)).toBeInTheDocument();
+    expect(screen.queryByText('Payment links')).not.toBeInTheDocument();
+  });
+
+  it('does not expose GrowthAI to customer users', () => {
+    authState.role = 'customer';
+    authState.isSuperAdmin = () => false;
+    authState.userProfile = { uid: 'customer-test', onboardingCompleted: true };
+    authState.currentTenant = {
+      id: 'tenant-test',
+      businessName: 'Test Cleaning Co.',
+      onboardingCompleted: true
+    };
+
+    render(<App />);
+
+    expect(screen.getByText('Customer portal')).toBeInTheDocument();
+    expect(screen.queryByText('GrowthAI')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'GrowthAI — Marketing Helper' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Customer Portal Screen' })).toBeInTheDocument();
   });
 
   it('detects Stripe booking checkout return query states', () => {

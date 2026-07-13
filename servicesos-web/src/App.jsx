@@ -19,6 +19,7 @@ import DataExport             from "./components/DataExport.jsx";
 import InsuranceTracking      from "./components/InsuranceTracking.jsx";
 // import ImprovedOnboarding     from "./components/ImprovedOnboarding.jsx"; // Legacy onboarding disabled for beta
 import RouteOptimization      from "./components/RouteOptimization.jsx";
+import GrowthAIPage           from "./modules/growthAI/GrowthAIPage.jsx";
 import { AuthProvider, useAuth } from "./contexts/AuthContext.jsx";
 import { saveLead }           from "./services/crmService.js";
 import { getStripeBookingCheckoutResult } from "./services/stripeCheckoutResult";
@@ -130,6 +131,12 @@ const NAV_ITEMS = [
     id: "ai-training",
     icon: "🤖",
     label: "AI training",
+    roles: ["super-admin"],
+  },
+  {
+    id: "growth-ai",
+    icon: "🚀",
+    label: "GrowthAI",
     roles: ["super-admin"],
   },
   {
@@ -418,6 +425,7 @@ function AuthenticatedApp() {
       case "customer-portal":   return <CustomerPortal />;
       case "tenant-management": return <TenantManagement />;
       case "ai-training":       return <AIModelTraining />;
+      case "growth-ai":         return <GrowthAIPage />;
       case "backup":            return <BackupPanel />;
       case "settings":          return <CompanySettings />;
       default:                  return null;
