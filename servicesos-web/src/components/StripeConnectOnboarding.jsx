@@ -5,10 +5,14 @@ import {
   getConnectedAccountStatus,
 } from '../services/stripeService';
 
-export default function StripeConnectOnboarding({ tenantId }) {
+export default function StripeConnectOnboarding({
+  tenantId,
+  initialBusinessEmail = '',
+  initialBusinessName = '',
+}) {
   const [accountStatus, setAccountStatus] = useState(null);
-  const [businessEmail, setBusinessEmail] = useState('');
-  const [businessName, setBusinessName] = useState('');
+  const [businessEmail, setBusinessEmail] = useState(initialBusinessEmail);
+  const [businessName, setBusinessName] = useState(initialBusinessName);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -16,6 +20,8 @@ export default function StripeConnectOnboarding({ tenantId }) {
   const connected = Boolean(accountStatus?.connected);
   const chargesEnabled = accountStatus?.chargesEnabled === true;
   const payoutsEnabled = accountStatus?.payoutsEnabled === true;
+  const statusKnown = accountStatus !== null;
+  const fullyReady = connected && chargesEnabled && payoutsEnabled;
 
   const refreshStatus = useCallback(async () => {
     if (!tenantId) {
@@ -79,9 +85,13 @@ export default function StripeConnectOnboarding({ tenantId }) {
     }
   };
 
-  const statusText = chargesEnabled
-    ? 'Stripe is ready. You can create booking payment links from Bookings.'
-    : 'Stripe is not ready yet. Finish setup before sending online payment links from Bookings.';
+  const statusText = !statusKnown
+    ? 'Stripe status unknown'
+    : fullyReady
+      ? 'Connected'
+      : connected
+        ? 'Stripe setup is incomplete. Resume setup before sending online payment links from Bookings.'
+        : 'Stripe is not connected.';
 
   return (
     <section className="v1-card" aria-labelledby="stripe-connect-title" style={{ display: 'grid', gap: 14 }}>
@@ -110,10 +120,10 @@ export default function StripeConnectOnboarding({ tenantId }) {
 
           {error && <div role="alert" style={{ color: '#b91c1c' }}>{error}</div>}
 
-          {!connected && (
+          {statusKnown && !connected && (
             <form onSubmit={startOnboarding} style={{ display: 'grid', gap: 10 }}>
               <label>
-                Business email
+                Stripe account email
                 <input
                   type="email"
                   value={businessEmail}
@@ -123,7 +133,7 @@ export default function StripeConnectOnboarding({ tenantId }) {
                 />
               </label>
               <label>
-                Business name
+                Stripe account business name
                 <input
                   value={businessName}
                   onChange={event => setBusinessName(event.target.value)}
@@ -131,7 +141,7 @@ export default function StripeConnectOnboarding({ tenantId }) {
                 />
               </label>
               <button className="v1-button v1-button-primary" type="submit" disabled={working}>
-                {working ? 'Opening Stripe...' : 'Continue Stripe onboarding'}
+                {working ? 'Opening Stripe...' : 'Connect Stripe'}
               </button>
               <p className="v1-muted" style={{ margin: 0 }}>
                 Stripe will ask for business details. Return here and refresh status when setup is complete.
@@ -139,9 +149,9 @@ export default function StripeConnectOnboarding({ tenantId }) {
             </form>
           )}
 
-          {connected && !chargesEnabled && (
+          {connected && !fullyReady && (
             <button className="v1-button v1-button-primary" type="button" onClick={continueOnboarding} disabled={working}>
-              {working ? 'Opening Stripe...' : 'Continue Stripe onboarding'}
+              {working ? 'Opening Stripe...' : 'Resume Stripe setup'}
             </button>
           )}
 

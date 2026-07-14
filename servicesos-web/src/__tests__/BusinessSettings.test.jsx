@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BusinessSettings from '../components/BusinessSettings';
 
@@ -80,37 +80,83 @@ describe('BusinessSettings', () => {
     }
   });
 
-  it('shows read-only Stripe status without setup actions', async () => {
+  it('shows read-only Stripe status and the existing Connect Stripe action', async () => {
     render(<BusinessSettings />);
 
-    expect(await screen.findByText('Stripe connection status')).toBeInTheDocument();
-    expect(screen.getByText('Needs setup')).toBeInTheDocument();
-    expect(screen.getByText('Stripe account exists, but payments or payouts are not fully ready yet.')).toBeInTheDocument();
-    expect(screen.getByText('...123456')).toBeInTheDocument();
+    const panel = await screen.findByRole('region', { name: 'Stripe Connect setup' });
+    expect(await within(panel).findByText('Stripe is not connected.')).toBeInTheDocument();
     expect(screen.getAllByText('Not ready')).toHaveLength(2);
-    expect(screen.queryByRole('button', { name: 'Continue Stripe onboarding' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Refresh Stripe status' })).not.toBeInTheDocument();
-    expect(mocks.getConnectedAccountStatus).not.toHaveBeenCalled();
+    expect(within(panel).getByRole('button', { name: 'Connect Stripe' })).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: 'Refresh Stripe status' })).toBeInTheDocument();
+    expect(mocks.getConnectedAccountStatus).toHaveBeenCalledWith('tenant-a');
+    for (const field of ['stripeAccountId', 'chargesEnabled', 'payoutsEnabled', 'stripeStatus', 'stripeConnectStatus', 'stripeAccountStatus', 'stripeAccountMode']) {
+      expect(screen.queryByLabelText(field)).not.toBeInTheDocument();
+    }
   });
 
-  it('shows connected Stripe status when tenant data reports readiness', async () => {
-    mocks.getBusinessSettings.mockResolvedValue({
-      ...settings,
-      stripeConnection: {
-        label: 'Connected',
-        detail: 'Stripe is connected for booking payment links.',
-        stripeAccountId: '...999999',
-        chargesEnabled: true,
-        payoutsEnabled: true,
-        status: 'active',
-      },
+  it('starts Stripe Connect through the existing account and onboarding helpers', async () => {
+    render(<BusinessSettings />);
+
+    const panel = await screen.findByRole('region', { name: 'Stripe Connect setup' });
+    fireEvent.click(await within(panel).findByRole('button', { name: 'Connect Stripe' }));
+
+    await waitFor(() => expect(mocks.createConnectedAccount).toHaveBeenCalledWith({
+      tenantId: 'tenant-a',
+      businessEmail: 'owner@example.com',
+      businessName: 'Aunt B Cleaning',
+    }));
+    expect(mocks.generateOnboardingLink).toHaveBeenCalledWith({
+      tenantId: 'tenant-a',
+      returnUrl: window.location.href,
+      refreshUrl: window.location.href,
+    });
+    expect(window.open).toHaveBeenCalledWith('https://connect.stripe.test/onboarding', '_self', 'noopener,noreferrer');
+  });
+
+  it('shows Resume Stripe setup for an existing incomplete account', async () => {
+    mocks.getConnectedAccountStatus.mockResolvedValue({
+      connected: true,
+      status: 'pending',
+      chargesEnabled: false,
+      payoutsEnabled: false,
     });
 
     render(<BusinessSettings />);
 
-    expect(await screen.findByText('Stripe is connected for booking payment links.')).toBeInTheDocument();
-    expect(screen.getByText('Connected')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume Stripe setup' }));
+    await waitFor(() => expect(mocks.generateOnboardingLink).toHaveBeenCalledWith({
+      tenantId: 'tenant-a',
+      returnUrl: window.location.href,
+      refreshUrl: window.location.href,
+    }));
+    expect(mocks.createConnectedAccount).not.toHaveBeenCalled();
+  });
+
+  it('shows Connected only when charges and payouts are confirmed', async () => {
+    mocks.getConnectedAccountStatus.mockResolvedValue({
+      connected: true,
+      status: 'active',
+      chargesEnabled: true,
+      payoutsEnabled: true,
+    });
+
+    render(<BusinessSettings />);
+
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
     expect(screen.getAllByText('Ready')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Connect Stripe' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resume Stripe setup' })).not.toBeInTheDocument();
+  });
+
+  it('shows an unknown status without offering onboarding when status cannot be checked', async () => {
+    mocks.getConnectedAccountStatus.mockRejectedValue(new Error('unavailable'));
+
+    render(<BusinessSettings />);
+
+    expect(await screen.findByText('Stripe status unknown')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Stripe Connect status could not be refreshed.');
+    expect(screen.queryByRole('button', { name: 'Connect Stripe' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resume Stripe setup' })).not.toBeInTheDocument();
   });
 
   it('edits basic business details and saves only through the tenant service', async () => {
@@ -143,9 +189,13 @@ describe('BusinessSettings', () => {
       { updatedByUid: 'admin-test' },
     ));
     expect(await screen.findByText('Business settings saved.')).toBeInTheDocument();
-    expect(mocks.getConnectedAccountStatus).not.toHaveBeenCalled();
+    expect(mocks.getConnectedAccountStatus).toHaveBeenCalledWith('tenant-a');
     expect(mocks.createConnectedAccount).not.toHaveBeenCalled();
     expect(mocks.generateOnboardingLink).not.toHaveBeenCalled();
+    const savedSettings = mocks.saveBusinessSettings.mock.calls[0][1];
+    for (const field of ['stripeConnection', 'stripeAccountId', 'chargesEnabled', 'payoutsEnabled', 'stripeStatus', 'stripeConnectStatus', 'stripeAccountStatus', 'stripeAccountMode']) {
+      expect(savedSettings).not.toHaveProperty(field);
+    }
   });
 
   it('validates required business name and basic email format before saving', async () => {

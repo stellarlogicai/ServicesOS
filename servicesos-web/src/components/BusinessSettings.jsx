@@ -5,6 +5,7 @@ import {
   getBusinessSettings,
   saveBusinessSettings,
 } from '../services/businessSettingsService';
+import StripeConnectOnboarding from './StripeConnectOnboarding';
 
 const emptyForm = {
   businessName: '',
@@ -102,7 +103,18 @@ export default function BusinessSettings() {
     }
     setSaving(true);
     try {
-      const saved = await saveBusinessSettings(tenantId, form, { updatedByUid: user?.uid });
+      const editableSettings = {
+        businessName: form.businessName,
+        businessPhone: form.businessPhone,
+        businessEmail: form.businessEmail,
+        serviceArea: form.serviceArea,
+        businessAddress: form.businessAddress,
+        websiteUrl: form.websiteUrl,
+        facebookUrl: form.facebookUrl,
+        defaultServiceNotes: form.defaultServiceNotes,
+        availability: form.availability,
+      };
+      const saved = await saveBusinessSettings(tenantId, editableSettings, { updatedByUid: user?.uid });
       setForm(current => ({ ...current, ...saved }));
       setSuccess('Business settings saved.');
     } catch {
@@ -193,31 +205,13 @@ export default function BusinessSettings() {
             </button>
           </form>
 
-          <section className="v1-card" aria-labelledby="stripe-status-title" style={{ padding: 24 }}>
-            <h2 id="stripe-status-title" style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 18 }}>Stripe connection status</h2>
-            <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 14, lineHeight: 1.5 }}>
-              This is read-only payment connection visibility. Stripe setup and payment confirmation are handled separately.
-            </p>
-            <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, margin: 0 }}>
-              <ReadOnlyDetail label="Status" value={form.stripeConnection?.label || 'Unknown'} />
-              <ReadOnlyDetail label="Details" value={form.stripeConnection?.detail || 'Stripe status is unavailable.'} />
-              <ReadOnlyDetail label="Connected account" value={form.stripeConnection?.stripeAccountId || 'Not connected'} />
-              <ReadOnlyDetail label="Online payments active" value={form.stripeConnection?.chargesEnabled ? 'Ready' : 'Not ready'} />
-              <ReadOnlyDetail label="Payouts active" value={form.stripeConnection?.payoutsEnabled ? 'Ready' : 'Not ready'} />
-              <ReadOnlyDetail label="Backend status" value={form.stripeConnection?.status || 'Unknown'} />
-            </dl>
-          </section>
+          <StripeConnectOnboarding
+            tenantId={tenantId}
+            initialBusinessEmail={form.businessEmail}
+            initialBusinessName={form.businessName}
+          />
         </div>
       )}
     </section>
-  );
-}
-
-function ReadOnlyDetail({ label, value }) {
-  return (
-    <div>
-      <dt style={{ color: '#64748b', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</dt>
-      <dd style={{ margin: '6px 0 0', color: '#0f172a' }}>{value}</dd>
-    </div>
   );
 }
