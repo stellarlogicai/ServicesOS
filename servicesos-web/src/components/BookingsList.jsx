@@ -676,7 +676,7 @@ export default function BookingsList() {
                 >
                   Edit Payment Details
                 </button>
-                {selectedBooking?.status !== 'cancelled' && (
+                {isBookingCancellable(selectedBooking) && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1026,6 +1026,11 @@ function paymentDateInputValue(value) {
 function bookingFieldStatus(booking = {}) {
   const status = typeof booking.fieldStatus === 'string' ? booking.fieldStatus.trim() : '';
   return BOOKING_FIELD_STATUS_LABELS[status] || BOOKING_FIELD_STATUS_LABELS.not_started;
+}
+
+function isBookingCancellable(booking = {}) {
+  const status = typeof booking.status === 'string' ? booking.status.trim().toLowerCase() : '';
+  return status !== 'cancelled' && status !== 'completed';
 }
 
 function formatFieldTimestamp(value, fallback) {

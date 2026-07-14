@@ -6,6 +6,7 @@ const customerMocks = vi.hoisted(() => ({
   getCustomers: vi.fn(),
   createCustomer: vi.fn(),
   updateCustomer: vi.fn(),
+  archiveCustomer: vi.fn(),
   deleteCustomer: vi.fn()
 }));
 
@@ -15,7 +16,7 @@ const requestMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
-  useAuth: () => ({ currentTenant: { id: 'tenant-test' } })
+  useAuth: () => ({ currentTenant: { id: 'tenant-test' }, user: { uid: 'admin-test' } })
 }));
 
 vi.mock('../core/customers/customerService', () => customerMocks);
@@ -51,12 +52,33 @@ const secondCustomer = {
   notes: 'Second note'
 };
 
+const archivedCustomer = {
+  id: 'customer-archived',
+  name: 'Archived Customer',
+  email: 'archived@example.com',
+  phone: '4175550300',
+  isArchived: true,
+  archivedAt: '2026-07-20T12:00:00.000Z'
+};
+
 describe('CustomerManagement restoration safety gate', () => {
   beforeEach(() => {
     Object.values(customerMocks).forEach(mock => mock.mockReset());
-    customerMocks.getCustomers.mockResolvedValue({ success: true, data: [linkedCustomer, secondCustomer] });
+    customerMocks.getCustomers.mockResolvedValue({ success: true, data: [linkedCustomer, secondCustomer, archivedCustomer] });
     customerMocks.createCustomer.mockResolvedValue({ success: true });
     customerMocks.updateCustomer.mockResolvedValue({ success: true });
+    customerMocks.archiveCustomer.mockResolvedValue({
+      success: true,
+      message: 'Customer archived. Existing bookings, payments, and history were preserved.',
+      data: {
+        id: 'customer-linked',
+        isArchived: true,
+        archivedAt: '2026-07-20T12:00:00.000Z',
+        archivedByUid: 'admin-test',
+        archiveReason: 'Owner/admin archived customer from active list.',
+        archiveType: 'customer'
+      }
+    });
     customerMocks.deleteCustomer.mockResolvedValue({
       success: false,
       message: 'Customer deletion is disabled until linked records can be verified.'
@@ -66,6 +88,7 @@ describe('CustomerManagement restoration safety gate', () => {
     requestMocks.updateCustomerPortalQuoteRequestStatus.mockReset();
     requestMocks.updateCustomerPortalQuoteRequestStatus.mockResolvedValue({ success: true });
     vi.spyOn(window, 'alert').mockImplementation(() => {});
+    vi.spyOn(window, 'confirm').mockImplementation(() => true);
   });
 
   it('renders an explicit non-crashing state when customer loading is denied', async () => {
@@ -121,6 +144,14 @@ describe('CustomerManagement restoration safety gate', () => {
         expect.objectContaining({ name: 'Updated Customer' })
       );
     });
+  });
+
+  it('hides archived customers from the default active customer list', async () => {
+    render(<CustomerManagement />);
+
+    expect(await screen.findByText('Linked Customer')).toBeInTheDocument();
+    expect(screen.getByText('Second Customer')).toBeInTheDocument();
+    expect(screen.queryByText('Archived Customer')).not.toBeInTheDocument();
   });
 
   it('allows adding a unique customer through the active tenant service boundary', async () => {
@@ -249,20 +280,39 @@ describe('CustomerManagement restoration safety gate', () => {
     expect(customerMocks.updateCustomer).not.toHaveBeenCalled();
   });
 
-  it('shows the safe-delete message and does not refresh as if deletion succeeded', async () => {
+  it('archives a customer with confirmation and preserves related history', async () => {
     render(<CustomerManagement />);
 
     expect(await screen.findByText('Linked Customer')).toBeInTheDocument();
     await new Promise(resolve => setTimeout(resolve, 0));
     customerMocks.getCustomers.mockClear();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Archive customer' })[0]);
 
     await waitFor(() => {
-      expect(customerMocks.deleteCustomer).toHaveBeenCalledWith('tenant-test', 'customer-linked');
+      expect(customerMocks.archiveCustomer).toHaveBeenCalledWith('tenant-test', 'customer-linked', {
+        archivedByUid: 'admin-test',
+        archiveReason: 'Owner/admin archived customer from active list.'
+      });
     });
-    expect(window.alert).toHaveBeenCalledWith(
-      'Customer deletion is disabled until linked records can be verified.'
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Archive this customer?\n\nThis will hide the customer from the active customer list. Existing bookings, payments, and history will be preserved.\n\nThis cannot be undone here.'
     );
+    expect(window.alert).toHaveBeenCalledWith(
+      'Customer archived. Existing bookings, payments, and history were preserved.'
+    );
+    expect(customerMocks.deleteCustomer).not.toHaveBeenCalled();
     expect(customerMocks.getCustomers).not.toHaveBeenCalled();
+    expect(screen.queryByText('Linked Customer')).not.toBeInTheDocument();
+  });
+
+  it('does not archive a customer when confirmation is declined', async () => {
+    window.confirm.mockReturnValueOnce(false);
+    render(<CustomerManagement />);
+
+    expect(await screen.findByText('Linked Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Archive customer' })[0]);
+
+    expect(customerMocks.archiveCustomer).not.toHaveBeenCalled();
+    expect(customerMocks.deleteCustomer).not.toHaveBeenCalled();
   });
 });

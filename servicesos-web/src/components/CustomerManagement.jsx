@@ -1,6 +1,6 @@
 // src/components/CustomerManagement.jsx
 import { useState, useEffect, useCallback } from 'react';
-import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '../core/customers/customerService';
+import { getCustomers, createCustomer, updateCustomer, archiveCustomer } from '../core/customers/customerService';
 import { useAuth } from '../contexts/AuthContext';
 import {
   getCustomerPortalQuoteRequests,
@@ -11,7 +11,7 @@ import './CustomerManagement.css';
 const DUPLICATE_CUSTOMER_MESSAGE = 'Possible duplicate customer found. A customer with this email or phone already exists. Please review the existing customer before creating another record.';
 
 export default function CustomerManagement() {
-  const { currentTenant } = useAuth();
+  const { currentTenant, user } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [customerRequests, setCustomerRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +32,7 @@ export default function CustomerManagement() {
     zip: '',
     notes: ''
   });
+  const activeCustomers = customers.filter(customer => customer?.isArchived !== true);
 
   // Load customers
   const loadCustomers = useCallback(async () => {
@@ -92,7 +93,7 @@ export default function CustomerManagement() {
       return;
     }
 
-    const duplicate = findDuplicateCustomer(customers, formData, editingCustomer?.id);
+    const duplicate = findDuplicateCustomer(activeCustomers, formData, editingCustomer?.id);
     if (duplicate) {
       setFormError(DUPLICATE_CUSTOMER_MESSAGE);
       return;
@@ -146,19 +147,32 @@ export default function CustomerManagement() {
     setShowModal(true);
   };
 
-  const handleDelete = async (customerId) => {
+  const handleArchive = async (customerId) => {
     if (!currentTenant?.id) return;
 
+    const confirmed = window.confirm(
+      'Archive this customer?\n\nThis will hide the customer from the active customer list. Existing bookings, payments, and history will be preserved.\n\nThis cannot be undone here.'
+    );
+    if (!confirmed) return;
+
     try {
-      const result = await deleteCustomer(currentTenant.id, customerId);
+      const result = await archiveCustomer(currentTenant.id, customerId, {
+        archivedByUid: user?.uid || null,
+        archiveReason: 'Owner/admin archived customer from active list.'
+      });
       if (result.success) {
-        loadCustomers();
+        setCustomers(current => current.map(customer =>
+          customer.id === customerId
+            ? { ...customer, ...(result.data || {}), isArchived: true }
+            : customer
+        ));
+        alert(result.message || 'Customer archived. Existing bookings, payments, and history were preserved.');
       } else {
-        alert(result.message || 'Customer deletion is currently unavailable.');
+        alert(result.message || 'Customer could not be archived. Please try again.');
       }
     } catch (error) {
-      console.error('Error deleting customer:', error);
-      alert('Error deleting customer: ' + error.message);
+      console.error('Error archiving customer:', error);
+      alert('Error archiving customer: ' + error.message);
     }
   };
 
@@ -176,7 +190,7 @@ export default function CustomerManagement() {
     }
   };
 
-  const filteredCustomers = customers.filter(customer => {
+  const filteredCustomers = activeCustomers.filter(customer => {
     if (!searchTerm) return true;
     
     const searchLower = searchTerm.toLowerCase();
@@ -355,10 +369,10 @@ export default function CustomerManagement() {
                       Edit
                     </button>
                     <button
-                      className="v1-button customers-delete-button"
-                      onClick={() => handleDelete(customer.id)}
+                      className="v1-button customers-archive-button"
+                      onClick={() => handleArchive(customer.id)}
                     >
-                      Delete
+                      Archive customer
                     </button>
                     </div>
                   </td>
@@ -384,9 +398,9 @@ export default function CustomerManagement() {
               {formError && (
                 <div className="customers-form-alert" role="alert">
                   <div>{formError}</div>
-                  {findDuplicateCustomer(customers, formData, editingCustomer?.id) && (
+                  {findDuplicateCustomer(activeCustomers, formData, editingCustomer?.id) && (
                     <div className="customers-form-alert-detail">
-                      Existing customer: {findDuplicateCustomer(customers, formData, editingCustomer?.id).name || 'Unnamed customer'}
+                      Existing customer: {findDuplicateCustomer(activeCustomers, formData, editingCustomer?.id).name || 'Unnamed customer'}
                     </div>
                   )}
                 </div>

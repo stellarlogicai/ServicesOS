@@ -343,6 +343,79 @@ describe('read-only Bookings admin list', () => {
     expect(screen.queryByRole('button', { name: 'Mark Complete' })).not.toBeInTheDocument();
   });
 
+  it('cancels a scheduled booking without changing payment history', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-cancel-safe',
+        customerName: 'Cancel Safe Customer',
+        status: 'scheduled',
+        paymentStatus: 'deposit_paid',
+        paymentMethod: 'cash',
+        amountReceived: 50,
+        agreedPrice: 200,
+      }],
+    });
+    mocks.updateBookingAdminFields.mockResolvedValue({
+      success: true,
+      data: {
+        id: 'booking-cancel-safe',
+        status: 'cancelled',
+        updatedAt: '2026-07-20T12:00:00.000Z',
+      },
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Cancel Safe Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Cancel Safe Customer' });
+    expect(dialog).toHaveTextContent('Deposit paid');
+    expect(dialog).toHaveTextContent('$50.00');
+
+    await user.click(screen.getByRole('button', { name: 'Cancel Booking' }));
+    expect(await screen.findByText('Cancel this booking?')).toBeInTheDocument();
+    expect(screen.getByText(/Payment history and notes will be preserved./)).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: 'Cancel Booking' })[1]);
+
+    await waitFor(() => {
+      expect(mocks.updateBookingAdminFields).toHaveBeenCalledWith(
+        'tenant-a',
+        'booking-cancel-safe',
+        { status: 'cancelled' }
+      );
+    });
+    expect(mocks.updateBookingAdminFields.mock.calls[0][2]).not.toMatchObject({
+      paymentStatus: expect.anything(),
+      paymentMethod: expect.anything(),
+      amountReceived: expect.anything(),
+      stripePaymentIntentId: expect.anything(),
+    });
+    expect(await screen.findByText('Booking cancelled. Payment history was preserved.')).toBeInTheDocument();
+  });
+
+  it('does not show cancel controls for completed bookings', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-completed-no-cancel',
+        customerName: 'Completed No Cancel Customer',
+        status: 'completed',
+        paymentStatus: 'not_paid',
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Completed No Cancel Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Completed No Cancel Customer' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel Booking' })).not.toBeInTheDocument();
+  });
+
   it('creates a booking-scoped Stripe payment link and does not mark the booking paid in frontend', async () => {
     const user = userEvent.setup();
     mocks.getJobs.mockResolvedValue({

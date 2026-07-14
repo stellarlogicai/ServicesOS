@@ -16,6 +16,7 @@ vi.mock('../firebase', () => ({ db: { id: 'db-test' } }));
 vi.mock('firebase/firestore', () => firestoreMocks);
 
 import {
+  archiveCustomer,
   createCustomer,
   deleteCustomer,
   getCustomers,
@@ -115,5 +116,44 @@ describe('customer service restoration safety gate', () => {
     expect(result.message).toContain('Customer deletion is disabled');
     expect(firestoreMocks.doc).not.toHaveBeenCalled();
     expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('archives customers with tenant-scoped metadata and preserves linked history', async () => {
+    const result = await archiveCustomer('tenant-test', 'customer-linked', {
+      archivedAt: '2026-07-20T12:00:00.000Z',
+      archivedByUid: 'admin-test',
+      archiveReason: 'Owner/admin archived customer from active list.'
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        id: 'customer-linked',
+        isArchived: true,
+        archivedAt: '2026-07-20T12:00:00.000Z',
+        archivedByUid: 'admin-test',
+        archiveReason: 'Owner/admin archived customer from active list.',
+        archiveType: 'customer',
+        updatedAt: '2026-07-20T12:00:00.000Z'
+      }
+    });
+    expect(firestoreMocks.doc).toHaveBeenCalledWith(
+      { id: 'db-test' },
+      'tenants',
+      'tenant-test',
+      'customers',
+      'customer-linked'
+    );
+    expect(firestoreMocks.updateDoc).toHaveBeenCalledWith(
+      expect.objectContaining({ path: ['tenants', 'tenant-test', 'customers', 'customer-linked'] }),
+      expect.objectContaining({
+        isArchived: true,
+        archivedByUid: 'admin-test',
+        archiveType: 'customer'
+      })
+    );
+    expect(firestoreMocks.updateDoc.mock.calls[0][1]).not.toHaveProperty('bookingIds');
+    expect(firestoreMocks.updateDoc.mock.calls[0][1]).not.toHaveProperty('paymentStatus');
+    expect(firestoreMocks.updateDoc.mock.calls[0][1]).not.toHaveProperty('stripePaymentIntentId');
   });
 });

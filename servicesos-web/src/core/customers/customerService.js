@@ -169,6 +169,49 @@ export async function updateCustomer(tenantId, customerId, customerData) {
 }
 
 /**
+ * Archive a customer without deleting linked business history
+ * @param {string} tenantId - The tenant ID
+ * @param {string} customerId - The customer ID
+ * @param {object} archiveData - Archive metadata
+ * @returns {Promise<object>} - Standardized API response
+ */
+export async function archiveCustomer(tenantId, customerId, archiveData = {}) {
+  try {
+    if (!tenantId || !customerId) {
+      return errorResponse('Tenant ID and Customer ID are required', 'VALIDATION_ERROR');
+    }
+
+    const archivedAt = archiveData.archivedAt || new Date().toISOString();
+    const archivePayload = {
+      isArchived: true,
+      archivedAt,
+      archivedByUid: archiveData.archivedByUid || null,
+      archiveReason: archiveData.archiveReason || 'Owner/admin archived customer from active list.',
+      archiveType: 'customer',
+      updatedAt: archivedAt,
+    };
+
+    const customerRef = doc(db, 'tenants', tenantId, COLLECTION_NAME, customerId);
+    await updateDoc(customerRef, archivePayload);
+
+    return successResponse(
+      { id: customerId, ...archivePayload },
+      'Customer archived. Existing bookings, payments, and history were preserved.'
+    );
+  } catch (error) {
+    logError({
+      message: 'Failed to archive customer',
+      module: 'core',
+      feature: 'customers',
+      severity: SEVERITY.HIGH,
+      tenantId,
+      error
+    });
+    return errorResponse('Failed to archive customer', ERROR_CODES.FIRESTORE_ERROR, error);
+  }
+}
+
+/**
  * Delete a customer
  * @param {string} tenantId - The tenant ID
  * @param {string} customerId - The customer ID

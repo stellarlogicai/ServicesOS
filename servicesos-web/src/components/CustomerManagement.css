@@ -160,13 +160,13 @@
 .customers-name-cell { color: var(--v1-text) !important; font-weight: 750; }
 .customers-row-actions { justify-content: flex-end; }
 
-.customers-delete-button {
+.customers-archive-button {
   border: 1px solid #fecaca;
   background: #fff;
   color: #b91c1c;
 }
 
-.customers-delete-button:hover { background: #fef2f2; }
+.customers-archive-button:hover { background: #fef2f2; }
 
 .customers-card-actions .v1-button:disabled {
   cursor: not-allowed;

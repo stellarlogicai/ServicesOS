@@ -85,6 +85,7 @@ describe('Smoke Tests', () => {
     expect(typeof customerService.getCustomers).toBe('function');
     expect(typeof customerService.createCustomer).toBe('function');
     expect(typeof customerService.updateCustomer).toBe('function');
+    expect(typeof customerService.archiveCustomer).toBe('function');
     expect(typeof customerService.deleteCustomer).toBe('function');
 
     // Employee service functions
