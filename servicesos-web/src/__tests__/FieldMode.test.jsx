@@ -22,12 +22,20 @@ vi.mock('../core/scheduling/schedulingService', () => ({
   },
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS: { not_paid: 'Not paid', paid_cash: 'Paid cash' },
   getJobs: mocks.getJobs,
+  getAssignedFieldJobs: (...args) => mocks.getJobs(...args),
+  bookingMatchesEmployeeFieldVisibility: (booking, employeeAuthUid) => (
+    booking?.assignedEmployeeAuthUid === employeeAuthUid &&
+    ['scheduled', 'completed'].includes(booking?.status) &&
+    booking?.isDeleted !== true &&
+    booking?.isArchived !== true
+  ),
   updateBookingFieldExecution: mocks.updateBookingFieldExecution,
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({
     isEmployee: () => mocks.role === 'employee',
+    isSuperAdmin: () => mocks.role === 'super-admin',
     tenantId: mocks.tenantId,
     user: mocks.user,
     userProfile: {
@@ -117,6 +125,8 @@ describe('FieldMode read-only field surface', () => {
     mocks.role = 'employee';
     mocks.getJobs.mockResolvedValue({ success: true, data: [{
       id: 'employee-job',
+      assignedEmployeeAuthUid: 'field-user-1',
+      status: 'scheduled',
       customerName: 'Employee Field Customer',
       address: '100 Field Lane',
       date: dateKey(today),
@@ -147,6 +157,75 @@ describe('FieldMode read-only field surface', () => {
     }
   });
 
+  it('shows employees only active jobs assigned by canonical Auth UID', async () => {
+    mocks.role = 'employee';
+    mocks.getJobs.mockResolvedValue({ success: true, data: [
+      { id: 'assigned', customerName: 'Assigned Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1' },
+      { id: 'unassigned', customerName: 'Unassigned Customer', date: dateKey(today), status: 'scheduled' },
+      { id: 'cancelled', customerName: 'Cancelled Customer', date: dateKey(tomorrow), status: 'cancelled', assignedEmployeeAuthUid: 'field-user-1' },
+      { id: 'other', customerName: 'Other Employee Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeAuthUid: 'field-user-2' },
+      { id: 'legacy', customerName: 'Legacy Assignment Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeId: 'field-user-1' },
+    ] });
+
+    render(<FieldMode />);
+
+    expect(await screen.findByText('Assigned Customer')).toBeInTheDocument();
+    expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a', 'field-user-1');
+    expect(screen.queryByText('Unassigned Customer')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cancelled Customer')).not.toBeInTheDocument();
+    expect(screen.queryByText('Other Employee Customer')).not.toBeInTheDocument();
+    expect(screen.queryByText('Legacy Assignment Customer')).not.toBeInTheDocument();
+  });
+
+  it('shows the shared photo upload controls to a tenant admin without assigning the booking', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'owner-job', customerName: 'Owner Operator Customer', date: dateKey(today), status: 'scheduled',
+    }] });
+
+    render(<FieldMode />);
+    await screen.findByText('Owner Operator Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    expect(await screen.findByLabelText('Add before photo')).toBeInTheDocument();
+    expect(screen.getByLabelText('Add after photo')).toBeInTheDocument();
+    expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a');
+    expect(mocks.getJobs.mock.calls[0]).not.toContain('field-user-1');
+  });
+
+  it('keeps assigned employee photo controls and hides them from a direct customer render', async () => {
+    mocks.role = 'employee';
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'employee-photo-job', customerName: 'Assigned Photo Customer', date: dateKey(today),
+      status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1',
+    }] });
+    const { unmount } = render(<FieldMode />);
+    await screen.findByText('Assigned Photo Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    expect(await screen.findByLabelText('Add before photo')).toBeInTheDocument();
+    unmount();
+
+    mocks.role = 'customer';
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'customer-direct-job', customerName: 'Denied Customer', date: dateKey(today), status: 'scheduled',
+    }] });
+    render(<FieldMode />);
+    await screen.findByText('Denied Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    expect(screen.queryByLabelText('Add before photo')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Add after photo')).not.toBeInTheDocument();
+  });
+
+  it('shows photo controls to a super-admin only with an explicit selected tenant', async () => {
+    mocks.role = 'super-admin';
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'super-job', customerName: 'Selected Tenant Job', date: dateKey(today), status: 'scheduled',
+    }] });
+    render(<FieldMode />);
+    await screen.findByText('Selected Tenant Job');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    expect(await screen.findByLabelText('Add before photo')).toBeInTheDocument();
+  });
+
   it('shows an honest call-device message without claiming call success', async () => {
     mocks.getJobs.mockResolvedValue({ success: true, data: [{
       id: 'today', customerName: 'Field Customer', customerPhone: '555-0100',
@@ -155,6 +234,7 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Field Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    await screen.findByText('No before photos added yet.');
 
     fireEvent.click(screen.getByRole('link', { name: 'Call customer' }));
 
@@ -201,6 +281,7 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Field Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    await screen.findByText('No before photos added yet.');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open in maps' }));
     expect(screen.getByRole('status')).toHaveTextContent('Maps could not open automatically. Copy the address and open it in your maps app.');
@@ -300,6 +381,7 @@ describe('FieldMode read-only field surface', () => {
     fireEvent.click(screen.getByLabelText('Complete the requested cleaning areas'));
     fireEvent.change(screen.getByLabelText('Employee notes'), { target: { value: 'Ready for owner review.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete anyway' }));
 
     await waitFor(() => expect(mocks.updateBookingFieldExecution).toHaveBeenCalled());
     const patch = mocks.updateBookingFieldExecution.mock.calls[0][2];
@@ -317,7 +399,7 @@ describe('FieldMode read-only field surface', () => {
   it('warns an employee before completion when no uploaded after evidence exists', async () => {
     mocks.role = 'employee';
     mocks.getJobs.mockResolvedValue({ success: true, data: [{
-      id: 'complete-without-photo', customerName: 'Warning Customer', date: dateKey(today), paymentStatus: 'not_paid',
+      id: 'complete-without-photo', customerName: 'Warning Customer', date: dateKey(today), paymentStatus: 'not_paid', status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1',
     }] });
     render(<FieldMode />);
     await screen.findByText('Warning Customer');
@@ -342,7 +424,7 @@ describe('FieldMode read-only field surface', () => {
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:after-photo') });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
     mocks.getJobs.mockResolvedValue({ success: true, data: [{
-      id: 'complete-with-photo', customerName: 'Evidence Customer', date: dateKey(today), paymentStatus: 'not_paid',
+      id: 'complete-with-photo', customerName: 'Evidence Customer', date: dateKey(today), paymentStatus: 'not_paid', status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1',
     }] });
     render(<FieldMode />);
     await screen.findByText('Evidence Customer');
@@ -378,6 +460,7 @@ describe('FieldMode read-only field surface', () => {
   });
 
   it('clears Tenant A field records and ignores its late response after switching to Tenant B', async () => {
+    mocks.role = 'employee';
     let resolveTenantA;
     mocks.getJobs.mockImplementation(tenantId => {
       if (tenantId === 'tenant-a') {
@@ -385,12 +468,12 @@ describe('FieldMode read-only field surface', () => {
       }
       return Promise.resolve({
         success: true,
-        data: [{ id: 'job-b', customerName: 'Tenant B Field Customer', date: dateKey(today) }],
+        data: [{ id: 'job-b', customerName: 'Tenant B Field Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1' }],
       });
     });
 
     const { rerender } = render(<FieldMode />);
-    await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a'));
+    await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a', 'field-user-1'));
 
     mocks.tenantId = 'tenant-b';
     rerender(<FieldMode />);
@@ -399,12 +482,31 @@ describe('FieldMode read-only field surface', () => {
     await act(async () => {
       resolveTenantA({
         success: true,
-        data: [{ id: 'job-a', customerName: 'Tenant A Field Customer', date: dateKey(today) }],
+        data: [{ id: 'job-a', customerName: 'Tenant A Field Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1' }],
       });
     });
 
     expect(screen.queryByText('Tenant A Field Customer')).not.toBeInTheDocument();
     expect(screen.getByText('Tenant B Field Customer')).toBeInTheDocument();
+  });
+
+  it('closes the selected employee job and reloads after assignment access is lost', async () => {
+    mocks.role = 'employee';
+    mocks.getJobs
+      .mockResolvedValueOnce({ success: true, data: [{
+        id: 'reassigned-job', customerName: 'Reassigned Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1',
+      }] })
+      .mockResolvedValue({ success: true, data: [] });
+    mocks.updateBookingFieldExecution.mockResolvedValue({ success: false, message: 'permission-denied' });
+
+    render(<FieldMode />);
+    await screen.findByText('Reassigned Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start Job' }));
+
+    await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reassigned Customer')).not.toBeInTheDocument();
   });
 
   it('closes the Tenant A job packet and photo surface when the tenant changes', async () => {

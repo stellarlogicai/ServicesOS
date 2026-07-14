@@ -85,10 +85,13 @@ That file is ignored by Git. These accounts exist only in the local Auth emulato
 
 ## Seeded Data
 
-- Tenant A: two customers, one linked customer quote request, scheduled/field-ready, payment-pending, completed/manual-paid, and cancelled bookings.
+- Tenant A: two customers, one linked customer quote request, and five bookings covering assigned field-ready, unassigned payment-pending, another employee's assigned job, completed/manual-paid, and future cancelled states.
 - Tenant B: visibly distinct customer, lead, and scheduled booking.
 - Payment states are fake Firestore fixtures only. No Stripe IDs, secrets, API calls, or fake webhook confirmation are created.
+- Tenant A includes one login employee and one additional non-login employee profile so assignment and reassignment can be tested without adding a sixth Auth persona.
+- Employee assignment uses `assignedEmployeeAuthUid`, which is the assigned employee's Firebase Auth UID and `users/{uid}` document ID. Legacy employee-record identifiers do not grant Field Mode access.
 - Tenant A includes employee-visible access instructions and separate owner-only notes.
+- A successful reset creates five fake Auth personas and 19 Firestore documents.
 - Generated upload fixtures are placed in the ignored `.servicesos-smoke-fixtures.local` directory: valid JPEG/PNG/WebP, invalid text, and an oversized binary over 10 MB.
 
 ## Run The Smoke

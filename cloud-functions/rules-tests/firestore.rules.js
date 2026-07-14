@@ -67,6 +67,7 @@ async function seedFirestore() {
       users: [
         'admin-a',
         'employee-a',
+        'employee-a-2',
         'employee-no-status',
         'employee-tenantless',
         'employee-inactive',
@@ -92,6 +93,7 @@ async function seedFirestore() {
       'customer-b-auth': { role: 'customer', status: 'active', tenantId: TENANT_A },
       'customer-other-auth': { role: 'customer', status: 'active', tenantId: TENANT_B },
       'employee-a': { role: 'employee', status: 'active', tenantId: TENANT_A },
+      'employee-a-2': { role: 'employee', status: 'active', tenantId: TENANT_A },
       'employee-b': { role: 'employee', status: 'active', tenantId: TENANT_B },
       'employee-no-status': { role: 'employee', tenantId: TENANT_A },
       'employee-tenantless': { role: 'employee', status: 'active', tenantId: '' },
@@ -137,10 +139,21 @@ async function seedFirestore() {
     await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking'), {
       status: 'scheduled',
       paymentStatus: 'unpaid',
+      assignedEmployeeAuthUid: 'employee-a',
+      updatedAt: '2026-07-13T12:00:00.000Z'
+    });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'unassigned-booking'), {
+      status: 'scheduled',
+      updatedAt: '2026-07-13T12:00:00.000Z'
+    });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'other-assigned-booking'), {
+      status: 'scheduled',
+      assignedEmployeeAuthUid: 'employee-a-2',
       updatedAt: '2026-07-13T12:00:00.000Z'
     });
     await setDoc(doc(database, 'tenants', TENANT_B, 'bookings', 'other-booking'), {
       status: 'scheduled',
+      assignedEmployeeAuthUid: 'employee-b',
       updatedAt: '2026-07-13T12:00:00.000Z'
     });
     await setDoc(doc(database, 'tenants', TENANT_A, 'quotes', 'quote-a'), { status: 'draft' });
@@ -329,7 +342,7 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     }));
   });
 
-  test('active employee can read tenant Field Mode bookings and use every approved execution field', async () => {
+  test('assigned active employee can read booking and use every approved execution field', async () => {
     const database = authenticatedDatabase('employee-a');
     const booking = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking');
 
@@ -345,6 +358,21 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       fieldIssue: 'Back door lock sticks.',
       updatedAt: '2026-07-13T13:00:00.000Z'
     }));
+  });
+
+  test('employee cannot read unassigned or another employee booking', async () => {
+    const database = authenticatedDatabase('employee-a');
+    await assertFails(getDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'unassigned-booking')));
+    await assertFails(getDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'other-assigned-booking')));
+  });
+
+  test('reassignment revokes the former employee and grants the new employee', async () => {
+    const admin = authenticatedDatabase('admin-a');
+    const booking = doc(admin, 'tenants', TENANT_A, 'bookings', 'field-booking');
+    await assertSucceeds(updateDoc(booking, { assignedEmployeeAuthUid: 'employee-a-2' }));
+
+    await assertFails(getDoc(doc(authenticatedDatabase('employee-a'), 'tenants', TENANT_A, 'bookings', 'field-booking')));
+    await assertSucceeds(getDoc(doc(authenticatedDatabase('employee-a-2'), 'tenants', TENANT_A, 'bookings', 'field-booking')));
   });
 
   test('invalid, tenantless, cross-tenant, unknown-role, and missing employee profiles cannot read Field Mode bookings', async () => {
@@ -382,6 +410,7 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       { stripeCheckoutSessionId: 'cs_test_employee' },
       { stripePaymentIntentId: 'pi_test_employee' },
       { assignedEmployeeId: 'employee-b' },
+      { assignedEmployeeAuthUid: 'employee-a-2' },
       { assignedEmployees: ['employee-b'] },
       { isDeleted: true },
       { unexpectedField: true }
@@ -435,6 +464,90 @@ describe('tenant-scoped customer intake Firestore rules', () => {
 
     await assertSucceeds(setDoc(photo, fieldPhotoMetadata()));
     await assertSucceeds(getDoc(photo));
+  });
+
+  test('tenant admin can create valid photo metadata without assignment and parent booking stays unchanged', async () => {
+    const database = authenticatedDatabase('admin-a');
+    const booking = doc(database, 'tenants', TENANT_A, 'bookings', 'unassigned-booking');
+    const before = (await getDoc(booking)).data();
+    const photo = doc(database, 'tenants', TENANT_A, 'bookings', 'unassigned-booking', 'fieldPhotos', 'admin-photo');
+
+    await assertSucceeds(setDoc(photo, fieldPhotoMetadata({
+      bookingId: 'unassigned-booking',
+      photoId: 'admin-photo',
+      uploadedByUid: 'admin-a',
+    })));
+    await assertSucceeds(getDoc(photo));
+
+    const after = (await getDoc(booking)).data();
+    assert.deepEqual(after, before);
+    assert.equal(after.assignedEmployeeAuthUid, undefined);
+    await assertFails(getDoc(doc(
+      authenticatedDatabase('employee-a-2'),
+      'tenants', TENANT_A, 'bookings', 'unassigned-booking'
+    )));
+  });
+
+  test('tenant admin photo creation remains tenant, identity, path, and metadata scoped', async () => {
+    const adminA = authenticatedDatabase('admin-a');
+    const adminB = authenticatedDatabase('admin-b');
+    const validPath = ['tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos'];
+
+    await assertFails(setDoc(
+      doc(adminB, ...validPath, 'cross-tenant-admin'),
+      fieldPhotoMetadata({ photoId: 'cross-tenant-admin', uploadedByUid: 'admin-b' })
+    ));
+
+    const invalidAdminMetadata = [
+      fieldPhotoMetadata({ photoId: 'admin-spoof-user', uploadedByUid: 'employee-a' }),
+      fieldPhotoMetadata({ photoId: 'admin-spoof-tenant', uploadedByUid: 'admin-a', extra: {
+        storagePath: 'tenants/tenant-b/bookings/field-booking/field-photos/before/admin-spoof-tenant.jpg',
+      } }),
+      fieldPhotoMetadata({ photoId: 'admin-spoof-booking', uploadedByUid: 'admin-a', extra: {
+        storagePath: 'tenants/tenant-a/bookings/other-booking/field-photos/before/admin-spoof-booking.jpg',
+      } }),
+      fieldPhotoMetadata({ photoId: 'admin-spoof-phase', phase: 'during', uploadedByUid: 'admin-a' }),
+      fieldPhotoMetadata({ photoId: 'admin-extra-field', uploadedByUid: 'admin-a', extra: { paymentStatus: 'paid' } }),
+    ];
+
+    for (const metadata of invalidAdminMetadata) {
+      await assertFails(setDoc(doc(adminA, ...validPath, metadata.id), metadata));
+    }
+  });
+
+  test('active super-admin can create valid photo metadata within an explicit tenant path', async () => {
+    const database = authenticatedDatabase('super-admin');
+    const photo = doc(database, 'tenants', TENANT_A, 'bookings', 'unassigned-booking', 'fieldPhotos', 'super-photo');
+    await assertSucceeds(setDoc(photo, fieldPhotoMetadata({
+      bookingId: 'unassigned-booking',
+      photoId: 'super-photo',
+      uploadedByUid: 'super-admin',
+    })));
+  });
+
+  test('field photo metadata access follows booking reassignment', async () => {
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      const database = context.firestore();
+      await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'reassigned-photo'), {
+        ...fieldPhotoMetadata({ photoId: 'reassigned-photo' }),
+        uploadedAt: new Date('2026-07-13T12:00:00.000Z'),
+      });
+      await updateDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking'), {
+        assignedEmployeeAuthUid: 'employee-a-2',
+      });
+    });
+
+    const photoPath = ['tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'reassigned-photo'];
+    await assertFails(getDoc(doc(authenticatedDatabase('employee-a'), ...photoPath)));
+    await assertSucceeds(getDoc(doc(authenticatedDatabase('employee-a-2'), ...photoPath)));
+    await assertFails(setDoc(
+      doc(authenticatedDatabase('employee-a'), 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'former-photo'),
+      fieldPhotoMetadata({ photoId: 'former-photo' })
+    ));
+    await assertSucceeds(setDoc(
+      doc(authenticatedDatabase('employee-a-2'), 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'new-photo'),
+      fieldPhotoMetadata({ photoId: 'new-photo', uploadedByUid: 'employee-a-2' })
+    ));
   });
 
   test('employee cannot spoof field photo identity, path, phase, uploader, size, or arbitrary metadata', async () => {
@@ -531,6 +644,34 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     await assertSucceeds(updateDoc(adminBooking, { agreedPrice: 225 }));
     await assertSucceeds(getDoc(superBooking));
     await assertSucceeds(updateDoc(superBooking, { status: 'completed' }));
+  });
+
+  test('tenant admin can set, change, and clear only valid tenant employee assignments', async () => {
+    const adminDatabase = authenticatedDatabase('admin-a');
+    const booking = doc(adminDatabase, 'tenants', TENANT_A, 'bookings', 'field-booking');
+
+    await assertSucceeds(updateDoc(booking, { assignedEmployeeAuthUid: 'employee-a-2' }));
+    await assertSucceeds(updateDoc(booking, { assignedEmployeeAuthUid: null }));
+    await assertFails(updateDoc(booking, { assignedEmployeeAuthUid: 'employee-b' }));
+    await assertFails(updateDoc(booking, { assignedEmployeeAuthUid: 'admin-a' }));
+    await assertFails(updateDoc(booking, { assignedEmployeeAuthUid: 'customer-a-auth' }));
+
+    const otherAdminBooking = doc(authenticatedDatabase('admin-b'), 'tenants', TENANT_A, 'bookings', 'field-booking');
+    await assertFails(updateDoc(otherAdminBooking, { assignedEmployeeAuthUid: 'employee-b' }));
+  });
+
+  test('tenant admin can query only active employee profiles for assignment', async () => {
+    const adminDatabase = authenticatedDatabase('admin-a');
+    const employeeQuery = query(
+      collection(adminDatabase, 'users'),
+      where('tenantId', '==', TENANT_A),
+      where('role', '==', 'employee'),
+      where('status', '==', 'active')
+    );
+    const snapshot = await assertSucceeds(getDocs(employeeQuery));
+    assert.deepEqual(snapshot.docs.map(profile => profile.id).sort(), ['employee-a', 'employee-a-2']);
+    await assertFails(getDoc(doc(adminDatabase, 'users', 'admin-b')));
+    await assertFails(getDoc(doc(adminDatabase, 'users', 'employee-b')));
   });
 
   test('tenant admin can read and update only approved Business Settings fields', async () => {

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BOOKING_FIELD_STATUS_LABELS,
+  bookingMatchesEmployeeFieldVisibility,
+  getAssignedFieldJobs,
   getJobs,
   updateBookingFieldExecution,
 } from '../core/scheduling/schedulingService';
@@ -111,7 +113,7 @@ function JobCard({ booking, employeeView, onOpen }) {
   );
 }
 
-function JobPacket({ booking, employeeView, employeePhotoAccess, tenantId, userId, onClose, onBookingPatch }) {
+function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, onClose, onBookingPatch, onAccessLost }) {
   const [actionMessage, setActionMessage] = useState('');
   const [executionMessage, setExecutionMessage] = useState('');
   const [executionError, setExecutionError] = useState('');
@@ -184,6 +186,7 @@ function JobPacket({ booking, employeeView, employeePhotoAccess, tenantId, userI
       setExecutionMessage(successMessage);
     } catch {
       setExecutionError('Job update could not be saved. Please try again.');
+      if (employeeView) onAccessLost?.();
     } finally {
       setSavingAction('');
     }
@@ -200,7 +203,7 @@ function JobPacket({ booking, employeeView, employeePhotoAccess, tenantId, userI
   }, 'Job marked complete.', 'complete');
   const markComplete = () => {
     const hasUploadedAfterPhoto = photoEvidence.photos.some(photo => photo.phase === 'after');
-    if (employeePhotoAccess && !hasUploadedAfterPhoto) {
+    if (fieldPhotoAccess && !hasUploadedAfterPhoto) {
       setShowCompletionWarning(true);
       return;
     }
@@ -345,11 +348,10 @@ function JobPacket({ booking, employeeView, employeePhotoAccess, tenantId, userI
               {savingAction === 'notes' ? 'Saving...' : 'Save notes'}
             </button>
           </div>
-          {employeePhotoAccess && (
+          {fieldPhotoAccess && (
             <FieldPhotoUploadPanel
               tenantId={tenantId}
               bookingId={booking.id}
-              uploadedByUid={userId}
               onEvidenceChange={updatePhotoEvidence}
             />
           )}
@@ -362,14 +364,25 @@ function JobPacket({ booking, employeeView, employeePhotoAccess, tenantId, userI
 }
 
 export default function FieldMode() {
-  const { isEmployee, tenantId, user, userProfile } = useAuth();
+  const { isEmployee, isSuperAdmin, tenantId, user, userProfile } = useAuth();
   const loadRequestRef = useRef(0);
   const employeeView = isEmployee?.() === true;
+  const authenticatedUserId = user?.uid || '';
   const employeePhotoAccess = employeeView &&
     userProfile?.role === 'employee' &&
     userProfile?.status === 'active' &&
     userProfile?.tenantId === tenantId &&
-    user?.uid === userProfile?.uid;
+    authenticatedUserId === userProfile?.uid;
+  const tenantAdminPhotoAccess = userProfile?.role === 'admin' &&
+    userProfile?.status === 'active' &&
+    userProfile?.tenantId === tenantId &&
+    authenticatedUserId === userProfile?.uid;
+  const superAdminPhotoAccess = isSuperAdmin?.() === true &&
+    userProfile?.status === 'active' &&
+    Boolean(tenantId) &&
+    tenantId !== 'DEFAULT' &&
+    authenticatedUserId === userProfile?.uid;
+  const fieldPhotoAccess = employeePhotoAccess || tenantAdminPhotoAccess || superAdminPhotoAccess;
   const [bookings, setBookings] = useState([]);
   const [bookingsTenantId, setBookingsTenantId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -396,11 +409,19 @@ export default function FieldMode() {
       return;
     }
     try {
-      const result = await getJobs(requestedTenantId);
+      const result = employeeView
+        ? await getAssignedFieldJobs(requestedTenantId, authenticatedUserId)
+        : await getJobs(requestedTenantId);
       if (!isCurrentRequest()) return;
       if (!result.success) throw new Error('load-failed');
-      setBookings(Array.isArray(result.data) ? result.data : []);
+      const nextBookings = Array.isArray(result.data) ? result.data : [];
+      setBookings(nextBookings);
       setBookingsTenantId(requestedTenantId);
+      if (employeeView) {
+        setSelectedBooking(current => current && nextBookings.some(booking => booking.id === current.id)
+          ? current
+          : null);
+      }
     } catch {
       if (!isCurrentRequest()) return;
       setBookings([]);
@@ -408,7 +429,7 @@ export default function FieldMode() {
     } finally {
       if (isCurrentRequest()) setLoading(false);
     }
-  }, [tenantId]);
+  }, [authenticatedUserId, employeeView, tenantId]);
 
   useEffect(() => {
     let active = true;
@@ -430,13 +451,16 @@ export default function FieldMode() {
 
   const grouped = useMemo(() => {
     const today = localDateKey(new Date());
-    const activeBookings = bookingsTenantId === tenantId ? bookings : [];
+    const tenantBookings = bookingsTenantId === tenantId ? bookings : [];
+    const activeBookings = employeeView
+      ? tenantBookings.filter(booking => bookingMatchesEmployeeFieldVisibility(booking, authenticatedUserId))
+      : tenantBookings;
     const ordered = [...activeBookings].filter(booking => bookingDateKey(booking) >= today).sort((a, b) => sortValue(a).localeCompare(sortValue(b)));
     return {
       today: ordered.filter(booking => bookingDateKey(booking) === today),
       upcoming: ordered.filter(booking => bookingDateKey(booking) > today),
     };
-  }, [bookings, bookingsTenantId, tenantId]);
+  }, [authenticatedUserId, bookings, bookingsTenantId, employeeView, tenantId]);
 
   return (
     <section className="v1-page field-mode-page" aria-labelledby="field-mode-title">
@@ -463,10 +487,14 @@ export default function FieldMode() {
           key={selectedBooking.id || 'selected-job'}
           booking={selectedBooking}
           employeeView={employeeView}
-          employeePhotoAccess={employeePhotoAccess}
+          fieldPhotoAccess={fieldPhotoAccess}
           tenantId={tenantId}
-          userId={user?.uid}
+          userId={authenticatedUserId}
           onBookingPatch={patchSelectedBooking}
+          onAccessLost={() => {
+            setSelectedBooking(null);
+            load();
+          }}
           onClose={() => setSelectedBooking(null)}
         />
       )}

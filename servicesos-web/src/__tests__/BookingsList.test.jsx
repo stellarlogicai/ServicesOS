@@ -10,11 +10,13 @@ const mocks = vi.hoisted(() => ({
   updateBookingManualPaymentStatus: vi.fn(),
   listFieldPhotos: vi.fn(),
   loadFieldPhotoBlob: vi.fn(),
+  getActiveTenantEmployeeProfiles: vi.fn(),
   tenantId: 'tenant-a',
+  adminAccess: true,
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
-  useAuth: () => ({ tenantId: mocks.tenantId }),
+  useAuth: () => ({ tenantId: mocks.tenantId, isAdmin: () => mocks.adminAccess }),
 }));
 
 vi.mock('../core/scheduling/schedulingService', () => ({
@@ -64,17 +66,25 @@ vi.mock('../services/fieldPhotoService', () => ({
   loadFieldPhotoBlob: mocks.loadFieldPhotoBlob,
 }));
 
+vi.mock('../services/employeeProfileService', () => ({
+  getActiveTenantEmployeeProfiles: mocks.getActiveTenantEmployeeProfiles,
+  employeeAssignmentLabel: employee => employee.displayName || employee.email || employee.uid,
+}));
+
 import BookingsList from '../components/BookingsList';
 
 describe('read-only Bookings admin list', () => {
   beforeEach(() => {
     mocks.tenantId = 'tenant-a';
+    mocks.adminAccess = true;
     mocks.getJobs.mockReset();
     mocks.createBookingCheckoutSession.mockReset();
     mocks.updateBookingAdminFields.mockReset();
     mocks.updateBookingManualPaymentStatus.mockReset();
     mocks.listFieldPhotos.mockReset();
     mocks.loadFieldPhotoBlob.mockReset();
+    mocks.getActiveTenantEmployeeProfiles.mockReset();
+    mocks.getActiveTenantEmployeeProfiles.mockResolvedValue({ success: true, data: [] });
     mocks.listFieldPhotos.mockResolvedValue([]);
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -277,6 +287,81 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('No field completion details recorded yet.');
     expect(dialog).toHaveTextContent('No notes provided');
     expect(dialog).toHaveTextContent('booking-partial');
+  });
+
+  it('assigns a booking using only an active tenant employee Auth UID', async () => {
+    const user = userEvent.setup();
+    mocks.getActiveTenantEmployeeProfiles.mockResolvedValue({
+      success: true,
+      data: [
+        { uid: 'employee-a', displayName: 'Employee A', role: 'employee', status: 'active', tenantId: 'tenant-a' },
+        { uid: 'employee-a-2', displayName: 'Employee B', role: 'employee', status: 'active', tenantId: 'tenant-a' },
+      ],
+    });
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'booking-assignment', customerName: 'Assignment Customer', date: '2026-07-20', status: 'scheduled',
+    }] });
+    mocks.updateBookingAdminFields.mockResolvedValue({
+      success: true,
+      data: { id: 'booking-assignment', assignedEmployeeAuthUid: 'employee-a' },
+    });
+
+    render(<BookingsList />);
+    await user.click(await screen.findByRole('button', { name: 'View Details' }));
+    await waitFor(() => expect(mocks.getActiveTenantEmployeeProfiles).toHaveBeenCalledWith('tenant-a'));
+    const assignmentSelect = screen.getByLabelText('Assigned employee');
+    expect(within(assignmentSelect).getByRole('option', { name: 'Employee A' })).toHaveValue('employee-a');
+    expect(within(assignmentSelect).queryByRole('option', { name: /admin|customer/i })).not.toBeInTheDocument();
+
+    await user.selectOptions(assignmentSelect, 'employee-a');
+    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+
+    expect(mocks.updateBookingAdminFields).toHaveBeenCalledWith(
+      'tenant-a',
+      'booking-assignment',
+      { assignedEmployeeAuthUid: 'employee-a' },
+    );
+    expect(JSON.stringify(mocks.updateBookingAdminFields.mock.calls[0][2])).not.toMatch(/payment|stripe|price|customer|schedule|date/i);
+    expect(await screen.findByText('Employee assignment saved.')).toBeInTheDocument();
+  });
+
+  it('unassigns with null and does not expose assignment controls without admin access', async () => {
+    const user = userEvent.setup();
+    mocks.getActiveTenantEmployeeProfiles.mockResolvedValue({
+      success: true,
+      data: [{ uid: 'employee-a', displayName: 'Employee A' }],
+    });
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'booking-unassign', customerName: 'Unassign Customer', date: '2026-07-20', status: 'scheduled', assignedEmployeeAuthUid: 'employee-a',
+    }] });
+    mocks.updateBookingAdminFields.mockResolvedValue({ success: true, data: { assignedEmployeeAuthUid: null } });
+
+    const view = render(<BookingsList />);
+    await user.click(await screen.findByRole('button', { name: 'View Details' }));
+    await user.selectOptions(screen.getByLabelText('Assigned employee'), '');
+    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+    expect(mocks.updateBookingAdminFields).toHaveBeenCalledWith('tenant-a', 'booking-unassign', { assignedEmployeeAuthUid: null });
+
+    view.unmount();
+    mocks.adminAccess = false;
+    render(<BookingsList />);
+    await user.click(await screen.findByRole('button', { name: 'View Details' }));
+    expect(screen.queryByLabelText('Assigned employee')).not.toBeInTheDocument();
+  });
+
+  it('does not show false assignment success when the save fails', async () => {
+    const user = userEvent.setup();
+    mocks.getActiveTenantEmployeeProfiles.mockResolvedValue({ success: true, data: [{ uid: 'employee-a', displayName: 'Employee A' }] });
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{ id: 'booking-fail', customerName: 'Failure Customer', date: '2026-07-20', status: 'scheduled' }] });
+    mocks.updateBookingAdminFields.mockResolvedValue({ success: false, message: 'permission-denied' });
+
+    render(<BookingsList />);
+    await user.click(await screen.findByRole('button', { name: 'View Details' }));
+    await user.selectOptions(screen.getByLabelText('Assigned employee'), 'employee-a');
+    await user.click(screen.getByRole('button', { name: 'Save assignment' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Booking assignment could not be saved. Please try again.');
+    expect(screen.queryByText('Employee assignment saved.')).not.toBeInTheDocument();
   });
 
   it('shows in-progress field completion details for owner review', async () => {

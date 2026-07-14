@@ -25,7 +25,7 @@ vi.mock('../shared/logging/errorLoggingStandard', () => ({
   logError: loggingMocks.logError,
 }));
 
-import { getJobs } from '../core/scheduling/schedulingService';
+import { getAssignedFieldJobs, getJobs } from '../core/scheduling/schedulingService';
 
 describe('Bookings admin-list audit service boundary', () => {
   beforeEach(() => {
@@ -33,6 +33,7 @@ describe('Bookings admin-list audit service boundary', () => {
     loggingMocks.logError.mockReset();
     firestoreMocks.collection.mockImplementation((db, ...path) => ({ db, path }));
     firestoreMocks.orderBy.mockReturnValue({ field: 'date', direction: 'desc' });
+    firestoreMocks.where.mockImplementation((field, operator, value) => ({ field, operator, value }));
     firestoreMocks.query.mockImplementation((collectionRef, ...constraints) => ({
       collectionRef,
       constraints,
@@ -66,6 +67,22 @@ describe('Bookings admin-list audit service boundary', () => {
     const result = await getJobs('tenant-empty');
 
     expect(result).toMatchObject({ success: true, data: [] });
+  });
+
+  it('queries employee Field Mode by canonical Auth UID and active statuses', async () => {
+    firestoreMocks.getDocs.mockResolvedValue({
+      docs: [{
+        id: 'assigned-booking',
+        data: () => ({ assignedEmployeeAuthUid: 'employee-a', status: 'scheduled', date: '2026-07-20' }),
+      }],
+    });
+
+    const result = await getAssignedFieldJobs('tenant-a', 'employee-a');
+
+    expect(firestoreMocks.where).toHaveBeenCalledWith('assignedEmployeeAuthUid', '==', 'employee-a');
+    expect(firestoreMocks.where).toHaveBeenCalledWith('status', 'in', ['scheduled', 'completed']);
+    expect(firestoreMocks.orderBy).toHaveBeenCalledWith('date', 'desc');
+    expect(result).toMatchObject({ success: true, data: [{ id: 'assigned-booking' }] });
   });
 
   it('rejects a missing tenant before attempting a Firestore read', async () => {

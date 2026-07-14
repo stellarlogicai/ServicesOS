@@ -113,7 +113,7 @@ function PendingPhoto({ pending, phase, onRemove, onUpload }) {
   );
 }
 
-export function FieldPhotoUploadPanel({ tenantId, bookingId, uploadedByUid, onEvidenceChange }) {
+export function FieldPhotoUploadPanel({ tenantId, bookingId, onEvidenceChange }) {
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -164,7 +164,6 @@ export function FieldPhotoUploadPanel({ tenantId, bookingId, uploadedByUid, onEv
       bookingId,
       phase,
       file: selected.file,
-      uploadedByUid,
     });
     if (!result.success) {
       setPending(current => ({ ...current, [phase]: { ...selected, status: 'failed' } }));

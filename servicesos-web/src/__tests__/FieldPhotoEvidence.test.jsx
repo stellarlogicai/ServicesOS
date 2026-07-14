@@ -34,7 +34,7 @@ describe('FieldPhotoEvidence', () => {
   });
 
   it('shows a local preview and allows removal before upload', async () => {
-    render(<FieldPhotoUploadPanel tenantId="tenant-a" bookingId="booking-a" uploadedByUid="employee-a" />);
+    render(<FieldPhotoUploadPanel tenantId="tenant-a" bookingId="booking-a" />);
     await screen.findByText('No before photos added yet.');
 
     fireEvent.change(screen.getByLabelText('Add before photo'), { target: { files: [jpegFile()] } });
@@ -48,7 +48,7 @@ describe('FieldPhotoEvidence', () => {
 
   it('rejects unsupported or oversized input before upload', async () => {
     mocks.validateFieldPhoto.mockReturnValue({ success: false, message: 'Choose a JPEG, PNG, or WebP photo.' });
-    render(<FieldPhotoUploadPanel tenantId="tenant-a" bookingId="booking-a" uploadedByUid="employee-a" />);
+    render(<FieldPhotoUploadPanel tenantId="tenant-a" bookingId="booking-a" />);
     await screen.findByText('No before photos added yet.');
 
     fireEvent.change(screen.getByLabelText('Add before photo'), {
@@ -68,7 +68,7 @@ describe('FieldPhotoEvidence', () => {
           id: 'photo-1', phase: 'after', storagePath: 'safe/after/photo-1.jpg', uploadedAt: new Date(),
         },
       });
-    render(<FieldPhotoUploadPanel tenantId="tenant-a" bookingId="booking-a" uploadedByUid="employee-a" />);
+    render(<FieldPhotoUploadPanel tenantId="tenant-a" bookingId="booking-a" />);
     await screen.findByText('No after photos added yet.');
     fireEvent.change(screen.getByLabelText('Add after photo'), { target: { files: [jpegFile('after.jpg')] } });
     fireEvent.click(await screen.findByRole('button', { name: 'Upload photo' }));
@@ -79,11 +79,14 @@ describe('FieldPhotoEvidence', () => {
 
     expect(await screen.findByText('Photo uploaded.')).toBeInTheDocument();
     expect(mocks.uploadFieldPhoto).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadFieldPhoto).toHaveBeenLastCalledWith({
+      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', file: expect.any(File),
+    });
     expect(screen.queryByAltText('Selected after photo preview')).not.toBeInTheDocument();
   });
 
   it('revokes temporary object URLs when previews are removed or unmounted', async () => {
-    const { unmount } = render(<FieldPhotoUploadPanel tenantId="tenant-a" bookingId="booking-a" uploadedByUid="employee-a" />);
+    const { unmount } = render(<FieldPhotoUploadPanel tenantId="tenant-a" bookingId="booking-a" />);
     await screen.findByText('No before photos added yet.');
     fireEvent.change(screen.getByLabelText('Add before photo'), { target: { files: [jpegFile()] } });
     await screen.findByAltText('Selected before photo preview');

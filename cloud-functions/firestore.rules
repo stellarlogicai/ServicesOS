@@ -43,6 +43,27 @@ service cloud.firestore {
              request.auth.uid in get(/databases/$(database)/documents/tenants/$(tenantId)).data.users;
     }
 
+    function isActiveTenantEmployeeProfile(employeeAuthUid, tenantId) {
+      return employeeAuthUid is string &&
+             employeeAuthUid != '' &&
+             exists(/databases/$(database)/documents/users/$(employeeAuthUid)) &&
+             get(/databases/$(database)/documents/users/$(employeeAuthUid)).data.role == 'employee' &&
+             get(/databases/$(database)/documents/users/$(employeeAuthUid)).data.status == 'active' &&
+             get(/databases/$(database)/documents/users/$(employeeAuthUid)).data.tenantId == tenantId &&
+             employeeAuthUid in get(/databases/$(database)/documents/tenants/$(tenantId)).data.users;
+    }
+
+    function isAssignedTenantFieldUser(tenantId) {
+      return isTenantFieldUser(tenantId) &&
+             resource.data.assignedEmployeeAuthUid == request.auth.uid;
+    }
+
+    function isAssignedFieldPhotoUser(tenantId, bookingId) {
+      return isTenantFieldUser(tenantId) &&
+             exists(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)) &&
+             get(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)).data.assignedEmployeeAuthUid == request.auth.uid;
+    }
+
     function isCustomerUser() {
       return userProfileExists() &&
              userProfile().role == 'customer' &&
@@ -75,7 +96,7 @@ service cloud.firestore {
     }
 
     function isFieldModeBookingUpdate(tenantId) {
-      return isTenantFieldUser(tenantId) && fieldModeBookingUpdateKeysOnly();
+      return isAssignedTenantFieldUser(tenantId) && fieldModeBookingUpdateKeysOnly();
     }
 
     function bookingManagerUpdateKeysOnly() {
@@ -105,8 +126,19 @@ service cloud.firestore {
         'completedAt',
         'completedByUid',
         'assignedEmployeeId',
+        'assignedEmployeeAuthUid',
         'updatedAt'
       ]);
+    }
+
+    function bookingAssignmentChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedEmployeeAuthUid']);
+    }
+
+    function validRequestedBookingAssignment(tenantId) {
+      return !('assignedEmployeeAuthUid' in request.resource.data) ||
+             request.resource.data.assignedEmployeeAuthUid == null ||
+             isActiveTenantEmployeeProfile(request.resource.data.assignedEmployeeAuthUid, tenantId);
     }
 
     function isSafeSuperAdminRouteUpdate(tenantId) {
@@ -168,6 +200,7 @@ service cloud.firestore {
     function isSafeBookingManagerUpdate(tenantId) {
       return isBookingManager(tenantId) &&
              bookingManagerUpdateKeysOnly() &&
+             (!bookingAssignmentChanged() || validRequestedBookingAssignment(tenantId)) &&
              (!bookingPaymentFieldsChanged() || validManualPaymentState());
     }
 
@@ -186,6 +219,7 @@ service cloud.firestore {
         'requestSnapshot',
         'appointmentRequest',
         'employeeId',
+        'assignedEmployeeAuthUid',
         'jobId',
         'date',
         'startTime',
@@ -206,6 +240,7 @@ service cloud.firestore {
       return isBookingManager(tenantId) &&
              bookingCreateKeysOnly() &&
              request.resource.data.status == 'scheduled' &&
+             validRequestedBookingAssignment(tenantId) &&
              (!('tenantId' in request.resource.data) || request.resource.data.tenantId == tenantId);
     }
 
@@ -243,7 +278,8 @@ service cloud.firestore {
 
     function isValidFieldPhotoMetadataCreate(tenantId, bookingId, photoId) {
       let data = request.resource.data;
-      return isTenantFieldUser(tenantId) &&
+      return exists(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)) &&
+             (isSuperAdmin() || isTenantAdmin(tenantId) || isAssignedFieldPhotoUser(tenantId, bookingId)) &&
              fieldPhotoMetadataKeysOnly() &&
              data.id == photoId &&
              data.phase in ['before', 'after'] &&
@@ -390,7 +426,7 @@ service cloud.firestore {
       }
 
       match /bookings/{bookingId} {
-        allow read: if isBookingManager(tenantId) || isTenantFieldUser(tenantId);
+        allow read: if isBookingManager(tenantId) || isAssignedTenantFieldUser(tenantId);
         allow create: if isSafeBookingCreate(tenantId);
         allow update: if isSafeBookingManagerUpdate(tenantId) ||
                          isFieldModeBookingUpdate(tenantId) ||
@@ -398,7 +434,7 @@ service cloud.firestore {
         allow delete: if isBookingManager(tenantId);
 
         match /fieldPhotos/{photoId} {
-          allow read: if isBookingManager(tenantId) || isTenantFieldUser(tenantId);
+          allow read: if isBookingManager(tenantId) || isAssignedFieldPhotoUser(tenantId, bookingId);
           allow create: if isValidFieldPhotoMetadataCreate(tenantId, bookingId, photoId);
           allow update, delete: if false;
         }
@@ -507,7 +543,10 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if (isAuthenticated() && request.auth.uid == userId) ||
+                    (resource.data.role == 'employee' &&
+                     resource.data.status == 'active' &&
+                     (isSuperAdmin() || isTenantAdmin(resource.data.tenantId)));
       allow create: if isOwnCustomerProfileCreate(userId);
       allow update: if isSafeOwnProfileUpdate(userId);
       allow delete: if false;

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   deleteObject: vi.fn(),
   doc: vi.fn(() => ({ id: 'photo-generated-1' })),
   getBlob: vi.fn(),
+  getDoc: vi.fn(),
   getDocs: vi.fn(),
   ref: vi.fn((_storage, path) => ({ path })),
   serverTimestamp: vi.fn(() => ({ __serverTimestamp: true })),
@@ -12,10 +13,15 @@ const mocks = vi.hoisted(() => ({
   uploadBytes: vi.fn(),
 }));
 
-vi.mock('../firebase', () => ({ db: { name: 'db' }, storage: { name: 'storage' } }));
+vi.mock('../firebase', () => ({
+  auth: { currentUser: { uid: 'employee-a' } },
+  db: { name: 'db' },
+  storage: { name: 'storage' },
+}));
 vi.mock('firebase/firestore', () => ({
   collection: mocks.collection,
   doc: mocks.doc,
+  getDoc: mocks.getDoc,
   getDocs: mocks.getDocs,
   serverTimestamp: mocks.serverTimestamp,
   setDoc: mocks.setDoc,
@@ -33,6 +39,7 @@ import {
   uploadFieldPhoto,
   validateFieldPhoto,
 } from '../services/fieldPhotoService';
+import { auth } from '../firebase';
 
 function imageFile({ name = 'customer-name.jpg', size = 128, type = 'image/jpeg' } = {}) {
   return new File([new Uint8Array(size)], name, { type, lastModified: 1710000000000 });
@@ -41,9 +48,14 @@ function imageFile({ name = 'customer-name.jpg', size = 128, type = 'image/jpeg'
 describe('fieldPhotoService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    auth.currentUser = { uid: 'employee-a' };
     mocks.uploadBytes.mockResolvedValue({});
     mocks.setDoc.mockResolvedValue(undefined);
     mocks.deleteObject.mockResolvedValue(undefined);
+    mocks.getDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ role: 'employee', status: 'active', tenantId: 'tenant-a' }),
+    });
   });
 
   it('validates only non-empty JPEG, PNG, or WebP files up to 10 MB', () => {
@@ -96,7 +108,6 @@ describe('fieldPhotoService', () => {
       bookingId: 'booking-a',
       phase: 'before',
       file: imageFile(),
-      uploadedByUid: 'employee-a',
     });
 
     expect(result.success).toBe(true);
@@ -104,6 +115,7 @@ describe('fieldPhotoService', () => {
     expect(mocks.setDoc).toHaveBeenCalledTimes(1);
     expect(mocks.uploadBytes.mock.invocationCallOrder[0]).toBeLessThan(mocks.setDoc.mock.invocationCallOrder[0]);
     const writtenMetadata = mocks.setDoc.mock.calls[0][1];
+    expect(writtenMetadata.uploadedByUid).toBe('employee-a');
     expect(Object.keys(writtenMetadata).sort()).toEqual([
       'clientFileLastModifiedAt',
       'contentType',
@@ -117,10 +129,45 @@ describe('fieldPhotoService', () => {
     ]);
   });
 
+  it('derives a tenant admin uploader from Firebase Auth without changing booking data', async () => {
+    auth.currentUser = { uid: 'admin-a' };
+    mocks.getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ role: 'admin', status: 'active', tenantId: 'tenant-a' }),
+    });
+
+    const result = await uploadFieldPhoto({
+      tenantId: 'tenant-a', bookingId: 'unassigned-booking', phase: 'after', file: imageFile({ type: 'image/png' }),
+    });
+
+    expect(result.success).toBe(true);
+    expect(mocks.setDoc.mock.calls[0][1]).toMatchObject({
+      uploadedByUid: 'admin-a',
+      phase: 'after',
+      contentType: 'image/png',
+    });
+    expect(JSON.stringify(mocks.setDoc.mock.calls[0][1])).not.toMatch(/assignedEmployee|payment|stripe|price|customer|lead|date/i);
+  });
+
+  it('rejects unsupported or cross-tenant profiles before Storage is written', async () => {
+    mocks.getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ role: 'customer', status: 'active', tenantId: 'tenant-a' }),
+    });
+
+    const result = await uploadFieldPhoto({
+      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'before', file: imageFile(),
+    });
+
+    expect(result).toEqual({ success: false, message: 'Photo upload is unavailable for this account.' });
+    expect(mocks.uploadBytes).not.toHaveBeenCalled();
+    expect(mocks.setDoc).not.toHaveBeenCalled();
+  });
+
   it('does not create metadata when Storage upload fails', async () => {
     mocks.uploadBytes.mockRejectedValueOnce(new Error('storage unavailable'));
     const result = await uploadFieldPhoto({
-      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'before', file: imageFile(), uploadedByUid: 'employee-a',
+      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'before', file: imageFile(),
     });
     expect(result).toMatchObject({ success: false, stage: 'storage' });
     expect(mocks.setDoc).not.toHaveBeenCalled();
@@ -129,7 +176,7 @@ describe('fieldPhotoService', () => {
   it('attempts Storage cleanup when metadata creation fails and never reports fake success', async () => {
     mocks.setDoc.mockRejectedValueOnce(new Error('metadata denied'));
     const result = await uploadFieldPhoto({
-      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', file: imageFile(), uploadedByUid: 'employee-a',
+      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', file: imageFile(),
     });
     expect(result).toMatchObject({ success: false, stage: 'metadata', cleanupFailed: false });
     expect(mocks.deleteObject).toHaveBeenCalledTimes(1);
@@ -139,7 +186,7 @@ describe('fieldPhotoService', () => {
     mocks.setDoc.mockRejectedValueOnce(new Error('metadata denied'));
     mocks.deleteObject.mockRejectedValueOnce(new Error('cleanup denied'));
     const result = await uploadFieldPhoto({
-      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', file: imageFile(), uploadedByUid: 'employee-a',
+      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', file: imageFile(),
     });
     expect(result).toMatchObject({ success: false, stage: 'metadata', cleanupFailed: true });
     expect(result.message).toBe('Upload failed. Try again.');

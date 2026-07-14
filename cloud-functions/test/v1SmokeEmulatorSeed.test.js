@@ -52,12 +52,21 @@ describe('V1 smoke emulator seed safety', () => {
     const tenantB = documents.get(`tenants/${TENANT_B}`);
     const fieldBooking = documents.get(`tenants/${TENANT_A}/bookings/booking-smoke-a-field`);
     const manualBooking = documents.get(`tenants/${TENANT_A}/bookings/booking-smoke-a-completed`);
+    const unassignedBooking = documents.get(`tenants/${TENANT_A}/bookings/booking-smoke-a-payment-pending`);
+    const otherEmployeeBooking = documents.get(`tenants/${TENANT_A}/bookings/booking-smoke-a-other-employee`);
+    const cancelledBooking = documents.get(`tenants/${TENANT_A}/bookings/booking-smoke-a-cancelled`);
 
     assert.equal(tenantA.businessSettings.businessName, 'Aunt B Smoke Cleaning A');
     assert.equal(tenantB.businessSettings.businessName, 'ServicesOS Smoke Cleaning B');
     assert.notDeepEqual(tenantA.adminUsers, tenantB.adminUsers);
     assert.equal(fieldBooking.paymentStatus, 'not_paid');
     assert.equal(fieldBooking.fieldStatus, 'not_started');
+    assert.equal(fieldBooking.assignedEmployeeAuthUid, 'smoke-employee-a');
+    assert.equal(fieldBooking.assignedEmployeeId, undefined);
+    assert.equal(fieldBooking.assignedEmployeeUid, undefined);
+    assert.equal(unassignedBooking.assignedEmployeeAuthUid, undefined);
+    assert.equal(otherEmployeeBooking.assignedEmployeeAuthUid, 'smoke-employee-a-other');
+    assert.equal(cancelledBooking.assignedEmployeeAuthUid, 'smoke-employee-a');
     assert.equal(manualBooking.paymentStatus, 'paid_in_full');
     assert.equal(manualBooking.paymentMethod, 'cash');
     assert.notEqual(manualBooking.paymentStatusUpdatedBy, 'stripe_webhook');

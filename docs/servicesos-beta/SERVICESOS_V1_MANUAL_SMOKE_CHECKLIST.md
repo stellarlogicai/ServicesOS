@@ -54,8 +54,17 @@ Use this checklist only with fake data in an approved staging, emulator, preview
 - [ ] Download customers, leads, bookings, and payment-record CSV files.
 - [ ] Confirm every CSV contains only Tenant A records.
 - [ ] Confirm payment rows distinguish manual and Stripe-confirmed status.
+- [ ] Open an unassigned active booking and confirm the Field employee assignment control lists only active employees from Tenant A.
+- [ ] Assign the booking to the Tenant A employee; refresh and confirm the assignment persists.
+- [ ] Reassign the booking to another Tenant A employee; refresh and confirm the new assignment persists.
+- [ ] Confirm assignment changes do not change price, schedule, customer, payment, or Stripe fields.
+- [ ] Open Field Mode as the tenant admin and confirm before/after upload controls appear for an own-tenant booking without assigning the admin as an employee.
+- [ ] Upload valid before and after fixtures from Field Mode; refresh after each and confirm persistence.
+- [ ] Confirm invalid type and over-10-MB fixtures are rejected.
+- [ ] Confirm owner upload did not create or change `assignedEmployeeAuthUid`, payment, price, schedule, customer, lead, or Stripe fields.
 - [ ] Open booking detail and verify field status, timestamps, checklist summary, notes, and issue flag.
 - [ ] Verify before/after evidence displays through authenticated Storage reads.
+- [ ] Confirm Booking Detail has no add, replace, edit, or delete photo controls.
 - [ ] Archive a fake customer and confirm history remains after refresh.
 - [ ] Confirm a completed booking cannot be accidentally cancelled.
 
@@ -67,6 +76,10 @@ Use this checklist only with fake data in an approved staging, emulator, preview
 - [ ] Confirm Dashboard, Business Settings, Data Export, Customer Portal, and admin pages cannot render.
 - [ ] Confirm payment badge and internal owner notes are hidden.
 - [ ] Confirm approved field instructions remain visible.
+- [ ] Confirm only active current/future bookings assigned through `assignedEmployeeAuthUid` to the signed-in employee appear.
+- [ ] Confirm unassigned bookings, another employee's bookings, and cancelled bookings do not appear.
+- [ ] After an admin assigns a booking to this employee, refresh and confirm it appears.
+- [ ] After an admin reassigns that booking, refresh and confirm it disappears and an open packet/photo surface closes.
 - [ ] Start a fake job; refresh and confirm persistence.
 - [ ] Change checklist items; refresh and confirm persistence.
 - [ ] Save a fake employee note; refresh and confirm persistence.
@@ -112,13 +125,16 @@ Use this checklist only with fake data in an approved staging, emulator, preview
 ### Tenant A selected
 
 - [ ] Confirm Tenant A Bookings, Calendar, Field Mode, Business Settings, and Data Export load.
+- [ ] Confirm the booking assignment control lists only active Tenant A employees and can perform an approved reversible assignment.
 - [ ] Open one Tenant A booking and its photo review.
+- [ ] If validating super-admin capture, open Tenant A Field Mode and confirm upload paths remain under Tenant A only.
 
 ### Switch to Tenant B
 
 - [ ] Confirm Tenant A lists clear immediately.
 - [ ] Confirm selected booking, Calendar selection, Field Mode job, and photo surfaces clear.
 - [ ] Confirm Tenant B data loads.
+- [ ] Confirm Tenant B assignment controls do not list Tenant A employees.
 - [ ] Confirm late Tenant A responses never reappear.
 - [ ] Perform one approved reversible write and confirm it uses Tenant B only.
 
@@ -183,4 +199,3 @@ After every meaningful approved write:
 - [ ] Confirm `master` / `origin/master` are unchanged.
 - [ ] Confirm no application, rules, functions, or environment deployment occurred unless separately approved.
 - [ ] Update `SERVICESOS_V1_AUTHENTICATED_SMOKE_REPORT.md` with pass/fail/not-run evidence and the final recommendation.
-

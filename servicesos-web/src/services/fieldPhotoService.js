@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   serverTimestamp,
   setDoc,
@@ -11,7 +12,7 @@ import {
   ref,
   uploadBytes,
 } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { auth, db, storage } from '../firebase';
 import { validateImageFile } from './imageCompressionService';
 
 export const FIELD_PHOTO_PHASES = Object.freeze(['before', 'after']);
@@ -138,9 +139,37 @@ export async function loadFieldPhotoBlob(storagePath) {
   return getBlob(ref(storage, requiredText(storagePath, 'Storage path')));
 }
 
-export async function uploadFieldPhoto({ tenantId, bookingId, phase, file, uploadedByUid }) {
+async function resolveFieldPhotoUploader(tenantId) {
+  const uploadedByUid = auth.currentUser?.uid;
+  if (!uploadedByUid) {
+    return { success: false, message: 'Sign in again before uploading a photo.' };
+  }
+
+  try {
+    const profileSnapshot = await getDoc(doc(db, 'users', uploadedByUid));
+    if (!profileSnapshot.exists()) {
+      return { success: false, message: 'Photo upload is unavailable for this account.' };
+    }
+    const profile = profileSnapshot.data();
+    const supportedRole = ['employee', 'admin', 'super-admin'].includes(profile?.role);
+    const active = profile?.status === 'active';
+    const tenantMatches = profile?.role === 'super-admin' || profile?.tenantId === tenantId;
+    if (!supportedRole || !active || !tenantMatches || tenantId === 'DEFAULT') {
+      return { success: false, message: 'Photo upload is unavailable for this account.' };
+    }
+    return { success: true, uploadedByUid };
+  } catch (error) {
+    console.error('[Field photos] Uploader authorization failed.', error);
+    return { success: false, message: 'Photo upload could not be authorized. Try again.' };
+  }
+}
+
+export async function uploadFieldPhoto({ tenantId, bookingId, phase, file }) {
   const validation = validateFieldPhoto(file);
   if (!validation.success) return validation;
+
+  const uploader = await resolveFieldPhotoUploader(tenantId);
+  if (!uploader.success) return uploader;
 
   const metadataReference = doc(photoCollection(tenantId, bookingId));
   const storagePath = buildFieldPhotoStoragePath(
@@ -155,7 +184,7 @@ export async function uploadFieldPhoto({ tenantId, bookingId, phase, file, uploa
     photoId: metadataReference.id,
     phase,
     storagePath,
-    uploadedByUid,
+    uploadedByUid: uploader.uploadedByUid,
     contentType: file.type,
     sizeBytes: file.size,
     clientFileLastModifiedAt: file.lastModified,

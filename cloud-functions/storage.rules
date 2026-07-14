@@ -47,6 +47,16 @@ service firebase.storage {
              request.auth.uid in tenantRecord(tenantId).users;
     }
 
+    function isAssignedTenantFieldUser(tenantId, bookingId) {
+      return isTenantFieldUser(tenantId) &&
+             firestore.exists(/databases/(default)/documents/tenants/$(tenantId)/bookings/$(bookingId)) &&
+             firestore.get(/databases/(default)/documents/tenants/$(tenantId)/bookings/$(bookingId)).data.assignedEmployeeAuthUid == request.auth.uid;
+    }
+
+    function bookingExists(tenantId, bookingId) {
+      return firestore.exists(/databases/(default)/documents/tenants/$(tenantId)/bookings/$(bookingId));
+    }
+
     function isAllowedPhase(phase) {
       return phase in ['before', 'after'];
     }
@@ -75,9 +85,10 @@ service firebase.storage {
 
     match /tenants/{tenantId}/bookings/{bookingId}/field-photos/{phase}/{fileName} {
       allow read: if isAllowedPhase(phase) &&
-                     (isSuperAdmin() || isTenantAdmin(tenantId) || isTenantFieldUser(tenantId));
+                     (isSuperAdmin() || isTenantAdmin(tenantId) || isAssignedTenantFieldUser(tenantId, bookingId));
       allow create: if isAllowedPhase(phase) &&
-                       isTenantFieldUser(tenantId) &&
+                       bookingExists(tenantId, bookingId) &&
+                       (isSuperAdmin() || isTenantAdmin(tenantId) || isAssignedTenantFieldUser(tenantId, bookingId)) &&
                        resource == null &&
                        validPhotoObject(fileName);
       allow update, delete: if false;

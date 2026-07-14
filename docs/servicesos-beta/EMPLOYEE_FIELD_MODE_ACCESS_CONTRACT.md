@@ -53,9 +53,17 @@ Field execution does not change payment status, price, schedule, customer data, 
 
 ## Tenant and assignment scope
 
-Employee booking access is tenant-level in V1. The application and rules do not yet enforce assigned-worker-only visibility.
+Employee booking access is assigned-worker-only in V1. The canonical booking field is:
 
-The repository contains inconsistent legacy assignment fields, including `assignedEmployeeId` and `assignedEmployees`. Neither is canonical across booking creation and conversion. Canonical assignment and assigned-worker filtering are deferred to V1.1.
+```text
+assignedEmployeeAuthUid
+```
+
+Its value is exactly the assigned employee's Firebase Auth UID and `users/{uid}` document ID. Legacy fields such as `assignedEmployeeId`, `assignedEmployeeUid`, `assignedEmployees`, and `employeeId` remain non-authoritative because existing code uses mixed employee-record and UID semantics.
+
+Owner/admin Booking Detail is the V1 assignment surface. It lists only profiles where `role == employee`, `status == active`, and `tenantId` matches the active tenant. A booking may remain unassigned for planning, but it is invisible to employees until explicitly assigned.
+
+Employee Field Mode uses a Firestore query constrained by canonical assignment UID and booking status. `scheduled` and current-date `completed` jobs are eligible; `cancelled`, unassigned, another employee's, archived/deleted, past, and cross-tenant jobs do not render. The required composite booking index is `assignedEmployeeAuthUid ASC`, `status ASC`, `date DESC`.
 
 ## Firestore contract
 
@@ -66,18 +74,20 @@ An employee is a tenant field user only when all of the following are true:
 - profile status is `active`
 - profile `tenantId` matches the requested tenant path
 - the UID is present in the tenant's existing `users` array
+- the booking's `assignedEmployeeAuthUid` equals the authenticated UID
 
-Employee booking writes remain limited to the approved Field Mode execution keys. Employees cannot use temporary legacy rules for tenant creation, tenant usage, quotes, jobs, properties, legacy photos, appointments, employee management, tenant payment records, time clock data, or equivalent unrelated surfaces.
+Employee booking writes remain limited to the approved Field Mode execution keys and require the same booking assignment. Firestore field-photo metadata and Storage evidence access also require the parent booking assignment. Reassignment immediately transfers booking and photo access without deleting existing field progress or evidence.
+
+Tenant admins retain tenant-wide booking visibility and may capture before/after evidence while personally operating in Field Mode without assigning themselves as employees. An explicitly tenant-scoped super-admin may do the same under the existing selected-tenant model. Booking Detail remains read-only for evidence review. Only booking managers can set, change, or clear assignment, and an assigned UID must resolve to an active employee profile in the same tenant membership.
+
+Owner/admin evidence capture does not weaken employee access: employees still require parent-booking assignment for booking reads, field execution writes, metadata reads/creates, and Storage reads/creates. Admin uploads do not create or change `assignedEmployeeAuthUid`.
 
 The legacy broad rules retained for recognized non-employee roles still require future module-by-module hardening. This employee slice does not claim those rules are fully production-hardened for every role.
 
 ## Deferred work
 
-- employee invitation and management UI
-- canonical assignment and assigned-worker-only filtering
+- employee invitation and richer employee profile management
+- assignment notifications and multi-worker crews
 - full employee mobile application
 - offline-safe field execution queue
-- before/after field photo evidence
 - broader legacy Firestore rules cleanup
-
-Field photo evidence is the next separate V1 slice after employee access is validated.

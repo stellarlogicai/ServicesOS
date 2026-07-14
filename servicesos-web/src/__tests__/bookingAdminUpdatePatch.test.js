@@ -28,6 +28,7 @@ vi.mock('../shared/logging/errorLoggingStandard', () => ({
 import {
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS,
   BOOKING_PAYMENT_METHOD_LABELS,
+  bookingMatchesEmployeeFieldVisibility,
   buildBookingAdminUpdatePatch,
   buildBookingFieldExecutionPatch,
   buildBookingManualPaymentStatusPatch,
@@ -39,6 +40,35 @@ import {
 const now = '2026-06-30T12:00:00.000Z';
 
 describe('booking admin update whitelist helper', () => {
+  it('uses only the canonical Auth UID assignment for employee visibility', () => {
+    expect(bookingMatchesEmployeeFieldVisibility({
+      assignedEmployeeAuthUid: 'employee-a', status: 'scheduled',
+    }, 'employee-a')).toBe(true);
+    expect(bookingMatchesEmployeeFieldVisibility({
+      assignedEmployeeId: 'employee-a', status: 'scheduled',
+    }, 'employee-a')).toBe(false);
+    expect(bookingMatchesEmployeeFieldVisibility({ status: 'scheduled' }, 'employee-a')).toBe(false);
+    expect(bookingMatchesEmployeeFieldVisibility({
+      assignedEmployeeAuthUid: 'employee-b', status: 'scheduled',
+    }, 'employee-a')).toBe(false);
+    expect(bookingMatchesEmployeeFieldVisibility({
+      assignedEmployeeAuthUid: 'employee-a', status: 'cancelled',
+    }, 'employee-a')).toBe(false);
+  });
+
+  it('allows assigning and unassigning only through the canonical Auth UID field', () => {
+    expect(buildBookingAdminUpdatePatch({ assignedEmployeeAuthUid: ' employee-a ' }, { now })).toMatchObject({
+      success: true,
+      data: { assignedEmployeeAuthUid: 'employee-a', updatedAt: now },
+    });
+    expect(buildBookingAdminUpdatePatch({ assignedEmployeeAuthUid: null }, { now })).toMatchObject({
+      success: true,
+      data: { assignedEmployeeAuthUid: null, updatedAt: now },
+    });
+    for (const invalidValue of ['', '   ', 123, 'x'.repeat(129)]) {
+      expect(buildBookingAdminUpdatePatch({ assignedEmployeeAuthUid: invalidValue }, { now }).success).toBe(false);
+    }
+  });
   it('allows date, time, notes update and adds updatedAt', () => {
     const result = buildBookingAdminUpdatePatch({
       date: '2026-07-03',

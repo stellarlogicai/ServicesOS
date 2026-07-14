@@ -9,6 +9,7 @@ const PROJECT_ID = 'demo-servicesos-v1-smoke-local';
 const STORAGE_BUCKET = `${PROJECT_ID}.appspot.com`;
 const TENANT_A = 'tenant-smoke-a';
 const TENANT_B = 'tenant-smoke-b';
+const OTHER_EMPLOYEE_A_UID = 'smoke-employee-a-other';
 const LOCAL_PASSWORD = 'ServicesOS-Local-Smoke-Only!';
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const CREDENTIALS_PATH = path.join(REPO_ROOT, '.servicesos-smoke-credentials.local.json');
@@ -126,7 +127,7 @@ function buildSeedDocuments(now = new Date()) {
     businessName: 'Aunt B Smoke Cleaning A',
     status: 'active',
     ownerId: adminA,
-    users: [adminA, employeeA],
+    users: [adminA, employeeA, OTHER_EMPLOYEE_A_UID],
     adminUsers: [adminA],
     chargesEnabled: false,
     payoutsEnabled: false,
@@ -176,6 +177,17 @@ function buildSeedDocuments(now = new Date()) {
       updatedAt: dates.todayIso,
     });
   }
+  add(`users/${OTHER_EMPLOYEE_A_UID}`, {
+    email: 'employee-a-other@servicesos.test',
+    displayName: 'Tenant A Other Employee',
+    role: 'employee',
+    status: 'active',
+    tenantId: TENANT_A,
+    onboardingCompleted: true,
+    onboardingProgress: 100,
+    createdAt: dates.yesterdayIso,
+    updatedAt: dates.todayIso,
+  });
 
   add(`tenants/${TENANT_A}/customers/customer-smoke-a`, {
     name: 'Tenant A Example Customer',
@@ -251,8 +263,7 @@ function buildSeedDocuments(now = new Date()) {
     address: '110 Example Lane, Test City, TX 00000', date: dates.today, startTime: '09:00',
     serviceType: 'standard', agreedPrice: 185,
   });
-  fieldBooking.assignedEmployeeId = employeeA;
-  fieldBooking.assignedEmployeeUid = employeeA;
+  fieldBooking.assignedEmployeeAuthUid = employeeA;
   add(`tenants/${TENANT_A}/bookings/booking-smoke-a-field`, fieldBooking);
 
   const pendingPaymentBooking = bookingBase({
@@ -264,6 +275,15 @@ function buildSeedDocuments(now = new Date()) {
   pendingPaymentBooking.paymentStatus = 'deposit_requested';
   add(`tenants/${TENANT_A}/bookings/booking-smoke-a-payment-pending`, pendingPaymentBooking);
 
+  const otherEmployeeBooking = bookingBase({
+    id: 'booking-smoke-a-other-employee', tenantId: TENANT_A, customerId: 'customer-smoke-a-secondary',
+    name: 'Tenant A Other Employee Job', email: 'secondary-a@servicesos.test', phone: '555-0111',
+    address: '114 Example Lane, Test City, TX 00000', date: dates.tomorrow, startTime: '11:00',
+    serviceType: 'standard', agreedPrice: 175,
+  });
+  otherEmployeeBooking.assignedEmployeeAuthUid = OTHER_EMPLOYEE_A_UID;
+  add(`tenants/${TENANT_A}/bookings/booking-smoke-a-other-employee`, otherEmployeeBooking);
+
   const completedBooking = bookingBase({
     id: 'booking-smoke-a-completed', tenantId: TENANT_A, customerId: 'customer-smoke-a-secondary',
     name: 'Tenant A Completed Example', email: 'completed-a@servicesos.test', phone: '555-0112',
@@ -271,6 +291,7 @@ function buildSeedDocuments(now = new Date()) {
     serviceType: 'move-out', agreedPrice: 320,
   });
   Object.assign(completedBooking, {
+    assignedEmployeeAuthUid: employeeA,
     status: 'completed',
     paymentStatus: 'paid_in_full',
     paymentMethod: 'cash',
@@ -302,6 +323,7 @@ function buildSeedDocuments(now = new Date()) {
     serviceType: 'standard', agreedPrice: 150,
   });
   cancelledBooking.status = 'cancelled';
+  cancelledBooking.assignedEmployeeAuthUid = employeeA;
   add(`tenants/${TENANT_A}/bookings/booking-smoke-a-cancelled`, cancelledBooking);
 
   const tenantBBooking = bookingBase({

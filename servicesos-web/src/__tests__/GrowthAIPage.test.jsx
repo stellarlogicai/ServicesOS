@@ -17,6 +17,7 @@ describe('GrowthAI Phase 0 local helper', () => {
     });
   });
 
+  // Isolated execution is fast, but full-suite module contention can exceed Vitest's five-second default.
   it('renders honesty copy and saves generated drafts locally without API calls', async () => {
     const fetchSpy = vi.fn().mockRejectedValue(new Error('network should not be used'));
     vi.stubGlobal('fetch', fetchSpy);
@@ -48,7 +49,7 @@ describe('GrowthAI Phase 0 local helper', () => {
     });
     expect(savedDrafts[0].creditsEstimated).toBeGreaterThan(0);
     expect(fetchSpy).not.toHaveBeenCalled();
-  });
+  }, 10_000);
 
   it('renders Aunt B and SLAI response scenarios and saves response drafts locally', () => {
     const fetchSpy = vi.fn().mockRejectedValue(new Error('network should not be used'));

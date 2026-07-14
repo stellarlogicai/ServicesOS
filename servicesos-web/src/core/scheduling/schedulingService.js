@@ -23,8 +23,11 @@ const BOOKING_ADMIN_UPDATE_ALLOWED_FIELDS = new Set([
   'status',
   'notes',
   'agreedPrice',
+  'assignedEmployeeAuthUid',
 ]);
 const BOOKING_ADMIN_STATUS_VALUES = new Set(['scheduled', 'completed', 'cancelled']);
+const FIELD_MODE_ACTIVE_BOOKING_STATUSES = ['scheduled', 'completed'];
+const EMPLOYEE_AUTH_UID_MAX_LENGTH = 128;
 const BOOKING_ADMIN_NOTES_MAX_LENGTH = 1000;
 const BOOKING_MANUAL_PAYMENT_STATUS_ALLOWED_FIELDS = new Set([
   'paymentStatus',
@@ -217,6 +220,20 @@ export function buildBookingAdminUpdatePatch(proposedPatch, { now = new Date().t
       return bookingAdminValidationError('Booking agreedPrice must be a non-negative number.');
     }
     payload.agreedPrice = agreedPrice;
+  }
+
+  if (Object.hasOwn(proposedPatch, 'assignedEmployeeAuthUid')) {
+    const assignedEmployeeAuthUid = proposedPatch.assignedEmployeeAuthUid;
+    if (assignedEmployeeAuthUid !== null && (
+      typeof assignedEmployeeAuthUid !== 'string' ||
+      !assignedEmployeeAuthUid.trim() ||
+      assignedEmployeeAuthUid.trim().length > EMPLOYEE_AUTH_UID_MAX_LENGTH
+    )) {
+      return bookingAdminValidationError('Assigned employee must be an active employee Auth UID or unassigned.');
+    }
+    payload.assignedEmployeeAuthUid = assignedEmployeeAuthUid === null
+      ? null
+      : assignedEmployeeAuthUid.trim();
   }
 
   if (Object.keys(payload).length === 0) {
@@ -577,6 +594,53 @@ export async function getJobs(tenantId) {
       error
     });
     return errorResponse('Failed to load jobs', ERROR_CODES.FIRESTORE_ERROR, error);
+  }
+}
+
+export function bookingMatchesEmployeeFieldVisibility(booking, employeeAuthUid) {
+  return Boolean(
+    booking &&
+    typeof employeeAuthUid === 'string' &&
+    employeeAuthUid &&
+    booking.assignedEmployeeAuthUid === employeeAuthUid &&
+    FIELD_MODE_ACTIVE_BOOKING_STATUSES.includes(booking.status) &&
+    booking.isDeleted !== true &&
+    booking.isArchived !== true
+  );
+}
+
+/**
+ * Load only active Field Mode jobs assigned to the authenticated employee UID.
+ */
+export async function getAssignedFieldJobs(tenantId, employeeAuthUid) {
+  try {
+    if (!tenantId || !employeeAuthUid) {
+      return errorResponse('Tenant ID and employee Auth UID are required', 'VALIDATION_ERROR');
+    }
+
+    const jobsRef = collection(db, 'tenants', tenantId, COLLECTION_NAME);
+    const q = query(
+      jobsRef,
+      where('assignedEmployeeAuthUid', '==', employeeAuthUid),
+      where('status', 'in', FIELD_MODE_ACTIVE_BOOKING_STATUSES),
+      orderBy('date', 'desc')
+    );
+    const snapshot = await getDocs(q);
+    const jobsData = snapshot.docs
+      .map(jobDocument => ({ id: jobDocument.id, ...jobDocument.data() }))
+      .filter(booking => bookingMatchesEmployeeFieldVisibility(booking, employeeAuthUid));
+
+    return successResponse(jobsData);
+  } catch (error) {
+    logError({
+      message: 'Failed to load assigned Field Mode jobs',
+      module: 'core',
+      feature: 'scheduling',
+      severity: SEVERITY.HIGH,
+      tenantId,
+      error
+    });
+    return errorResponse('Failed to load assigned Field Mode jobs', ERROR_CODES.FIRESTORE_ERROR, error);
   }
 }
 

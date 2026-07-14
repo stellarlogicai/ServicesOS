@@ -27,6 +27,10 @@ import {
   bookingStillOwed,
 } from './bookingDisplay';
 import { createBookingCheckoutSession } from '../services/stripeService';
+import {
+  employeeAssignmentLabel,
+  getActiveTenantEmployeeProfiles,
+} from '../services/employeeProfileService';
 import { BookingFieldPhotoReview } from './FieldPhotoEvidence';
 
 const customerMessageButtonStyle = {
@@ -40,8 +44,10 @@ const customerMessageButtonStyle = {
 };
 
 export default function BookingsList() {
-  const { tenantId } = useAuth();
+  const { tenantId, isAdmin } = useAuth();
   const loadRequestRef = useRef(0);
+  const employeeLoadRequestRef = useRef(0);
+  const canManageAssignment = isAdmin?.() === true;
   const [bookings, setBookings] = useState([]);
   const [bookingsTenantId, setBookingsTenantId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -71,6 +77,33 @@ export default function BookingsList() {
     copyMessage: '',
   });
   const [customerMessageStatus, setCustomerMessageStatus] = useState('');
+  const [employeeProfiles, setEmployeeProfiles] = useState([]);
+  const [employeesTenantId, setEmployeesTenantId] = useState(null);
+  const [employeesLoading, setEmployeesLoading] = useState(false);
+  const [assignmentValue, setAssignmentValue] = useState('');
+  const [assignmentSaving, setAssignmentSaving] = useState(false);
+  const [assignmentError, setAssignmentError] = useState('');
+  const [assignmentStatus, setAssignmentStatus] = useState('');
+
+  const loadEmployees = useCallback(async () => {
+    const requestedTenantId = tenantId;
+    const requestId = ++employeeLoadRequestRef.current;
+    const isCurrentRequest = () => requestId === employeeLoadRequestRef.current;
+
+    if (!canManageAssignment || !requestedTenantId) {
+      setEmployeeProfiles([]);
+      setEmployeesTenantId(null);
+      setEmployeesLoading(false);
+      return;
+    }
+
+    setEmployeesLoading(true);
+    const result = await getActiveTenantEmployeeProfiles(requestedTenantId);
+    if (!isCurrentRequest()) return;
+    setEmployeeProfiles(result.success && Array.isArray(result.data) ? result.data : []);
+    setEmployeesTenantId(requestedTenantId);
+    setEmployeesLoading(false);
+  }, [canManageAssignment, tenantId]);
 
   const loadBookings = useCallback(async () => {
     const requestedTenantId = tenantId;
@@ -128,6 +161,24 @@ export default function BookingsList() {
     };
   }, [loadBookings]);
 
+  useEffect(() => {
+    let active = true;
+    employeeLoadRequestRef.current += 1;
+    Promise.resolve().then(() => {
+      if (!active) return;
+      setEmployeeProfiles([]);
+      setEmployeesTenantId(null);
+      setAssignmentValue('');
+      setAssignmentError('');
+      setAssignmentStatus('');
+      loadEmployees();
+    });
+    return () => {
+      active = false;
+      employeeLoadRequestRef.current += 1;
+    };
+  }, [loadEmployees]);
+
   const visibleBookings = bookingsTenantId === tenantId ? bookings : [];
 
   const openBookingDetails = (booking) => {
@@ -141,6 +192,9 @@ export default function BookingsList() {
     setSuccessMessage('');
     setCustomerMessageStatus('');
     setStripeLinkState({ creating: false, url: '', error: '', copyMessage: '' });
+    setAssignmentValue(typeof booking.assignedEmployeeAuthUid === 'string' ? booking.assignedEmployeeAuthUid : '');
+    setAssignmentError('');
+    setAssignmentStatus('');
   };
 
   const closeBookingDetails = () => {
@@ -154,6 +208,9 @@ export default function BookingsList() {
     setSuccessMessage('');
     setCustomerMessageStatus('');
     setStripeLinkState({ creating: false, url: '', error: '', copyMessage: '' });
+    setAssignmentValue('');
+    setAssignmentError('');
+    setAssignmentStatus('');
   };
 
   const startBookingEdit = () => {
@@ -363,6 +420,35 @@ export default function BookingsList() {
     setSuccessMessage('Booking cancelled. Payment history was preserved.');
   };
 
+  const saveBookingAssignment = async () => {
+    if (!canManageAssignment || !tenantId || !selectedBooking?.id) return;
+    const currentEmployees = employeesTenantId === tenantId ? employeeProfiles : [];
+    if (assignmentValue && !currentEmployees.some(employee => employee.uid === assignmentValue)) {
+      setAssignmentError('Select an active employee from this tenant.');
+      setAssignmentStatus('');
+      return;
+    }
+
+    setAssignmentSaving(true);
+    setAssignmentError('');
+    setAssignmentStatus('');
+    const result = await updateBookingAdminFields(tenantId, selectedBooking.id, {
+      assignedEmployeeAuthUid: assignmentValue || null,
+    });
+    if (!result.success) {
+      setAssignmentSaving(false);
+      setAssignmentError('Booking assignment could not be saved. Please try again.');
+      return;
+    }
+
+    setSelectedBooking(current => current ? { ...current, ...result.data } : current);
+    setBookings(current => current.map(booking => booking.id === selectedBooking.id
+      ? { ...booking, ...result.data }
+      : booking));
+    setAssignmentSaving(false);
+    setAssignmentStatus(assignmentValue ? 'Employee assignment saved.' : 'Booking is now unassigned.');
+  };
+
   const saveBookingEdit = async (event) => {
     event.preventDefault();
     if (!selectedBooking?.id) {
@@ -514,6 +600,48 @@ export default function BookingsList() {
               <DetailItem label="Job price" value={bookingPrice(selectedBooking)} />
               <DetailItem label="Reference" value={bookingReference(selectedBooking) || 'Reference not provided'} />
             </dl>
+
+            {canManageAssignment && (
+              <section style={{ marginTop: 24, padding: 20, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 12 }} aria-labelledby="booking-assignment-title">
+                <h3 id="booking-assignment-title" style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 18, fontWeight: 600 }}>Field employee assignment</h3>
+                <p style={{ margin: '0 0 14px', color: '#475569', fontSize: 14, lineHeight: 1.5 }}>
+                  Assigned jobs appear in that employee's Field Mode. Unassigned and cancelled jobs remain hidden from employees.
+                </p>
+                <label style={{ display: 'block', color: '#0f172a', fontWeight: 600 }}>
+                  Assigned employee
+                  <select
+                    value={assignmentValue}
+                    onChange={event => {
+                      setAssignmentValue(event.target.value);
+                      setAssignmentError('');
+                      setAssignmentStatus('');
+                    }}
+                    disabled={employeesLoading || assignmentSaving}
+                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 10, border: '1px solid #cbd5e1', borderRadius: 8, background: '#fff' }}
+                  >
+                    <option value="">Unassigned</option>
+                    {employeesTenantId === tenantId && employeeProfiles.map(employee => (
+                      <option value={employee.uid} key={employee.uid}>{employeeAssignmentLabel(employee)}</option>
+                    ))}
+                    {assignmentValue && !employeeProfiles.some(employee => employee.uid === assignmentValue) && (
+                      <option value={assignmentValue} disabled>Current assignee unavailable</option>
+                    )}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="v1-button v1-button-secondary"
+                  onClick={saveBookingAssignment}
+                  disabled={employeesLoading || assignmentSaving}
+                  style={{ marginTop: 12 }}
+                >
+                  {assignmentSaving ? 'Saving assignment...' : 'Save assignment'}
+                </button>
+                {employeesLoading && <p role="status" style={{ margin: '10px 0 0', color: '#64748b' }}>Loading active employees...</p>}
+                {assignmentError && <p role="alert" style={{ margin: '10px 0 0', color: '#991b1b' }}>{assignmentError}</p>}
+                {assignmentStatus && <p role="status" style={{ margin: '10px 0 0', color: '#166534' }}>{assignmentStatus}</p>}
+              </section>
+            )}
 
             <section style={{ marginTop: 24, padding: 20, border: '1px solid #dbeafe', background: '#eff6ff', borderRadius: 12 }}>
               <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18, fontWeight: 600 }}>Field completion</h3>

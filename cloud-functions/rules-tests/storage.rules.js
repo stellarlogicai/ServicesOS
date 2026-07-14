@@ -19,7 +19,7 @@ async function seedAccessData() {
     const database = context.firestore();
     await database.doc(`tenants/${TENANT_A}`).set({
       adminUsers: ['admin-a'],
-      users: ['admin-a', 'employee-a', 'employee-inactive', 'employee-disabled', 'employee-suspended', 'employee-tenantless'],
+      users: ['admin-a', 'employee-a', 'employee-a-2', 'employee-inactive', 'employee-disabled', 'employee-suspended', 'employee-tenantless'],
     });
     await database.doc(`tenants/${TENANT_B}`).set({
       adminUsers: ['admin-b'],
@@ -29,6 +29,7 @@ async function seedAccessData() {
       'admin-a': { role: 'admin', status: 'active', tenantId: TENANT_A },
       'admin-b': { role: 'admin', status: 'active', tenantId: TENANT_B },
       'employee-a': { role: 'employee', status: 'active', tenantId: TENANT_A },
+      'employee-a-2': { role: 'employee', status: 'active', tenantId: TENANT_A },
       'employee-b': { role: 'employee', status: 'active', tenantId: TENANT_B },
       'employee-inactive': { role: 'employee', status: 'inactive', tenantId: TENANT_A },
       'employee-disabled': { role: 'employee', status: 'disabled', tenantId: TENANT_A },
@@ -41,6 +42,17 @@ async function seedAccessData() {
     for (const [uid, profile] of Object.entries(profiles)) {
       await database.doc(`users/${uid}`).set(profile);
     }
+    await database.doc(`tenants/${TENANT_A}/bookings/booking-a`).set({
+      status: 'scheduled',
+      assignedEmployeeAuthUid: 'employee-a',
+    });
+    await database.doc(`tenants/${TENANT_A}/bookings/unassigned-booking`).set({
+      status: 'scheduled',
+    });
+    await database.doc(`tenants/${TENANT_B}/bookings/booking-b`).set({
+      status: 'scheduled',
+      assignedEmployeeAuthUid: 'employee-b',
+    });
   });
 }
 
@@ -86,6 +98,16 @@ describe('tenant-scoped Field Mode Storage rules', () => {
     ));
   });
 
+  test('tenant admin and super-admin can upload within a tenant path without employee assignment', async () => {
+    const unassignedAdminPath = `tenants/${TENANT_A}/bookings/unassigned-booking/field-photos/before/admin-photo.jpg`;
+    const superAdminPath = `tenants/${TENANT_A}/bookings/unassigned-booking/field-photos/after/super-photo.png`;
+    await assertSucceeds(upload('admin-a', unassignedAdminPath, 'image/jpeg'));
+    await assertSucceeds(storageFor('admin-a').ref(unassignedAdminPath).getDownloadURL());
+    await assertSucceeds(upload('super-admin', superAdminPath, 'image/png'));
+    await assertSucceeds(storageFor('super-admin').ref(superAdminPath).getDownloadURL());
+    await assertFails(upload('admin-b', unassignedAdminPath.replace('admin-photo', 'cross-admin'), 'image/jpeg'));
+  });
+
   test('employee upload rejects unsupported type, extension mismatch, zero bytes, and over 10 MB', async () => {
     await assertFails(upload('employee-a', `${PHOTO_PATH}.pdf`, 'application/pdf'));
     await assertFails(upload('employee-a', PHOTO_PATH, 'image/png'));
@@ -126,6 +148,21 @@ describe('tenant-scoped Field Mode Storage rules', () => {
     await assertSucceeds(storageFor('super-admin').ref(PHOTO_PATH).getDownloadURL());
     await assertFails(storageFor('admin-b').ref(PHOTO_PATH).getDownloadURL());
     await assertFails(storageFor('employee-b').ref(PHOTO_PATH).getDownloadURL());
+    await assertFails(storageFor('employee-a-2').ref(PHOTO_PATH).getDownloadURL());
+  });
+
+  test('reassignment revokes former employee photo access and grants the new employee', async () => {
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await context.storage().ref(PHOTO_PATH).put(new Uint8Array(32), { contentType: 'image/jpeg' });
+      await context.firestore().doc(`tenants/${TENANT_A}/bookings/booking-a`).update({
+        assignedEmployeeAuthUid: 'employee-a-2',
+      });
+    });
+
+    await assertFails(storageFor('employee-a').ref(PHOTO_PATH).getDownloadURL());
+    await assertFails(upload('employee-a', `tenants/${TENANT_A}/bookings/booking-a/field-photos/after/former.jpg`, 'image/jpeg'));
+    await assertSucceeds(storageFor('employee-a-2').ref(PHOTO_PATH).getDownloadURL());
+    await assertSucceeds(upload('employee-a-2', `tenants/${TENANT_A}/bookings/booking-a/field-photos/after/new.jpg`, 'image/jpeg'));
   });
 
   test('successful evidence cannot be overwritten or deleted by an employee', async () => {
@@ -134,6 +171,14 @@ describe('tenant-scoped Field Mode Storage rules', () => {
     const employeePhoto = storageFor('employee-a').ref(protectedPath);
     await assertFails(employeePhoto.put(new Uint8Array(64), { contentType: 'image/jpeg' }));
     await assertFails(employeePhoto.delete());
+  });
+
+  test('tenant admin cannot overwrite or delete persisted evidence', async () => {
+    const protectedPath = `tenants/${TENANT_A}/bookings/booking-a/field-photos/before/admin-protected.jpg`;
+    await assertSucceeds(upload('admin-a', protectedPath, 'image/jpeg'));
+    const adminPhoto = storageFor('admin-a').ref(protectedPath);
+    await assertFails(adminPhoto.put(new Uint8Array(64), { contentType: 'image/jpeg' }));
+    await assertFails(adminPhoto.delete());
   });
 
   test('mounted branding storage is limited to active super-admin image uploads', async () => {
