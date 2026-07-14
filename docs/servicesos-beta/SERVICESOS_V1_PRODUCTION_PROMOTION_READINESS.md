@@ -11,6 +11,12 @@ Protected production candidate: `master` / `origin/master` at
 
 Production changes performed: **None**
 
+Preflight follow-up: see `SERVICESOS_V1_PRODUCTION_PREFLIGHT_EVIDENCE.md`. Jamie approved
+the read-only inspection and the production target/database/index definitions were
+reverified. The required employee-assignment index is confirmed missing. Deployed rules,
+Storage CORS/path inventory, and sanitized production identity/assignment counts remain
+unverified because an authenticated read-only Console/data surface was unavailable.
+
 ## Executive Result
 
 The V1 lab history is complete, linear, pushed, and locally validated. Repository
