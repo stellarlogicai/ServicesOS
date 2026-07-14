@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BusinessSettings from '../components/BusinessSettings';
 
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
-  useAuth: () => ({ currentTenant: mocks.tenantId ? { id: mocks.tenantId } : null }),
+  useAuth: () => ({ currentTenant: mocks.tenantId ? { id: mocks.tenantId } : null, user: { uid: 'admin-test' } }),
 }));
 
 vi.mock('../services/businessSettingsService', () => ({
@@ -32,7 +32,19 @@ const settings = {
   businessPhone: '555-0100',
   businessEmail: 'owner@example.com',
   serviceArea: 'Bolivar, MO',
+  businessAddress: '10 Main Street',
+  websiteUrl: 'https://auntb.example',
+  facebookUrl: 'https://facebook.com/auntb',
+  defaultServiceNotes: 'Use side entry when available.',
   availability: { availableDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] },
+  stripeConnection: {
+    label: 'Needs setup',
+    detail: 'Stripe account exists, but payments or payouts are not fully ready yet.',
+    stripeAccountId: '...123456',
+    chargesEnabled: false,
+    payoutsEnabled: false,
+    status: 'pending',
+  },
 };
 
 describe('BusinessSettings', () => {
@@ -54,6 +66,13 @@ describe('BusinessSettings', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading');
     expect(await screen.findByDisplayValue('Aunt B Cleaning')).toBeInTheDocument();
     expect(mocks.getBusinessSettings).toHaveBeenCalledWith('tenant-a');
+    expect(screen.getByDisplayValue('555-0100')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('owner@example.com')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Bolivar, MO')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('10 Main Street')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('https://auntb.example')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('https://facebook.com/auntb')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Use side entry when available.')).toBeInTheDocument();
     expect(screen.getByLabelText('Monday')).toBeChecked();
     expect(screen.getByLabelText('Saturday')).not.toBeChecked();
     for (const unsafe of ['Staff', 'Portal', 'Pricing', 'API key', 'Payment Links', 'PaymentForm']) {
@@ -61,88 +80,88 @@ describe('BusinessSettings', () => {
     }
   });
 
-  it('shows only Stripe Connect setup actions and a not-ready status when charges are disabled', async () => {
-    mocks.getConnectedAccountStatus.mockResolvedValue({
-      connected: true,
-      status: 'pending',
-      chargesEnabled: false,
-      payoutsEnabled: false,
+  it('shows read-only Stripe status without setup actions', async () => {
+    render(<BusinessSettings />);
+
+    expect(await screen.findByText('Stripe connection status')).toBeInTheDocument();
+    expect(screen.getByText('Needs setup')).toBeInTheDocument();
+    expect(screen.getByText('Stripe account exists, but payments or payouts are not fully ready yet.')).toBeInTheDocument();
+    expect(screen.getByText('...123456')).toBeInTheDocument();
+    expect(screen.getAllByText('Not ready')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Continue Stripe onboarding' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refresh Stripe status' })).not.toBeInTheDocument();
+    expect(mocks.getConnectedAccountStatus).not.toHaveBeenCalled();
+  });
+
+  it('shows connected Stripe status when tenant data reports readiness', async () => {
+    mocks.getBusinessSettings.mockResolvedValue({
+      ...settings,
+      stripeConnection: {
+        label: 'Connected',
+        detail: 'Stripe is connected for booking payment links.',
+        stripeAccountId: '...999999',
+        chargesEnabled: true,
+        payoutsEnabled: true,
+        status: 'active',
+      },
     });
 
     render(<BusinessSettings />);
 
-    expect(await screen.findByText('Stripe Connect setup')).toBeInTheDocument();
-    expect(screen.getByText('Connect Stripe so customers can pay online from booking payment links. Payment links stay disabled until payments are active.')).toBeInTheDocument();
-    expect(await screen.findByText('Stripe is not ready yet. Finish setup before sending online payment links from Bookings.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Continue Stripe onboarding' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Refresh Stripe status' })).toBeInTheDocument();
-    expect(screen.queryByText('Payments ready')).not.toBeInTheDocument();
-    expect(screen.queryByText('Payment Links')).not.toBeInTheDocument();
+    expect(await screen.findByText('Stripe is connected for booking payment links.')).toBeInTheDocument();
+    expect(screen.getByText('Connected')).toBeInTheDocument();
+    expect(screen.getAllByText('Ready')).toHaveLength(2);
   });
 
-  it('shows ready only when backend reports chargesEnabled true', async () => {
-    mocks.getConnectedAccountStatus.mockResolvedValue({
-      connected: true,
-      status: 'active',
-      chargesEnabled: true,
-      payoutsEnabled: true,
-    });
-
-    render(<BusinessSettings />);
-
-    expect(await screen.findByText('Stripe is ready. You can create booking payment links from Bookings.')).toBeInTheDocument();
-    expect(screen.getByText('Online payments active').nextSibling).toHaveTextContent('Ready');
-    expect(screen.getByText('Payouts active').nextSibling).toHaveTextContent('Ready');
-  });
-
-  it('starts Stripe Connect setup without marking the tenant ready locally', async () => {
-    render(<BusinessSettings />);
-
-    const panel = await screen.findByRole('region', { name: 'Stripe Connect setup' });
-    fireEvent.change(await within(panel).findByLabelText('Business email'), { target: { value: 'owner@example.com' } });
-    fireEvent.change(within(panel).getByLabelText('Business name'), { target: { value: 'Aunt B Cleaning' } });
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue Stripe onboarding' }));
-
-    await waitFor(() => expect(mocks.createConnectedAccount).toHaveBeenCalledWith({
-      tenantId: 'tenant-a',
-      businessEmail: 'owner@example.com',
-      businessName: 'Aunt B Cleaning',
-    }));
-    expect(mocks.generateOnboardingLink).toHaveBeenCalledWith({
-      tenantId: 'tenant-a',
-      returnUrl: window.location.href,
-      refreshUrl: window.location.href,
-    });
-    expect(screen.queryByText('Stripe is ready. You can create booking payment links from Bookings.')).not.toBeInTheDocument();
-  });
-
-  it('shows actionable backend Stripe Connect setup errors', async () => {
-    mocks.createConnectedAccount.mockRejectedValue(new Error(
-      'Stripe Connect platform setup is not ready. Confirm you are using the sk_test key from the Stellar Logic AI onboarding sandbox with Connect enabled.'
-    ));
-    render(<BusinessSettings />);
-
-    const panel = await screen.findByRole('region', { name: 'Stripe Connect setup' });
-    fireEvent.change(await within(panel).findByLabelText('Business email'), { target: { value: 'owner@example.com' } });
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue Stripe onboarding' }));
-
-    expect(await within(panel).findByRole('alert')).toHaveTextContent(
-      'Stripe Connect platform setup is not ready. Confirm you are using the sk_test key from the Stellar Logic AI onboarding sandbox with Connect enabled.'
-    );
-    expect(mocks.generateOnboardingLink).not.toHaveBeenCalled();
-  });
-
-  it('changes available days and saves only through the tenant service', async () => {
+  it('edits basic business details and saves only through the tenant service', async () => {
     render(<BusinessSettings />);
     await screen.findByDisplayValue('Aunt B Cleaning');
+    fireEvent.change(screen.getByLabelText(/Business name/), { target: { value: 'Aunt B Cleaning Co.' } });
+    fireEvent.change(screen.getByLabelText('Business phone'), { target: { value: '555-0199' } });
+    fireEvent.change(screen.getByLabelText('Business email'), { target: { value: 'new-owner@example.com' } });
+    fireEvent.change(screen.getByLabelText('Service area'), { target: { value: 'Bolivar and Springfield' } });
+    fireEvent.change(screen.getByLabelText(/Business address/), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText(/Website link/), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText(/Facebook link/), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText(/Default service notes/), { target: { value: '' } });
     fireEvent.click(screen.getByLabelText('Saturday'));
     fireEvent.click(screen.getByRole('button', { name: 'Save Business Settings' }));
 
     await waitFor(() => expect(mocks.saveBusinessSettings).toHaveBeenCalledWith(
       'tenant-a',
-      expect.objectContaining({ availability: { availableDays: expect.arrayContaining(['monday', 'saturday']) } }),
+      expect.objectContaining({
+        businessName: 'Aunt B Cleaning Co.',
+        businessPhone: '555-0199',
+        businessEmail: 'new-owner@example.com',
+        serviceArea: 'Bolivar and Springfield',
+        businessAddress: '',
+        websiteUrl: '',
+        facebookUrl: '',
+        defaultServiceNotes: '',
+        availability: { availableDays: expect.arrayContaining(['monday', 'saturday']) },
+      }),
+      { updatedByUid: 'admin-test' },
     ));
     expect(await screen.findByText('Business settings saved.')).toBeInTheDocument();
+    expect(mocks.getConnectedAccountStatus).not.toHaveBeenCalled();
+    expect(mocks.createConnectedAccount).not.toHaveBeenCalled();
+    expect(mocks.generateOnboardingLink).not.toHaveBeenCalled();
+  });
+
+  it('validates required business name and basic email format before saving', async () => {
+    render(<BusinessSettings />);
+    await screen.findByDisplayValue('Aunt B Cleaning');
+
+    fireEvent.change(screen.getByLabelText(/Business name/), { target: { value: ' ' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Business settings form' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Business name is required.');
+    expect(mocks.saveBusinessSettings).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText(/Business name/), { target: { value: 'Aunt B Cleaning' } });
+    fireEvent.change(screen.getByLabelText('Business email'), { target: { value: 'not-an-email' } });
+    fireEvent.submit(screen.getByRole('form', { name: 'Business settings form' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a valid business email address.');
+    expect(mocks.saveBusinessSettings).not.toHaveBeenCalled();
   });
 
   it('rejects an empty available-day selection', async () => {

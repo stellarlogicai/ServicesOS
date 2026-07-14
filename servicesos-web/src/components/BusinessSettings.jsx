@@ -5,38 +5,51 @@ import {
   getBusinessSettings,
   saveBusinessSettings,
 } from '../services/businessSettingsService';
-import StripeConnectOnboarding from './StripeConnectOnboarding';
 
 const emptyForm = {
   businessName: '',
   businessPhone: '',
   businessEmail: '',
   serviceArea: '',
+  businessAddress: '',
+  websiteUrl: '',
+  facebookUrl: '',
+  defaultServiceNotes: '',
   availability: { availableDays: [] },
+  stripeConnection: {
+    label: 'Unknown',
+    detail: 'Stripe status is unavailable.',
+    stripeAccountId: '',
+    chargesEnabled: false,
+    payoutsEnabled: false,
+    status: 'unknown',
+  },
 };
 
 export default function BusinessSettings() {
-  const { currentTenant } = useAuth();
+  const { currentTenant, user } = useAuth();
   const tenantId = typeof currentTenant === 'string' ? currentTenant : currentTenant?.id;
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     setError('');
     setSuccess('');
     if (!tenantId) {
-      setError('Business settings could not be loaded. Your tenant is unavailable.');
+      setLoadError('Business settings could not be loaded. Your tenant is unavailable.');
       setLoading(false);
       return;
     }
     try {
       setForm(await getBusinessSettings(tenantId));
     } catch {
-      setError('Business settings could not be loaded. Please try again.');
+      setLoadError('Business settings could not be loaded. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -73,14 +86,24 @@ export default function BusinessSettings() {
     event.preventDefault();
     setError('');
     setSuccess('');
+    const normalizedName = form.businessName.trim();
+    const normalizedEmail = form.businessEmail.trim();
+    if (!normalizedName) {
+      setError('Business name is required.');
+      return;
+    }
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError('Enter a valid business email address.');
+      return;
+    }
     if (form.availability.availableDays.length === 0) {
       setError('Select at least one available day.');
       return;
     }
     setSaving(true);
     try {
-      const saved = await saveBusinessSettings(tenantId, form);
-      setForm(saved);
+      const saved = await saveBusinessSettings(tenantId, form, { updatedByUid: user?.uid });
+      setForm(current => ({ ...current, ...saved }));
       setSuccess('Business settings saved.');
     } catch {
       setError('Business settings could not be saved. Please try again.');
@@ -95,18 +118,23 @@ export default function BusinessSettings() {
     <section className="v1-page business-settings-page" style={{ maxWidth: 820 }} aria-labelledby="business-settings-title">
       <div className="v1-page-header" style={{ marginBottom: 32 }}>
         <h1 className="v1-page-title" id="business-settings-title">Business Settings</h1>
-        <p className="v1-page-subtitle">Set the business contact details, working days, and Stripe readiness for online booking payments.</p>
+        <p className="v1-page-subtitle">Set the business details used for owner/admin records and customer-facing copy where available.</p>
       </div>
       {loading && <p role="status">Loading business settings...</p>}
-      {!loading && error && <div role="alert" style={{ color: '#b91c1c', marginBottom: 16 }}>{error}</div>}
-      {!loading && error && tenantId && <button type="button" onClick={load}>Try again</button>}
-      {!loading && !error && (
+      {!loading && loadError && <div role="alert" style={{ color: '#b91c1c', marginBottom: 16 }}>{loadError}</div>}
+      {!loading && loadError && tenantId && <button type="button" onClick={load}>Try again</button>}
+      {!loading && !loadError && (
         <div style={{ display: 'grid', gap: 24 }}>
-          <form className="v1-card business-settings-form" onSubmit={save} style={{ display: 'grid', gap: 20, padding: 24 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Contact information</div>
+          <form className="v1-card business-settings-form" aria-label="Business settings form" onSubmit={save} style={{ display: 'grid', gap: 20, padding: 24 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Basic business details</div>
+              <p className="v1-muted" style={{ margin: '0 0 16px', fontSize: 13, color: '#64748b', lineHeight: 1.5 }}>
+                These details are used for owner/admin records and customer-facing copy where available.
+              </p>
+            </div>
             <label style={{ display: 'block', marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Business name</div>
-              <input name="businessName" value={form.businessName} onChange={updateText} style={fieldStyle} />
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Business name *</div>
+              <input name="businessName" value={form.businessName} onChange={updateText} required style={fieldStyle} />
             </label>
             <label style={{ display: 'block', marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Business phone</div>
@@ -119,6 +147,22 @@ export default function BusinessSettings() {
             <label style={{ display: 'block', marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Service area</div>
               <input name="serviceArea" value={form.serviceArea} onChange={updateText} style={fieldStyle} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Business address <span style={{ color: '#64748b' }}>(optional)</span></div>
+              <input name="businessAddress" value={form.businessAddress} onChange={updateText} style={fieldStyle} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Website link <span style={{ color: '#64748b' }}>(optional)</span></div>
+              <input name="websiteUrl" value={form.websiteUrl} onChange={updateText} style={fieldStyle} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Facebook link <span style={{ color: '#64748b' }}>(optional)</span></div>
+              <input name="facebookUrl" value={form.facebookUrl} onChange={updateText} style={fieldStyle} />
+            </label>
+            <label style={{ display: 'block', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Default service notes <span style={{ color: '#64748b' }}>(optional)</span></div>
+              <textarea name="defaultServiceNotes" value={form.defaultServiceNotes} onChange={updateText} rows={4} style={{ ...fieldStyle, resize: 'vertical' }} />
             </label>
             
             <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 8, marginTop: 8 }}>Availability</div>
@@ -149,9 +193,31 @@ export default function BusinessSettings() {
             </button>
           </form>
 
-          <StripeConnectOnboarding tenantId={tenantId} />
+          <section className="v1-card" aria-labelledby="stripe-status-title" style={{ padding: 24 }}>
+            <h2 id="stripe-status-title" style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 18 }}>Stripe connection status</h2>
+            <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 14, lineHeight: 1.5 }}>
+              This is read-only payment connection visibility. Stripe setup and payment confirmation are handled separately.
+            </p>
+            <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, margin: 0 }}>
+              <ReadOnlyDetail label="Status" value={form.stripeConnection?.label || 'Unknown'} />
+              <ReadOnlyDetail label="Details" value={form.stripeConnection?.detail || 'Stripe status is unavailable.'} />
+              <ReadOnlyDetail label="Connected account" value={form.stripeConnection?.stripeAccountId || 'Not connected'} />
+              <ReadOnlyDetail label="Online payments active" value={form.stripeConnection?.chargesEnabled ? 'Ready' : 'Not ready'} />
+              <ReadOnlyDetail label="Payouts active" value={form.stripeConnection?.payoutsEnabled ? 'Ready' : 'Not ready'} />
+              <ReadOnlyDetail label="Backend status" value={form.stripeConnection?.status || 'Unknown'} />
+            </dl>
+          </section>
         </div>
       )}
     </section>
+  );
+}
+
+function ReadOnlyDetail({ label, value }) {
+  return (
+    <div>
+      <dt style={{ color: '#64748b', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</dt>
+      <dd style={{ margin: '6px 0 0', color: '#0f172a' }}>{value}</dd>
+    </div>
   );
 }
