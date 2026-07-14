@@ -28,8 +28,7 @@ const emptyForm = {
 };
 
 export default function BusinessSettings() {
-  const { currentTenant, user } = useAuth();
-  const tenantId = typeof currentTenant === 'string' ? currentTenant : currentTenant?.id;
+  const { tenantId, user } = useAuth();
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

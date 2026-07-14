@@ -11,10 +11,7 @@ const emptyExportData = {
 };
 
 export default function DataExport() {
-  const { currentTenant, role, tenantId: profileTenantId } = useAuth();
-  const tenantId = typeof currentTenant === 'string'
-    ? currentTenant
-    : currentTenant?.id || profileTenantId;
+  const { role, tenantId } = useAuth();
   const isOwnerAdmin = role === 'admin' || role === 'super-admin';
   const [exportData, setExportData] = useState(emptyExportData);
   const [loading, setLoading] = useState(true);

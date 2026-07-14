@@ -17,7 +17,7 @@
  * FIRESTORE TENANT DOC (tenants/{tenantId}) — already handled by tenantService.js
  */
 
-import { useContext, useState, useEffect, useCallback } from 'react';
+import { useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
@@ -32,6 +32,7 @@ import { setCurrentTenantId, clearCurrentTenantId } from '../services/multiTenan
 import { getTenant } from '../services/tenantService';
 import { completeUserOnboarding } from '../services/onboardingService';
 import { AuthContext } from './AuthContextValue';
+import { normalizeTenantId, resolveActiveTenantId } from './activeTenant';
 
 // ─── Permission map ───────────────────────────────────────────────────────────
 // Scoped per role. Super-admin gets everything.
@@ -108,13 +109,21 @@ export function AuthProvider({ children }) {
   const [loading, setLoading]         = useState(true);
   const [tenantLoading, setTenantLoading] = useState(false);
   const [accessError, setAccessError] = useState('');
+  const tenantLoadRequestRef = useRef(0);
 
   // ── Load tenant helper ────────────────────────────────────────────────────
   const loadTenant = useCallback(async (tenantId, userRole) => {
-    if (!tenantId) {
-      setCurrentTenant(null);
-      clearCurrentTenantId();
-      return;
+    const requestId = ++tenantLoadRequestRef.current;
+    const normalizedTenantId = normalizeTenantId(tenantId);
+
+    // Invalidate the previous tenant before starting a switch so tenant-scoped
+    // pages unmount instead of showing stale records while the next tenant loads.
+    setCurrentTenant(null);
+    clearCurrentTenantId();
+
+    if (!normalizedTenantId) {
+      setTenantLoading(false);
+      return { success: true, tenant: null };
     }
 
     setTenantLoading(true);
@@ -122,19 +131,35 @@ export function AuthProvider({ children }) {
       // Customers and employees need only tenantId scoping, not the full tenant document.
       // This also keeps tenant business/payment configuration out of employee context.
       if (userRole === 'customer' || userRole === 'employee') {
-        setCurrentTenantId(tenantId);
-        setCurrentTenant(null);
-      } else {
-        const tenant = await getTenant(tenantId);
-        setCurrentTenant(tenant);
-        // Wire into multiTenantService so all data calls are scoped automatically
-        setCurrentTenantId(tenantId);
+        if (requestId !== tenantLoadRequestRef.current) {
+          return { success: false, error: 'Tenant selection changed.' };
+        }
+        setCurrentTenantId(normalizedTenantId);
+        return { success: true, tenant: null };
       }
+
+      const tenant = await getTenant(normalizedTenantId);
+      if (requestId !== tenantLoadRequestRef.current) {
+        return { success: false, error: 'Tenant selection changed.' };
+      }
+      if (normalizeTenantId(tenant?.id) !== normalizedTenantId) {
+        throw new Error('Loaded tenant does not match the requested tenant.');
+      }
+
+      setCurrentTenant(tenant);
+      setCurrentTenantId(normalizedTenantId);
+      return { success: true, tenant };
     } catch (err) {
-      console.error('[Auth] Failed to load tenant:', err);
-      setCurrentTenant(null);
+      if (requestId === tenantLoadRequestRef.current) {
+        console.error('[Auth] Failed to load tenant:', err);
+        setCurrentTenant(null);
+        clearCurrentTenantId();
+      }
+      return { success: false, error: 'Tenant could not be loaded.' };
     } finally {
-      setTenantLoading(false);
+      if (requestId === tenantLoadRequestRef.current) {
+        setTenantLoading(false);
+      }
     }
   }, []);
 
@@ -142,6 +167,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
+        tenantLoadRequestRef.current += 1;
         setUser(null);
         setUserProfile(null);
         setCurrentTenant(null);
@@ -288,6 +314,7 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try {
       await firebaseSignOut(auth);
+      tenantLoadRequestRef.current += 1;
       setUser(null);
       setUserProfile(null);
       setCurrentTenant(null);
@@ -334,13 +361,17 @@ export function AuthProvider({ children }) {
       console.warn('[Auth] switchTenant: only super-admins can switch tenants');
       return { success: false, error: 'Insufficient permissions' };
     }
-    await loadTenant(tenantId);
-    return { success: true };
+    return loadTenant(tenantId, 'super-admin');
   };
 
   // ── Role + permission helpers ─────────────────────────────────────────────
 
   const role = userProfile?.role || 'customer';
+  const activeTenantId = resolveActiveTenantId({
+    role,
+    profileTenantId: userProfile?.tenantId,
+    currentTenant,
+  });
 
   const isAdmin      = () => role === 'admin' || role === 'super-admin';
   const isSuperAdmin = () => role === 'super-admin';
@@ -388,7 +419,9 @@ export function AuthProvider({ children }) {
       userProfile,
       // Current company tenant  (full tenantService doc)
       currentTenant,
-      tenantId: userProfile?.tenantId || null,
+      // Canonical tenant scope for every tenant-scoped read/write.
+      activeTenantId,
+      tenantId: activeTenantId,
 
       // Loading states
       loading,
@@ -405,7 +438,7 @@ export function AuthProvider({ children }) {
 
       // Tenant actions
       switchTenant,        // super-admin only
-      reloadTenant: () => loadTenant(userProfile?.tenantId, userProfile?.role),
+      reloadTenant: () => loadTenant(activeTenantId, role),
 
       // Role helpers
       role,

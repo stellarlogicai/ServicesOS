@@ -98,7 +98,11 @@ export default function TenantManagement() {
 
   const handleSelectTenant = async (tenant) => {
     // Use the AuthContext's switchTenant function to properly set the current tenant
-    await switchTenant(tenant.id);
+    const result = await switchTenant(tenant.id);
+    if (!result?.success) {
+      showMessage('error', result?.error || 'Tenant could not be selected');
+      return;
+    }
     setSelectedTenant(tenant);
     showMessage('success', `Selected ${tenant.businessName}`);
   };

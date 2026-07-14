@@ -154,6 +154,22 @@ const NAV_ITEMS = [
   },
 ];
 
+const TENANT_SCOPED_PAGES = new Set([
+  'dashboard',
+  'intake',
+  'customers',
+  'bookings',
+  'staff-scheduling',
+  'route-optimization',
+  'calendar',
+  'field-mode',
+  'business-settings',
+  'insurance',
+  'data-export',
+  'ai-training',
+  'settings',
+]);
+
 // ─── Role-based access hook ───────────────────────────────────────────────────
 function useCanView() {
   const { role, hasPermission } = useAuth();
@@ -233,7 +249,7 @@ function StripeBookingCheckoutResult({ result }) {
 
 // ─── Tenant switcher (super-admin only) ──────────────────────────────────────
 function TenantSwitcher() {
-  const { isSuperAdmin, currentTenant, switchTenant } = useAuth();
+  const { isSuperAdmin, currentTenant, switchTenant, tenantLoading } = useAuth();
   if (!isSuperAdmin()) return null;
 
   return (
@@ -246,7 +262,7 @@ function TenantSwitcher() {
         Viewing tenant
       </div>
       <div style={{ fontSize: 12, color: currentTenant ? "#38bdf8" : "#64748b", fontWeight: 500 }}>
-        {currentTenant ? currentTenant.businessName : "All tenants (global)"}
+        {tenantLoading ? "Loading tenant..." : currentTenant ? currentTenant.businessName : "All tenants (global)"}
       </div>
       {currentTenant && (
         <button
@@ -262,7 +278,7 @@ function TenantSwitcher() {
 
 // ─── Authenticated shell ──────────────────────────────────────────────────────
 function AuthenticatedApp() {
-  const { user, role, logout, currentTenant, isSuperAdmin } = useAuth();
+  const { user, role, logout, currentTenant, tenantId, tenantLoading, isSuperAdmin } = useAuth();
   const { width } = useWindowSize();
   const isMobile  = width < 768;
   const canView   = useCanView();
@@ -408,27 +424,28 @@ function AuthenticatedApp() {
     const item = NAV_ITEMS.find(n => n.id === page);
     if (item && !canView(item)) return <AccessDenied />;
 
-    // Extract tenant ID safely - handle both object and string cases
-    const tenantId = typeof currentTenant === 'string' ? currentTenant : currentTenant?.id;
+    if (isSuperAdmin() && TENANT_SCOPED_PAGES.has(page) && !tenantId) {
+      return <TenantSelectionRequired loading={tenantLoading} />;
+    }
 
     switch (page) {
-      case "intake":            return <div className="v1-page" style={{ maxWidth: 720 }}><AIPhotoEstimateSystem onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
-      case "dashboard":         return <Dashboard />;
-      case "customers":         return <CustomerManagement />;
-      case "bookings":          return <BookingsList />;
-      case "field-mode":        return <FieldMode />;
-      case "staff-scheduling":  return <StaffScheduling tenantId={tenantId} />;
-      case "route-optimization": return <RouteOptimization tenantId={tenantId} />;
-      case "calendar":          return <CalendarView />;
-      case "business-settings": return <BusinessSettings />;
-      case "insurance":         return <InsuranceTracking tenantId={tenantId} />;
-      case "data-export":       return <DataExport />;
+      case "intake":            return <div className="v1-page" style={{ maxWidth: 720 }} key={tenantId}><AIPhotoEstimateSystem onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
+      case "dashboard":         return <Dashboard key={tenantId} />;
+      case "customers":         return <CustomerManagement key={tenantId} />;
+      case "bookings":          return <BookingsList key={tenantId} />;
+      case "field-mode":        return <FieldMode key={tenantId} />;
+      case "staff-scheduling":  return <StaffScheduling key={tenantId} tenantId={tenantId} />;
+      case "route-optimization": return <RouteOptimization key={tenantId} tenantId={tenantId} />;
+      case "calendar":          return <CalendarView key={tenantId} />;
+      case "business-settings": return <BusinessSettings key={tenantId} />;
+      case "insurance":         return <InsuranceTracking key={tenantId} tenantId={tenantId} />;
+      case "data-export":       return <DataExport key={tenantId} />;
       case "customer-portal":   return <CustomerPortal />;
       case "tenant-management": return <TenantManagement />;
-      case "ai-training":       return <AIModelTraining />;
+      case "ai-training":       return <AIModelTraining key={tenantId} />;
       case "growth-ai":         return <GrowthAIPage />;
       case "backup":            return <BackupPanel />;
-      case "settings":          return <CompanySettings />;
+      case "settings":          return <CompanySettings key={tenantId} />;
       default:                  return null;
     }
   };
@@ -457,6 +474,23 @@ function AuthenticatedApp() {
         {renderPage()}
       </main>
     </div>
+  );
+}
+
+function TenantSelectionRequired({ loading = false }) {
+  return (
+    <section className="v1-page" aria-labelledby="tenant-selection-required-title">
+      <div className="v1-empty-state" style={{ maxWidth: 560, margin: '64px auto', padding: 32, textAlign: 'center' }}>
+        <h1 id="tenant-selection-required-title" style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 22 }}>
+          {loading ? 'Loading selected tenant...' : 'Select a tenant to view this area.'}
+        </h1>
+        {!loading && (
+          <p style={{ margin: 0, color: '#64748b' }}>
+            Choose a tenant from Tenant management before opening tenant-scoped records or actions.
+          </p>
+        )}
+      </div>
+    </section>
   );
 }
 

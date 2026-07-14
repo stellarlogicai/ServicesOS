@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,10 +10,11 @@ const mocks = vi.hoisted(() => ({
   updateBookingManualPaymentStatus: vi.fn(),
   listFieldPhotos: vi.fn(),
   loadFieldPhotoBlob: vi.fn(),
+  tenantId: 'tenant-a',
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
-  useAuth: () => ({ tenantId: 'tenant-a' }),
+  useAuth: () => ({ tenantId: mocks.tenantId }),
 }));
 
 vi.mock('../core/scheduling/schedulingService', () => ({
@@ -67,6 +68,7 @@ import BookingsList from '../components/BookingsList';
 
 describe('read-only Bookings admin list', () => {
   beforeEach(() => {
+    mocks.tenantId = 'tenant-a';
     mocks.getJobs.mockReset();
     mocks.createBookingCheckoutSession.mockReset();
     mocks.updateBookingAdminFields.mockReset();
@@ -1274,5 +1276,60 @@ describe('read-only Bookings admin list', () => {
     expect(mocks.updateBookingAdminFields).not.toHaveBeenCalled();
     expect(screen.queryByRole('form', { name: 'Edit booking date and notes' })).not.toBeInTheDocument();
     expect(screen.getByText('Keep this note')).toBeInTheDocument();
+  });
+
+  it('clears Tenant A bookings and ignores its late response after switching to Tenant B', async () => {
+    let resolveTenantA;
+    mocks.getJobs.mockImplementation(tenantId => {
+      if (tenantId === 'tenant-a') {
+        return new Promise(resolve => { resolveTenantA = resolve; });
+      }
+      return Promise.resolve({
+        success: true,
+        data: [{ id: 'booking-b', customerName: 'Tenant B Customer', date: '2026-07-20' }],
+      });
+    });
+
+    const { rerender } = render(<BookingsList />);
+    await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a'));
+
+    mocks.tenantId = 'tenant-b';
+    rerender(<BookingsList />);
+    expect(await screen.findByRole('heading', { name: 'Tenant B Customer' })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveTenantA({
+        success: true,
+        data: [{ id: 'booking-a', customerName: 'Tenant A Customer', date: '2026-07-20' }],
+      });
+    });
+
+    expect(screen.queryByRole('heading', { name: 'Tenant A Customer' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tenant B Customer' })).toBeInTheDocument();
+  });
+
+  it('closes Tenant A booking actions and field-photo review when the tenant changes', async () => {
+    mocks.getJobs.mockImplementation(async tenantId => ({
+      success: true,
+      data: [{
+        id: tenantId === 'tenant-a' ? 'booking-a' : 'booking-b',
+        customerName: tenantId === 'tenant-a' ? 'Tenant A Selected Customer' : 'Tenant B Replacement Customer',
+        date: '2026-07-20',
+      }],
+    }));
+
+    const { rerender } = render(<BookingsList />);
+    expect(await screen.findByRole('heading', { name: 'Tenant A Selected Customer' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View Details' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(mocks.listFieldPhotos).toHaveBeenCalledWith('tenant-a', 'booking-a');
+
+    mocks.tenantId = 'tenant-b';
+    rerender(<BookingsList />);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit Payment Details' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create Stripe payment link' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Tenant B Replacement Customer' })).toBeInTheDocument();
   });
 });

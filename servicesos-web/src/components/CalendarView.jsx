@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getJobs } from '../core/scheduling/schedulingService';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -110,8 +110,10 @@ function DayBookings({ selectedDate, bookings, onClose }) {
 
 export default function CalendarView() {
   const { tenantId } = useAuth();
+  const loadRequestRef = useRef(0);
   const today = useMemo(() => new Date(), []);
   const [bookings, setBookings] = useState([]);
+  const [bookingsTenantId, setBookingsTenantId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
@@ -119,6 +121,10 @@ export default function CalendarView() {
   const [dayDialogOpen, setDayDialogOpen] = useState(false);
 
   const loadBookings = useCallback(async () => {
+    const requestedTenantId = tenantId;
+    const requestId = ++loadRequestRef.current;
+    const isCurrentRequest = () => requestId === loadRequestRef.current;
+
     setLoading(true);
     setError('');
     if (!tenantId) {
@@ -129,27 +135,40 @@ export default function CalendarView() {
     }
 
     try {
-      const result = await getJobs(tenantId);
+      const result = await getJobs(requestedTenantId);
+      if (!isCurrentRequest()) return;
       if (!result.success) {
         setBookings([]);
         setError('Calendar could not be loaded. Please try again.');
         return;
       }
       setBookings(Array.isArray(result.data) ? result.data : []);
+      setBookingsTenantId(requestedTenantId);
     } catch {
+      if (!isCurrentRequest()) return;
       setBookings([]);
       setError('Calendar could not be loaded. Please try again.');
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) setLoading(false);
     }
   }, [tenantId]);
 
   useEffect(() => {
-    let isActive = true;
+    let active = true;
+    loadRequestRef.current += 1;
     Promise.resolve().then(() => {
-      if (isActive) loadBookings();
+      if (!active) return;
+      setBookings([]);
+      setBookingsTenantId(null);
+      setDayDialogOpen(false);
+      setError('');
+      setLoading(true);
+      loadBookings();
     });
-    return () => { isActive = false; };
+    return () => {
+      active = false;
+      loadRequestRef.current += 1;
+    };
   }, [loadBookings]);
 
   useEffect(() => {
@@ -163,6 +182,7 @@ export default function CalendarView() {
 
   const bookingsByDate = useMemo(() => {
     const grouped = new Map();
+    if (bookingsTenantId !== tenantId) return grouped;
     bookings.forEach(booking => {
       const key = bookingCalendarDateKey(booking);
       if (!key) return;
@@ -171,7 +191,7 @@ export default function CalendarView() {
       grouped.set(key, existing);
     });
     return grouped;
-  }, [bookings]);
+  }, [bookings, bookingsTenantId, tenantId]);
 
   const cells = useMemo(() => monthCells(visibleMonth), [visibleMonth]);
   const selectedBookings = bookingsByDate.get(dateKey(selectedDate)) || [];
@@ -247,7 +267,9 @@ export default function CalendarView() {
             </div>
           </div>
 
-          {dayDialogOpen && <DayBookings selectedDate={selectedDate} bookings={selectedBookings} onClose={() => setDayDialogOpen(false)} />}
+          {dayDialogOpen && bookingsTenantId === tenantId && (
+            <DayBookings selectedDate={selectedDate} bookings={selectedBookings} onClose={() => setDayDialogOpen(false)} />
+          )}
         </>
       )}
     </section>

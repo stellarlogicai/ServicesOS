@@ -1,4 +1,4 @@
-import { createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FieldMode from '../components/FieldMode';
 
@@ -375,5 +375,58 @@ describe('FieldMode read-only field surface', () => {
     for (const name of ['Arrived', 'In Progress', 'Edit', 'Edit Payment Details', 'Create Stripe payment link', 'Delete', 'Pay', 'Collect payment', 'Refund', 'Assign', 'Reschedule', 'Upload photo', 'Start route', 'Panic']) {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
     }
+  });
+
+  it('clears Tenant A field records and ignores its late response after switching to Tenant B', async () => {
+    let resolveTenantA;
+    mocks.getJobs.mockImplementation(tenantId => {
+      if (tenantId === 'tenant-a') {
+        return new Promise(resolve => { resolveTenantA = resolve; });
+      }
+      return Promise.resolve({
+        success: true,
+        data: [{ id: 'job-b', customerName: 'Tenant B Field Customer', date: dateKey(today) }],
+      });
+    });
+
+    const { rerender } = render(<FieldMode />);
+    await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a'));
+
+    mocks.tenantId = 'tenant-b';
+    rerender(<FieldMode />);
+    expect(await screen.findByText('Tenant B Field Customer')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveTenantA({
+        success: true,
+        data: [{ id: 'job-a', customerName: 'Tenant A Field Customer', date: dateKey(today) }],
+      });
+    });
+
+    expect(screen.queryByText('Tenant A Field Customer')).not.toBeInTheDocument();
+    expect(screen.getByText('Tenant B Field Customer')).toBeInTheDocument();
+  });
+
+  it('closes the Tenant A job packet and photo surface when the tenant changes', async () => {
+    mocks.getJobs.mockImplementation(async tenantId => ({
+      success: true,
+      data: [{
+        id: tenantId === 'tenant-a' ? 'field-a' : 'field-b',
+        customerName: tenantId === 'tenant-a' ? 'Tenant A Job Packet' : 'Tenant B Job Packet',
+        date: dateKey(today),
+      }],
+    }));
+
+    const { rerender } = render(<FieldMode />);
+    await screen.findByText('Tenant A Job Packet');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    mocks.tenantId = 'tenant-b';
+    rerender(<FieldMode />);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(await screen.findByText('Tenant B Job Packet')).toBeInTheDocument();
+    expect(screen.queryByText('Tenant A Job Packet')).not.toBeInTheDocument();
   });
 });

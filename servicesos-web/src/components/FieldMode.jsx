@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BOOKING_FIELD_STATUS_LABELS,
   getJobs,
@@ -363,6 +363,7 @@ function JobPacket({ booking, employeeView, employeePhotoAccess, tenantId, userI
 
 export default function FieldMode() {
   const { isEmployee, tenantId, user, userProfile } = useAuth();
+  const loadRequestRef = useRef(0);
   const employeeView = isEmployee?.() === true;
   const employeePhotoAccess = employeeView &&
     userProfile?.role === 'employee' &&
@@ -370,6 +371,7 @@ export default function FieldMode() {
     userProfile?.tenantId === tenantId &&
     user?.uid === userProfile?.uid;
   const [bookings, setBookings] = useState([]);
+  const [bookingsTenantId, setBookingsTenantId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
@@ -381,6 +383,10 @@ export default function FieldMode() {
   };
 
   const load = useCallback(async () => {
+    const requestedTenantId = tenantId;
+    const requestId = ++loadRequestRef.current;
+    const isCurrentRequest = () => requestId === loadRequestRef.current;
+
     setLoading(true);
     setError('');
     if (!tenantId) {
@@ -390,31 +396,47 @@ export default function FieldMode() {
       return;
     }
     try {
-      const result = await getJobs(tenantId);
+      const result = await getJobs(requestedTenantId);
+      if (!isCurrentRequest()) return;
       if (!result.success) throw new Error('load-failed');
       setBookings(Array.isArray(result.data) ? result.data : []);
+      setBookingsTenantId(requestedTenantId);
     } catch {
+      if (!isCurrentRequest()) return;
       setBookings([]);
       setError('Field Mode could not be loaded. Please try again.');
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) setLoading(false);
     }
   }, [tenantId]);
 
   useEffect(() => {
     let active = true;
-    Promise.resolve().then(() => active && load());
-    return () => { active = false; };
+    loadRequestRef.current += 1;
+    Promise.resolve().then(() => {
+      if (!active) return;
+      setBookings([]);
+      setBookingsTenantId(null);
+      setSelectedBooking(null);
+      setError('');
+      setLoading(true);
+      load();
+    });
+    return () => {
+      active = false;
+      loadRequestRef.current += 1;
+    };
   }, [load]);
 
   const grouped = useMemo(() => {
     const today = localDateKey(new Date());
-    const ordered = [...bookings].filter(booking => bookingDateKey(booking) >= today).sort((a, b) => sortValue(a).localeCompare(sortValue(b)));
+    const activeBookings = bookingsTenantId === tenantId ? bookings : [];
+    const ordered = [...activeBookings].filter(booking => bookingDateKey(booking) >= today).sort((a, b) => sortValue(a).localeCompare(sortValue(b)));
     return {
       today: ordered.filter(booking => bookingDateKey(booking) === today),
       upcoming: ordered.filter(booking => bookingDateKey(booking) > today),
     };
-  }, [bookings]);
+  }, [bookings, bookingsTenantId, tenantId]);
 
   return (
     <section className="v1-page field-mode-page" aria-labelledby="field-mode-title">
@@ -436,7 +458,7 @@ export default function FieldMode() {
           </section>
         </div>
       )}
-      {selectedBooking && (
+      {selectedBooking && bookingsTenantId === tenantId && (
         <JobPacket
           key={selectedBooking.id || 'selected-job'}
           booking={selectedBooking}

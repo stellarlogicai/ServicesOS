@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BOOKING_FIELD_STATUS_LABELS,
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS,
@@ -41,7 +41,9 @@ const customerMessageButtonStyle = {
 
 export default function BookingsList() {
   const { tenantId } = useAuth();
+  const loadRequestRef = useRef(0);
   const [bookings, setBookings] = useState([]);
+  const [bookingsTenantId, setBookingsTenantId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
@@ -71,6 +73,10 @@ export default function BookingsList() {
   const [customerMessageStatus, setCustomerMessageStatus] = useState('');
 
   const loadBookings = useCallback(async () => {
+    const requestedTenantId = tenantId;
+    const requestId = ++loadRequestRef.current;
+    const isCurrentRequest = () => requestId === loadRequestRef.current;
+
     setLoading(true);
     setError('');
 
@@ -82,32 +88,47 @@ export default function BookingsList() {
     }
 
     try {
-      const result = await getJobs(tenantId);
+      const result = await getJobs(requestedTenantId);
+      if (!isCurrentRequest()) return;
       if (result.success) {
         setBookings(Array.isArray(result.data) ? result.data : []);
+        setBookingsTenantId(requestedTenantId);
       } else {
         setBookings([]);
         setSelectedBooking(null);
         setError('Bookings could not be loaded. Please try again.');
       }
     } catch {
+      if (!isCurrentRequest()) return;
       setBookings([]);
       setSelectedBooking(null);
       setError('Bookings could not be loaded. Please try again.');
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) setLoading(false);
     }
   }, [tenantId]);
 
   useEffect(() => {
-    let isActive = true;
+    let active = true;
+    loadRequestRef.current += 1;
     Promise.resolve().then(() => {
-      if (isActive) loadBookings();
+      if (!active) return;
+      setBookings([]);
+      setBookingsTenantId(null);
+      setSelectedBooking(null);
+      setError('');
+      setLoading(true);
+      setStripeLinkState({ creating: false, url: '', error: '', copyMessage: '' });
+      setCustomerMessageStatus('');
+      loadBookings();
     });
     return () => {
-      isActive = false;
+      active = false;
+      loadRequestRef.current += 1;
     };
   }, [loadBookings]);
+
+  const visibleBookings = bookingsTenantId === tenantId ? bookings : [];
 
   const openBookingDetails = (booking) => {
     setSelectedBooking(booking);
@@ -394,7 +415,7 @@ export default function BookingsList() {
         </div>
       )}
 
-      {!loading && !error && bookings.length === 0 && (
+      {!loading && !error && visibleBookings.length === 0 && (
         <div className="v1-empty-state" style={{ padding: 48, textAlign: 'center', border: '1px solid #e2e8f0', borderRadius: 12, color: '#64748b' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>📅</div>
           <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No bookings yet</div>
@@ -402,9 +423,9 @@ export default function BookingsList() {
         </div>
       )}
 
-      {!loading && !error && bookings.length > 0 && (
+      {!loading && !error && visibleBookings.length > 0 && (
         <div className="bookings-grid">
-          {bookings.map((booking, index) => (
+          {visibleBookings.map((booking, index) => (
             <article className="v1-card booking-list-card" key={booking?.id || `booking-${index}`}>
               <div className="booking-list-main">
                 <div className="booking-list-customer">
@@ -432,7 +453,7 @@ export default function BookingsList() {
         </div>
       )}
 
-      {selectedBooking && (
+      {selectedBooking && bookingsTenantId === tenantId && (
         <div
           className="v1-modal-overlay"
           role="dialog"

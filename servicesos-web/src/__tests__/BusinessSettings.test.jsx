@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
-  useAuth: () => ({ currentTenant: mocks.tenantId ? { id: mocks.tenantId } : null, user: { uid: 'admin-test' } }),
+  useAuth: () => ({ tenantId: mocks.tenantId, user: { uid: 'admin-test' } }),
 }));
 
 vi.mock('../services/businessSettingsService', () => ({

@@ -85,6 +85,8 @@ const authState = {
     businessName: 'Test Cleaning Co.',
     onboardingCompleted: false
   },
+  tenantId: 'tenant-test',
+  tenantLoading: false,
   loading: false,
   logout: vi.fn(),
   hasPermission: () => true,
@@ -110,11 +112,15 @@ describe('App onboarding router context', () => {
     authState.role = 'admin';
     authState.hasPermission = () => true;
     authState.isSuperAdmin = () => false;
+    authState.isEmployee = () => false;
+    authState.isSuperAdmin = () => false;
     authState.currentTenant = {
       id: 'tenant-test',
       businessName: 'Test Cleaning Co.',
       onboardingCompleted: false
     };
+    authState.tenantId = 'tenant-test';
+    authState.tenantLoading = false;
     authState.userProfile = { uid: 'admin-test', onboardingCompleted: false };
   });
 
@@ -329,6 +335,37 @@ describe('App onboarding router context', () => {
     expect(screen.getByRole('heading', { name: 'GrowthAI — Marketing Helper' })).toBeInTheDocument();
     expect(screen.getByText(/Placeholder\/local generation only/)).toBeInTheDocument();
     expect(screen.queryByText('Payment links')).not.toBeInTheDocument();
+  });
+
+  it('blocks super-admin tenant pages until an explicit tenant is selected', () => {
+    authState.role = 'super-admin';
+    authState.isSuperAdmin = () => true;
+    authState.userProfile = { uid: 'super-admin-test', role: 'super-admin', onboardingCompleted: true };
+    authState.currentTenant = null;
+    authState.tenantId = null;
+
+    const { rerender } = render(<App />);
+
+    for (const label of ['Dashboard', 'Create estimate', 'Bookings', 'Calendar', 'Field Mode', 'Business Settings', 'Data export']) {
+      fireEvent.click(screen.getByText(label));
+      expect(screen.getByRole('heading', { name: 'Select a tenant to view this area.' })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('heading', { name: 'Bookings Screen' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Create Estimate Screen' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Business Settings Screen' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Data Export Screen' })).not.toBeInTheDocument();
+
+    authState.currentTenant = { id: 'tenant-b', businessName: 'Tenant B' };
+    authState.tenantId = 'tenant-b';
+    rerender(<App />);
+    fireEvent.click(screen.getByText('Bookings'));
+    expect(screen.getByRole('heading', { name: 'Bookings Screen' })).toBeInTheDocument();
+
+    authState.currentTenant = null;
+    authState.tenantId = null;
+    rerender(<App />);
+    expect(screen.getByRole('heading', { name: 'Select a tenant to view this area.' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Bookings Screen' })).not.toBeInTheDocument();
   });
 
   it('does not expose GrowthAI to customer users', () => {

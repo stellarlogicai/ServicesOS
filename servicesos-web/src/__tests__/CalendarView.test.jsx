@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CalendarView from '../components/CalendarView';
 
@@ -143,5 +143,58 @@ describe('CalendarView month calendar read-only boundary', () => {
     expect(screen.queryByRole('button', { name: 'Edit Payment Details' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Create Stripe payment link' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'View Details' })).not.toBeInTheDocument();
+  });
+
+  it('ignores a late Tenant A calendar response after switching to Tenant B', async () => {
+    let resolveTenantA;
+    mocks.getJobs.mockImplementation(tenantId => {
+      if (tenantId === 'tenant-a') {
+        return new Promise(resolve => { resolveTenantA = resolve; });
+      }
+      return Promise.resolve({
+        success: true,
+        data: [{ id: 'booking-b', customerName: 'Tenant B Calendar Customer', date: dateForDay(bookedDay) }],
+      });
+    });
+
+    const { rerender } = render(<CalendarView />);
+    await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a'));
+
+    mocks.tenantId = 'tenant-b';
+    rerender(<CalendarView />);
+    expect(await screen.findByText('Tenant B Calendar Customer')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveTenantA({
+        success: true,
+        data: [{ id: 'booking-a', customerName: 'Tenant A Calendar Customer', date: dateForDay(bookedDay) }],
+      });
+    });
+
+    expect(screen.queryByText('Tenant A Calendar Customer')).not.toBeInTheDocument();
+    expect(screen.getByText('Tenant B Calendar Customer')).toBeInTheDocument();
+  });
+
+  it('closes a selected Tenant A calendar day when the tenant changes', async () => {
+    mocks.getJobs.mockImplementation(async tenantId => ({
+      success: true,
+      data: [{
+        id: tenantId === 'tenant-a' ? 'calendar-a' : 'calendar-b',
+        customerName: tenantId === 'tenant-a' ? 'Tenant A Day Customer' : 'Tenant B Day Customer',
+        date: dateForDay(bookedDay),
+      }],
+    }));
+
+    const { rerender } = render(<CalendarView />);
+    await screen.findByText('Tenant A Day Customer');
+    fireEvent.click(screen.getByRole('button', { name: `Select ${dayLabel(bookedDay)}, 1 booking` }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    mocks.tenantId = 'tenant-b';
+    rerender(<CalendarView />);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(await screen.findByText('Tenant B Day Customer')).toBeInTheDocument();
+    expect(screen.queryByText('Tenant A Day Customer')).not.toBeInTheDocument();
   });
 });

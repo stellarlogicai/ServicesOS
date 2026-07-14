@@ -89,6 +89,20 @@ function SignupGuardProbe() {
   return <button onClick={() => signup('customer@example.com', 'password', null, 'customer')}>Try orphan signup</button>;
 }
 
+function TenantSwitchProbe() {
+  const { currentTenant, switchTenant, tenantId, tenantLoading } = useAuth();
+  return (
+    <div>
+      <div>Selected tenant: {currentTenant?.businessName || 'none'}</div>
+      <div>Active tenant ID: {tenantId || 'none'}</div>
+      <div>Tenant loading: {tenantLoading ? 'yes' : 'no'}</div>
+      <button type="button" onClick={() => switchTenant('tenant-a')}>Select Tenant A</button>
+      <button type="button" onClick={() => switchTenant('tenant-b')}>Select Tenant B</button>
+      <button type="button" onClick={() => switchTenant('DEFAULT')}>Select invalid tenant</button>
+    </div>
+  );
+}
+
 describe('AuthContext logout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -274,5 +288,82 @@ describe('AuthContext logout', () => {
     expect(await screen.findByText('Profile role: customer')).toBeInTheDocument();
     expect(screen.getByText('Field Mode access: no')).toBeInTheDocument();
     expect(mocks.getTenant).not.toHaveBeenCalled();
+  });
+
+  it('propagates an explicit super-admin tenant selection and rejects DEFAULT without a read', async () => {
+    mocks.getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ role: 'super-admin', status: 'active', tenantId: null }),
+    });
+    mocks.getTenant.mockImplementation(async tenantId => ({
+      id: tenantId,
+      businessName: tenantId === 'tenant-a' ? 'Tenant A' : 'Tenant B',
+    }));
+
+    render(<AuthProvider><TenantSwitchProbe /></AuthProvider>);
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'super@example.com', uid: 'super-a' });
+    });
+
+    expect(await screen.findByText('Active tenant ID: none')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Tenant A' }));
+    expect(await screen.findByText('Active tenant ID: tenant-a')).toBeInTheDocument();
+    expect(screen.getByText('Selected tenant: Tenant A')).toBeInTheDocument();
+    expect(mocks.setCurrentTenantId).toHaveBeenLastCalledWith('tenant-a');
+
+    const readsBeforeInvalidSelection = mocks.getTenant.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Select invalid tenant' }));
+    expect(await screen.findByText('Active tenant ID: none')).toBeInTheDocument();
+    expect(mocks.getTenant).toHaveBeenCalledTimes(readsBeforeInvalidSelection);
+  });
+
+  it.each([
+    ['admin', { role: 'admin', status: 'active', tenantId: 'tenant-a' }],
+    ['employee', { role: 'employee', status: 'active', tenantId: 'tenant-a' }],
+    ['customer', { role: 'customer', status: 'active', tenantId: 'tenant-a' }],
+  ])('does not allow a normal %s to switch away from the profile tenant', async (_label, profile) => {
+    mocks.getDoc.mockResolvedValueOnce({ exists: () => true, data: () => profile });
+
+    render(<AuthProvider><TenantSwitchProbe /></AuthProvider>);
+    await act(async () => {
+      await mocks.authStateChanged({ email: `${profile.role}@example.com`, uid: `${profile.role}-a` });
+    });
+
+    expect(await screen.findByText('Active tenant ID: tenant-a')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Tenant B' }));
+    expect(screen.getByText('Active tenant ID: tenant-a')).toBeInTheDocument();
+    expect(mocks.getTenant).not.toHaveBeenCalledWith('tenant-b');
+  });
+
+  it('ignores a late tenant load after a newer super-admin selection completes', async () => {
+    mocks.getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ role: 'super-admin', status: 'active', tenantId: null }),
+    });
+    let resolveTenantA;
+    mocks.getTenant.mockImplementation(tenantId => {
+      if (tenantId === 'tenant-a') {
+        return new Promise(resolve => { resolveTenantA = resolve; });
+      }
+      return Promise.resolve({ id: 'tenant-b', businessName: 'Tenant B' });
+    });
+
+    render(<AuthProvider><TenantSwitchProbe /></AuthProvider>);
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'super@example.com', uid: 'super-a' });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Tenant A' }));
+    await waitFor(() => expect(mocks.getTenant).toHaveBeenCalledWith('tenant-a'));
+    fireEvent.click(screen.getByRole('button', { name: 'Select Tenant B' }));
+
+    expect(await screen.findByText('Active tenant ID: tenant-b')).toBeInTheDocument();
+    expect(screen.getByText('Selected tenant: Tenant B')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveTenantA({ id: 'tenant-a', businessName: 'Tenant A' });
+    });
+    expect(screen.getByText('Active tenant ID: tenant-b')).toBeInTheDocument();
+    expect(screen.queryByText('Selected tenant: Tenant A')).not.toBeInTheDocument();
   });
 });
