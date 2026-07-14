@@ -344,6 +344,10 @@ describe('App onboarding router context', () => {
 
     expect(screen.getByText('Customer portal')).toBeInTheDocument();
     expect(screen.queryByText('GrowthAI')).not.toBeInTheDocument();
+    expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByText('Data export')).not.toBeInTheDocument();
+    expect(screen.queryByText('Business Settings')).not.toBeInTheDocument();
+    expect(screen.queryByText('Field Mode')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'GrowthAI — Marketing Helper' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Customer Portal Screen' })).toBeInTheDocument();
   });

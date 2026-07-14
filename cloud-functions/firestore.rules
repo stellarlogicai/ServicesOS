@@ -11,6 +11,26 @@ service cloud.firestore {
       return isAuthenticated() && 
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
     }
+
+    function authenticatedUserProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasAuthenticatedUserProfile() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isCustomerUser() {
+      return hasAuthenticatedUserProfile() &&
+             authenticatedUserProfile().role == 'customer' &&
+             authenticatedUserProfile().status == 'active';
+    }
+
+    function userTenantMatches(tenantId) {
+      return hasAuthenticatedUserProfile() &&
+             authenticatedUserProfile().tenantId == tenantId;
+    }
     
     function isTenantAdmin(tenantId) {
       return isAuthenticated() && 
@@ -54,6 +74,101 @@ service cloud.firestore {
     function isFieldModeBookingUpdate(tenantId) {
       return isTenantFieldUser(tenantId) && fieldModeBookingUpdateKeysOnly();
     }
+
+    function isOwnLinkedCustomer(tenantId, customerId) {
+      let customer = get(/databases/$(database)/documents/tenants/$(tenantId)/customers/$(customerId)).data;
+      return isCustomerUser() &&
+             userTenantMatches(tenantId) &&
+             customerId is string &&
+             exists(/databases/$(database)/documents/tenants/$(tenantId)/customers/$(customerId)) &&
+             customer.authUid == request.auth.uid &&
+             (!('isArchived' in customer) || customer.isArchived != true) &&
+             (!('status' in customer) || !(customer.status in ['archived', 'disabled', 'inactive']));
+    }
+
+    function isOwnCustomerRecord(tenantId) {
+      return isCustomerUser() &&
+             userTenantMatches(tenantId) &&
+             resource.data.authUid == request.auth.uid;
+    }
+
+    function customerQuoteRequestKeysOnly() {
+      return request.resource.data.keys().hasOnly([
+        'schemaVersion',
+        'type',
+        'source',
+        'status',
+        'tenantId',
+        'customerId',
+        'propertyId',
+        'createdByAuthUid',
+        'formData',
+        'estimate',
+        'aiAnalysis',
+        'booking',
+        'customerSnapshot',
+        'propertySnapshot',
+        'requestSnapshot',
+        'review',
+        'appointmentRequest',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    function isOwnCustomerQuoteRequestCreate(tenantId) {
+      return isCustomerUser() &&
+             userTenantMatches(tenantId) &&
+             request.resource.data.tenantId == tenantId &&
+             request.resource.data.createdByAuthUid == request.auth.uid &&
+             request.resource.data.type == 'quote_request' &&
+             request.resource.data.source == 'customer-portal' &&
+             request.resource.data.status == 'new' &&
+             request.resource.data.booking == null &&
+             isOwnLinkedCustomer(tenantId, request.resource.data.customerId) &&
+             customerQuoteRequestKeysOnly();
+    }
+
+    function isOwnCustomerQuoteRequestRead(tenantId) {
+      return isCustomerUser() &&
+             userTenantMatches(tenantId) &&
+             resource.data.tenantId == tenantId &&
+             resource.data.createdByAuthUid == request.auth.uid &&
+             resource.data.type == 'quote_request' &&
+             resource.data.source == 'customer-portal';
+    }
+
+    function isOwnCustomerProfileCreate(userId) {
+      return isAuthenticated() &&
+             request.auth.uid == userId &&
+             request.resource.data.keys().hasOnly([
+               'email',
+               'role',
+               'tenantId',
+               'displayName',
+               'phone',
+               'photoURL',
+               'status',
+               'createdAt',
+               'updatedAt'
+             ]) &&
+             request.resource.data.role == 'customer' &&
+             request.resource.data.status == 'active' &&
+             request.resource.data.tenantId is string &&
+             request.resource.data.tenantId.size() > 0 &&
+             exists(/databases/$(database)/documents/tenants/$(request.resource.data.tenantId));
+    }
+
+    function isSafeOwnProfileUpdate(userId) {
+      return isAuthenticated() &&
+             request.auth.uid == userId &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+               'displayName',
+               'phone',
+               'photoURL',
+               'updatedAt'
+             ]);
+    }
     
     // Tenants collection - allow create for testing, will restrict later
     match /tenants/{tenantId} {
@@ -76,10 +191,9 @@ service cloud.firestore {
     
     // Leads - isolated by tenant
     match /tenants/{tenantId}/leads/{leadId} {
-      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing lead CRUD
-      allow create: if isSuperAdmin() || isAuthenticated();
-      allow update: if isSuperAdmin() || isAuthenticated();
-      allow delete: if isSuperAdmin() || isAuthenticated();
+      allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || isOwnCustomerQuoteRequestRead(tenantId);
+      allow create: if isSuperAdmin() || isTenantAdmin(tenantId) || isOwnCustomerQuoteRequestCreate(tenantId);
+      allow update, delete: if isSuperAdmin() || isTenantAdmin(tenantId);
     }
     
     // Quotes - isolated by tenant
@@ -156,10 +270,8 @@ service cloud.firestore {
     
     // Customers - isolated by tenant (CRM)
     match /tenants/{tenantId}/customers/{customerId} {
-      allow read: if isSuperAdmin() || isAuthenticated(); // Temporary: allow any authenticated user for testing customer CRUD
-      allow create: if isSuperAdmin() || isAuthenticated();
-      allow update: if isSuperAdmin() || isAuthenticated();
-      allow delete: if isSuperAdmin() || isAuthenticated();
+      allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || isOwnCustomerRecord(tenantId);
+      allow create, update, delete: if isSuperAdmin() || isTenantAdmin(tenantId);
     }
     
     // Appointments - isolated by tenant (scheduling)
@@ -213,7 +325,9 @@ service cloud.firestore {
     // Users collection - for user management
     match /users/{userId} {
       allow read: if isAuthenticated() && request.auth.uid == userId;
-      allow write: if isAuthenticated() && request.auth.uid == userId;
+      allow create: if isOwnCustomerProfileCreate(userId);
+      allow update: if isSafeOwnProfileUpdate(userId);
+      allow delete: if false;
     }
   }
 }

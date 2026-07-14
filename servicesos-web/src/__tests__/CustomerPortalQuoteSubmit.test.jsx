@@ -9,17 +9,13 @@ const customerPortalMocks = vi.hoisted(() => ({
     tenantId: 'tenant-test',
     currentTenant: { id: 'tenant-test', businessName: 'Test Cleaning Co.' }
   },
-  getQuotes: vi.fn(),
+  getOwnCustomerPortalQuoteRequests: vi.fn(),
   resolveCustomerPortalCustomer: vi.fn(),
   submitCustomerPortalQuoteRequest: vi.fn()
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => customerPortalMocks.authContext
-}));
-
-vi.mock('../services/crmService', () => ({
-  getQuotes: customerPortalMocks.getQuotes
 }));
 
 vi.mock('../services/pdfService', () => ({
@@ -38,6 +34,8 @@ vi.mock('../services/customerPortalIdentityService', () => ({
 }));
 
 vi.mock('../services/customerPortalQuoteRequestService', () => ({
+  CUSTOMER_ACCOUNT_NOT_CONNECTED_MESSAGE: "Your account is not connected to a service business yet. Please use the business's quote request link or contact the business directly.",
+  getOwnCustomerPortalQuoteRequests: customerPortalMocks.getOwnCustomerPortalQuoteRequests,
   submitCustomerPortalQuoteRequest: customerPortalMocks.submitCustomerPortalQuoteRequest
 }));
 
@@ -77,8 +75,8 @@ describe('CustomerPortal quote request submit wiring', () => {
       tenantId: 'tenant-test',
       currentTenant: { id: 'tenant-test', businessName: 'Test Cleaning Co.' }
     };
-    customerPortalMocks.getQuotes.mockReset();
-    customerPortalMocks.getQuotes.mockResolvedValue([]);
+    customerPortalMocks.getOwnCustomerPortalQuoteRequests.mockReset();
+    customerPortalMocks.getOwnCustomerPortalQuoteRequests.mockResolvedValue({ success: true, data: [] });
     customerPortalMocks.resolveCustomerPortalCustomer.mockReset();
     customerPortalMocks.submitCustomerPortalQuoteRequest.mockReset();
     customerPortalMocks.submitCustomerPortalQuoteRequest.mockResolvedValue({
@@ -100,14 +98,14 @@ describe('CustomerPortal quote request submit wiring', () => {
       status: 'missing-tenant',
       customer: null,
       matchMethod: null,
-      message: 'Your customer account is not linked to a business yet, so saved quote requests are not enabled.'
+      message: "Your account is not connected to a service business yet. Please use the business's quote request link or contact the business directly."
     });
 
     await renderRequestQuotePreview();
 
     expect(
       screen.getAllByText(
-        'Your customer account is not linked to a business yet, so saved quote requests are not enabled.'
+        "Your account is not connected to a service business yet. Please use the business's quote request link or contact the business directly."
       ).length
     ).toBeGreaterThan(0);
     expect(
@@ -121,13 +119,13 @@ describe('CustomerPortal quote request submit wiring', () => {
       status: 'customer-not-found',
       customer: null,
       matchMethod: null,
-      message: 'Your customer profile needs to be linked before saved quote requests can be enabled.'
+      message: "Your account is not connected to a service business yet. Please use the business's quote request link or contact the business directly."
     });
 
     await renderRequestQuotePreview();
 
     expect(
-      screen.getAllByText('Your customer profile needs to be linked before saved quote requests can be enabled.')
+      screen.getAllByText("Your account is not connected to a service business yet. Please use the business's quote request link or contact the business directly.")
         .length
     ).toBeGreaterThan(0);
     expect(
@@ -147,7 +145,6 @@ describe('CustomerPortal quote request submit wiring', () => {
 
     expect(customerPortalMocks.submitCustomerPortalQuoteRequest).toHaveBeenCalledWith({
       tenantId: 'tenant-test',
-      user: { uid: 'auth-test', email: 'customer@example.com' },
       customer: linkedCustomer,
       quoteIntakeDraft: expect.objectContaining({
         quoteRequestDraft: expect.objectContaining({
@@ -158,8 +155,24 @@ describe('CustomerPortal quote request submit wiring', () => {
       })
     });
     await waitFor(() => {
-      expect(screen.getAllByText('Quote request submitted for owner review.').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Your quote request was submitted for owner review. This is not a confirmed booking yet.').length).toBeGreaterThan(0);
     });
+  });
+
+  it('loads only the authenticated customer request query and never renders a raw tenant id', async () => {
+    customerPortalMocks.authContext = {
+      user: { uid: 'auth-test', email: 'customer@example.com' },
+      userProfile: { email: 'customer@example.com' },
+      tenantId: 'tenant-secret-raw-id',
+      currentTenant: null
+    };
+
+    render(<CustomerPortal />);
+
+    await screen.findByText('Customer identity resolved');
+    expect(customerPortalMocks.getOwnCustomerPortalQuoteRequests).toHaveBeenCalledWith('tenant-secret-raw-id');
+    expect(screen.getByText('Your service business')).toBeInTheDocument();
+    expect(screen.queryByText('tenant-secret-raw-id')).not.toBeInTheDocument();
   });
 
   it('preselects recommended options and submits only the options still selected', async () => {
@@ -185,7 +198,7 @@ describe('CustomerPortal quote request submit wiring', () => {
   });
 
   it('renders a pending quote request from snapshots without booking or zero-value placeholders', async () => {
-    customerPortalMocks.getQuotes.mockResolvedValue([
+    customerPortalMocks.getOwnCustomerPortalQuoteRequests.mockResolvedValue({ success: true, data: [
       {
         id: 'lead-snapshot',
         type: 'quote_request',
@@ -221,7 +234,7 @@ describe('CustomerPortal quote request submit wiring', () => {
         booking: null,
         createdAt: '2026-06-22T12:00:00.000Z'
       }
-    ]);
+    ] });
 
     render(<CustomerPortal />);
 
@@ -245,5 +258,7 @@ describe('CustomerPortal quote request submit wiring', () => {
     expect(
       await screen.findByText('Failed to submit Customer Portal quote request.')
     ).toBeInTheDocument();
+    expect(screen.queryByText('Your quote request was submitted for owner review. This is not a confirmed booking yet.')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Quote request preview' })).toBeInTheDocument();
   });
 });

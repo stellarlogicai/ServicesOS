@@ -51,6 +51,43 @@ export async function getLeads(tenantId) {
 }
 
 /**
+ * Get only Customer Portal quote requests created by one authenticated customer.
+ * Firestore rules independently enforce the same ownership boundary.
+ */
+export async function getCustomerOwnedQuoteRequests(tenantId, authUid) {
+  try {
+    if (!tenantId || !authUid) {
+      return errorResponse('Tenant ID and authenticated user ID are required', 'VALIDATION_ERROR');
+    }
+
+    const leadsRef = collection(db, 'tenants', tenantId, COLLECTION_NAME);
+    const customerRequestsQuery = query(
+      leadsRef,
+      where('tenantId', '==', tenantId),
+      where('createdByAuthUid', '==', authUid),
+      where('type', '==', 'quote_request'),
+      where('source', '==', 'customer-portal')
+    );
+    const snapshot = await getDocs(customerRequestsQuery);
+    const requests = snapshot.docs
+      .map(leadDocument => ({ id: leadDocument.id, ...leadDocument.data() }))
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+    return successResponse(requests);
+  } catch (error) {
+    logError({
+      message: 'Failed to load customer quote requests',
+      module: 'core',
+      feature: 'leads',
+      severity: SEVERITY.HIGH,
+      tenantId,
+      error
+    });
+    return errorResponse('Failed to load customer quote requests', ERROR_CODES.FIRESTORE_ERROR, error);
+  }
+}
+
+/**
  * Get leads by status
  * @param {string} tenantId - The tenant ID
  * @param {string} status - The lead status

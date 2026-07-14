@@ -60,12 +60,12 @@ describe('Customer Portal identity service', () => {
       status: CUSTOMER_PORTAL_IDENTITY_STATUS.MISSING_TENANT,
       customer: null,
       matchMethod: null,
-      message: 'Your customer account is not linked to a business yet, so saved quote requests are not enabled.'
+      message: "Your account is not connected to a service business yet. Please use the business's quote request link or contact the business directly."
     });
     expect(firestoreMockState.queries).toHaveLength(0);
   });
 
-  it('resolves a customer by authUid before trying email', async () => {
+  it('resolves a customer by authUid', async () => {
     firestoreMockState.snapshots = [
       createSnapshot([
         {
@@ -100,46 +100,8 @@ describe('Customer Portal identity service', () => {
     });
   });
 
-  it('falls back to email when authUid does not match', async () => {
-    firestoreMockState.snapshots = [
-      createSnapshot([]),
-      createSnapshot([
-        {
-          id: 'customer-email',
-          data: {
-            name: 'Email Matched Customer',
-            email: 'customer@example.com'
-          }
-        }
-      ])
-    ];
-
-    const result = await resolveCustomerPortalCustomer({
-      tenantId: 'tenant-1',
-      user: { uid: 'auth-1', email: 'customer@example.com' }
-    });
-
-    expect(result).toMatchObject({
-      status: CUSTOMER_PORTAL_IDENTITY_STATUS.FOUND,
-      matchMethod: 'email',
-      customer: {
-        id: 'customer-email',
-        email: 'customer@example.com'
-      }
-    });
-    expect(firestoreMockState.queries).toHaveLength(2);
-    expect(firestoreMockState.queries[1].constraints[0]).toMatchObject({
-      field: 'email',
-      operator: '==',
-      value: 'customer@example.com'
-    });
-  });
-
-  it('returns customer-not-found when authUid and email do not match', async () => {
-    firestoreMockState.snapshots = [
-      createSnapshot([]),
-      createSnapshot([])
-    ];
+  it('does not treat an email-only record as an authenticated customer link', async () => {
+    firestoreMockState.snapshots = [createSnapshot([])];
 
     const result = await resolveCustomerPortalCustomer({
       tenantId: 'tenant-1',
@@ -150,8 +112,9 @@ describe('Customer Portal identity service', () => {
       status: CUSTOMER_PORTAL_IDENTITY_STATUS.CUSTOMER_NOT_FOUND,
       customer: null,
       matchMethod: null,
-      message: 'Your customer profile needs to be linked before saved quote requests can be enabled.'
+      message: "Your account is not connected to a service business yet. Please use the business's quote request link or contact the business directly."
     });
-    expect(firestoreMockState.queries).toHaveLength(2);
+    expect(firestoreMockState.queries).toHaveLength(1);
+    expect(firestoreMockState.queries[0].constraints[0].field).toBe('authUid');
   });
 });

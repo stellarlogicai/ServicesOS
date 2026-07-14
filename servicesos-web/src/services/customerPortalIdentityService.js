@@ -10,10 +10,10 @@ export const CUSTOMER_PORTAL_IDENTITY_STATUS = Object.freeze({
 });
 
 const missingTenantMessage =
-  'Your customer account is not linked to a business yet, so saved quote requests are not enabled.';
+  "Your account is not connected to a service business yet. Please use the business's quote request link or contact the business directly.";
 
 const missingCustomerMessage =
-  'Your customer profile needs to be linked before saved quote requests can be enabled.';
+  "Your account is not connected to a service business yet. Please use the business's quote request link or contact the business directly.";
 
 const linkedCustomerMessage =
   'Customer profile linked. You can submit quote requests for owner review.';
@@ -65,17 +65,6 @@ export async function resolveCustomerPortalCustomer({ tenantId, user } = {}) {
         status: CUSTOMER_PORTAL_IDENTITY_STATUS.FOUND,
         customer: customerByAuthUid,
         matchMethod: 'authUid',
-        message: linkedCustomerMessage
-      };
-    }
-
-    const customerByEmail = await findCustomerByField(tenantId, 'email', user.email);
-
-    if (customerByEmail) {
-      return {
-        status: CUSTOMER_PORTAL_IDENTITY_STATUS.FOUND,
-        customer: customerByEmail,
-        matchMethod: 'email',
         message: linkedCustomerMessage
       };
     }

@@ -1,14 +1,17 @@
 // src/components/CustomerPortal.jsx
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { getQuotes } from '../services/crmService';
 import { downloadQuotePDF } from '../services/pdfService';
 import {
   CUSTOMER_PORTAL_IDENTITY_STATUS,
   resolveCustomerPortalCustomer
 } from '../services/customerPortalIdentityService';
 import { buildCustomerPortalQuoteIntakeDraft } from '../services/customerPortalQuoteRequestMapper';
-import { submitCustomerPortalQuoteRequest } from '../services/customerPortalQuoteRequestService';
+import {
+  CUSTOMER_ACCOUNT_NOT_CONNECTED_MESSAGE,
+  getOwnCustomerPortalQuoteRequests,
+  submitCustomerPortalQuoteRequest
+} from '../services/customerPortalQuoteRequestService';
 import {
   getQuoteLeadDisplayData,
   getQuoteLeadPriceDisplay,
@@ -112,10 +115,10 @@ const getTenantIdFromContext = (tenantId, currentTenant) =>
   tenantId || (typeof currentTenant === 'string' ? currentTenant : currentTenant?.id) || null;
 
 const missingTenantQuoteRequestMessage =
-  'Your customer account is not linked to a business yet, so saved quote requests are not enabled.';
+  CUSTOMER_ACCOUNT_NOT_CONNECTED_MESSAGE;
 
 const missingCustomerQuoteRequestMessage =
-  'Your customer profile needs to be linked before saved quote requests can be enabled.';
+  CUSTOMER_ACCOUNT_NOT_CONNECTED_MESSAGE;
 
 function getStoredAppointments() {
   try {
@@ -163,9 +166,9 @@ export default function CustomerPortal() {
     let isMounted = true;
 
     if (resolvedTenantId) {
-      getQuotes(resolvedTenantId).then((quotes) => {
+      getOwnCustomerPortalQuoteRequests(resolvedTenantId).then((result) => {
         if (isMounted) {
-          setQuotes(quotes || []);
+          setQuotes(result?.success && Array.isArray(result.data) ? result.data : []);
         }
       }).catch((error) => {
         console.error('[Customer Portal] Error loading quotes:', error);
@@ -370,14 +373,13 @@ export default function CustomerPortal() {
     try {
       const result = await submitCustomerPortalQuoteRequest({
         tenantId: resolvedTenantId,
-        user: userUid ? { uid: userUid, email: userEmail } : null,
         customer: customerIdentity.customer,
         quoteIntakeDraft: quoteRequestPreview
       });
 
       if (result.success) {
         setQuoteRequestSubmittedLeadId(result.leadId);
-        showMessage('success', 'Quote request submitted for owner review.');
+        showMessage('success', 'Your quote request was submitted for owner review. This is not a confirmed booking yet.');
         return;
       }
 
@@ -439,7 +441,7 @@ export default function CustomerPortal() {
             </div>
             <div>
               <dt>Business</dt>
-              <dd>{currentTenant?.businessName || resolvedTenantId || 'Not linked'}</dd>
+              <dd>{currentTenant?.businessName || 'Your service business'}</dd>
             </div>
             <div>
               <dt>Customer match</dt>
@@ -908,7 +910,7 @@ export default function CustomerPortal() {
               <div className="quote-request-submit-panel">
                 {quoteRequestSubmittedLeadId && (
                   <p className="quote-request-submit-status quote-request-submit-status--success">
-                    Quote request submitted for owner review.
+                    Your quote request was submitted for owner review. This is not a confirmed booking yet.
                   </p>
                 )}
                 {!quoteRequestSubmittedLeadId && quoteRequestSubmitBlockedReason && (
