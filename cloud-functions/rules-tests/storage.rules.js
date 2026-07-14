@@ -11,6 +11,7 @@ const PROJECT_ID = 'demo-servicesos-rules';
 const TENANT_A = 'tenant-a';
 const TENANT_B = 'tenant-b';
 const PHOTO_PATH = `tenants/${TENANT_A}/bookings/booking-a/field-photos/before/photo-a.jpg`;
+const BRANDING_PATH = `tenants/${TENANT_A}/branding/logo_test.png`;
 let testEnvironment;
 
 async function seedAccessData() {
@@ -34,6 +35,7 @@ async function seedAccessData() {
       'employee-suspended': { role: 'employee', status: 'suspended', tenantId: TENANT_A },
       'employee-tenantless': { role: 'employee', status: 'active', tenantId: '' },
       'customer-a': { role: 'customer', status: 'active', tenantId: TENANT_A },
+      'unknown-a': { role: 'contractor', status: 'active', tenantId: TENANT_A },
       'super-admin': { role: 'super-admin', status: 'active', tenantId: null },
     };
     for (const [uid, profile] of Object.entries(profiles)) {
@@ -132,5 +134,63 @@ describe('tenant-scoped Field Mode Storage rules', () => {
     const employeePhoto = storageFor('employee-a').ref(protectedPath);
     await assertFails(employeePhoto.put(new Uint8Array(64), { contentType: 'image/jpeg' }));
     await assertFails(employeePhoto.delete());
+  });
+
+  test('mounted branding storage is limited to active super-admin image uploads', async () => {
+    await assertSucceeds(upload('super-admin', BRANDING_PATH, 'image/png'));
+    await assertSucceeds(upload('super-admin', `tenants/${TENANT_A}/branding/favicon_test.ico`, 'image/x-icon'));
+    await assertSucceeds(storageFor('super-admin').ref(BRANDING_PATH).getDownloadURL());
+
+    for (const uid of ['admin-a', 'employee-a', 'customer-a', 'admin-b']) {
+      await assertFails(upload(uid, `tenants/${TENANT_A}/branding/${uid}.png`, 'image/png'));
+      await assertFails(storageFor(uid).ref(BRANDING_PATH).getDownloadURL());
+    }
+  });
+
+  test('branding uploads reject arbitrary documents, zero bytes, oversized objects, and DEFAULT tenant', async () => {
+    await assertFails(upload('super-admin', `tenants/${TENANT_A}/branding/logo.pdf`, 'application/pdf'));
+    await assertFails(upload('super-admin', `tenants/${TENANT_A}/branding/logo.svg`, 'image/svg+xml'));
+    await assertFails(upload('super-admin', `tenants/${TENANT_A}/branding/empty.png`, 'image/png', 0));
+    await assertFails(upload('super-admin', `tenants/${TENANT_A}/branding/large.png`, 'image/png', (5 * 1024 * 1024) + 1));
+    await assertFails(upload('super-admin', 'tenants/DEFAULT/branding/logo.png', 'image/png'));
+  });
+
+  test('persisted branding cannot be overwritten or deleted through client rules', async () => {
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await context.storage().ref(BRANDING_PATH).put(new Uint8Array(32), { contentType: 'image/png' });
+    });
+    const brandingObject = storageFor('super-admin').ref(BRANDING_PATH);
+
+    await assertFails(brandingObject.put(new Uint8Array(64), { contentType: 'image/png' }));
+    await assertFails(brandingObject.delete());
+  });
+
+  test('missing, unknown-role, inactive, and unauthenticated profiles are denied', async () => {
+    for (const uid of ['missing-profile', 'unknown-a', 'employee-inactive', 'employee-disabled', 'employee-suspended']) {
+      await assertFails(upload(uid, `tenants/${TENANT_A}/bookings/booking-a/field-photos/before/${uid}.jpg`, 'image/jpeg'));
+      await assertFails(storageFor(uid).ref(PHOTO_PATH).getDownloadURL());
+    }
+
+    const anonymous = testEnvironment.unauthenticatedContext().storage();
+    await assertFails(anonymous.ref(BRANDING_PATH).getDownloadURL());
+  });
+
+  test('legacy private paths and unknown root uploads remain denied', async () => {
+    const unsafePaths = [
+      `tenants/${TENANT_A}/documents/customer-a/contract.pdf`,
+      `tenants/${TENANT_A}/signatures/customer-a/signature.png`,
+      `tenants/${TENANT_A}/photos/customer-a/property.jpg`,
+      `tenants/${TENANT_A}/property_conditions/report.jpg`,
+      `tenants/${TENANT_A}/incidents/report.jpg`,
+      'jobPhotos/booking-a/photo.jpg',
+      'profile-images/admin-a.png',
+      'unknown-root/file.png'
+    ];
+
+    for (const uid of ['super-admin', 'admin-a', 'employee-a', 'customer-a']) {
+      for (const objectPath of unsafePaths) {
+        await assertFails(upload(uid, objectPath, objectPath.endsWith('.pdf') ? 'application/pdf' : 'image/png'));
+      }
+    }
   });
 });

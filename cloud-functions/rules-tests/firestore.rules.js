@@ -57,6 +57,13 @@ async function seedFirestore() {
 
     await setDoc(doc(database, 'tenants', TENANT_A), {
       adminUsers: ['admin-a'],
+      businessSettings: {
+        businessName: 'Tenant A Cleaning',
+        availability: { availableDays: ['monday'] }
+      },
+      stripeAccountId: 'acct_test_tenant_a',
+      chargesEnabled: false,
+      payoutsEnabled: false,
       users: [
         'admin-a',
         'employee-a',
@@ -71,6 +78,10 @@ async function seedFirestore() {
     });
     await setDoc(doc(database, 'tenants', TENANT_B), {
       adminUsers: ['admin-b'],
+      businessSettings: {
+        businessName: 'Tenant B Cleaning',
+        availability: { availableDays: ['tuesday'] }
+      },
       users: ['admin-b', 'employee-b']
     });
 
@@ -139,8 +150,14 @@ async function seedFirestore() {
     await setDoc(doc(database, 'tenants', TENANT_A, 'appointments', 'appointment-a'), { status: 'scheduled' });
     await setDoc(doc(database, 'tenants', TENANT_A, 'employees', 'staff-a'), { name: 'Staff A' });
     await setDoc(doc(database, 'tenants', TENANT_A, 'payments', 'payment-a'), { status: 'pending' });
+    await setDoc(doc(database, 'tenants', TENANT_B, 'payments', 'payment-b'), { status: 'pending' });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'branding', 'config'), { primaryColor: '#123456' });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'insurance', 'policy'), { status: 'active' });
     await setDoc(doc(database, 'tenants', TENANT_A, 'time_clock', 'clock-a'), { status: 'open' });
     await setDoc(doc(database, 'tenant_usage', TENANT_A), { bookings: 1 });
+    await setDoc(doc(database, 'ai_usage', TENANT_A), { estimatedCredits: 0 });
+    await setDoc(doc(database, 'ai_credit_history', 'history-a'), { tenantId: TENANT_A });
+    await setDoc(doc(database, 'unsafe_global', 'record-a'), { tenantId: TENANT_A });
   });
 }
 
@@ -514,5 +531,193 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     await assertSucceeds(updateDoc(adminBooking, { agreedPrice: 225 }));
     await assertSucceeds(getDoc(superBooking));
     await assertSucceeds(updateDoc(superBooking, { status: 'completed' }));
+  });
+
+  test('tenant admin can read and update only approved Business Settings fields', async () => {
+    const adminDatabase = authenticatedDatabase('admin-a');
+    const otherAdminDatabase = authenticatedDatabase('admin-b');
+    const tenant = doc(adminDatabase, 'tenants', TENANT_A);
+
+    await assertSucceeds(getDoc(tenant));
+    await assertSucceeds(updateDoc(tenant, {
+      businessSettings: {
+        businessName: 'Updated Tenant A Cleaning',
+        businessPhone: '555-0100',
+        businessEmail: 'owner@example.test',
+        serviceArea: 'Metro area',
+        businessAddress: '1 Main Street',
+        websiteUrl: 'https://example.test',
+        facebookUrl: '',
+        defaultServiceNotes: 'Use side entrance.',
+        availability: { availableDays: ['monday', 'tuesday'] }
+      },
+      updatedAt: '2026-07-13T14:00:00.000Z',
+      updatedByUid: 'admin-a'
+    }));
+
+    await assertFails(updateDoc(tenant, { adminUsers: ['admin-a', 'employee-a'] }));
+    await assertFails(updateDoc(tenant, { users: ['admin-a'] }));
+    await assertFails(updateDoc(tenant, { stripeAccountId: 'acct_spoofed' }));
+    await assertFails(updateDoc(tenant, { chargesEnabled: true }));
+    await assertFails(updateDoc(tenant, { updatedByUid: 'admin-b' }));
+    await assertFails(getDoc(doc(otherAdminDatabase, 'tenants', TENANT_A)));
+  });
+
+  test('employees and customers cannot create tenants or read tenant administration data', async () => {
+    for (const uid of ['employee-a', 'customer-a-auth']) {
+      const database = authenticatedDatabase(uid);
+      await assertFails(getDoc(doc(database, 'tenants', TENANT_A)));
+      await assertFails(setDoc(doc(database, 'tenants', `${uid}-tenant`), {
+        adminUsers: [uid],
+        users: [uid]
+      }));
+    }
+
+    const anonymousDatabase = testEnvironment.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(anonymousDatabase, 'tenants', TENANT_A)));
+  });
+
+  test('tenant payment documents are admin-readable but client-immutable', async () => {
+    const adminA = authenticatedDatabase('admin-a');
+    const adminB = authenticatedDatabase('admin-b');
+    const superAdmin = authenticatedDatabase('super-admin');
+    const paymentA = doc(adminA, 'tenants', TENANT_A, 'payments', 'payment-a');
+
+    await assertSucceeds(getDoc(paymentA));
+    await assertSucceeds(getDoc(doc(superAdmin, 'tenants', TENANT_A, 'payments', 'payment-a')));
+    await assertFails(getDoc(doc(adminB, 'tenants', TENANT_A, 'payments', 'payment-a')));
+    await assertFails(getDoc(doc(authenticatedDatabase('employee-a'), 'tenants', TENANT_A, 'payments', 'payment-a')));
+    await assertFails(getDoc(doc(authenticatedDatabase('customer-a-auth'), 'tenants', TENANT_A, 'payments', 'payment-a')));
+    await assertFails(setDoc(doc(adminA, 'tenants', TENANT_A, 'payments', 'fabricated'), { status: 'paid' }));
+    await assertFails(updateDoc(paymentA, { status: 'paid' }));
+    await assertFails(deleteDoc(paymentA));
+  });
+
+  test('tenant admin can create the proven quote-to-booking shape without trusted payment fields', async () => {
+    const database = authenticatedDatabase('admin-a');
+    const safeBooking = doc(database, 'tenants', TENANT_A, 'bookings', 'new-safe-booking');
+
+    await assertSucceeds(setDoc(safeBooking, {
+      schemaVersion: 1,
+      tenantId: TENANT_A,
+      leadId: 'request-a',
+      sourceLeadId: 'request-a',
+      source: 'customer-portal',
+      customerId: 'customer-a',
+      propertyId: null,
+      customerName: 'Customer A',
+      customerSnapshot: { name: 'Customer A' },
+      propertySnapshot: { address: '1 Test Street' },
+      requestSnapshot: { cleaningType: 'standard' },
+      appointmentRequest: null,
+      date: '2026-07-20',
+      startTime: '09:00',
+      endTime: '11:00',
+      scheduledAt: '2026-07-20T14:00:00.000Z',
+      agreedPrice: 190,
+      status: 'scheduled',
+      serviceType: 'standard',
+      address: '1 Test Street',
+      notes: '',
+      createdBy: 'admin-a',
+      createdAt: '2026-07-13T14:00:00.000Z',
+      updatedAt: '2026-07-13T14:00:00.000Z'
+    }));
+
+    await assertFails(setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'spoofed-stripe-booking'), {
+      tenantId: TENANT_A,
+      status: 'scheduled',
+      stripeCheckoutSessionId: 'cs_test_spoofed'
+    }));
+    await assertFails(setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'wrong-tenant-booking'), {
+      tenantId: TENANT_B,
+      status: 'scheduled'
+    }));
+  });
+
+  test('manual booking payment updates require the acting admin and cannot fabricate Stripe confirmation', async () => {
+    const database = authenticatedDatabase('admin-a');
+    const booking = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking');
+
+    await assertSucceeds(updateDoc(booking, {
+      paymentStatus: 'paid_cash',
+      paymentStatusUpdatedAt: '2026-07-13T14:00:00.000Z',
+      paymentMethod: 'cash',
+      amountReceived: 190,
+      receivedAt: '2026-07-13T14:00:00.000Z',
+      paymentNote: 'Paid at the job.',
+      paymentStatusUpdatedBy: 'admin-a',
+      updatedAt: '2026-07-13T14:00:00.000Z'
+    }));
+
+    await assertFails(updateDoc(booking, {
+      paymentStatus: 'paid_in_full',
+      paymentStatusUpdatedBy: 'stripe_webhook'
+    }));
+    await assertFails(updateDoc(booking, { stripeCheckoutSessionId: 'cs_test_spoofed' }));
+    await assertFails(updateDoc(booking, { stripePaymentIntentId: 'pi_test_spoofed' }));
+    await assertFails(updateDoc(booking, { platformFee: 20 }));
+    await assertFails(updateDoc(booking, { refundStatus: 'succeeded' }));
+  });
+
+  test('only super-admin can use mounted compatibility and global administration paths', async () => {
+    const superAdmin = authenticatedDatabase('super-admin');
+    const admin = authenticatedDatabase('admin-a');
+    const employee = authenticatedDatabase('employee-a');
+    const customer = authenticatedDatabase('customer-a-auth');
+    const mountedPaths = [
+      ['tenants', TENANT_A, 'employees', 'staff-a'],
+      ['tenants', TENANT_A, 'branding', 'config'],
+      ['tenants', TENANT_A, 'insurance', 'policy'],
+      ['tenant_usage', TENANT_A],
+      ['ai_usage', TENANT_A],
+      ['ai_credit_history', 'history-a']
+    ];
+
+    for (const pathParts of mountedPaths) {
+      await assertSucceeds(getDoc(doc(superAdmin, ...pathParts)));
+      await assertFails(getDoc(doc(admin, ...pathParts)));
+      await assertFails(getDoc(doc(employee, ...pathParts)));
+      await assertFails(getDoc(doc(customer, ...pathParts)));
+    }
+
+    await assertSucceeds(setDoc(doc(superAdmin, 'tenants', TENANT_A, 'employees', 'staff-new'), { name: 'New Staff' }));
+    await assertFails(setDoc(doc(admin, 'tenants', TENANT_A, 'employees', 'staff-admin'), { name: 'Unsafe Staff' }));
+
+    const superRouteBooking = doc(superAdmin, 'tenants', TENANT_A, 'bookings', 'field-booking');
+    const adminRouteBooking = doc(admin, 'tenants', TENANT_A, 'bookings', 'field-booking');
+    await assertSucceeds(updateDoc(superRouteBooking, {
+      routeOrder: 1,
+      estimatedTravelTime: 12,
+      distanceFromPrevious: 4.2
+    }));
+    await assertFails(updateDoc(adminRouteBooking, {
+      routeOrder: 2,
+      estimatedTravelTime: 18,
+      distanceFromPrevious: 7.5
+    }));
+  });
+
+  test('stale tenant paths, DEFAULT tenant, and unknown global paths are denied to every client role', async () => {
+    const stalePaths = [
+      ['tenants', TENANT_A, 'quotes', 'quote-a'],
+      ['tenants', TENANT_A, 'jobs', 'job-a'],
+      ['tenants', TENANT_A, 'properties', 'property-a'],
+      ['tenants', TENANT_A, 'photos', 'photo-a'],
+      ['tenants', TENANT_A, 'appointments', 'appointment-a'],
+      ['tenants', TENANT_A, 'time_clock', 'clock-a'],
+      ['unsafe_global', 'record-a']
+    ];
+
+    for (const uid of ['super-admin', 'admin-a', 'employee-a', 'customer-a-auth']) {
+      const database = authenticatedDatabase(uid);
+      for (const pathParts of stalePaths) {
+        await assertFails(getDoc(doc(database, ...pathParts)));
+      }
+      await assertFails(setDoc(doc(database, 'tenants', 'DEFAULT', 'leads', `${uid}-lead`), {
+        type: 'lead',
+        status: 'new'
+      }));
+    }
   });
 });

@@ -14,25 +14,32 @@ service firebase.storage {
       return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
     }
 
+    function tenantExists(tenantId) {
+      return tenantId != 'DEFAULT' &&
+             firestore.exists(/databases/(default)/documents/tenants/$(tenantId));
+    }
+
     function tenantRecord(tenantId) {
       return firestore.get(/databases/(default)/documents/tenants/$(tenantId)).data;
     }
 
     function isSuperAdmin() {
-      return hasUserProfile() && userProfile().role == 'super-admin';
+      return hasUserProfile() &&
+             userProfile().role == 'super-admin' &&
+             userProfile().status == 'active';
     }
 
     function isTenantAdmin(tenantId) {
-      return tenantId != 'DEFAULT' &&
+      return tenantExists(tenantId) &&
              hasUserProfile() &&
              userProfile().role == 'admin' &&
+             userProfile().status == 'active' &&
              userProfile().tenantId == tenantId &&
-             (!('status' in userProfile()) || userProfile().status == 'active') &&
              request.auth.uid in tenantRecord(tenantId).adminUsers;
     }
 
     function isTenantFieldUser(tenantId) {
-      return tenantId != 'DEFAULT' &&
+      return tenantExists(tenantId) &&
              hasUserProfile() &&
              userProfile().role == 'employee' &&
              userProfile().status == 'active' &&
@@ -53,6 +60,19 @@ service firebase.storage {
               (request.resource.contentType == 'image/webp' && fileName.matches('^[A-Za-z0-9_-]+\\.webp$')));
     }
 
+    function validBrandingObject() {
+      return request.resource != null &&
+             request.resource.size > 0 &&
+             request.resource.size <= 5 * 1024 * 1024 &&
+             request.resource.contentType in [
+               'image/jpeg',
+               'image/png',
+               'image/webp',
+               'image/gif',
+               'image/x-icon'
+             ];
+    }
+
     match /tenants/{tenantId}/bookings/{bookingId}/field-photos/{phase}/{fileName} {
       allow read: if isAllowedPhase(phase) &&
                      (isSuperAdmin() || isTenantAdmin(tenantId) || isTenantFieldUser(tenantId));
@@ -61,6 +81,45 @@ service firebase.storage {
                        resource == null &&
                        validPhotoObject(fileName);
       allow update, delete: if false;
+    }
+
+    // Company Settings is a mounted super-admin compatibility surface.
+    match /tenants/{tenantId}/branding/{fileName} {
+      allow read: if tenantExists(tenantId) && isSuperAdmin();
+      allow create: if tenantExists(tenantId) &&
+                       isSuperAdmin() &&
+                       resource == null &&
+                       validBrandingObject();
+      allow update, delete: if false;
+    }
+
+    // Present in unmounted legacy code; these require a separate ownership/migration contract.
+    match /tenants/{tenantId}/documents/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /tenants/{tenantId}/signatures/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /tenants/{tenantId}/photos/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /tenants/{tenantId}/property_conditions/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /tenants/{tenantId}/incidents/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /jobPhotos/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /{unknownPath=**} {
+      allow read, write: if false;
     }
   }
 }

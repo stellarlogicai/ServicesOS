@@ -1,75 +1,61 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper functions
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    function isSuperAdmin() {
-      return isAuthenticated() && 
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
-    }
 
-    function authenticatedUserProfile() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
-    function hasAuthenticatedUserProfile() {
+    function userProfileExists() {
       return isAuthenticated() &&
              exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
-    function isCustomerUser() {
-      return hasAuthenticatedUserProfile() &&
-             authenticatedUserProfile().role == 'customer' &&
-             authenticatedUserProfile().status == 'active';
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isEmployeeUser() {
-      return hasAuthenticatedUserProfile() &&
-             authenticatedUserProfile().role == 'employee';
+    function tenantExists(tenantId) {
+      return tenantId != 'DEFAULT' &&
+             exists(/databases/$(database)/documents/tenants/$(tenantId));
     }
 
-    // Preserve legacy broad access for recognized non-employee roles only.
-    // These temporary rules still require separate module-by-module hardening.
-    function isLegacyBroadAccessUser() {
-      return hasAuthenticatedUserProfile() &&
-             !isEmployeeUser() &&
-             (authenticatedUserProfile().role == 'customer' ||
-              authenticatedUserProfile().role == 'admin' ||
-              authenticatedUserProfile().role == 'super-admin');
+    function isSuperAdmin() {
+      return userProfileExists() &&
+             userProfile().role == 'super-admin' &&
+             userProfile().status == 'active';
     }
 
-    function userTenantMatches(tenantId) {
-      return hasAuthenticatedUserProfile() &&
-             authenticatedUserProfile().tenantId == tenantId;
-    }
-    
     function isTenantAdmin(tenantId) {
-      return hasAuthenticatedUserProfile() &&
-             authenticatedUserProfile().role == 'admin' &&
-             authenticatedUserProfile().tenantId == tenantId &&
-             (!('status' in authenticatedUserProfile()) || authenticatedUserProfile().status == 'active') &&
+      return tenantExists(tenantId) &&
+             userProfileExists() &&
+             userProfile().role == 'admin' &&
+             userProfile().status == 'active' &&
+             userProfile().tenantId == tenantId &&
              request.auth.uid in get(/databases/$(database)/documents/tenants/$(tenantId)).data.adminUsers;
-    }
-    
-    function isTenantUser(tenantId) {
-      return isAuthenticated() && 
-             request.auth.uid in get(/databases/$(database)/documents/tenants/$(tenantId)).data.users;
     }
 
     function isTenantFieldUser(tenantId) {
-      return hasAuthenticatedUserProfile() &&
-             authenticatedUserProfile().role == 'employee' &&
-             authenticatedUserProfile().status == 'active' &&
-             authenticatedUserProfile().tenantId == tenantId &&
-             isTenantUser(tenantId);
+      return tenantExists(tenantId) &&
+             userProfileExists() &&
+             userProfile().role == 'employee' &&
+             userProfile().status == 'active' &&
+             userProfile().tenantId == tenantId &&
+             request.auth.uid in get(/databases/$(database)/documents/tenants/$(tenantId)).data.users;
     }
-    
-    function hasTenantAccess(tenantId) {
-      return isTenantAdmin(tenantId) || isTenantUser(tenantId);
+
+    function isCustomerUser() {
+      return userProfileExists() &&
+             userProfile().role == 'customer' &&
+             userProfile().status == 'active';
+    }
+
+    function customerTenantMatches(tenantId) {
+      return isCustomerUser() && userProfile().tenantId == tenantId;
+    }
+
+    function isBookingManager(tenantId) {
+      return tenantExists(tenantId) &&
+             (isSuperAdmin() || isTenantAdmin(tenantId));
     }
 
     function fieldModeBookingUpdateKeysOnly() {
@@ -90,6 +76,137 @@ service cloud.firestore {
 
     function isFieldModeBookingUpdate(tenantId) {
       return isTenantFieldUser(tenantId) && fieldModeBookingUpdateKeysOnly();
+    }
+
+    function bookingManagerUpdateKeysOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'date',
+        'startTime',
+        'endTime',
+        'scheduledAt',
+        'status',
+        'notes',
+        'agreedPrice',
+        'paymentStatus',
+        'paymentStatusUpdatedAt',
+        'paymentMethod',
+        'amountReceived',
+        'receivedAt',
+        'paymentNote',
+        'paymentStatusUpdatedBy',
+        'fieldStatus',
+        'fieldStatusUpdatedAt',
+        'fieldStartedAt',
+        'fieldStartedByUid',
+        'fieldChecklist',
+        'fieldChecklistSummary',
+        'fieldNotes',
+        'fieldIssue',
+        'completedAt',
+        'completedByUid',
+        'assignedEmployeeId',
+        'updatedAt'
+      ]);
+    }
+
+    function isSafeSuperAdminRouteUpdate(tenantId) {
+      return tenantExists(tenantId) &&
+             isSuperAdmin() &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+               'routeOrder',
+               'estimatedTravelTime',
+               'distanceFromPrevious',
+               'optimizedAt',
+               'updatedAt'
+             ]);
+    }
+
+    function bookingPaymentFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'paymentStatus',
+        'paymentStatusUpdatedAt',
+        'paymentMethod',
+        'amountReceived',
+        'receivedAt',
+        'paymentNote',
+        'paymentStatusUpdatedBy'
+      ]);
+    }
+
+    function validManualPaymentState() {
+      return request.resource.data.paymentStatus in [
+               'not_paid',
+               'deposit_requested',
+               'deposit_paid',
+               'final_due',
+               'partial',
+               'paid_in_full',
+               'paid_cash',
+               'paid_check',
+               'paid_external_app',
+               'waived_family_discount',
+               'payment_issue'
+             ] &&
+             request.resource.data.paymentStatusUpdatedBy == request.auth.uid &&
+             (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['paymentMethod']) ||
+              request.resource.data.paymentMethod in [
+                '',
+                'cash',
+                'check',
+                'venmo',
+                'cash_app',
+                'zelle',
+                'facebook_pay',
+                'paypal',
+                'card',
+                'stripe_manual_reference',
+                'waived',
+                'other'
+              ]);
+    }
+
+    function isSafeBookingManagerUpdate(tenantId) {
+      return isBookingManager(tenantId) &&
+             bookingManagerUpdateKeysOnly() &&
+             (!bookingPaymentFieldsChanged() || validManualPaymentState());
+    }
+
+    function bookingCreateKeysOnly() {
+      return request.resource.data.keys().hasOnly([
+        'schemaVersion',
+        'tenantId',
+        'leadId',
+        'sourceLeadId',
+        'source',
+        'customerId',
+        'propertyId',
+        'customerName',
+        'customerSnapshot',
+        'propertySnapshot',
+        'requestSnapshot',
+        'appointmentRequest',
+        'employeeId',
+        'jobId',
+        'date',
+        'startTime',
+        'endTime',
+        'scheduledAt',
+        'agreedPrice',
+        'status',
+        'serviceType',
+        'address',
+        'notes',
+        'createdBy',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    function isSafeBookingCreate(tenantId) {
+      return isBookingManager(tenantId) &&
+             bookingCreateKeysOnly() &&
+             request.resource.data.status == 'scheduled' &&
+             (!('tenantId' in request.resource.data) || request.resource.data.tenantId == tenantId);
     }
 
     function fieldPhotoMetadataKeysOnly() {
@@ -140,20 +257,18 @@ service cloud.firestore {
     }
 
     function isOwnLinkedCustomer(tenantId, customerId) {
-      let customer = get(/databases/$(database)/documents/tenants/$(tenantId)/customers/$(customerId)).data;
-      return isCustomerUser() &&
-             userTenantMatches(tenantId) &&
+      return customerTenantMatches(tenantId) &&
              customerId is string &&
              exists(/databases/$(database)/documents/tenants/$(tenantId)/customers/$(customerId)) &&
-             customer.authUid == request.auth.uid &&
-             (!('isArchived' in customer) || customer.isArchived != true) &&
-             (!('status' in customer) || !(customer.status in ['archived', 'disabled', 'inactive']));
+             get(/databases/$(database)/documents/tenants/$(tenantId)/customers/$(customerId)).data.authUid == request.auth.uid &&
+             (!('isArchived' in get(/databases/$(database)/documents/tenants/$(tenantId)/customers/$(customerId)).data) ||
+              get(/databases/$(database)/documents/tenants/$(tenantId)/customers/$(customerId)).data.isArchived != true) &&
+             (!('status' in get(/databases/$(database)/documents/tenants/$(tenantId)/customers/$(customerId)).data) ||
+              !(get(/databases/$(database)/documents/tenants/$(tenantId)/customers/$(customerId)).data.status in ['archived', 'disabled', 'inactive']));
     }
 
     function isOwnCustomerRecord(tenantId) {
-      return isCustomerUser() &&
-             userTenantMatches(tenantId) &&
-             resource.data.authUid == request.auth.uid;
+      return customerTenantMatches(tenantId) && resource.data.authUid == request.auth.uid;
     }
 
     function customerQuoteRequestKeysOnly() {
@@ -181,8 +296,7 @@ service cloud.firestore {
     }
 
     function isOwnCustomerQuoteRequestCreate(tenantId) {
-      return isCustomerUser() &&
-             userTenantMatches(tenantId) &&
+      return customerTenantMatches(tenantId) &&
              request.resource.data.tenantId == tenantId &&
              request.resource.data.createdByAuthUid == request.auth.uid &&
              request.resource.data.type == 'quote_request' &&
@@ -194,8 +308,7 @@ service cloud.firestore {
     }
 
     function isOwnCustomerQuoteRequestRead(tenantId) {
-      return isCustomerUser() &&
-             userTenantMatches(tenantId) &&
+      return customerTenantMatches(tenantId) &&
              resource.data.tenantId == tenantId &&
              resource.data.createdByAuthUid == request.auth.uid &&
              resource.data.type == 'quote_request' &&
@@ -220,7 +333,7 @@ service cloud.firestore {
              request.resource.data.status == 'active' &&
              request.resource.data.tenantId is string &&
              request.resource.data.tenantId.size() > 0 &&
-             exists(/databases/$(database)/documents/tenants/$(request.resource.data.tenantId));
+             tenantExists(request.resource.data.tenantId);
     }
 
     function isSafeOwnProfileUpdate(userId) {
@@ -233,171 +346,175 @@ service cloud.firestore {
                'updatedAt'
              ]);
     }
-    
-    // Tenants collection - allow create for testing, will restrict later
-    match /tenants/{tenantId} {
-      allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || (isTenantUser(tenantId) && !isEmployeeUser());
-      allow create: if isLegacyBroadAccessUser(); // Temporary legacy access; employees are explicitly denied
-      allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
-      allow delete: if isSuperAdmin();
-    }
-    
-    // Tenant usage - allow create for testing, will restrict later
-    match /tenant_usage/{tenantId} {
-      allow read, write: if isLegacyBroadAccessUser(); // Temporary legacy access; employees are explicitly denied
-    }
-    
-    // Tenant billing - only tenant admin can read
-    match /tenant_billing/{billingId} {
-      allow read: if isTenantAdmin(resource.data.tenantId);
-      allow write: if false; // Only system can write via Stripe webhooks
-    }
-    
-    // Leads - isolated by tenant
-    match /tenants/{tenantId}/leads/{leadId} {
-      allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || isOwnCustomerQuoteRequestRead(tenantId);
-      allow create: if isSuperAdmin() || isTenantAdmin(tenantId) || isOwnCustomerQuoteRequestCreate(tenantId);
-      allow update, delete: if isSuperAdmin() || isTenantAdmin(tenantId);
-    }
-    
-    // Quotes - isolated by tenant
-    match /tenants/{tenantId}/quotes/{quoteId} {
-      allow read: if isSuperAdmin() || isLegacyBroadAccessUser(); // Temporary legacy access
-      allow create: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow update: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow delete: if isSuperAdmin() || isLegacyBroadAccessUser();
-    }
-    
-    // Bookings - isolated by tenant
-    match /tenants/{tenantId}/bookings/{bookingId} {
-      allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || isTenantFieldUser(tenantId);
-      allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
-      allow update: if isSuperAdmin() || isTenantAdmin(tenantId) || isFieldModeBookingUpdate(tenantId);
-      allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
 
-      match /fieldPhotos/{photoId} {
-        allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || isTenantFieldUser(tenantId);
-        allow create: if isValidFieldPhotoMetadataCreate(tenantId, bookingId, photoId);
-        allow update, delete: if false;
+    function businessSettingsKeysOnly() {
+      return request.resource.data.businessSettings.keys().hasOnly([
+               'businessName',
+               'businessPhone',
+               'businessEmail',
+               'serviceArea',
+               'businessAddress',
+               'websiteUrl',
+               'facebookUrl',
+               'defaultServiceNotes',
+               'availability'
+             ]) &&
+             request.resource.data.businessSettings.availability.keys().hasOnly(['availableDays']) &&
+             request.resource.data.businessSettings.availability.availableDays is list;
+    }
+
+    function isSafeBusinessSettingsUpdate(tenantId) {
+      return isTenantAdmin(tenantId) &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+               'businessSettings',
+               'updatedAt',
+               'updatedByUid'
+             ]) &&
+             businessSettingsKeysOnly() &&
+             (!('updatedByUid' in request.resource.data) || request.resource.data.updatedByUid == request.auth.uid);
+    }
+
+    match /tenants/{tenantId} {
+      allow read: if isSuperAdmin() || isTenantAdmin(tenantId);
+      allow create: if isSuperAdmin() && tenantId != 'DEFAULT';
+      allow update: if isSuperAdmin() || isSafeBusinessSettingsUpdate(tenantId);
+      allow delete: if isSuperAdmin();
+
+      match /leads/{leadId} {
+        allow read: if tenantExists(tenantId) &&
+                       (isSuperAdmin() || isTenantAdmin(tenantId) || isOwnCustomerQuoteRequestRead(tenantId));
+        allow create: if tenantExists(tenantId) &&
+                         (isSuperAdmin() || isTenantAdmin(tenantId) || isOwnCustomerQuoteRequestCreate(tenantId));
+        allow update, delete: if tenantExists(tenantId) &&
+                                 (isSuperAdmin() || isTenantAdmin(tenantId));
+      }
+
+      match /bookings/{bookingId} {
+        allow read: if isBookingManager(tenantId) || isTenantFieldUser(tenantId);
+        allow create: if isSafeBookingCreate(tenantId);
+        allow update: if isSafeBookingManagerUpdate(tenantId) ||
+                         isFieldModeBookingUpdate(tenantId) ||
+                         isSafeSuperAdminRouteUpdate(tenantId);
+        allow delete: if isBookingManager(tenantId);
+
+        match /fieldPhotos/{photoId} {
+          allow read: if isBookingManager(tenantId) || isTenantFieldUser(tenantId);
+          allow create: if isValidFieldPhotoMetadataCreate(tenantId, bookingId, photoId);
+          allow update, delete: if false;
+        }
+      }
+
+      match /customers/{customerId} {
+        allow read: if tenantExists(tenantId) &&
+                       (isSuperAdmin() || isTenantAdmin(tenantId) || isOwnCustomerRecord(tenantId));
+        allow create, update, delete: if tenantExists(tenantId) &&
+                                        (isSuperAdmin() || isTenantAdmin(tenantId));
+      }
+
+      match /payments/{paymentId} {
+        allow read: if tenantExists(tenantId) &&
+                       (isSuperAdmin() || isTenantAdmin(tenantId));
+        allow create, update, delete: if false;
+      }
+
+      // Mounted super-admin compatibility paths.
+      match /employees/{employeeId} {
+        allow read, create, update, delete: if tenantExists(tenantId) && isSuperAdmin();
+      }
+
+      match /branding/{brandingId} {
+        allow read, create, update, delete: if tenantExists(tenantId) && isSuperAdmin();
+      }
+
+      match /insurance/{insuranceId} {
+        allow read, create, update, delete: if tenantExists(tenantId) && isSuperAdmin();
+      }
+
+      // Unmounted or unsafe legacy paths remain client-denied. Admin SDK runtimes bypass rules.
+      match /quotes/{quoteId} {
+        allow read, write: if false;
+      }
+
+      match /jobs/{jobId} {
+        allow read, write: if false;
+      }
+
+      match /properties/{propertyId} {
+        allow read, write: if false;
+      }
+
+      match /photos/{photoId} {
+        allow read, write: if false;
+      }
+
+      match /appointments/{appointmentId} {
+        allow read, write: if false;
+      }
+
+      match /ai_learning_data/{learningId} {
+        allow read, write: if false;
+      }
+
+      match /ai_models/{modelId} {
+        allow read, write: if false;
+      }
+
+      match /customer_reviews/{reviewId} {
+        allow read, write: if false;
+      }
+
+      match /white_label_domains/{domainId} {
+        allow read, write: if false;
+      }
+
+      match /upsell_offers/{offerId} {
+        allow read, write: if false;
+      }
+
+      match /upsell_impressions/{impressionId} {
+        allow read, write: if false;
+      }
+
+      match /upsell_acceptances/{acceptanceId} {
+        allow read, write: if false;
+      }
+
+      match /time_clock/{clockId} {
+        allow read, write: if false;
+      }
+
+      match /{unprovenPath=**} {
+        allow read, write: if false;
       }
     }
-    
-    // Payments - isolated by tenant
-    match /tenants/{tenantId}/payments/{paymentId} {
-      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
-      allow create: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
-      allow update: if isSuperAdmin() || false; // Only system can update via Stripe webhooks
-      allow delete: if isSuperAdmin() || false;
+
+    match /tenant_usage/{tenantId} {
+      allow read, create, update, delete: if isSuperAdmin() && tenantId != 'DEFAULT';
     }
-    
-    // Jobs - isolated by tenant (for dataset collection)
-    match /tenants/{tenantId}/jobs/{jobId} {
-      allow read: if isSuperAdmin() || isLegacyBroadAccessUser(); // Temporary legacy access
-      allow create: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow update: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow delete: if isSuperAdmin() || isLegacyBroadAccessUser();
+
+    match /ai_usage/{tenantId} {
+      allow read, create, update, delete: if isSuperAdmin() && tenantId != 'DEFAULT';
     }
-    
-    // Properties - isolated by tenant (for dataset collection)
-    match /tenants/{tenantId}/properties/{propertyId} {
-      allow read: if isSuperAdmin() || isLegacyBroadAccessUser(); // Temporary legacy access
-      allow create: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow update: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow delete: if isSuperAdmin() || isLegacyBroadAccessUser();
+
+    match /ai_credit_history/{historyId} {
+      allow read, create: if isSuperAdmin();
+      allow update, delete: if false;
     }
-    
-    // Photos - isolated by tenant (before/after photos for dataset)
-    match /tenants/{tenantId}/photos/{photoId} {
-      allow read: if isSuperAdmin() || isLegacyBroadAccessUser(); // Temporary legacy access
-      allow create: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow update: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow delete: if isSuperAdmin() || isLegacyBroadAccessUser();
+
+    match /tenant_billing/{billingId} {
+      allow read: if isSuperAdmin() || isTenantAdmin(resource.data.tenantId);
+      allow create, update, delete: if false;
     }
-    
-    // AI Learning Data - isolated by tenant (for ML training)
-    match /tenants/{tenantId}/ai_learning_data/{learningId} {
-      allow read: if isSuperAdmin() || isLegacyBroadAccessUser(); // Temporary legacy access
-      allow create: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow update: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow delete: if isSuperAdmin() || isLegacyBroadAccessUser();
-    }
-    
-    // Customer Reviews - isolated by tenant
-    match /tenants/{tenantId}/customer_reviews/{reviewId} {
-      allow read: if isSuperAdmin() || isLegacyBroadAccessUser(); // Temporary legacy access
-      allow create: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow update: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow delete: if isSuperAdmin() || isLegacyBroadAccessUser();
-    }
-    
-    // Employees - isolated by tenant
-    match /tenants/{tenantId}/employees/{employeeId} {
-      allow read: if isSuperAdmin() || isLegacyBroadAccessUser(); // Temporary legacy access
-      allow create: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow update: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow delete: if isSuperAdmin() || isLegacyBroadAccessUser();
-    }
-    
-    // Customers - isolated by tenant (CRM)
-    match /tenants/{tenantId}/customers/{customerId} {
-      allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || isOwnCustomerRecord(tenantId);
-      allow create, update, delete: if isSuperAdmin() || isTenantAdmin(tenantId);
-    }
-    
-    // Appointments - isolated by tenant (scheduling)
-    match /tenants/{tenantId}/appointments/{appointmentId} {
-      allow read: if isSuperAdmin() || isLegacyBroadAccessUser(); // Temporary legacy access
-      allow create: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow update: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow delete: if isSuperAdmin() || isLegacyBroadAccessUser();
-    }
-    
-    // White Label Domains - isolated by tenant
-    match /tenants/{tenantId}/white_label_domains/{domainId} {
-      allow read: if isSuperAdmin() || isTenantAdmin(tenantId);
-      allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
-      allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
-      allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
-    }
-    
-    // Upsell Offers - isolated by tenant
-    match /tenants/{tenantId}/upsell_offers/{offerId} {
-      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
-      allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
-      allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
-      allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
-    }
-    
-    // Upsell Impressions - isolated by tenant (analytics)
-    match /tenants/{tenantId}/upsell_impressions/{impressionId} {
-      allow read: if isSuperAdmin() || isTenantAdmin(tenantId);
-      allow create: if isSuperAdmin() || false; // System only
-      allow update: if isSuperAdmin() || false;
-      allow delete: if isSuperAdmin() || false;
-    }
-    
-    // Upsell Acceptances - isolated by tenant (analytics)
-    match /tenants/{tenantId}/upsell_acceptances/{acceptanceId} {
-      allow read: if isSuperAdmin() || isTenantAdmin(tenantId);
-      allow create: if isSuperAdmin() || false; // System only
-      allow update: if isSuperAdmin() || false;
-      allow delete: if isSuperAdmin() || false;
-    }
-    
-    // Time Clock - isolated by tenant (employee tracking)
-    match /tenants/{tenantId}/time_clock/{clockId} {
-      allow read: if isSuperAdmin() || isLegacyBroadAccessUser(); // Temporary legacy access
-      allow create: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow update: if isSuperAdmin() || isLegacyBroadAccessUser();
-      allow delete: if isSuperAdmin() || isLegacyBroadAccessUser();
-    }
-    
-    // Users collection - for user management
+
     match /users/{userId} {
       allow read: if isAuthenticated() && request.auth.uid == userId;
       allow create: if isOwnCustomerProfileCreate(userId);
       allow update: if isSafeOwnProfileUpdate(userId);
       allow delete: if false;
+    }
+
+    match /{unprovenGlobalPath=**} {
+      allow read, write: if false;
     }
   }
 }
