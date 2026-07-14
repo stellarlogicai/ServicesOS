@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   createBookingCheckoutSession: vi.fn(),
   updateBookingAdminFields: vi.fn(),
   updateBookingManualPaymentStatus: vi.fn(),
+  listFieldPhotos: vi.fn(),
+  loadFieldPhotoBlob: vi.fn(),
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
@@ -55,6 +57,12 @@ vi.mock('../services/stripeService', () => ({
   createBookingCheckoutSession: mocks.createBookingCheckoutSession,
 }));
 
+vi.mock('../services/fieldPhotoService', () => ({
+  FIELD_PHOTO_PHASES: ['before', 'after'],
+  listFieldPhotos: mocks.listFieldPhotos,
+  loadFieldPhotoBlob: mocks.loadFieldPhotoBlob,
+}));
+
 import BookingsList from '../components/BookingsList';
 
 describe('read-only Bookings admin list', () => {
@@ -63,6 +71,9 @@ describe('read-only Bookings admin list', () => {
     mocks.createBookingCheckoutSession.mockReset();
     mocks.updateBookingAdminFields.mockReset();
     mocks.updateBookingManualPaymentStatus.mockReset();
+    mocks.listFieldPhotos.mockReset();
+    mocks.loadFieldPhotoBlob.mockReset();
+    mocks.listFieldPhotos.mockResolvedValue([]);
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: {
@@ -341,6 +352,35 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('Field completion is worker-entered job progress. It does not change payment status.');
     expect(dialog).toHaveTextContent('Not paid');
     expect(screen.queryByRole('button', { name: 'Mark Complete' })).not.toBeInTheDocument();
+  });
+
+  it('shows tenant-scoped before and after evidence read-only without changing payment state', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(blob => `blob:${blob.type}`) });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    mocks.listFieldPhotos.mockResolvedValue([
+      { id: 'before-1', phase: 'before', storagePath: 'safe/before-1.jpg', uploadedAt: new Date('2026-07-13T14:00:00Z') },
+      { id: 'after-1', phase: 'after', storagePath: 'safe/after-1.jpg', uploadedAt: new Date('2026-07-13T16:00:00Z') },
+    ]);
+    mocks.loadFieldPhotoBlob.mockResolvedValue(new Blob(['photo'], { type: 'image/jpeg' }));
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'booking-photo-review',
+      customerName: 'Photo Review Customer',
+      paymentStatus: 'not_paid',
+    }] });
+
+    render(<BookingsList />);
+    await screen.findByRole('heading', { name: 'Photo Review Customer' });
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Photo Review Customer' });
+    expect(await within(dialog).findByAltText('before job evidence')).toBeInTheDocument();
+    expect(within(dialog).getByAltText('after job evidence')).toBeInTheDocument();
+    expect(within(dialog).getByText('Field photos')).toBeInTheDocument();
+    expect(within(dialog).getByText('Not paid')).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/Add .* photo/)).not.toBeInTheDocument();
+    expect(mocks.listFieldPhotos).toHaveBeenCalledWith('tenant-a', 'booking-photo-review');
+    expect(mocks.updateBookingManualPaymentStatus).not.toHaveBeenCalled();
   });
 
   it('cancels a scheduled booking without changing payment history', async () => {

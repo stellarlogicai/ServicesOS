@@ -14,6 +14,7 @@ const {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
   setDoc,
   updateDoc,
   where
@@ -145,6 +146,27 @@ async function seedFirestore() {
 
 const authenticatedDatabase = uid =>
   testEnvironment.authenticatedContext(uid, { email: `${uid}@example.test` }).firestore();
+
+const fieldPhotoMetadata = ({
+  tenantId = TENANT_A,
+  bookingId = 'field-booking',
+  photoId = 'photo-valid',
+  phase = 'before',
+  uploadedByUid = 'employee-a',
+  contentType = 'image/jpeg',
+  extension = 'jpg',
+  extra = {},
+} = {}) => ({
+  id: photoId,
+  phase,
+  storagePath: `tenants/${tenantId}/bookings/${bookingId}/field-photos/${phase}/${photoId}.${extension}`,
+  uploadedAt: serverTimestamp(),
+  uploadedByUid,
+  fileName: `${phase}-photo.${extension}`,
+  contentType,
+  sizeBytes: 256,
+  ...extra,
+});
 
 describe('tenant-scoped customer intake Firestore rules', () => {
   before(async () => {
@@ -388,6 +410,86 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     await assertFails(updateDoc(profile, { role: 'admin' }));
     await assertFails(updateDoc(profile, { tenantId: TENANT_B }));
     await assertFails(updateDoc(profile, { status: 'inactive' }));
+  });
+
+  test('active matching employee can create and read valid field photo metadata', async () => {
+    const database = authenticatedDatabase('employee-a');
+    const photo = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'photo-valid');
+
+    await assertSucceeds(setDoc(photo, fieldPhotoMetadata()));
+    await assertSucceeds(getDoc(photo));
+  });
+
+  test('employee cannot spoof field photo identity, path, phase, uploader, size, or arbitrary metadata', async () => {
+    const database = authenticatedDatabase('employee-a');
+    const invalidCases = [
+      fieldPhotoMetadata({ photoId: 'photo-1', extra: { id: 'different-photo' } }),
+      fieldPhotoMetadata({ photoId: 'photo-2', uploadedByUid: 'employee-b' }),
+      fieldPhotoMetadata({ photoId: 'photo-3', extra: { storagePath: 'tenants/tenant-b/bookings/field-booking/field-photos/before/photo-3.jpg' } }),
+      fieldPhotoMetadata({ photoId: 'photo-4', extra: { storagePath: 'tenants/tenant-a/bookings/other-booking/field-photos/before/photo-4.jpg' } }),
+      fieldPhotoMetadata({ photoId: 'photo-5', phase: 'during' }),
+      fieldPhotoMetadata({ photoId: 'photo-6', extra: { sizeBytes: 0 } }),
+      fieldPhotoMetadata({ photoId: 'photo-7', extra: { sizeBytes: (10 * 1024 * 1024) + 1 } }),
+      fieldPhotoMetadata({ photoId: 'photo-8', extra: { customerName: 'Not allowed' } }),
+      fieldPhotoMetadata({ photoId: 'photo-9', contentType: 'application/pdf', extension: 'pdf' }),
+    ];
+
+    for (const metadata of invalidCases) {
+      const photo = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', metadata.id === 'different-photo' ? 'photo-1' : metadata.id);
+      await assertFails(setDoc(photo, metadata));
+    }
+  });
+
+  test('employee cannot update or delete persisted field photo metadata', async () => {
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'persisted-photo'), {
+        ...fieldPhotoMetadata({ photoId: 'persisted-photo' }),
+        uploadedAt: new Date('2026-07-13T12:00:00.000Z'),
+      });
+    });
+    const database = authenticatedDatabase('employee-a');
+    const photo = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'persisted-photo');
+    await assertFails(updateDoc(photo, { sizeBytes: 512 }));
+    await assertFails(deleteDoc(photo));
+  });
+
+  test('field photo metadata reads and creates remain tenant and role scoped', async () => {
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      const database = context.firestore();
+      await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'photo-a'), {
+        ...fieldPhotoMetadata({ photoId: 'photo-a' }),
+        uploadedAt: new Date('2026-07-13T12:00:00.000Z'),
+      });
+      await setDoc(doc(database, 'tenants', TENANT_B, 'bookings', 'other-booking', 'fieldPhotos', 'photo-b'), {
+        ...fieldPhotoMetadata({ tenantId: TENANT_B, bookingId: 'other-booking', photoId: 'photo-b', uploadedByUid: 'employee-b' }),
+        uploadedAt: new Date('2026-07-13T12:00:00.000Z'),
+      });
+    });
+
+    const employeeA = authenticatedDatabase('employee-a');
+    const employeeB = authenticatedDatabase('employee-b');
+    const customer = authenticatedDatabase('customer-a-auth');
+    const adminA = authenticatedDatabase('admin-a');
+    const adminB = authenticatedDatabase('admin-b');
+    const superAdmin = authenticatedDatabase('super-admin');
+    const anonymous = testEnvironment.unauthenticatedContext().firestore();
+    const photoAPath = ['tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'photo-a'];
+
+    await assertSucceeds(getDoc(doc(employeeA, ...photoAPath)));
+    await assertFails(getDoc(doc(employeeB, ...photoAPath)));
+    await assertFails(setDoc(
+      doc(employeeB, 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'cross-create'),
+      fieldPhotoMetadata({ photoId: 'cross-create', uploadedByUid: 'employee-b' })
+    ));
+    await assertFails(getDoc(doc(customer, ...photoAPath)));
+    await assertFails(setDoc(
+      doc(customer, 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'customer-create'),
+      fieldPhotoMetadata({ photoId: 'customer-create', uploadedByUid: 'customer-a-auth' })
+    ));
+    await assertFails(getDoc(doc(anonymous, ...photoAPath)));
+    await assertSucceeds(getDoc(doc(adminA, ...photoAPath)));
+    await assertFails(getDoc(doc(adminB, ...photoAPath)));
+    await assertSucceeds(getDoc(doc(superAdmin, ...photoAPath)));
   });
 
   test('customer cannot use employee Field Mode reads or writes', async () => {

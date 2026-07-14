@@ -95,6 +95,53 @@ service cloud.firestore {
       return isTenantFieldUser(tenantId) && fieldModeBookingUpdateKeysOnly();
     }
 
+    function fieldPhotoMetadataKeysOnly() {
+      return request.resource.data.keys().hasAll([
+               'id',
+               'phase',
+               'storagePath',
+               'uploadedAt',
+               'uploadedByUid',
+               'fileName',
+               'contentType',
+               'sizeBytes'
+             ]) &&
+             request.resource.data.keys().hasOnly([
+               'id',
+               'phase',
+               'storagePath',
+               'uploadedAt',
+               'uploadedByUid',
+               'fileName',
+               'contentType',
+               'sizeBytes',
+               'clientFileLastModifiedAt'
+             ]);
+    }
+
+    function validFieldPhotoObjectIdentity(tenantId, bookingId, photoId) {
+      let data = request.resource.data;
+      let prefix = 'tenants/' + tenantId + '/bookings/' + bookingId + '/field-photos/' + data.phase + '/' + photoId;
+      return (data.contentType == 'image/jpeg' && data.storagePath == prefix + '.jpg' && data.fileName == data.phase + '-photo.jpg') ||
+             (data.contentType == 'image/png' && data.storagePath == prefix + '.png' && data.fileName == data.phase + '-photo.png') ||
+             (data.contentType == 'image/webp' && data.storagePath == prefix + '.webp' && data.fileName == data.phase + '-photo.webp');
+    }
+
+    function isValidFieldPhotoMetadataCreate(tenantId, bookingId, photoId) {
+      let data = request.resource.data;
+      return isTenantFieldUser(tenantId) &&
+             fieldPhotoMetadataKeysOnly() &&
+             data.id == photoId &&
+             data.phase in ['before', 'after'] &&
+             data.uploadedByUid == request.auth.uid &&
+             data.uploadedAt == request.time &&
+             data.sizeBytes is int &&
+             data.sizeBytes > 0 &&
+             data.sizeBytes <= 10 * 1024 * 1024 &&
+             (!('clientFileLastModifiedAt' in data) || data.clientFileLastModifiedAt is timestamp) &&
+             validFieldPhotoObjectIdentity(tenantId, bookingId, photoId);
+    }
+
     function isOwnLinkedCustomer(tenantId, customerId) {
       let customer = get(/databases/$(database)/documents/tenants/$(tenantId)/customers/$(customerId)).data;
       return isCustomerUser() &&
@@ -230,6 +277,12 @@ service cloud.firestore {
       allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId) || isFieldModeBookingUpdate(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
+
+      match /fieldPhotos/{photoId} {
+        allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || isTenantFieldUser(tenantId);
+        allow create: if isValidFieldPhotoMetadataCreate(tenantId, bookingId, photoId);
+        allow update, delete: if false;
+      }
     }
     
     // Payments - isolated by tenant

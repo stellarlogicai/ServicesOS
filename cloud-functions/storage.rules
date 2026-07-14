@@ -1,0 +1,66 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function hasUserProfile() {
+      return isAuthenticated() &&
+             firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function userProfile() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function tenantRecord(tenantId) {
+      return firestore.get(/databases/(default)/documents/tenants/$(tenantId)).data;
+    }
+
+    function isSuperAdmin() {
+      return hasUserProfile() && userProfile().role == 'super-admin';
+    }
+
+    function isTenantAdmin(tenantId) {
+      return tenantId != 'DEFAULT' &&
+             hasUserProfile() &&
+             userProfile().role == 'admin' &&
+             userProfile().tenantId == tenantId &&
+             (!('status' in userProfile()) || userProfile().status == 'active') &&
+             request.auth.uid in tenantRecord(tenantId).adminUsers;
+    }
+
+    function isTenantFieldUser(tenantId) {
+      return tenantId != 'DEFAULT' &&
+             hasUserProfile() &&
+             userProfile().role == 'employee' &&
+             userProfile().status == 'active' &&
+             userProfile().tenantId == tenantId &&
+             request.auth.uid in tenantRecord(tenantId).users;
+    }
+
+    function isAllowedPhase(phase) {
+      return phase in ['before', 'after'];
+    }
+
+    function validPhotoObject(fileName) {
+      return request.resource != null &&
+             request.resource.size > 0 &&
+             request.resource.size <= 10 * 1024 * 1024 &&
+             ((request.resource.contentType == 'image/jpeg' && fileName.matches('^[A-Za-z0-9_-]+\\.jpg$')) ||
+              (request.resource.contentType == 'image/png' && fileName.matches('^[A-Za-z0-9_-]+\\.png$')) ||
+              (request.resource.contentType == 'image/webp' && fileName.matches('^[A-Za-z0-9_-]+\\.webp$')));
+    }
+
+    match /tenants/{tenantId}/bookings/{bookingId}/field-photos/{phase}/{fileName} {
+      allow read: if isAllowedPhase(phase) &&
+                     (isSuperAdmin() || isTenantAdmin(tenantId) || isTenantFieldUser(tenantId));
+      allow create: if isAllowedPhase(phase) &&
+                       isTenantFieldUser(tenantId) &&
+                       resource == null &&
+                       validPhotoObject(fileName);
+      allow update, delete: if false;
+    }
+  }
+}

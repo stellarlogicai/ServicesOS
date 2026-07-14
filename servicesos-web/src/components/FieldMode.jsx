@@ -5,6 +5,7 @@ import {
   updateBookingFieldExecution,
 } from '../core/scheduling/schedulingService';
 import { useAuth } from '../contexts/AuthContext';
+import { FieldPhotoUploadPanel } from './FieldPhotoEvidence';
 import {
   bookingAddress,
   bookingCustomerName,
@@ -110,7 +111,7 @@ function JobCard({ booking, employeeView, onOpen }) {
   );
 }
 
-function JobPacket({ booking, employeeView, tenantId, userId, onClose, onBookingPatch }) {
+function JobPacket({ booking, employeeView, employeePhotoAccess, tenantId, userId, onClose, onBookingPatch }) {
   const [actionMessage, setActionMessage] = useState('');
   const [executionMessage, setExecutionMessage] = useState('');
   const [executionError, setExecutionError] = useState('');
@@ -119,6 +120,8 @@ function JobPacket({ booking, employeeView, tenantId, userId, onClose, onBooking
   const [checklist, setChecklist] = useState(() => normalizeChecklist(booking.fieldChecklist));
   const [fieldNotes, setFieldNotes] = useState(typeof booking.fieldNotes === 'string' ? booking.fieldNotes : '');
   const [fieldIssue, setFieldIssue] = useState(typeof booking.fieldIssue === 'string' ? booking.fieldIssue : '');
+  const [photoEvidence, setPhotoEvidence] = useState({ loading: true, photos: [] });
+  const [showCompletionWarning, setShowCompletionWarning] = useState(false);
   const phone = bookingCustomerPhone(booking);
   const address = bookingAddress(booking);
   const hasPhone = phone !== 'Phone not provided';
@@ -188,12 +191,21 @@ function JobPacket({ booking, employeeView, tenantId, userId, onClose, onBooking
   const startJob = () => saveFieldExecution({ fieldStatus: 'in_progress' }, 'Job started.', 'start');
   const saveChecklist = () => saveFieldExecution({ fieldChecklist: checklist }, 'Checklist saved.', 'checklist');
   const saveNotes = () => saveFieldExecution({ fieldNotes, fieldIssue }, 'Notes saved.', 'notes');
-  const markComplete = () => saveFieldExecution({
+  const updatePhotoEvidence = useCallback(evidence => setPhotoEvidence(evidence), []);
+  const completeJob = () => saveFieldExecution({
     fieldStatus: 'completed',
     fieldChecklist: checklist,
     fieldNotes,
     fieldIssue,
   }, 'Job marked complete.', 'complete');
+  const markComplete = () => {
+    const hasUploadedAfterPhoto = photoEvidence.photos.some(photo => photo.phase === 'after');
+    if (employeePhotoAccess && !hasUploadedAfterPhoto) {
+      setShowCompletionWarning(true);
+      return;
+    }
+    completeJob();
+  };
 
   return (
     <div className="v1-modal-overlay" onClick={onClose}>
@@ -256,6 +268,26 @@ function JobPacket({ booking, employeeView, tenantId, userId, onClose, onBooking
               {savingAction === 'complete' ? 'Completing...' : 'Mark Complete'}
             </button>
           </div>
+          {showCompletionWarning && (
+            <div className="field-completion-warning" role="alertdialog" aria-labelledby="field-completion-warning-title">
+              <p id="field-completion-warning-title">No after photos have been uploaded. Complete the job anyway?</p>
+              <div className="field-completion-warning-actions">
+                <button className="v1-button v1-button-secondary" type="button" onClick={() => setShowCompletionWarning(false)}>
+                  Go back
+                </button>
+                <button
+                  className="v1-button v1-button-primary"
+                  type="button"
+                  onClick={() => {
+                    setShowCompletionWarning(false);
+                    completeJob();
+                  }}
+                >
+                  Complete anyway
+                </button>
+              </div>
+            </div>
+          )}
           <div className="field-job-checklist">
             <h4>Checklist</h4>
             <p>{completedCount} of {checklist.length} complete</p>
@@ -313,6 +345,14 @@ function JobPacket({ booking, employeeView, tenantId, userId, onClose, onBooking
               {savingAction === 'notes' ? 'Saving...' : 'Save notes'}
             </button>
           </div>
+          {employeePhotoAccess && (
+            <FieldPhotoUploadPanel
+              tenantId={tenantId}
+              bookingId={booking.id}
+              uploadedByUid={userId}
+              onEvidenceChange={updatePhotoEvidence}
+            />
+          )}
           {executionMessage && <div className="field-job-execution-status" role="status">{executionMessage}</div>}
           {executionError && <div className="field-job-execution-error" role="alert">{executionError}</div>}
         </section>
@@ -322,8 +362,13 @@ function JobPacket({ booking, employeeView, tenantId, userId, onClose, onBooking
 }
 
 export default function FieldMode() {
-  const { isEmployee, tenantId, user } = useAuth();
+  const { isEmployee, tenantId, user, userProfile } = useAuth();
   const employeeView = isEmployee?.() === true;
+  const employeePhotoAccess = employeeView &&
+    userProfile?.role === 'employee' &&
+    userProfile?.status === 'active' &&
+    userProfile?.tenantId === tenantId &&
+    user?.uid === userProfile?.uid;
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -396,6 +441,7 @@ export default function FieldMode() {
           key={selectedBooking.id || 'selected-job'}
           booking={selectedBooking}
           employeeView={employeeView}
+          employeePhotoAccess={employeePhotoAccess}
           tenantId={tenantId}
           userId={user?.uid}
           onBookingPatch={patchSelectedBooking}

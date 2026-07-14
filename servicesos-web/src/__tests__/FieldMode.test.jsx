@@ -5,6 +5,10 @@ import FieldMode from '../components/FieldMode';
 const mocks = vi.hoisted(() => ({
   getJobs: vi.fn(),
   updateBookingFieldExecution: vi.fn(),
+  listFieldPhotos: vi.fn(),
+  loadFieldPhotoBlob: vi.fn(),
+  uploadFieldPhoto: vi.fn(),
+  validateFieldPhoto: vi.fn(),
   tenantId: 'tenant-a',
   user: { uid: 'field-user-1' },
   role: 'admin',
@@ -26,7 +30,21 @@ vi.mock('../contexts/AuthContext', () => ({
     isEmployee: () => mocks.role === 'employee',
     tenantId: mocks.tenantId,
     user: mocks.user,
+    userProfile: {
+      uid: mocks.user?.uid,
+      role: mocks.role,
+      status: 'active',
+      tenantId: mocks.tenantId,
+    },
   }),
+}));
+
+vi.mock('../services/fieldPhotoService', () => ({
+  FIELD_PHOTO_PHASES: ['before', 'after'],
+  listFieldPhotos: mocks.listFieldPhotos,
+  loadFieldPhotoBlob: mocks.loadFieldPhotoBlob,
+  uploadFieldPhoto: mocks.uploadFieldPhoto,
+  validateFieldPhoto: mocks.validateFieldPhoto,
 }));
 
 const pad = value => String(value).padStart(2, '0');
@@ -42,6 +60,12 @@ describe('FieldMode read-only field surface', () => {
     mocks.role = 'admin';
     mocks.getJobs.mockReset();
     mocks.updateBookingFieldExecution.mockReset();
+    mocks.listFieldPhotos.mockReset();
+    mocks.loadFieldPhotoBlob.mockReset();
+    mocks.uploadFieldPhoto.mockReset();
+    mocks.validateFieldPhoto.mockReset();
+    mocks.listFieldPhotos.mockResolvedValue([]);
+    mocks.validateFieldPhoto.mockReturnValue({ success: true });
     mocks.updateBookingFieldExecution.mockImplementation(async (_tenantId, bookingId, patch) => ({
       success: true,
       data: { id: bookingId, ...patch },
@@ -288,6 +312,48 @@ describe('FieldMode read-only field surface', () => {
     expect(patch).not.toHaveProperty('paymentStatus');
     expect(patch).not.toHaveProperty('amountReceived');
     expect(await screen.findByText('Job marked complete.')).toBeInTheDocument();
+  });
+
+  it('warns an employee before completion when no uploaded after evidence exists', async () => {
+    mocks.role = 'employee';
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'complete-without-photo', customerName: 'Warning Customer', date: dateKey(today), paymentStatus: 'not_paid',
+    }] });
+    render(<FieldMode />);
+    await screen.findByText('Warning Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    await screen.findByText('No after photos added yet.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
+
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('No after photos have been uploaded. Complete the job anyway?');
+    expect(mocks.updateBookingFieldExecution).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Complete anyway' }));
+    await waitFor(() => expect(mocks.updateBookingFieldExecution).toHaveBeenCalled());
+    expect(mocks.updateBookingFieldExecution.mock.calls[0][2]).not.toHaveProperty('paymentStatus');
+  });
+
+  it('does not warn when persisted after evidence has loaded', async () => {
+    mocks.role = 'employee';
+    mocks.listFieldPhotos.mockResolvedValue([{
+      id: 'after-1', phase: 'after', storagePath: 'safe/after-1.jpg', uploadedAt: new Date(),
+    }]);
+    mocks.loadFieldPhotoBlob.mockResolvedValue(new Blob(['photo'], { type: 'image/jpeg' }));
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:after-photo') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'complete-with-photo', customerName: 'Evidence Customer', date: dateKey(today), paymentStatus: 'not_paid',
+    }] });
+    render(<FieldMode />);
+    await screen.findByText('Evidence Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    await screen.findByAltText('after job evidence');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
+
+    await waitFor(() => expect(mocks.updateBookingFieldExecution).toHaveBeenCalled());
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(mocks.updateBookingFieldExecution.mock.calls[0][2]).not.toHaveProperty('paymentStatus');
   });
 
   it('requires an active tenant and performs no booking read without one', async () => {

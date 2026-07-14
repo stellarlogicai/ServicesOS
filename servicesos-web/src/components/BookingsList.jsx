@@ -27,6 +27,7 @@ import {
   bookingStillOwed,
 } from './bookingDisplay';
 import { createBookingCheckoutSession } from '../services/stripeService';
+import { BookingFieldPhotoReview } from './FieldPhotoEvidence';
 
 const customerMessageButtonStyle = {
   border: '1px solid #cbd5e1',
@@ -521,6 +522,8 @@ export default function BookingsList() {
                 </>
               )}
             </section>
+
+            <BookingFieldPhotoReview tenantId={tenantId} bookingId={selectedBooking.id} />
 
             <section style={{ marginTop: 24, padding: 20, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 12 }}>
               <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18, fontWeight: 600 }}>Payment details</h3>
