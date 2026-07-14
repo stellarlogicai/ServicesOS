@@ -28,6 +28,16 @@ import {
 } from './bookingDisplay';
 import { createBookingCheckoutSession } from '../services/stripeService';
 
+const customerMessageButtonStyle = {
+  border: '1px solid #cbd5e1',
+  background: '#fff',
+  color: '#0f172a',
+  borderRadius: 8,
+  padding: '9px 14px',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
 export default function BookingsList() {
   const { tenantId } = useAuth();
   const [bookings, setBookings] = useState([]);
@@ -57,6 +67,7 @@ export default function BookingsList() {
     error: '',
     copyMessage: '',
   });
+  const [customerMessageStatus, setCustomerMessageStatus] = useState('');
 
   const loadBookings = useCallback(async () => {
     setLoading(true);
@@ -106,6 +117,7 @@ export default function BookingsList() {
     setPaymentStatusError('');
     setCancelError('');
     setSuccessMessage('');
+    setCustomerMessageStatus('');
     setStripeLinkState({ creating: false, url: '', error: '', copyMessage: '' });
   };
 
@@ -118,6 +130,7 @@ export default function BookingsList() {
     setPaymentStatusError('');
     setCancelError('');
     setSuccessMessage('');
+    setCustomerMessageStatus('');
     setStripeLinkState({ creating: false, url: '', error: '', copyMessage: '' });
   };
 
@@ -132,6 +145,7 @@ export default function BookingsList() {
     setEditError('');
     setPaymentStatusError('');
     setSuccessMessage('');
+    setCustomerMessageStatus('');
     setIsEditingPaymentStatus(false);
     setIsEditingBooking(true);
   };
@@ -165,6 +179,7 @@ export default function BookingsList() {
     setPaymentStatusError('');
     setEditError('');
     setSuccessMessage('');
+    setCustomerMessageStatus('');
     setIsEditingBooking(false);
     setIsEditingPaymentStatus(true);
   };
@@ -288,28 +303,16 @@ export default function BookingsList() {
     }
   };
 
-  const copyPaymentMessage = async () => {
-    if (!stripeLinkState.url) return;
-
-    const name = bookingCustomerName(selectedBooking);
-    const greeting = name && name !== 'Unknown customer' ? `Hi ${name}` : 'Hi';
-    const message = `${greeting}, here is your payment link for your upcoming cleaning: ${stripeLinkState.url}`;
-
+  const copyCustomerMessage = async (message) => {
+    if (!message) return;
     try {
       if (!navigator?.clipboard?.writeText) {
         throw new Error('Clipboard unavailable');
       }
       await navigator.clipboard.writeText(message);
-      setStripeLinkState(current => ({
-        ...current,
-        copyMessage: 'Payment message copied.',
-        error: '',
-      }));
+      setCustomerMessageStatus('Message copied.');
     } catch {
-      setStripeLinkState(current => ({
-        ...current,
-        copyMessage: 'Payment message could not be copied automatically.',
-      }));
+      setCustomerMessageStatus('Message could not be copied automatically.');
     }
   };
 
@@ -378,7 +381,7 @@ export default function BookingsList() {
     <div className="v1-page bookings-page">
       <div className="v1-page-header">
         <h1 className="v1-page-title">Bookings</h1>
-        <p className="v1-page-subtitle">Your job management page. Update booked job details, send Stripe payment links, and record payments made another way.</p>
+        <p className="v1-page-subtitle">Your job management page. Update booked job details, create Stripe payment links, and copy customer-ready messages.</p>
       </div>
 
       {loading && <p role="status">Loading bookings…</p>}
@@ -608,21 +611,6 @@ export default function BookingsList() {
                         >
                           Copy payment link
                         </button>
-                        <button
-                          type="button"
-                          onClick={copyPaymentMessage}
-                          style={{
-                            border: '1px solid #a5b4fc',
-                            background: '#fff',
-                            color: '#3730a3',
-                            borderRadius: 8,
-                            padding: '9px 14px',
-                            fontWeight: 700,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Copy message
-                        </button>
                       </div>
                       {stripeLinkState.copyMessage && (
                         <p style={{ margin: '10px 0 0', color: '#166534' }}>{stripeLinkState.copyMessage}</p>
@@ -632,6 +620,64 @@ export default function BookingsList() {
                 </div>
               )}
             </section>
+
+            {!isEditingBooking && !isEditingPaymentStatus && (
+              <section style={{ marginTop: 24, padding: 20, border: '1px solid #e2e8f0', background: '#f8fafc', borderRadius: 12 }}>
+                <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18, fontWeight: 600 }}>Customer messages</h3>
+                <p style={{ margin: '0 0 16px', color: '#475569', fontSize: 14, lineHeight: 1.5 }}>
+                  Copy-ready customer wording only. ServicesOS does not contact the customer or record communication history from this panel.
+                </p>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => copyCustomerMessage(buildEstimateReadyMessage(selectedBooking))}
+                    style={customerMessageButtonStyle}
+                  >
+                    Copy estimate message
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => copyCustomerMessage(buildBookingConfirmationMessage(selectedBooking))}
+                    style={customerMessageButtonStyle}
+                  >
+                    Copy booking confirmation
+                  </button>
+                  {stripeLinkState.url ? (
+                    <button
+                      type="button"
+                      onClick={() => copyCustomerMessage(buildPaymentLinkMessage(selectedBooking, stripeLinkState.url))}
+                      style={customerMessageButtonStyle}
+                    >
+                      Copy payment message
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => copyCustomerMessage(buildFollowUpMessage(selectedBooking))}
+                    style={customerMessageButtonStyle}
+                  >
+                    Copy follow-up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => copyCustomerMessage(buildReviewRequestMessage(selectedBooking))}
+                    style={customerMessageButtonStyle}
+                  >
+                    Copy review request
+                  </button>
+                </div>
+                {!stripeLinkState.url && (
+                  <p style={{ margin: '12px 0 0', color: '#64748b', fontSize: 13 }}>
+                    Create a payment link first, then you can copy a customer message.
+                  </p>
+                )}
+                {customerMessageStatus && (
+                  <p role="status" style={{ margin: '12px 0 0', color: customerMessageStatus === 'Message copied.' ? '#166534' : '#991b1b', fontWeight: 600 }}>
+                    {customerMessageStatus}
+                  </p>
+                )}
+              </section>
+            )}
 
             <div style={{ marginTop: 18 }}>
               <dt style={{ color: '#64748b', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Notes</dt>
@@ -1026,6 +1072,49 @@ function paymentDateInputValue(value) {
 function bookingFieldStatus(booking = {}) {
   const status = typeof booking.fieldStatus === 'string' ? booking.fieldStatus.trim() : '';
   return BOOKING_FIELD_STATUS_LABELS[status] || BOOKING_FIELD_STATUS_LABELS.not_started;
+}
+
+function customerMessageGreeting(booking = {}) {
+  const name = bookingCustomerName(booking);
+  return name && name !== 'Unknown customer' ? `Hi ${name}` : 'Hi';
+}
+
+function formatCustomerMessageAmount(amount) {
+  return Number.isFinite(amount)
+    ? amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+    : null;
+}
+
+function safeBookingSchedule(booking = {}) {
+  const schedule = bookingSchedule(booking);
+  return schedule && schedule !== 'Not scheduled' ? schedule : '';
+}
+
+function buildEstimateReadyMessage(booking = {}) {
+  const greeting = customerMessageGreeting(booking);
+  const amount = formatCustomerMessageAmount(bookingAgreedPrice(booking));
+  const amountSentence = amount ? ` The estimated total is ${amount}.` : '';
+  return `${greeting}, your cleaning estimate is ready.${amountSentence} Please let us know if you have any questions or would like to schedule.`;
+}
+
+function buildBookingConfirmationMessage(booking = {}) {
+  const greeting = customerMessageGreeting(booking);
+  const schedule = safeBookingSchedule(booking);
+  const scheduleText = schedule ? ` for ${schedule}` : '';
+  return `${greeting}, your cleaning is confirmed${scheduleText}. We look forward to helping you.`;
+}
+
+function buildPaymentLinkMessage(booking = {}, paymentLink = '') {
+  if (!paymentLink) return '';
+  return `${customerMessageGreeting(booking)}, here is your payment link for your upcoming cleaning: ${paymentLink}`;
+}
+
+function buildFollowUpMessage(booking = {}) {
+  return `${customerMessageGreeting(booking)}, I wanted to follow up on your cleaning estimate. Let us know if you would like to schedule or have any questions.`;
+}
+
+function buildReviewRequestMessage(booking = {}) {
+  return `${customerMessageGreeting(booking)}, thank you for choosing us for your cleaning. If you were happy with the service, we would really appreciate a review.`;
 }
 
 function isBookingCancellable(booking = {}) {

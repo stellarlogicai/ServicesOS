@@ -75,7 +75,7 @@ describe('read-only Bookings admin list', () => {
     mocks.getJobs.mockResolvedValue({ success: true, data: [] });
     render(<BookingsList />);
 
-    expect(await screen.findByText('Your job management page. Update booked job details, send Stripe payment links, and record payments made another way.')).toBeInTheDocument();
+    expect(await screen.findByText('Your job management page. Update booked job details, create Stripe payment links, and copy customer-ready messages.')).toBeInTheDocument();
   });
 
   it('loads bookings through the active tenant service boundary', async () => {
@@ -416,8 +416,95 @@ describe('read-only Bookings admin list', () => {
     expect(screen.queryByRole('button', { name: 'Cancel Booking' })).not.toBeInTheDocument();
   });
 
+  it('renders customer messages and copies estimate, booking confirmation, follow-up, and review text', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-customer-messages',
+        customerName: 'Message Customer',
+        date: '2026-07-02',
+        startTime: '09:00',
+        agreedPrice: 185,
+        paymentStatus: 'not_paid',
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Message Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Message Customer' });
+    expect(dialog).toHaveTextContent('Customer messages');
+    expect(dialog).toHaveTextContent('Copy-ready customer wording only.');
+    expect(dialog).toHaveTextContent('Create a payment link first, then you can copy a customer message.');
+    expect(screen.queryByRole('button', { name: 'Copy payment message' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Copy estimate message' }));
+    expect(writeText).toHaveBeenLastCalledWith(
+      'Hi Message Customer, your cleaning estimate is ready. The estimated total is $185.00. Please let us know if you have any questions or would like to schedule.'
+    );
+    expect(await screen.findByText('Message copied.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Copy booking confirmation' }));
+    expect(writeText).toHaveBeenLastCalledWith(
+      'Hi Message Customer, your cleaning is confirmed for Jul 2, 2026 at 09:00. We look forward to helping you.'
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Copy follow-up' }));
+    expect(writeText).toHaveBeenLastCalledWith(
+      'Hi Message Customer, I wanted to follow up on your cleaning estimate. Let us know if you would like to schedule or have any questions.'
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Copy review request' }));
+    expect(writeText).toHaveBeenLastCalledWith(
+      'Hi Message Customer, thank you for choosing us for your cleaning. If you were happy with the service, we would really appreciate a review.'
+    );
+    expect(mocks.updateBookingManualPaymentStatus).not.toHaveBeenCalled();
+    expect(mocks.updateBookingAdminFields).not.toHaveBeenCalled();
+  });
+
+  it('copies fallback customer messages when name, amount, and schedule are missing', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{ id: 'booking-message-fallback' }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Unknown customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    await user.click(screen.getByRole('button', { name: 'Copy estimate message' }));
+    expect(writeText).toHaveBeenLastCalledWith(
+      'Hi, your cleaning estimate is ready. Please let us know if you have any questions or would like to schedule.'
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Copy booking confirmation' }));
+    expect(writeText).toHaveBeenLastCalledWith(
+      'Hi, your cleaning is confirmed. We look forward to helping you.'
+    );
+  });
+
   it('creates a booking-scoped Stripe payment link and does not mark the booking paid in frontend', async () => {
     const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
     mocks.getJobs.mockResolvedValue({
       success: true,
       data: [{
@@ -443,6 +530,12 @@ describe('read-only Bookings admin list', () => {
     expect(screen.getByDisplayValue('https://checkout.stripe.test/pay/cs_test_booking')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open payment link' })).toHaveAttribute('href', 'https://checkout.stripe.test/pay/cs_test_booking');
     expect(screen.getByRole('button', { name: 'Copy payment link' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy payment message' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Copy payment message' }));
+    expect(writeText).toHaveBeenCalledWith(
+      'Hi Stripe Link Customer, here is your payment link for your upcoming cleaning: https://checkout.stripe.test/pay/cs_test_booking'
+    );
+    expect(await screen.findByText('Message copied.')).toBeInTheDocument();
     expect(screen.queryByText('Paid in full')).not.toBeInTheDocument();
     expect(mocks.updateBookingManualPaymentStatus).not.toHaveBeenCalled();
   });
