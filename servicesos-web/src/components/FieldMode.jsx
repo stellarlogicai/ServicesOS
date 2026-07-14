@@ -76,7 +76,20 @@ function normalizeChecklist(items) {
     }));
 }
 
-function JobCard({ booking, onOpen }) {
+function fieldSafeInstructions(booking = {}) {
+  const candidates = [
+    booking.fieldInstructions,
+    booking.technicianNotes,
+    booking.accessInstructions,
+    booking.requestSnapshot?.accessInstructions,
+    booking.requestSnapshot?.rawInput?.accessInstructions,
+    booking.requestSnapshot?.specialRequests,
+    booking.formData?.specialRequests,
+  ];
+  return candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'No field instructions provided';
+}
+
+function JobCard({ booking, employeeView, onOpen }) {
   return (
     <article className="v1-card field-job-card">
       <div className="field-job-card-header">
@@ -88,7 +101,7 @@ function JobCard({ booking, onOpen }) {
         <div className="field-job-badges">
           <span className="v1-pill">{bookingStatus(booking)}</span>
           <span className="v1-pill">{fieldStatusLabel(booking)}</span>
-          <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>
+          {!employeeView && <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>}
         </div>
       </div>
       <div className="field-job-address">{bookingAddress(booking)}</div>
@@ -97,7 +110,7 @@ function JobCard({ booking, onOpen }) {
   );
 }
 
-function JobPacket({ booking, tenantId, userId, onClose, onBookingPatch }) {
+function JobPacket({ booking, employeeView, tenantId, userId, onClose, onBookingPatch }) {
   const [actionMessage, setActionMessage] = useState('');
   const [executionMessage, setExecutionMessage] = useState('');
   const [executionError, setExecutionError] = useState('');
@@ -195,13 +208,13 @@ function JobPacket({ booking, tenantId, userId, onClose, onBookingPatch }) {
         <div className="field-job-badges">
           <span className="v1-pill">{bookingStatus(booking)}</span>
           <span className="v1-pill">{BOOKING_FIELD_STATUS_LABELS[fieldStatus] || BOOKING_FIELD_STATUS_LABELS.not_started}</span>
-          <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>
+          {!employeeView && <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>}
         </div>
         <dl className="field-job-details">
           <dt>Schedule</dt><dd>{bookingSchedule(booking)}</dd>
           <dt>Service</dt><dd>{bookingServiceType(booking)}</dd>
           <dt>Address</dt><dd>{address}</dd>
-          <dt>Notes</dt><dd>{bookingNotes(booking)}</dd>
+          <dt>Notes</dt><dd>{employeeView ? fieldSafeInstructions(booking) : bookingNotes(booking)}</dd>
           <dt>Phone</dt><dd>{phone}</dd>
         </dl>
         <section className="field-job-actions" aria-labelledby="field-job-actions-title">
@@ -309,7 +322,8 @@ function JobPacket({ booking, tenantId, userId, onClose, onBookingPatch }) {
 }
 
 export default function FieldMode() {
-  const { tenantId, user } = useAuth();
+  const { isEmployee, tenantId, user } = useAuth();
+  const employeeView = isEmployee?.() === true;
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -369,11 +383,11 @@ export default function FieldMode() {
         <div className="field-mode-sections" style={{ display: 'grid', gap: 32 }}>
           <section aria-labelledby="today-jobs-title">
             <h2 id="today-jobs-title" style={{ fontSize: 16, fontWeight: 600, color: '#374151', marginBottom: 16 }}>Today</h2>
-            {grouped.today.length ? grouped.today.map((booking, index) => <JobCard booking={booking} onOpen={setSelectedBooking} key={booking.id || `today-${index}`} />) : <div className="v1-empty-state" style={{ padding: 48, textAlign: 'center', color: '#64748b' }}><div style={{ fontSize: 48, marginBottom: 16 }}>📅</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No jobs scheduled for today</div><div style={{ fontSize: 14 }}>Upcoming job packets will appear below.</div></div>}
+            {grouped.today.length ? grouped.today.map((booking, index) => <JobCard booking={booking} employeeView={employeeView} onOpen={setSelectedBooking} key={booking.id || `today-${index}`} />) : <div className="v1-empty-state" style={{ padding: 48, textAlign: 'center', color: '#64748b' }}><div style={{ fontSize: 48, marginBottom: 16 }}>📅</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No jobs scheduled for today</div><div style={{ fontSize: 14 }}>Upcoming job packets will appear below.</div></div>}
           </section>
           <section aria-labelledby="upcoming-jobs-title">
             <h2 id="upcoming-jobs-title" style={{ fontSize: 16, fontWeight: 600, color: '#374151', marginBottom: 16 }}>Upcoming</h2>
-            {grouped.upcoming.length ? grouped.upcoming.map((booking, index) => <JobCard booking={booking} onOpen={setSelectedBooking} key={booking.id || `upcoming-${index}`} />) : <div className="v1-empty-state" style={{ padding: 48, textAlign: 'center', color: '#64748b' }}><div style={{ fontSize: 48, marginBottom: 16 }}>📅</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No upcoming jobs scheduled</div><div style={{ fontSize: 14 }}>Approved bookings will show here for field reference.</div></div>}
+            {grouped.upcoming.length ? grouped.upcoming.map((booking, index) => <JobCard booking={booking} employeeView={employeeView} onOpen={setSelectedBooking} key={booking.id || `upcoming-${index}`} />) : <div className="v1-empty-state" style={{ padding: 48, textAlign: 'center', color: '#64748b' }}><div style={{ fontSize: 48, marginBottom: 16 }}>📅</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No upcoming jobs scheduled</div><div style={{ fontSize: 14 }}>Approved bookings will show here for field reference.</div></div>}
           </section>
         </div>
       )}
@@ -381,6 +395,7 @@ export default function FieldMode() {
         <JobPacket
           key={selectedBooking.id || 'selected-job'}
           booking={selectedBooking}
+          employeeView={employeeView}
           tenantId={tenantId}
           userId={user?.uid}
           onBookingPatch={patchSelectedBooking}

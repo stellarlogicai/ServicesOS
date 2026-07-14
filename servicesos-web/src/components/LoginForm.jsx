@@ -8,7 +8,8 @@ export default function LoginForm() {
   const [showSignupInfo, setShowSignupInfo] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, loginWithGoogle } = useAuth();
+  const { accessError, login, loginWithGoogle } = useAuth();
+  const displayedError = error || accessError;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -118,7 +119,7 @@ export default function LoginForm() {
           />
         </div>
 
-        {error && (
+        {displayedError && (
           <div style={{
             padding: 12,
             background: '#fef2f2',
@@ -127,7 +128,7 @@ export default function LoginForm() {
             fontSize: 14,
             color: '#991b1b'
           }}>
-            {error}
+            {displayedError}
           </div>
         )}
 

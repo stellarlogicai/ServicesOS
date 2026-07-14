@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext } from '../contexts/AuthContextValue';
 
@@ -88,7 +88,8 @@ const authState = {
   loading: false,
   logout: vi.fn(),
   hasPermission: () => true,
-  isSuperAdmin: () => false
+  isSuperAdmin: () => false,
+  isEmployee: () => false
 };
 
 vi.mock('../contexts/AuthContext', () => ({
@@ -333,6 +334,7 @@ describe('App onboarding router context', () => {
   it('does not expose GrowthAI to customer users', () => {
     authState.role = 'customer';
     authState.isSuperAdmin = () => false;
+    authState.isEmployee = () => authState.role === 'employee';
     authState.userProfile = { uid: 'customer-test', onboardingCompleted: true };
     authState.currentTenant = {
       id: 'tenant-test',
@@ -350,6 +352,76 @@ describe('App onboarding router context', () => {
     expect(screen.queryByText('Field Mode')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'GrowthAI — Marketing Helper' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Customer Portal Screen' })).toBeInTheDocument();
+  });
+
+  it('limits an employee to Field Mode and sign out across direct browser paths', () => {
+    authState.role = 'employee';
+    authState.hasPermission = permission => permission === 'access_field_mode';
+    authState.userProfile = {
+      uid: 'employee-test',
+      role: 'employee',
+      status: 'active',
+      tenantId: 'tenant-test',
+    };
+    authState.currentTenant = null;
+
+    for (const path of ['/', '/dashboard', '/bookings', '/business-settings', '/data-export', '/customer-portal']) {
+      window.history.pushState({}, '', path);
+      const { unmount } = render(<App />);
+
+      expect(screen.getByRole('heading', { name: 'Field Mode Screen' })).toBeInTheDocument();
+      expect(screen.getByText('Field Mode')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+      expect(screen.getByText('Field operations')).toBeInTheDocument();
+
+      [
+        'Dashboard',
+        'Create estimate',
+        'Customers',
+        'Bookings',
+        'Calendar',
+        'Business Settings',
+        'Data export',
+        'Customer portal',
+        'Staff scheduling',
+        'Tenant management',
+        'GrowthAI',
+      ].forEach(label => expect(screen.queryByText(label)).not.toBeInTheDocument());
+
+      [
+        'Wife Beta Dashboard',
+        'Bookings Screen',
+        'Business Settings Screen',
+        'Data Export Screen',
+        'Customer Portal Screen',
+      ].forEach(heading => expect(screen.queryByRole('heading', { name: heading })).not.toBeInTheDocument());
+
+      unmount();
+    }
+  });
+
+  it('falls back from an admin page to Field Mode when the active role becomes employee', async () => {
+    authState.userProfile = { uid: 'admin-test', role: 'admin', onboardingCompleted: true };
+    const { rerender } = render(<App />);
+
+    fireEvent.click(screen.getByText('Business Settings'));
+    expect(screen.getByRole('heading', { name: 'Business Settings Screen' })).toBeInTheDocument();
+
+    authState.role = 'employee';
+    authState.hasPermission = permission => permission === 'access_field_mode';
+    authState.userProfile = {
+      uid: 'employee-test',
+      role: 'employee',
+      status: 'active',
+      tenantId: 'tenant-test',
+    };
+    authState.currentTenant = null;
+    rerender(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Field Mode Screen' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('heading', { name: 'Business Settings Screen' })).not.toBeInTheDocument();
   });
 
   it('detects Stripe booking checkout return query states', () => {

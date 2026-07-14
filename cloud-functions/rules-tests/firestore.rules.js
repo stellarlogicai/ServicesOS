@@ -56,7 +56,17 @@ async function seedFirestore() {
 
     await setDoc(doc(database, 'tenants', TENANT_A), {
       adminUsers: ['admin-a'],
-      users: ['admin-a', 'employee-a']
+      users: [
+        'admin-a',
+        'employee-a',
+        'employee-no-status',
+        'employee-tenantless',
+        'employee-inactive',
+        'employee-disabled',
+        'employee-suspended',
+        'unknown-a',
+        'missing-profile'
+      ]
     });
     await setDoc(doc(database, 'tenants', TENANT_B), {
       adminUsers: ['admin-b'],
@@ -69,7 +79,15 @@ async function seedFirestore() {
       'customer-a-auth': { role: 'customer', status: 'active', tenantId: TENANT_A },
       'customer-b-auth': { role: 'customer', status: 'active', tenantId: TENANT_A },
       'customer-other-auth': { role: 'customer', status: 'active', tenantId: TENANT_B },
-      'employee-a': { role: 'employee', status: 'active', tenantId: TENANT_A }
+      'employee-a': { role: 'employee', status: 'active', tenantId: TENANT_A },
+      'employee-b': { role: 'employee', status: 'active', tenantId: TENANT_B },
+      'employee-no-status': { role: 'employee', tenantId: TENANT_A },
+      'employee-tenantless': { role: 'employee', status: 'active', tenantId: '' },
+      'employee-inactive': { role: 'employee', status: 'inactive', tenantId: TENANT_A },
+      'employee-disabled': { role: 'employee', status: 'disabled', tenantId: TENANT_A },
+      'employee-suspended': { role: 'employee', status: 'suspended', tenantId: TENANT_A },
+      'unknown-a': { role: 'contractor', status: 'active', tenantId: TENANT_A },
+      'super-admin': { role: 'super-admin', status: 'active', tenantId: null }
     };
 
     for (const [uid, profile] of Object.entries(profiles)) {
@@ -109,6 +127,19 @@ async function seedFirestore() {
       paymentStatus: 'unpaid',
       updatedAt: '2026-07-13T12:00:00.000Z'
     });
+    await setDoc(doc(database, 'tenants', TENANT_B, 'bookings', 'other-booking'), {
+      status: 'scheduled',
+      updatedAt: '2026-07-13T12:00:00.000Z'
+    });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'quotes', 'quote-a'), { status: 'draft' });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'jobs', 'job-a'), { status: 'scheduled' });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'properties', 'property-a'), { label: 'Property A' });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'photos', 'photo-a'), { type: 'legacy' });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'appointments', 'appointment-a'), { status: 'scheduled' });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'employees', 'staff-a'), { name: 'Staff A' });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'payments', 'payment-a'), { status: 'pending' });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'time_clock', 'clock-a'), { status: 'open' });
+    await setDoc(doc(database, 'tenant_usage', TENANT_A), { bookings: 1 });
   });
 }
 
@@ -259,15 +290,127 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     }));
   });
 
-  test('Field Mode employee allowlist remains intact', async () => {
+  test('active employee can read tenant Field Mode bookings and use every approved execution field', async () => {
     const database = authenticatedDatabase('employee-a');
     const booking = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking');
 
+    await assertSucceeds(getDoc(booking));
     await assertSucceeds(updateDoc(booking, {
+      fieldStatus: 'in_progress',
+      fieldStatusUpdatedAt: '2026-07-13T13:00:00.000Z',
+      fieldStartedAt: '2026-07-13T13:00:00.000Z',
+      fieldStartedByUid: 'employee-a',
+      fieldChecklist: [{ id: 'kitchen', label: 'Kitchen', completed: true }],
+      fieldChecklistSummary: { completed: 1, total: 1 },
+      fieldNotes: 'Kitchen completed.',
+      fieldIssue: 'Back door lock sticks.',
+      updatedAt: '2026-07-13T13:00:00.000Z'
+    }));
+  });
+
+  test('invalid, tenantless, cross-tenant, unknown-role, and missing employee profiles cannot read Field Mode bookings', async () => {
+    const deniedUsers = [
+      'employee-no-status',
+      'employee-tenantless',
+      'employee-inactive',
+      'employee-disabled',
+      'employee-suspended',
+      'employee-b',
+      'unknown-a',
+      'missing-profile'
+    ];
+
+    for (const uid of deniedUsers) {
+      const database = authenticatedDatabase(uid);
+      await assertFails(getDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking')));
+    }
+
+    const employeeDatabase = authenticatedDatabase('employee-a');
+    await assertFails(getDoc(doc(employeeDatabase, 'tenants', TENANT_B, 'bookings', 'other-booking')));
+  });
+
+  test('employee booking writes reject price, schedule, customer, payment, Stripe, assignment, delete, and arbitrary fields', async () => {
+    const database = authenticatedDatabase('employee-a');
+    const booking = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking');
+    const forbiddenPatches = [
+      { agreedPrice: 1 },
+      { date: '2026-07-14' },
+      { scheduledAt: '2026-07-14T09:00:00.000Z' },
+      { customerId: 'customer-b' },
+      { leadId: 'lead-b' },
+      { paymentStatus: 'paid_in_full' },
+      { amountReceived: 100 },
+      { stripeCheckoutSessionId: 'cs_test_employee' },
+      { stripePaymentIntentId: 'pi_test_employee' },
+      { assignedEmployeeId: 'employee-b' },
+      { assignedEmployees: ['employee-b'] },
+      { isDeleted: true },
+      { unexpectedField: true }
+    ];
+
+    for (const patch of forbiddenPatches) {
+      await assertFails(updateDoc(booking, patch));
+    }
+    await assertFails(deleteDoc(booking));
+  });
+
+  test('employee cannot inherit unrelated temporary collection access', async () => {
+    const database = authenticatedDatabase('employee-a');
+    const deniedPaths = [
+      ['tenants', TENANT_A],
+      ['tenant_usage', TENANT_A],
+      ['tenants', TENANT_A, 'quotes', 'quote-a'],
+      ['tenants', TENANT_A, 'jobs', 'job-a'],
+      ['tenants', TENANT_A, 'properties', 'property-a'],
+      ['tenants', TENANT_A, 'photos', 'photo-a'],
+      ['tenants', TENANT_A, 'appointments', 'appointment-a'],
+      ['tenants', TENANT_A, 'employees', 'staff-a'],
+      ['tenants', TENANT_A, 'payments', 'payment-a'],
+      ['tenants', TENANT_A, 'time_clock', 'clock-a']
+    ];
+
+    for (const pathParts of deniedPaths) {
+      await assertFails(getDoc(doc(database, ...pathParts)));
+    }
+    await assertFails(setDoc(doc(database, 'tenants', 'employee-created-tenant'), {
+      adminUsers: ['employee-a'],
+      users: ['employee-a']
+    }));
+    await assertFails(setDoc(doc(database, 'tenants', TENANT_A, 'payments', 'employee-payment'), {
+      status: 'paid'
+    }));
+  });
+
+  test('employee cannot change own role, tenant, or status', async () => {
+    const database = authenticatedDatabase('employee-a');
+    const profile = doc(database, 'users', 'employee-a');
+
+    await assertFails(updateDoc(profile, { role: 'admin' }));
+    await assertFails(updateDoc(profile, { tenantId: TENANT_B }));
+    await assertFails(updateDoc(profile, { status: 'inactive' }));
+  });
+
+  test('customer cannot use employee Field Mode reads or writes', async () => {
+    const database = authenticatedDatabase('customer-a-auth');
+    const booking = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking');
+
+    await assertFails(getDoc(booking));
+    await assertFails(updateDoc(booking, {
       fieldStatus: 'in_progress',
       fieldStatusUpdatedAt: '2026-07-13T13:00:00.000Z',
       updatedAt: '2026-07-13T13:00:00.000Z'
     }));
-    await assertFails(updateDoc(booking, { paymentStatus: 'paid_in_full' }));
+  });
+
+  test('tenant admin and super-admin retain intended booking access', async () => {
+    const adminDatabase = authenticatedDatabase('admin-a');
+    const superDatabase = authenticatedDatabase('super-admin');
+    const adminBooking = doc(adminDatabase, 'tenants', TENANT_A, 'bookings', 'field-booking');
+    const superBooking = doc(superDatabase, 'tenants', TENANT_A, 'bookings', 'field-booking');
+
+    await assertSucceeds(getDoc(adminBooking));
+    await assertSucceeds(updateDoc(adminBooking, { agreedPrice: 225 }));
+    await assertSucceeds(getDoc(superBooking));
+    await assertSucceeds(updateDoc(superBooking, { status: 'completed' }));
   });
 });

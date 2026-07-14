@@ -30,13 +30,31 @@ service cloud.firestore {
              authenticatedUserProfile().status == 'active';
     }
 
+    function isEmployeeUser() {
+      return hasAuthenticatedUserProfile() &&
+             authenticatedUserProfile().role == 'employee';
+    }
+
+    // Preserve legacy access for recognized non-employee roles only.
+    // Remaining temporary rules still require module-by-module hardening.
+    function isLegacyBroadAccessUser() {
+      return hasAuthenticatedUserProfile() &&
+             !isEmployeeUser() &&
+             (authenticatedUserProfile().role == 'customer' ||
+              authenticatedUserProfile().role == 'admin' ||
+              authenticatedUserProfile().role == 'super-admin');
+    }
+
     function userTenantMatches(tenantId) {
       return hasAuthenticatedUserProfile() &&
              authenticatedUserProfile().tenantId == tenantId;
     }
     
     function isTenantAdmin(tenantId) {
-      return isAuthenticated() && 
+      return hasAuthenticatedUserProfile() &&
+             authenticatedUserProfile().role == 'admin' &&
+             authenticatedUserProfile().tenantId == tenantId &&
+             (!('status' in authenticatedUserProfile()) || authenticatedUserProfile().status == 'active') &&
              request.auth.uid in get(/databases/$(database)/documents/tenants/$(tenantId)).data.adminUsers;
     }
     
@@ -45,13 +63,12 @@ service cloud.firestore {
              request.auth.uid in get(/databases/$(database)/documents/tenants/$(tenantId)).data.users;
     }
 
-    function isCustomerOnlyUser() {
-      return isAuthenticated() &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'customer';
-    }
-
     function isTenantFieldUser(tenantId) {
-      return isTenantUser(tenantId) && !isCustomerOnlyUser();
+      return hasAuthenticatedUserProfile() &&
+             authenticatedUserProfile().role == 'employee' &&
+             authenticatedUserProfile().status == 'active' &&
+             authenticatedUserProfile().tenantId == tenantId &&
+             isTenantUser(tenantId);
     }
     
     function hasTenantAccess(tenantId) {
@@ -175,15 +192,15 @@ service cloud.firestore {
     
     // Tenants collection - allow create for testing, will restrict later
     match /tenants/{tenantId} {
-      allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || isTenantUser(tenantId);
-      allow create: if isAuthenticated(); // Temporary: allow any authenticated user to create
+      allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || (isTenantUser(tenantId) && !isEmployeeUser());
+      allow create: if isLegacyBroadAccessUser(); // Temporary legacy access; employees are explicitly denied
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow delete: if isSuperAdmin();
     }
     
     // Tenant usage - allow create for testing, will restrict later
     match /tenant_usage/{tenantId} {
-      allow read, write: if isAuthenticated(); // Temporary: allow any authenticated user
+      allow read, write: if isLegacyBroadAccessUser(); // Temporary legacy access; employees are explicitly denied
     }
     
     // Tenant billing - only tenant admin can read
@@ -201,15 +218,15 @@ service cloud.firestore {
     
     // Quotes - isolated by tenant
     match /tenants/{tenantId}/quotes/{quoteId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
-      allow create: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
+      allow create: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
     }
     
     // Bookings - isolated by tenant
     match /tenants/{tenantId}/bookings/{bookingId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || isTenantAdmin(tenantId) || isTenantFieldUser(tenantId);
       allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId) || isFieldModeBookingUpdate(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
@@ -217,15 +234,15 @@ service cloud.firestore {
     
     // Payments - isolated by tenant
     match /tenants/{tenantId}/payments/{paymentId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
-      allow create: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
+      allow create: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
       allow update: if isSuperAdmin() || false; // Only system can update via Stripe webhooks
       allow delete: if isSuperAdmin() || false;
     }
     
     // Jobs - isolated by tenant (for dataset collection)
     match /tenants/{tenantId}/jobs/{jobId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
       allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
@@ -233,7 +250,7 @@ service cloud.firestore {
     
     // Properties - isolated by tenant (for dataset collection)
     match /tenants/{tenantId}/properties/{propertyId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
       allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
@@ -241,7 +258,7 @@ service cloud.firestore {
     
     // Photos - isolated by tenant (before/after photos for dataset)
     match /tenants/{tenantId}/photos/{photoId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
       allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
@@ -249,7 +266,7 @@ service cloud.firestore {
     
     // AI Learning Data - isolated by tenant (for ML training)
     match /tenants/{tenantId}/ai_learning_data/{learningId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
       allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
@@ -257,7 +274,7 @@ service cloud.firestore {
     
     // Customer Reviews - isolated by tenant
     match /tenants/{tenantId}/customer_reviews/{reviewId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
       allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
@@ -265,7 +282,7 @@ service cloud.firestore {
     
     // Employees - isolated by tenant
     match /tenants/{tenantId}/employees/{employeeId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
       allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
@@ -279,7 +296,7 @@ service cloud.firestore {
     
     // Appointments - isolated by tenant (scheduling)
     match /tenants/{tenantId}/appointments/{appointmentId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
       allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
@@ -295,7 +312,7 @@ service cloud.firestore {
     
     // Upsell Offers - isolated by tenant
     match /tenants/{tenantId}/upsell_offers/{offerId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
       allow create: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow update: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
@@ -319,9 +336,9 @@ service cloud.firestore {
     
     // Time Clock - isolated by tenant (employee tracking)
     match /tenants/{tenantId}/time_clock/{clockId} {
-      allow read: if isSuperAdmin() || hasTenantAccess(tenantId);
-      allow create: if isSuperAdmin() || hasTenantAccess(tenantId);
-      allow update: if isSuperAdmin() || hasTenantAccess(tenantId);
+      allow read: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
+      allow create: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
+      allow update: if isSuperAdmin() || (hasTenantAccess(tenantId) && !isEmployeeUser());
       allow delete: if isSuperAdmin() || isTenantAdmin(tenantId);
     }
     

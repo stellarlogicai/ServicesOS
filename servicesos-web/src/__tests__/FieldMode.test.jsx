@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   updateBookingFieldExecution: vi.fn(),
   tenantId: 'tenant-a',
   user: { uid: 'field-user-1' },
+  role: 'admin',
 }));
 
 vi.mock('../core/scheduling/schedulingService', () => ({
@@ -20,7 +21,13 @@ vi.mock('../core/scheduling/schedulingService', () => ({
   updateBookingFieldExecution: mocks.updateBookingFieldExecution,
 }));
 
-vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ tenantId: mocks.tenantId, user: mocks.user }) }));
+vi.mock('../contexts/AuthContext', () => ({
+  useAuth: () => ({
+    isEmployee: () => mocks.role === 'employee',
+    tenantId: mocks.tenantId,
+    user: mocks.user,
+  }),
+}));
 
 const pad = value => String(value).padStart(2, '0');
 const dateKey = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -32,6 +39,7 @@ describe('FieldMode read-only field surface', () => {
   beforeEach(() => {
     mocks.tenantId = 'tenant-a';
     mocks.user = { uid: 'field-user-1' };
+    mocks.role = 'admin';
     mocks.getJobs.mockReset();
     mocks.updateBookingFieldExecution.mockReset();
     mocks.updateBookingFieldExecution.mockImplementation(async (_tenantId, bookingId, patch) => ({
@@ -79,6 +87,40 @@ describe('FieldMode read-only field surface', () => {
     expect(within(dialog).getByRole('button', { name: 'Copy address' })).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: 'Field actions' })).toBeInTheDocument();
     expect(dialog).toHaveTextContent('Maps opens in a new tab/window where supported. Calls require a phone-capable device.');
+  });
+
+  it('hides payment and private owner notes while showing approved instructions to an employee', async () => {
+    mocks.role = 'employee';
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'employee-job',
+      customerName: 'Employee Field Customer',
+      address: '100 Field Lane',
+      date: dateKey(today),
+      paymentStatus: 'not_paid',
+      agreedPrice: 225,
+      notes: 'Owner administration note.',
+      internalNotes: 'Private owner safety review.',
+      requestSnapshot: {
+        accessInstructions: 'Use the side gate and lock it when leaving.',
+        specialRequests: 'Use unscented products.',
+      },
+    }] });
+
+    render(<FieldMode />);
+    await screen.findByText('Employee Field Customer');
+
+    expect(screen.queryByText('Not paid')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Employee Field Customer' });
+    expect(dialog).toHaveTextContent('Use the side gate and lock it when leaving.');
+    expect(dialog).not.toHaveTextContent('Private owner safety review.');
+    expect(dialog).not.toHaveTextContent('Owner administration note.');
+    expect(dialog).not.toHaveTextContent('Not paid');
+    expect(dialog).not.toHaveTextContent('$225');
+    for (const name of ['Edit Payment Details', 'Create Stripe payment link', 'Delete', 'Archive', 'Reschedule', 'Edit customer']) {
+      expect(within(dialog).queryByRole('button', { name })).not.toBeInTheDocument();
+    }
   });
 
   it('shows an honest call-device message without claiming call success', async () => {

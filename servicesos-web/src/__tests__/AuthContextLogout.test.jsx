@@ -54,16 +54,30 @@ vi.mock('../services/onboardingService', () => ({
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 
 function AuthStateProbe() {
-  const { currentTenant, loading, logout, role, tenantId, user } = useAuth();
+  const {
+    accessError,
+    canAccessAdminArea,
+    canAccessFieldMode,
+    currentTenant,
+    isEmployee,
+    loading,
+    logout,
+    role,
+    tenantId,
+    user,
+  } = useAuth();
 
   if (loading) return <div>Loading auth</div>;
-  if (!user) return <div>Login state</div>;
+  if (!user) return <div>Login state{accessError ? `: ${accessError}` : ''}</div>;
 
   return (
     <div>
       <div>Tenant dashboard: {currentTenant?.businessName}</div>
       <div>Profile role: {role}</div>
       <div>Tenant ID: {tenantId || 'none'}</div>
+      <div>Employee role: {isEmployee() ? 'yes' : 'no'}</div>
+      <div>Field Mode access: {canAccessFieldMode() ? 'yes' : 'no'}</div>
+      <div>Admin area access: {canAccessAdminArea() ? 'yes' : 'no'}</div>
       <button onClick={logout}>Sign out</button>
     </div>
   );
@@ -112,7 +126,7 @@ describe('AuthContext logout', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
     await waitFor(() => expect(mocks.firebaseSignOut).toHaveBeenCalledWith(mocks.auth));
-    expect(await screen.findByText('Login state')).toBeInTheDocument();
+    expect(await screen.findByText(/^Login state/)).toBeInTheDocument();
     expect(screen.queryByText('Tenant dashboard: Tenant A')).not.toBeInTheDocument();
     expect(mocks.clearCurrentTenantId).toHaveBeenCalled();
   });
@@ -141,7 +155,7 @@ describe('AuthContext logout', () => {
     });
 
     expect(mocks.firebaseSignOut).toHaveBeenCalledWith(mocks.auth);
-    expect(await screen.findByText('Login state')).toBeInTheDocument();
+    expect(await screen.findByText(/^Login state/)).toBeInTheDocument();
     expect(screen.queryByText('Profile role: customer')).not.toBeInTheDocument();
     expect(screen.queryByText('Tenant dashboard: Tenant A')).not.toBeInTheDocument();
     expect(mocks.getTenant).not.toHaveBeenCalled();
@@ -160,7 +174,7 @@ describe('AuthContext logout', () => {
     await act(async () => {
       await mocks.authStateChanged({ email: 'owner@example.com', uid: 'admin-a' });
     });
-    expect(await screen.findByText('Login state')).toBeInTheDocument();
+    expect(await screen.findByText(/^Login state/)).toBeInTheDocument();
 
     await act(async () => {
       await mocks.authStateChanged({ email: 'owner@example.com', uid: 'admin-a' });
@@ -172,7 +186,7 @@ describe('AuthContext logout', () => {
     expect(screen.queryByText('Profile role: customer')).not.toBeInTheDocument();
   });
 
-  it('preserves the intentional customer fallback only when the user document does not exist', async () => {
+  it('denies a signed-in user whose canonical profile does not exist', async () => {
     mocks.getDoc.mockResolvedValueOnce({ exists: () => false });
 
     render(
@@ -185,8 +199,80 @@ describe('AuthContext logout', () => {
       await mocks.authStateChanged({ email: 'customer@example.com', uid: 'customer-new' });
     });
 
+    expect(await screen.findByText(/account profile is not configured/i)).toBeInTheDocument();
+    expect(screen.queryByText('Profile role: customer')).not.toBeInTheDocument();
+    expect(mocks.firebaseSignOut).toHaveBeenCalledWith(mocks.auth);
+  });
+
+  it('accepts an active tenant employee without loading the full tenant document', async () => {
+    mocks.getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ role: 'employee', status: 'active', tenantId: 'tenant-a' }),
+    });
+
+    render(<AuthProvider><AuthStateProbe /></AuthProvider>);
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'employee@example.com', uid: 'employee-a' });
+    });
+
+    expect(await screen.findByText('Profile role: employee')).toBeInTheDocument();
+    expect(screen.getByText('Tenant ID: tenant-a')).toBeInTheDocument();
+    expect(screen.getByText('Employee role: yes')).toBeInTheDocument();
+    expect(screen.getByText('Field Mode access: yes')).toBeInTheDocument();
+    expect(screen.getByText('Admin area access: no')).toBeInTheDocument();
+    expect(mocks.setCurrentTenantId).toHaveBeenCalledWith('tenant-a');
+    expect(mocks.getTenant).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing status', { role: 'employee', tenantId: 'tenant-a' }],
+    ['missing tenant', { role: 'employee', status: 'active', tenantId: '' }],
+    ['inactive status', { role: 'employee', status: 'inactive', tenantId: 'tenant-a' }],
+    ['disabled status', { role: 'employee', status: 'disabled', tenantId: 'tenant-a' }],
+    ['suspended status', { role: 'employee', status: 'suspended', tenantId: 'tenant-a' }],
+  ])('denies an employee profile with %s', async (_label, profile) => {
+    mocks.getDoc.mockResolvedValueOnce({ exists: () => true, data: () => profile });
+
+    render(<AuthProvider><AuthStateProbe /></AuthProvider>);
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'employee@example.com', uid: 'employee-a' });
+    });
+
+    expect(await screen.findByText(/Login state:/)).toBeInTheDocument();
+    expect(screen.queryByText('Profile role: employee')).not.toBeInTheDocument();
+    expect(mocks.firebaseSignOut).toHaveBeenCalledWith(mocks.auth);
+    expect(mocks.getTenant).not.toHaveBeenCalled();
+  });
+
+  it('denies an unknown role instead of reinterpreting it', async () => {
+    mocks.getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ role: 'contractor', status: 'active', tenantId: 'tenant-a' }),
+    });
+
+    render(<AuthProvider><AuthStateProbe /></AuthProvider>);
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'contractor@example.com', uid: 'contractor-a' });
+    });
+
+    expect(await screen.findByText(/account role is not supported/i)).toBeInTheDocument();
+    expect(mocks.firebaseSignOut).toHaveBeenCalledWith(mocks.auth);
+    expect(mocks.getTenant).not.toHaveBeenCalled();
+  });
+
+  it('preserves a legacy customer profile without a status field', async () => {
+    mocks.getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ role: 'customer', tenantId: 'tenant-a' }),
+    });
+
+    render(<AuthProvider><AuthStateProbe /></AuthProvider>);
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'customer@example.com', uid: 'customer-a' });
+    });
+
     expect(await screen.findByText('Profile role: customer')).toBeInTheDocument();
-    expect(screen.getByText('Tenant ID: none')).toBeInTheDocument();
-    expect(mocks.firebaseSignOut).not.toHaveBeenCalled();
+    expect(screen.getByText('Field Mode access: no')).toBeInTheDocument();
+    expect(mocks.getTenant).not.toHaveBeenCalled();
   });
 });

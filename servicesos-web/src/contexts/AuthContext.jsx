@@ -6,7 +6,7 @@
  *
  * FIRESTORE USER DOC STRUCTURE (users/{uid}):
  * {
- *   role:        'customer' | 'admin' | 'super-admin'
+ *   role:        'customer' | 'employee' | 'admin' | 'super-admin'
  *   tenantId:    'tenant_abc123'   ← null for super-admin (spans all tenants)
  *   email:       string
  *   displayName: string
@@ -42,6 +42,10 @@ const ROLE_PERMISSIONS = {
     'view_own_bookings',
     'upload_photos',
   ],
+  employee: [
+    'access_field_mode',
+    'complete_jobs',
+  ],
   admin: [
     'view_own_quotes',
     'create_quotes',
@@ -54,6 +58,7 @@ const ROLE_PERMISSIONS = {
     'complete_jobs',
     'send_quotes',
     'manage_settings',
+    'access_field_mode',
   ],
   'super-admin': [
     // gets every permission, plus cross-tenant ones
@@ -74,8 +79,27 @@ const ROLE_PERMISSIONS = {
     'manage_subscriptions',
     'manage_users',
     'view_all_data',
+    'access_field_mode',
   ],
 };
+
+const RECOGNIZED_ROLES = new Set(['customer', 'employee', 'admin', 'super-admin']);
+const DISABLED_STATUSES = new Set(['suspended', 'inactive', 'disabled']);
+const PROFILE_NOT_CONFIGURED_MESSAGE = 'Your ServicesOS account profile is not configured. Contact your business administrator.';
+const PROFILE_ACCESS_DENIED_MESSAGE = 'Your ServicesOS account is not active. Contact your business administrator.';
+const PROFILE_ROLE_INVALID_MESSAGE = 'Your ServicesOS account role is not supported. Contact your business administrator.';
+const EMPLOYEE_PROFILE_INVALID_MESSAGE = 'Your employee account is not fully configured. Contact your business administrator.';
+
+function profileAccessError(profile) {
+  if (!profile) return PROFILE_NOT_CONFIGURED_MESSAGE;
+  if (!RECOGNIZED_ROLES.has(profile.role)) return PROFILE_ROLE_INVALID_MESSAGE;
+  if (DISABLED_STATUSES.has(profile.status)) return PROFILE_ACCESS_DENIED_MESSAGE;
+  if (profile.role === 'employee') {
+    const tenantId = typeof profile.tenantId === 'string' ? profile.tenantId.trim() : '';
+    if (profile.status !== 'active' || !tenantId) return EMPLOYEE_PROFILE_INVALID_MESSAGE;
+  }
+  return '';
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser]               = useState(null);   // Firebase user
@@ -83,6 +107,7 @@ export function AuthProvider({ children }) {
   const [currentTenant, setCurrentTenant] = useState(null); // Full tenant object
   const [loading, setLoading]         = useState(true);
   const [tenantLoading, setTenantLoading] = useState(false);
+  const [accessError, setAccessError] = useState('');
 
   // ── Load tenant helper ────────────────────────────────────────────────────
   const loadTenant = useCallback(async (tenantId, userRole) => {
@@ -94,11 +119,11 @@ export function AuthProvider({ children }) {
 
     setTenantLoading(true);
     try {
-      // Customers only need tenantId for scoping, not the full tenant document
-      // This avoids permission errors since customers are not in tenants/{tenantId}.users
-      if (userRole === 'customer') {
+      // Customers and employees need only tenantId scoping, not the full tenant document.
+      // This also keeps tenant business/payment configuration out of employee context.
+      if (userRole === 'customer' || userRole === 'employee') {
         setCurrentTenantId(tenantId);
-        setCurrentTenant(null); // Customers don't need full tenant object
+        setCurrentTenant(null);
       } else {
         const tenant = await getTenant(tenantId);
         setCurrentTenant(tenant);
@@ -125,28 +150,42 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      setUser(firebaseUser);
-
       try {
         const userSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (userSnap.exists()) {
           const profile = { uid: firebaseUser.uid, ...userSnap.data() };
-          setUserProfile(profile);
-
-          // Suspended accounts get signed out immediately
-          if (profile.status === 'suspended') {
+          const deniedMessage = profileAccessError(profile);
+          if (deniedMessage) {
+            setAccessError(deniedMessage);
+            setUser(null);
+            setUserProfile(null);
+            setCurrentTenant(null);
+            setTenantLoading(false);
+            clearCurrentTenantId();
+            setLoading(false);
             await firebaseSignOut(auth);
             return;
           }
 
+          setAccessError('');
+          setUser(firebaseUser);
+          setUserProfile(profile);
+
           // Load their tenant (super-admins may have tenantId = null)
           await loadTenant(profile.tenantId || null, profile.role);
         } else {
-          // User doc doesn't exist yet (e.g. first Google sign-in)
-          setUserProfile({ uid: firebaseUser.uid, role: 'customer', tenantId: null });
+          setAccessError(PROFILE_NOT_CONFIGURED_MESSAGE);
+          setUser(null);
+          setUserProfile(null);
+          setCurrentTenant(null);
+          setTenantLoading(false);
+          clearCurrentTenantId();
+          setLoading(false);
+          await firebaseSignOut(auth);
         }
       } catch (err) {
         console.error('[Auth] Error loading user profile:', err);
+        setAccessError('ServicesOS could not verify your account profile. Please try again.');
         setUser(null);
         setUserProfile(null);
         setCurrentTenant(null);
@@ -169,6 +208,7 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     try {
+      setAccessError('');
       const cred = await signInWithEmailAndPassword(auth, email, password);
       return { success: true, user: cred.user };
     } catch (err) {
@@ -214,6 +254,7 @@ export function AuthProvider({ children }) {
 
   const loginWithGoogle = async (tenantId = null) => {
     try {
+      setAccessError('');
       const cred = await signInWithPopup(auth, googleProvider);
       const uid  = cred.user.uid;
 
@@ -251,6 +292,7 @@ export function AuthProvider({ children }) {
       setUserProfile(null);
       setCurrentTenant(null);
       setTenantLoading(false);
+      setAccessError('');
       clearCurrentTenantId();
       setLoading(false);
       return { success: true };
@@ -303,6 +345,9 @@ export function AuthProvider({ children }) {
   const isAdmin      = () => role === 'admin' || role === 'super-admin';
   const isSuperAdmin = () => role === 'super-admin';
   const isCustomer   = () => role === 'customer';
+  const isEmployee   = () => role === 'employee';
+  const canAccessFieldMode = () => isEmployee() || isAdmin();
+  const canAccessAdminArea = () => isAdmin();
 
   /**
    * Check a single permission string against the user's role.
@@ -348,6 +393,7 @@ export function AuthProvider({ children }) {
       // Loading states
       loading,
       tenantLoading,
+      accessError,
 
       // Auth actions
       login,
@@ -366,11 +412,14 @@ export function AuthProvider({ children }) {
       isAdmin,
       isSuperAdmin,
       isCustomer,
+      isEmployee,
 
       // Permission helpers
       hasPermission,
       belongsToTenant,
       canAccessDashboard,
+      canAccessFieldMode,
+      canAccessAdminArea,
       tenantFeatureEnabled,
     }}>
       {children}

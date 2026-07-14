@@ -100,8 +100,8 @@ const NAV_ITEMS = [
     id: "field-mode",
     icon: "🧰",
     label: "Field Mode",
-    roles: ["admin", "super-admin"],
-    permission: "manage_bookings",
+    roles: ["employee", "admin", "super-admin"],
+    permission: "access_field_mode",
   },
   {
     id: "business-settings",
@@ -167,6 +167,7 @@ function useCanView() {
 // Default landing page per role
 function defaultPage(role) {
   if (role === "customer")    return "customer-portal";
+  if (role === "employee")    return "field-mode";
   if (role === "super-admin") return "tenant-management";
   return "dashboard";
 }
@@ -339,7 +340,7 @@ function AuthenticatedApp() {
               {currentTenant?.businessName ?? "ServicesOS"}
             </div>
             <div style={{ fontSize: 11, color: "#94a3b8" }}>
-              {isSuperAdmin() ? "Super Admin" : "Service operations"}
+              {isSuperAdmin() ? "Super Admin" : role === "employee" ? "Field operations" : "Service operations"}
             </div>
           </div>
         </div>
