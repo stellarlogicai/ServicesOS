@@ -119,7 +119,7 @@ const NAV_ITEMS = [
     id: "data-export",
     icon: "📤",
     label: "Data export",
-    roles: ["super-admin"],
+    roles: ["admin", "super-admin"],
   },
   {
     id: "tenant-management",

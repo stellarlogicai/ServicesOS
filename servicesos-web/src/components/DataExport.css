@@ -1,0 +1,66 @@
+.data-export-page {
+  max-width: 980px;
+}
+
+.data-export-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.data-export-card {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.data-export-card h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.data-export-card p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.data-export-count {
+  color: #334155;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.data-export-empty {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.data-export-message {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.data-export-message[data-state='error'] {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+@media (max-width: 680px) {
+  .data-export-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .data-export-card .v1-button {
+    width: 100%;
+  }
+}

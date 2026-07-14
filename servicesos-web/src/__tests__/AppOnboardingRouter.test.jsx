@@ -40,7 +40,7 @@ vi.mock('../components/InsuranceTracking', () => ({
 }));
 
 vi.mock('../components/DataExport', () => ({
-  default: () => <h1>Deferred Data Export Screen</h1>
+  default: () => <h1>Data Export Screen</h1>
 }));
 
 vi.mock('../components/TenantManagement', () => ({
@@ -132,7 +132,7 @@ describe('App onboarding router context', () => {
     render(<App />);
 
     expect(screen.queryByRole('heading', { name: 'Welcome to CleanOps' })).not.toBeInTheDocument();
-    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings'].forEach(label => {
+    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export'].forEach(label => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
     [
@@ -141,7 +141,6 @@ describe('App onboarding router context', () => {
       'Route optimization',
       'Payment links',
       'Insurance',
-      'Data export',
       'Backup',
       'Settings',
       'Tenant management',
@@ -177,6 +176,10 @@ describe('App onboarding router context', () => {
 
     expect(screen.getByRole('heading', { name: 'Business Settings Screen' })).toBeInTheDocument();
 
+    fireEvent.click(screen.getByText('Data export'));
+
+    expect(screen.getByRole('heading', { name: 'Data Export Screen' })).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
     expect(authState.logout).toHaveBeenCalledTimes(1);
@@ -207,7 +210,7 @@ describe('App onboarding router context', () => {
 
     expect(screen.getByRole('button', { name: 'Close navigation menu' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('navigation')).toHaveStyle({ zIndex: '130' });
-    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings'].forEach(label => {
+    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export'].forEach(label => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
     expect(screen.queryByText('Settings')).not.toBeInTheDocument();
@@ -230,7 +233,6 @@ describe('App onboarding router context', () => {
       '/staff-scheduling',
       '/customer-portal',
       '/insurance',
-      '/data-export',
       '/backup',
       '/route-optimization',
       '/payroll',
@@ -242,7 +244,7 @@ describe('App onboarding router context', () => {
       window.history.pushState({}, '', path);
       const { unmount } = render(<App />);
 
-      ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings'].forEach(label => {
+      ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export'].forEach(label => {
         expect(screen.getByText(label)).toBeInTheDocument();
       });
 
@@ -252,7 +254,6 @@ describe('App onboarding router context', () => {
         'Route optimization',
         'Payment links',
         'Insurance',
-        'Data export',
         'Backup',
         'Settings',
         'Tenant management',
@@ -267,7 +268,6 @@ describe('App onboarding router context', () => {
         'Deferred Staff Scheduling Screen',
         'Deferred Route Optimization Screen',
         'Deferred Insurance Screen',
-        'Deferred Data Export Screen',
         'Deferred Backup Screen',
         'Deferred Settings Screen',
         'Deferred AI Training Screen',
