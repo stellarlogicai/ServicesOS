@@ -11,11 +11,13 @@ Protected production candidate: `master` / `origin/master` at
 
 Production changes performed: **None**
 
-Preflight follow-up: see `SERVICESOS_V1_PRODUCTION_PREFLIGHT_EVIDENCE.md`. Jamie approved
-the read-only inspection and the production target/database/index definitions were
-reverified. The required employee-assignment index is confirmed missing. Deployed rules,
-Storage CORS/path inventory, and sanitized production identity/assignment counts remain
-unverified because an authenticated read-only Console/data surface was unavailable.
+Preflight follow-up: see `SERVICESOS_V1_PRODUCTION_PREFLIGHT_EVIDENCE.md`. Jamie manually
+authenticated to the confirmed production Console. Viewer evidence now confirms that the
+deployed Firestore rules differ from V1 and contain broad authenticated access, all 21
+production indexes are enabled but the employee-assignment index is missing, application
+Storage is not initialized, canonical admin tenant memberships are absent, no employee
+profiles exist, all inspected bookings are unassigned, and customer ownership preparation
+is incomplete. Overall classification remains **D - production promotion blocked**.
 
 ## Executive Result
 
