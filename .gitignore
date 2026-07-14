@@ -15,3 +15,5 @@ serviceAccount*.json
 *service-account*.json
 *.pem
 *.key
+.servicesos-smoke-credentials.local.json
+.servicesos-smoke-fixtures.local/

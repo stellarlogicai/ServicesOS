@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:v1-smoke": "vite --mode v1-smoke",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",

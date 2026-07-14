@@ -13,6 +13,7 @@ dist-ssr
 .env
 .env.*
 !.env.example
+!.env.v1-smoke
 *.local
 
 # Editor directories and files

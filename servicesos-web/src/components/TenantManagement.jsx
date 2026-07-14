@@ -6,6 +6,7 @@ import {
   getTenantSubscription,
   updateTenantSubscription
 } from '../services/tenantService';
+import { loadV1SmokeTenants } from '../services/v1SmokeEmulatorService';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function TenantManagement() {
@@ -30,6 +31,16 @@ export default function TenantManagement() {
 
   const loadTenants = useCallback(async () => {
     try {
+      const smokeTenants = await loadV1SmokeTenants({
+        enabled: import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true',
+        projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID
+      });
+
+      if (smokeTenants) {
+        setTenants(smokeTenants);
+        return;
+      }
+
       // In production, query Firebase for all tenants
       // For now, use placeholder data
       const storedTenants = JSON.parse(localStorage.getItem('saas_tenants') || '[]');
