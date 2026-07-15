@@ -1,28 +1,28 @@
 # ServicesOS V1 Production Storage Readiness
 
-Date: 2026-07-14
+Date: 2026-07-15
 Production project: `cleaning-intake-system`
 Production bucket: `cleaning-intake-system.firebasestorage.app`
 Bucket location: `US-EAST1`
-Working branch: `v1-lab-production-storage-readiness`
-Base commit: `12c37be` (`Prepare ServicesOS V1 production identity data`)
+Working branch: `v1-lab-production-storage-rules-smoke`
+Starting commit: `5d71894` (`Clarify ServicesOS V1 customer identity gates`)
 
-The existing uncommitted Storage-readiness document was preserved while the dedicated
-branch was created from the completed identity-readiness history. Protected `master` was
-not modified.
+The branch was created from the pushed two-document Storage-rules correction and customer
+readiness history. Protected `master` was not modified.
 
 ## Status
 
 | Area | Status | Evidence |
 | --- | --- | --- |
 | Default Firebase Storage bucket | Verified ready | Firebase console and Firebase Web SDK config identify the exact production bucket |
-| Canonical V1 Storage rules | Deployed, configuration blocker remains | Storage-only deploy succeeded and console source matches `cloud-functions/storage.rules`; cross-service Firestore calls are not configured |
-| Firestore access-call limit | Blocks permission enablement and photo smoke | Intended tenant-admin create and assigned-employee read/create paths can access three Firestore documents; Storage Rules permit at most two |
-| Local two-document correction | Verified locally; not deployed | The protected user profile and tenant-scoped booking are the only field-photo lookups; expanded Storage suite passes 20/20 |
+| Canonical V1 Storage rules | Verified deployed | Storage-only deploy succeeded; production rules are byte-equivalent to `cloud-functions/storage.rules` |
+| Firestore access-call limit | Verified resolved | Field-photo authorization reads only the protected user profile and requested booking; Storage suite passes 20/20 |
+| Cross-service authorization | Verified ready | Firebase Console attached only `Firebase Rules Firestore Service Agent` to one Firebase Storage managed service identity; warning cleared |
 | Production Storage CORS | Verified ready | Bucket metadata read-back exactly matches the approved JSON |
 | Public access | Verified private | No `allUsers` or `allAuthenticatedUsers` IAM binding; public-access prevention is inherited |
-| CORS-created objects | Verified none | Object-list API returned an empty result immediately after the CORS update |
-| Owner/admin photo smoke | Blocked, not run | Firebase console reports cross-service database calls are not configured |
+| Pre-smoke object inventory | Verified none | Object-list API returned zero objects before and after rules/IAM preparation |
+| Firestore photo metadata path | Blocks photo smoke | Deployed Firestore rules contain no nested `fieldPhotos` rule; the production app cannot list photo metadata |
+| Owner/admin photo smoke | Blocked, no upload attempted | Field Mode displayed upload controls but returned an honest metadata load error; stop condition applied |
 | Loopback origin removal | Deferred | Keep until the controlled local owner/admin smoke passes |
 
 ## Field Photo Transport Contract
@@ -104,27 +104,33 @@ exists.
 
 ## Canonical Rules Verification
 
-The Storage-only deployment compiled and released `cloud-functions/storage.rules` to
-`firebase.storage`. The Firebase console Rules editor shows the canonical helpers and
-tenant-scoped Field Mode paths from that file. Firestore rules, indexes, Functions, Hosting,
-and application code were not deployed.
+The Storage-only command was:
 
-The Firebase console also shows this blocking warning:
+```bash
+npx firebase-tools@13.35.1 deploy --only storage \
+  --project cleaning-intake-system \
+  --config firebase.json
+```
 
-> Your rules make use of cross-service database calls, but your project is not configured
-> to execute those calls.
+It ran from `cloud-functions`, compiled `storage.rules`, and released only
+`firebase.storage`. The resulting ruleset reference ends in `84d0`, was updated at
+`2026-07-15T03:13:33.781481Z`, contains 125 lines, and is byte-equivalent to the canonical
+source after line-ending normalization.
 
-The V1 rules depend on Firestore lookups for tenant membership, admin role, and employee
-assignment. The console `Fix issue` action was not used because it would change project
-permissions or service configuration outside the approved phase.
+The Firestore rules release remained unchanged at its 2026-06-16 reference. All 21
+Firestore indexes remained byte-equivalent to the predeployment inventory. CORS, public
+access prevention, bucket IAM, objects, Functions, Hosting, Auth, and application code were
+unchanged by the deployment.
 
-## Firestore Access-Call Audit
+Rollback was not executed. The prior deployed Storage ruleset ends in `b388` and the prior
+committed source is available at `86a9f22:cloud-functions/storage.rules`. A rollback must
+use a clean worktree at that commit and the same Storage-only deployment command.
 
-Cloud Storage Rules permit at most two Firestore documents in one evaluation. The matrix
-counts distinct document paths that may be reached. Repeated `exists()` and `get()` calls
-to the same path may be cached, but the audit does not assume caching across different
-documents. Boolean evaluation is left-to-right, so the noted short-circuit behavior is
-part of the maximum-path calculation.
+## Prior Three-Document Access-Call Audit (Superseded)
+
+This matrix documents the previous deployed rule graph and the reason it was replaced.
+Production now runs the two-document correction described below. Cloud Storage Rules permit
+at most two Firestore documents in one evaluation.
 
 | Operation | Helpers and Firestore documents reached | Maximum distinct documents | Short-circuit dependency | Emulator coverage | Result |
 | --- | --- | ---: | --- | --- | --- |
@@ -151,11 +157,19 @@ anonymous, cross-tenant, branding, size, and MIME constraints. They do not remov
 production two-document limit: the rule graph itself proves that three distinct documents
 are reachable on intended allowed paths.
 
-Per the approved stop condition, the Firebase Console `Fix issue` action was not inspected
-or enabled after this blocker was found. The expected Firebase-managed permission category
-is documented by Firebase as the `Firebase Rules Firestore Service Agent` role on the
-Firebase Storage service identity, but the exact production proposal remains **not
-verified**. No permission category is approved by this audit.
+## Firebase-Managed Cross-Service Permission
+
+The Firebase Console proposal was inspected on the exact production project and bucket.
+The supported `Attach permissions` action granted exactly
+`roles/firebaserules.firestoreServiceAgent` to one principal in the Firebase Storage
+managed service-identity category. No human or non-Storage principal received that role,
+and the managed identity received no Owner, Editor, Storage Admin, Firestore Admin, Auth
+Admin, or other broad role.
+
+The Console warning cleared. The managed binding was verified by read-only project IAM
+inspection by `2026-07-15T03:26:42Z`. Project and bucket public-principal counts remained
+zero, public-access prevention remained inherited, CORS remained unchanged, and the bucket
+still contained zero objects before smoke.
 
 ## Local Two-Document Correction
 
@@ -208,20 +222,46 @@ membership arrays. No application or Firestore rule change is included in this c
 
 ## Owner/Admin Photo Smoke
 
-The production photo smoke remains stopped because production still runs the prior rules,
-the local correction has not been reviewed or deployed, and the cross-service permission
-has not been approved or enabled. Therefore:
+The production-connected app ran at `http://127.0.0.1:5173` with emulator mode disabled and
+the exact production project/bucket configuration. A verified tenant admin opened Field
+Mode and an existing unassigned, own-tenant fake booking. Before/after upload controls
+appeared without an employee assignment.
+
+The photo panel could not list Firestore photo metadata. A read-only ruleset comparison
+confirmed that the deployed 2026-06-16 Firestore rules have no nested `fieldPhotos` rule,
+while the canonical V1 Firestore rules do. The stop condition was applied before selecting
+or uploading a file. Therefore:
 
 - before-photo upload: not run;
 - after-photo upload: not run;
 - refresh persistence: not run;
 - invalid type and over-10-MB browser checks: not run against production;
-- Booking Detail read-only review: not run against production;
-- customer and cross-tenant denial: not run against production;
-- browser CORS/Storage console result: not available for authenticated object operations;
+- Booking Detail read-only review: not run;
+- cross-tenant and anonymous object denial: not run because no object exists;
+- customer production smoke: not run because customer identity remediation remains blocked;
+- employee production smoke: not run because no production employees exist;
+- emulator customer, assignment, reassignment, cross-tenant, and anonymous coverage: passed;
+- browser result: Firestore photo-metadata load error; no CORS or object-loading result was
+  available because upload never began;
 - production photo objects created: zero;
-- booking/payment/price/schedule/customer/lead/assignment/Stripe comparison: no app write
-  occurred, so no field was changed by this phase.
+- production photo metadata created: zero;
+- booking document: byte-equivalent to the captured pre-smoke baseline.
+
+Payment, price, schedule, customer/lead references, assignment, booking status, Stripe
+session/payment-intent markers, and unrelated booking fields remained unchanged.
+
+## Offboarding Contract
+
+- Protected `users/{uid}` values for role, tenant ID, and status are authoritative for
+  Storage authorization.
+- Removing a UID only from tenant membership arrays does not revoke raw Storage access.
+- Admin offboarding must deactivate or correct the protected profile.
+- Employee offboarding must deactivate or correct the profile and clear or reassign affected
+  bookings.
+- Reassignment revokes the former employee's booking-photo access.
+- No employee accounts currently exist, so this does not block owner operation.
+- This operational contract is required before employee rollout; do not reintroduce the
+  third tenant-document lookup.
 
 ## Validation
 
@@ -245,8 +285,8 @@ removed and the running smoke environment was not changed.
 
 ## Next Action
 
-Review the local correction first. Under separate approval, deploy only the corrected
-Storage rules. Then inspect and report the Firebase-managed cross-service permission,
-approve and enable it separately, and run the controlled production-connected photo smoke.
-Keep `http://127.0.0.1:5173` in CORS until that smoke passes; remove it only in a separate
-approved CORS update.
+Under separate approval, reconcile and deploy the canonical Firestore rules that include
+the tenant-scoped nested `fieldPhotos` metadata contract, then rerun the controlled
+production owner/admin photo smoke from the beginning. Do not weaken Storage rules or write
+metadata outside that canonical path. Keep `http://127.0.0.1:5173` in CORS until the full
+smoke passes; remove it only in a separate approved CORS update.

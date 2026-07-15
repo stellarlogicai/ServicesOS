@@ -19,11 +19,13 @@ Storage is not initialized, canonical admin tenant memberships are absent, no em
 profiles exist, all inspected bookings are unassigned, and customer ownership preparation
 is incomplete. Overall classification remains **D - production promotion blocked**.
 
-Storage-readiness follow-up: see `SERVICESOS_V1_PRODUCTION_STORAGE_READINESS.md`. A local
-least-privilege correction now bounds field-photo authorization to the protected user
-profile and tenant-scoped booking, with 20/20 Storage tests. It is not deployed. Production
-still runs the prior three-document rules, and the cross-service permission plus photo
-smoke remain blocked behind separate approval gates.
+Storage-readiness follow-up: see `SERVICESOS_V1_PRODUCTION_STORAGE_READINESS.md`. The
+least-privilege two-document Storage correction is now deployed, matches the canonical
+source, and the exact Firebase-managed Rules Firestore service role is enabled. CORS and
+public access remain unchanged. Production owner/admin photo smoke stopped before upload
+because the older deployed Firestore rules contain no nested `fieldPhotos` metadata rule.
+No object or application-data write occurred. Photo readiness remains blocked pending a
+separately approved canonical Firestore-rules deployment and complete production smoke.
 
 Customer readiness clarification: an owner-operator wife beta may proceed as a separate
 track only without Customer Portal access. Customer-facing wife beta and customer-ready

@@ -184,5 +184,18 @@ Before any deployment, run:
 
 The authenticated smoke must verify employee and owner/admin upload persistence after refresh, unsupported and oversized rejection, optional completion warning, read-only owner review, Customer Portal privacy, and unchanged payment/price/schedule/customer/assignment fields.
 
-The two-document correction is local only. Do not deploy it or enable cross-service
-permissions without the separate production approval sequence.
+The two-document Storage correction is deployed to the production Storage release, and the
+Firebase-managed `Firebase Rules Firestore Service Agent` permission is enabled for the
+Firebase Storage managed service identity. The first production owner/admin smoke stopped
+before upload because the older deployed Firestore rules do not contain the nested
+`fieldPhotos` metadata rule. No object or metadata document was created.
+
+Production photo evidence remains blocked until the canonical Firestore metadata rules are
+separately reviewed/deployed and the complete owner/admin persistence, read-only review,
+cross-tenant, anonymous, invalid-file, and oversized-file smoke passes.
+
+The two-document offboarding consequence is part of the V1 contract: protected profile
+role, tenant ID, and status are authoritative; admin offboarding must deactivate or correct
+that profile; employee offboarding must also clear or reassign affected bookings; and
+reassignment revokes the former employee's evidence access. Removing only tenant membership
+array entries is not sufficient for raw Storage revocation.
