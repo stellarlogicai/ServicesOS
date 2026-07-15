@@ -2,9 +2,9 @@
 
 Prepared: 2026-07-14
 
-Branch: `v1-lab-production-console-evidence`
+Branch: `v1-lab-production-identity-readiness`
 
-Base commit: `51d9cd0`
+Base commit: `d5834ec`
 
 Protected production candidate: `master` / `origin/master` at
 `031bb46249fd09bbe7014e5f9747d4a7a4737a6f`
@@ -15,22 +15,23 @@ Overall classification: **Blocks promotion**
 
 ## Approval And Safety
 
-Jamie manually authenticated to Firebase Console and visually confirmed the production
-project. The browser session was not copied, exported, or stored. This phase used only
-viewer surfaces and local repository reads.
+Jamie manually authenticated to Firebase/Google Cloud Console and confirmed the
+production project. The browser session was not copied, exported, or stored. Jamie then
+separately approved one exact private backup bucket and one complete Firestore export.
 
-No production resource was created, changed, published, deployed, downloaded, copied,
-moved, backed up, migrated, or deleted. No Stripe surface was inspected. The emulator
-project remained separate.
+The only production writes in the identity-readiness phase were creation of that approved
+bucket and the verified export. No application document, Auth user, rule, index, CORS,
+application Storage resource, payment, Stripe record, lead, booking, or service record was
+modified. No application or rules deployment occurred. The emulator project remained
+separate.
 
 Tracked evidence contains no names, emails, phone numbers, addresses, Auth UIDs,
 Firestore document IDs, tenant IDs, credentials, tokens, complete Storage object names,
 customer photographs, or private documents.
 
-## Read-Only Evidence Operations
+## Evidence Operations
 
-No new production CLI command was executed in this phase. Browser operations were
-limited to opening these viewer surfaces in the confirmed production project:
+Viewer operations were limited to the confirmed production project:
 
 - Firebase Console project overview;
 - Firestore Rules, Indexes, users, tenants, customers, and bookings viewers;
@@ -38,8 +39,9 @@ limited to opening these viewer surfaces in the confirmed production project:
 - Firebase Storage viewer; and
 - Google Cloud Storage bucket list and expected application-bucket viewer.
 
-These operations only displayed metadata or document fields. No Edit, Publish, Add,
-Delete, Upload, Download, Copy, Create, Activate, or Get started control was used.
+Cloud Shell was used for the approved bucket/export and for read-only verification. The
+bucket has public-access prevention and uniform bucket-level access. Exact identity values
+remain only in an ignored local remediation manifest.
 
 The previous committed evidence phase used only these production list/get commands:
 
@@ -63,11 +65,12 @@ The previous committed evidence phase used only these production list/get comman
 | Required assignment index | **Blocks promotion** | Missing from production; present only in local canonical index file |
 | Application Storage inventory | **Verified ready** | No application bucket or application objects were visible |
 | Auth/profile reconciliation | **Data preparation required** | 7 Auth users and 7 matching profiles; one customer profile lacks tenant linkage |
-| Admin membership | **Blocks promotion** | All 3 admin profiles lack required tenant `users` and `adminUsers` membership |
+| Admin membership | **Verified ready** | All 3 admins are already in both required membership arrays |
 | Employee readiness | **Blocks promotion** | No employee Auth/profile records exist |
-| Customer ownership | **Blocks promotion** | Only one complete profile-to-customer link confirmed; record audit is partial |
+| Customer ownership | **Blocks promotion** | All 9 inspected; one valid link, one cross-tenant duplicate, two profile/role mismatches |
 | Booking assignment | **Blocks promotion** for employees | 14 bookings inspected; all unassigned |
-| Owner/admin booking operation | **Data preparation required** | Unassigned bookings can remain owner-operated after membership correction |
+| Owner/admin booking operation | **Verified ready** for data | Admin memberships are canonical; unassigned bookings remain owner-operable |
+| Firestore backup | **Verified ready** | Complete export succeeded; 59/59 documents and metadata verified |
 
 ## 1. Deployed Firestore Rules
 
@@ -89,18 +92,19 @@ The deployed rules include temporary broad authenticated access. In particular, 
 updates and several tenant subcollections are available to any authenticated user. The
 current frozen app can therefore read/write nested data more broadly than V1 permits.
 
-The V1 rules must not be weakened to preserve this behavior. Deploying them now would
-also block legitimate tenant-root admin access because production tenant membership data
-is incomplete. Membership and customer-link preparation must happen before the rules
+The V1 rules must not be weakened to preserve this behavior. A fresh direct reread proved
+that all three admin memberships are already canonical, correcting the earlier viewer
+classification. Customer ownership blockers still require resolution before the rules
 promotion window.
 
 ## 2. Deployed Storage Rules And CORS
 
 Status: **Blocks promotion**.
 
-Firebase Console showed only the Storage initialization surface. The expected application
-bucket was not present in Google Cloud Storage. The project bucket list contained only a
-managed Cloud Functions source bucket, which was not opened or inventoried.
+Firebase Console showed only the application Storage initialization surface. The expected
+application bucket remains absent. A separate private bucket now exists only for the
+approved Firestore export; it is not Firebase application Storage and has no app CORS,
+website, or tenant-content role.
 
 Consequences:
 
@@ -113,14 +117,15 @@ Consequences:
 - before/after photos and branding are blocked until Jamie separately approves bucket
   initialization, rules deployment, and CORS configuration.
 
-No `Get started` or bucket-creation control was used. No object was opened or downloaded.
+No application `Get started` control was used. Backup verification used sanitized object
+counts only; no export object was opened or downloaded.
 
 ## 3. Sanitized Storage Inventory
 
 No application bucket or application objects were visible. Approximate count and size for
 every application category are therefore zero/not applicable at this pre-initialization
-state. The managed function-source bucket is operational infrastructure, not an
-application content path.
+state. The managed function-source bucket and dedicated Firestore backup bucket are
+operational infrastructure, not application content paths.
 
 | Sanitized path/category | Observed state | V1 classification |
 | --- | --- | --- |
@@ -185,19 +190,23 @@ selection remains required.
 
 ## 6. Admin And Employee Readiness
 
-Status: **Blocks promotion** for V1 rules and employee workflows.
+Status: **Verified ready** for existing admins; **Blocks promotion** for employee
+workflows.
 
 | Admin readiness count | Result |
 | --- | ---: |
 | Admin profiles inspected | 3 |
 | Referenced tenant documents present | 3 |
-| Missing tenant `users` membership | 3 |
-| Missing tenant `adminUsers` membership | 3 |
+| Missing tenant `users` membership | 0 |
+| Missing tenant `adminUsers` membership | 0 |
 | Matching tenant `ownerId` | 1 |
 | Invalid/missing admin profile tenant ID | 0 |
+| Admin memberships already canonical | 3 |
+| Admin membership writes required/completed | 0 |
 
-`ownerId` is not a substitute for the membership fields required by the V1 rules. All
-three admin tenant documents require explicit reviewed membership correction.
+All three admin profiles are active, reference existing tenant documents, and appear in
+both required membership arrays on only their intended tenant. The earlier missing-count
+result was stale/incomplete viewer evidence and is superseded by the direct reread.
 
 | Employee readiness count | Result |
 | --- | ---: |
@@ -210,25 +219,28 @@ inferred from a name, email, array position, or legacy identifier.
 
 ## 7. Customer Ownership Readiness
 
-Status: **Blocks promotion**. The viewer allowed complete inspection of 5 of 9 customer
-records. Four records repeatedly failed to load, so global ownership and duplicate counts
-remain **Not verified**.
+Status: **Blocks promotion**. All nine customer records were inspected through read-only
+Firestore REST calls and reconciled against all seven Auth identities and profiles.
 
 | Sanitized count | Result |
 | --- | ---: |
 | Customer records visible | 9 |
-| Customer records inspected | 5 |
-| Inspected records missing `authUid` | 4 |
-| Inspected email-only records | 4 |
-| Inspected `authUid` values without Auth user | 0 |
-| Duplicate `authUid` among inspected records | 0 |
+| Customer records inspected | 9 |
+| Records missing `authUid` | 7 |
+| Valid existing exact customer link | 1 |
+| Customer `authUid` corrections completed | 0 |
+| Existing cross-tenant duplicate `authUid` | 1 |
+| Records with no corresponding Auth identity | 5 |
+| Profile/customer tenant mismatch | 2 |
+| Customer record matching a non-customer role | 1 |
+| Ambiguous records changed | 0 |
 | Complete profile/tenant/customer link confirmed | 1 |
 | Customer profiles missing linked customer record | 1 |
 | Archived/disabled confirmed links expected to log in | 0 |
 
-Email-only linkage is not ownership proof. The four uninspected customer records must be
-privately reviewed before any customer rules promotion or customer-link correction is
-approved.
+No customer write was made. The stop condition was triggered by an existing cross-tenant
+duplicate link and profile/tenant mismatches. Exact remediation requires a new reviewed
+scope; email-only or role-incompatible records remain unlinked.
 
 ## 8. Booking Assignment Readiness
 
@@ -247,26 +259,26 @@ Status: **B - owner-safe while unassigned; D - blocks employee workflow**.
 | Completed | 0 |
 | Cancelled | 0 |
 
-Owner/admin operation may continue with unassigned bookings after tenant membership is
-corrected. Employee Field Mode requires an exact active same-tenant employee Auth UID,
+Owner/admin operation may continue with unassigned bookings because admin memberships
+are canonical. Employee Field Mode requires an exact active same-tenant employee Auth UID,
 the missing composite index, and explicit assignment. Do not infer assignments.
 
 ## 9. Compatibility Conclusion
 
 | V1 surface | Classification | Production finding |
 | --- | --- | --- |
-| Current admin login | **B** | Profiles exist, but canonical tenant membership is missing |
-| Business Settings | **D** | V1 root update requires corrected admin membership |
-| Customer requests | **D** | Ownership audit incomplete; most inspected records lack `authUid` |
-| Customer auth ownership | **D** | One complete link; one tenantless profile; four records uninspected |
-| Booking creation/admin management | **B/D** | Data exists; canonical rules require membership correction |
-| Calendar | **B** | Query shape is supported; admin membership still required |
+| Current admin login | **A/B** | Three admin profiles and memberships are canonical; production smoke remains |
+| Business Settings | **A/B** | Membership prerequisite is ready; rules deployment/smoke remain |
+| Customer requests | **D** | One valid owner link; cross-tenant and profile mismatches remain |
+| Customer auth ownership | **D** | One valid link; one duplicate cross-tenant UID and two profile/role mismatches |
+| Booking creation/admin management | **A/B** | Admin data prerequisites are ready; production smoke remains |
+| Calendar | **A/B** | Query and admin data prerequisites are ready; production smoke remains |
 | Employee assignment | **D** | No employees, all bookings unassigned, index missing |
 | Employee Field Mode | **D** | Same blockers plus Storage setup for photos |
-| Owner-operated Field Mode | **B/D** | Execution can work after membership; photos require Storage setup |
+| Owner-operated Field Mode | **A/B** without photos | Admin data is ready; photos require Storage setup |
 | Before/after photos | **D** | Application Storage bucket/rules/CORS absent |
 | Admin photo review | **D** | Same Storage blocker |
-| Data Export | **B** | Tenant data exists; canonical admin membership required |
+| Data Export | **A/B** | Tenant/admin prerequisites are ready; production smoke remains |
 | Stripe status/onboarding display | **B** | No Stripe change; requires authenticated production smoke later |
 | Super-admin tenant selection | **A/B** | Canonical profiles exist with no `DEFAULT`; production smoke remains |
 
@@ -279,17 +291,19 @@ Read-only work complete:
 
 1. Confirm project/database and deployed index inventory.
 2. Compare deployed Firestore rules privately with canonical rules.
-3. Count Auth/profile/admin/employee/customer/booking readiness where the viewer allowed.
+3. Fully reconcile Auth/profile/admin/customer readiness and booking assignment counts.
 4. Confirm application Storage is not initialized.
+5. Verify all existing admin membership pairs are already canonical.
 
 Write work requiring Jamie's explicit approval:
 
-1. Capture approved rollback references and execute approved Firestore backup.
+1. Approved Firestore backup completed and verified; preserve the export until this
+   promotion decision is closed.
 2. Decide whether a Storage backup is applicable before initialization; document that
    there is no application bucket rather than creating one implicitly.
-3. Correct the three admin tenant memberships with a private before/after ledger.
-4. Correct the tenantless customer profile and complete the four-record private customer
-   audit; link only exact verified identities.
+3. Admin tenant memberships require no correction.
+4. Resolve the cross-tenant customer link and two profile/role mismatches only under a new
+   exact remediation approval; five records have no Auth identity and remain unlinked.
 5. Create employee Auth/profile/membership records only for approved real workers.
 6. Assign only explicitly verified employees to selected bookings.
 7. Initialize application Storage, then deploy reviewed Storage rules and CORS.
@@ -310,13 +324,12 @@ index, and current-app compatibility review are complete.
 ## 11. Current Promotion Blockers
 
 1. Deployed Firestore rules differ from canonical V1 and contain broad authenticated access.
-2. All admin profiles lack canonical tenant membership fields required by V1 rules.
-3. Customer ownership evidence is incomplete and most inspected records are email-only.
-4. No employee records exist and every inspected booking is unassigned.
-5. The required employee-assignment index is missing.
-6. Application Storage, Storage rules, and browser CORS are not initialized/configured.
-7. Four customer records could not be safely classified in the viewer.
-8. No production-equivalent staging Firebase project exists.
+2. Customer ownership contains one cross-tenant duplicate `authUid` and two profile/role
+   mismatches; no correction was safe in this phase.
+3. No employee records exist and every inspected booking is unassigned.
+4. The required employee-assignment index is missing.
+5. Application Storage, Storage rules, and browser CORS are not initialized/configured.
+6. No production-equivalent staging Firebase project exists.
 
 ## 12. Validation
 
@@ -342,8 +355,9 @@ command connected to production.
 
 ## Final Readiness
 
-**D - Blocks promotion.** The production target, deployed rules difference, enabled index
-inventory, missing assignment index, absent application Storage, and major identity/data
-counts are now evidenced. Production needs approved membership/customer preparation,
-employee/assignment setup if employee Field Mode is included, Storage initialization,
-CORS/rules deployment, and the missing index before controlled promotion can begin.
+**D - Blocks promotion.** The production target, verified Firestore backup, deployed rules
+difference, enabled index inventory, missing assignment index, absent application Storage,
+and complete admin/customer/booking counts are evidenced. Admin data is ready for an
+owner-operated beta, but customer identity conflicts require a separately approved exact
+remediation. Employee setup, application Storage/CORS/rules, and the missing assignment
+index remain blockers for their respective workflows.

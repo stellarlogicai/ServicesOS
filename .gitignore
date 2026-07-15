@@ -17,3 +17,4 @@ serviceAccount*.json
 *.key
 .servicesos-smoke-credentials.local.json
 .servicesos-smoke-fixtures.local/
+.servicesos-production-remediation.local.json
