@@ -219,8 +219,10 @@ inferred from a name, email, array position, or legacy identifier.
 
 ## 7. Customer Ownership Readiness
 
-Status: **Blocks promotion**. All nine customer records were inspected through read-only
-Firestore REST calls and reconciled against all seven Auth identities and profiles.
+Status: **Blocks customer-facing wife beta and customer-ready V1**. It does not by itself
+block a separately controlled owner-operator wife beta with Customer Portal excluded. All
+nine customer records were inspected through read-only Firestore REST calls and reconciled
+against all seven Auth identities and profiles.
 
 | Sanitized count | Result |
 | --- | ---: |
@@ -241,6 +243,23 @@ Firestore REST calls and reconciled against all seven Auth identities and profil
 No customer write was made. The stop condition was triggered by an existing cross-tenant
 duplicate link and profile/tenant mismatches. Exact remediation requires a new reviewed
 scope; email-only or role-incompatible records remain unlinked.
+
+Records with no corresponding Auth identity may remain non-portal customers and are not
+automatically defective. They must not receive portal access unless one exact identity is
+proven. Names, phone numbers, email similarity, record order, and approximate identity
+evidence must never be used to establish ownership.
+
+Customer-ready V1 requires all of the following before release:
+
+1. Every portal-enabled customer has exactly one proven Auth identity.
+2. The Auth profile tenant matches the customer tenant.
+3. The Auth profile role is `customer`.
+4. The `authUid` is not used by another customer record.
+5. Non-portal customers remain inaccessible through Customer Portal.
+6. Customer reads are limited to the customer's own records and requests.
+7. Cross-tenant customer reads are denied.
+8. Customers cannot access Field Mode, internal notes, payment internals, or photo evidence.
+9. Production customer-role privacy smoke passes.
 
 ## 8. Booking Assignment Readiness
 
@@ -269,7 +288,9 @@ the missing composite index, and explicit assignment. Do not infer assignments.
 | --- | --- | --- |
 | Current admin login | **A/B** | Three admin profiles and memberships are canonical; production smoke remains |
 | Business Settings | **A/B** | Membership prerequisite is ready; rules deployment/smoke remain |
-| Customer requests | **D** | One valid owner link; cross-tenant and profile mismatches remain |
+| Customer-facing wife beta | **D** | Cross-tenant duplicate ownership, tenant mismatch, and non-customer role conflict remain |
+| Customer-ready ServicesOS V1 | **D** | Exact ownership remediation and production customer privacy smoke are required |
+| Customer requests | **D** | One valid record-level link does not clear the unresolved release-wide ownership conflicts |
 | Customer auth ownership | **D** | One valid link; one duplicate cross-tenant UID and two profile/role mismatches |
 | Booking creation/admin management | **A/B** | Admin data prerequisites are ready; production smoke remains |
 | Calendar | **A/B** | Query and admin data prerequisites are ready; production smoke remains |
@@ -302,8 +323,9 @@ Write work requiring Jamie's explicit approval:
 2. Decide whether a Storage backup is applicable before initialization; document that
    there is no application bucket rather than creating one implicitly.
 3. Admin tenant memberships require no correction.
-4. Resolve the cross-tenant customer link and two profile/role mismatches only under a new
-   exact remediation approval; five records have no Auth identity and remain unlinked.
+4. Resolve the cross-tenant customer link and two profile/role mismatches under a new exact
+   remediation approval before customer-facing V1; five records with no Auth identity may
+   remain non-portal and unlinked.
 5. Create employee Auth/profile/membership records only for approved real workers.
 6. Assign only explicitly verified employees to selected bookings.
 7. Initialize application Storage, then deploy reviewed Storage rules and CORS.
@@ -324,8 +346,10 @@ index, and current-app compatibility review are complete.
 ## 11. Current Promotion Blockers
 
 1. Deployed Firestore rules differ from canonical V1 and contain broad authenticated access.
-2. Customer ownership contains one cross-tenant duplicate `authUid` and two profile/role
-   mismatches; no correction was safe in this phase.
+2. Customer-facing wife beta and customer-ready V1 are blocked by one cross-tenant
+   duplicate `authUid`, one customer/profile tenant mismatch, one customer linked to a
+   non-customer role, and the inability to complete production customer-role privacy smoke
+   safely before exact remediation.
 3. No employee records exist and every inspected booking is unassigned.
 4. The required employee-assignment index is missing.
 5. Application Storage, Storage rules, and browser CORS are not initialized/configured.
@@ -355,9 +379,11 @@ command connected to production.
 
 ## Final Readiness
 
-**D - Blocks promotion.** The production target, verified Firestore backup, deployed rules
-difference, enabled index inventory, missing assignment index, absent application Storage,
-and complete admin/customer/booking counts are evidenced. Admin data is ready for an
-owner-operated beta, but customer identity conflicts require a separately approved exact
-remediation. Employee setup, application Storage/CORS/rules, and the missing assignment
-index remain blockers for their respective workflows.
+**D - Blocks customer-facing promotion.** The production target, verified Firestore backup,
+deployed rules difference, enabled index inventory, missing assignment index, absent
+application Storage, and complete admin/customer/booking counts are evidenced. Admin data
+may support a separately controlled owner-operator wife beta with Customer Portal excluded.
+Customer-facing wife beta and customer-ready V1 remain blocked until exact identity
+remediation and production customer privacy smoke pass. This remediation is required for
+V1, not deferred V1.1 cleanup. Employee setup, application Storage/CORS/rules, and the
+missing assignment index remain blockers for their respective workflows.

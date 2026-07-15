@@ -85,6 +85,13 @@ immediate rollback trigger.
 
 ## 4. Customer
 
+Do not begin customer-role smoke until the test customer has one proven Auth identity,
+the profile tenant matches the customer tenant, the profile role is `customer`, and the
+`authUid` is unique across customer records. A customer record with no Auth identity may
+remain a valid non-portal record, but it must remain inaccessible through Customer Portal.
+Never infer ownership from name, phone, email similarity, record order, or approximate
+identity evidence.
+
 | Step | Expected | Result | Notes |
 | --- | --- | --- | --- |
 | Sign in | only Customer Portal is available |  |  |
@@ -96,7 +103,10 @@ immediate rollback trigger.
 | No automatic payment | no payment/session/paid state is created |  |  |
 | Photo denial | booking field-photo metadata/object access is denied |  |  |
 | Admin/export/Field Mode denial | navigation and direct access remain denied |  |  |
+| Internal data denial | internal notes, payment internals, and photo evidence remain denied |  |  |
 | Cross-customer request | another customer's request is not readable |  |  |
+| Cross-tenant customer data | another tenant's customer records and requests are denied |  |  |
+| Non-portal customer | a record without an exact Auth link cannot be accessed through Customer Portal |  |  |
 
 ## 5. Super-Admin
 
@@ -179,7 +189,12 @@ checkout/webhook smoke requires separate approval and environment confirmation.
 - [ ] Browser console/network errors are understood and non-safety-impacting.
 - [ ] All controlled writes and IDs are recorded privately for cleanup/reconciliation.
 - [ ] Netlify, rules, index, and backup references are complete.
+- [ ] Every portal-enabled customer satisfies the exact identity ownership contract.
+- [ ] Production customer-role privacy smoke passed, including own-record and cross-tenant denial checks.
 - [ ] Jamie approved V1 as customer-ready.
+
+An owner-operator wife beta without Customer Portal may receive a separate approval. That
+approval does not make customer-facing wife beta or ServicesOS V1 customer-ready.
 
 Decision: **Pass / Fail - rollback / Blocked - additional verification required**
 

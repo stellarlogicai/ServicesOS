@@ -25,6 +25,11 @@ profile and tenant-scoped booking, with 20/20 Storage tests. It is not deployed.
 still runs the prior three-document rules, and the cross-service permission plus photo
 smoke remain blocked behind separate approval gates.
 
+Customer readiness clarification: an owner-operator wife beta may proceed as a separate
+track only without Customer Portal access. Customer-facing wife beta and customer-ready
+ServicesOS V1 remain **D - blocked** until exact customer identity ownership conflicts are
+resolved and production customer-role privacy smoke passes.
+
 ## Executive Result
 
 The V1 lab history is complete, linear, pushed, and locally validated. Repository
@@ -47,6 +52,19 @@ that production does not yet contain the canonical employee-assignment composite
 - **C - Requires data preparation:** production records must be corrected before promotion.
 - **D - Blocks production promotion:** promotion must not start.
 - **E - Deferred V1.1 cleanup:** intentionally outside V1.
+
+Customer Portal identity remediation is not Classification E. Cross-tenant duplicate
+`authUid`, customer/profile tenant mismatch, non-customer role linkage, duplicate or
+ambiguous ownership, and inability to run customer-role privacy smoke are Classification D
+blockers for customer-facing V1.
+
+### Release-track classification
+
+| Release track | Classification | Customer Portal condition |
+| --- | --- | --- |
+| Owner-operator wife beta | **A/B independently** | May proceed only with Customer Portal excluded and all owner-track gates passed |
+| Customer-facing wife beta | **D** | Blocked pending exact identity remediation and production privacy smoke |
+| Customer-ready ServicesOS V1 | **D** | Blocked until every portal-enabled customer satisfies the identity contract and privacy smoke passes |
 
 ## 1. Git And Release Inventory
 
@@ -232,6 +250,23 @@ Sanitized counts required before promotion:
 Email or display-name matching is not an ownership proof and must not be used for
 remediation.
 
+Customer records without Firebase Auth accounts may remain non-portal records. They are
+not automatically defective, but they must remain inaccessible through Customer Portal
+and must never be linked by name, phone number, email similarity, record order, or other
+approximate evidence.
+
+Customer-ready V1 acceptance requires:
+
+1. Every portal-enabled customer has exactly one proven Auth identity.
+2. The Auth profile tenant matches the customer tenant.
+3. The Auth profile role is `customer`.
+4. The `authUid` is unique across customer records.
+5. Non-portal customers remain inaccessible through Customer Portal.
+6. Customer reads are limited to their own records and requests.
+7. Cross-tenant customer reads are denied.
+8. Customer access to Field Mode, internal notes, payment internals, and photo evidence is denied.
+9. Production customer-role privacy smoke passes before V1 is declared customer-ready.
+
 ## 6. Booking Assignment Migration Gate
 
 Sanitized production counts required:
@@ -359,6 +394,9 @@ Unexpected Stripe/backend changes during release integration are a D blocker.
 10. **B:** no dedicated staging Firebase project exists for a production-equivalent preview.
 11. **D until evidence:** compatibility of the current production app with final rules is
     unknown because deployed rules and active legacy paths are unknown.
+12. **D for customer-facing V1:** cross-tenant duplicate `authUid`, customer/profile tenant
+    mismatch, non-customer role linkage, duplicate or ambiguous portal ownership, or an
+    unexecuted production customer-role privacy smoke blocks release.
 
 ## 12. Jamie Approval Gates
 

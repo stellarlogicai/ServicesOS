@@ -80,6 +80,12 @@ tenant fields remained unchanged.
 All nine customer records were inspected and reconciled against all Auth identities and
 `users` profiles.
 
+This evidence is a release-track split, not permission to defer customer identity work
+beyond V1. An owner-operator wife beta may proceed only with Customer Portal access kept
+out of that beta. Customer-facing wife beta and customer-ready ServicesOS V1 remain
+blocked until the conflicts below are resolved and production customer privacy smoke
+passes.
+
 | Classification | Count |
 | --- | ---: |
 | A - valid exact `authUid` link | 1 |
@@ -100,6 +106,11 @@ The three blocking records consist of:
 No approximate matching was used. Duplicate customer email data with no Auth identity
 remains unlinked. No invitation or Customer Portal account was created.
 
+The five records with no corresponding Auth identity are not automatically defective.
+They may remain valid non-portal customer records, but they must remain inaccessible
+through Customer Portal. Do not create or infer a portal link from names, phone numbers,
+email similarity, record order, or any other approximate evidence.
+
 ## Correction And Verification Method
 
 - Profiles, tenants, Auth identities, and all customer records were reread from the
@@ -115,11 +126,12 @@ remains unlinked. No invitation or Customer Portal account was created.
 
 | Workflow | Data readiness | Remaining gate |
 | --- | --- | --- |
-| Owner-operator beta without photos | **A/B** | Admin/tenant/booking data is ready; controlled rules/app promotion and smoke remain |
+| Owner-operator wife beta without Customer Portal | **A/B** | Admin/tenant/booking data is ready; portal access must remain excluded and controlled rules/app promotion and smoke remain |
+| Customer-facing wife beta | **D** | Identity ownership conflicts must be remediated and production customer privacy smoke must pass |
+| Customer-ready ServicesOS V1 | **D** | Every portal-enabled customer must satisfy the exact identity contract and production customer privacy smoke must pass |
 | Owner-operated photo workflow | **D** | Firebase application Storage, Storage rules, and CORS are absent |
 | Employee workflow | **D** | No employees, all bookings unassigned, and assignment index missing |
-| Existing proven customer login | **A/B** | One exact link exists; canonical rules and production smoke remain |
-| Full Customer Portal rollout | **D** | Cross-tenant duplicate and profile/role mismatches require separate remediation |
+| Existing proven customer identity | **A at record level only** | One exact link exists, but it does not make the customer-facing release ready while other ownership conflicts remain |
 
 Absent employees and unassigned bookings do not block the owner-operator beta. They block
 only employee assignment and employee Field Mode.
@@ -134,7 +146,9 @@ were the separately approved backup bucket and complete Firestore export.
 ## Remaining Blockers
 
 1. Deployed Firestore rules differ from canonical V1 and retain broad authenticated access.
-2. Customer identity has one cross-tenant duplicate and two profile/role mismatches.
+2. Customer-ready V1 is blocked by one cross-tenant duplicate `authUid`, one
+   customer/profile tenant mismatch, one customer linked to a non-customer role, and the
+   resulting inability to complete a safe production customer-role privacy smoke.
 3. Firebase application Storage, Storage rules, and CORS are absent for photo workflows.
 4. No employees or assignments exist, and the employee assignment index is missing.
 5. No production-equivalent staging Firebase project exists.
@@ -158,8 +172,9 @@ loopback ports. No validation command connected to production.
 
 ## Recommended Next Action
 
-Do not modify customer identity yet. Jamie should approve a separate exact remediation
-plan for the three Category F records, including whether to remove the incorrect
-cross-tenant `authUid` and how to establish or reject the tenantless customer profile.
-Owner-operator release planning can proceed independently if photo upload and Customer
-Portal expansion remain excluded until their infrastructure/data gates are resolved.
+Customer identity remediation is required for customer-ready V1; it is not V1.1 or
+optional cleanup. Jamie should approve a separate exact remediation plan for the three
+Category F records, including how to remove the incorrect cross-tenant `authUid`, resolve
+the tenant mismatch, and unlink or correct the non-customer role conflict. Owner-operator
+wife-beta planning may proceed independently only while Customer Portal access remains
+excluded from that track.
