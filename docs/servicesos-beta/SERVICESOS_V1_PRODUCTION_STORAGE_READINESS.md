@@ -18,6 +18,7 @@ not modified.
 | Default Firebase Storage bucket | Verified ready | Firebase console and Firebase Web SDK config identify the exact production bucket |
 | Canonical V1 Storage rules | Deployed, configuration blocker remains | Storage-only deploy succeeded and console source matches `cloud-functions/storage.rules`; cross-service Firestore calls are not configured |
 | Firestore access-call limit | Blocks permission enablement and photo smoke | Intended tenant-admin create and assigned-employee read/create paths can access three Firestore documents; Storage Rules permit at most two |
+| Local two-document correction | Verified locally; not deployed | The protected user profile and tenant-scoped booking are the only field-photo lookups; expanded Storage suite passes 20/20 |
 | Production Storage CORS | Verified ready | Bucket metadata read-back exactly matches the approved JSON |
 | Public access | Verified private | No `allUsers` or `allAuthenticatedUsers` IAM binding; public-access prevention is inherited |
 | CORS-created objects | Verified none | Object-list API returned an empty result immediately after the CORS update |
@@ -156,10 +157,60 @@ is documented by Firebase as the `Firebase Rules Firestore Service Agent` role o
 Firebase Storage service identity, but the exact production proposal remains **not
 verified**. No permission category is approved by this audit.
 
+## Local Two-Document Correction
+
+The local correction removes the tenant root document from field-photo Storage rule
+evaluation. It does not weaken access to authenticated users generally and does not trust
+Storage metadata. Authorization now uses exactly:
+
+1. `users/{request.auth.uid}` for protected `role`, `status`, and `tenantId`.
+2. `tenants/{tenantId}/bookings/{bookingId}` for booking existence, exact employee
+   assignment, execution status, and archive/delete state.
+
+The canonical Firestore rules prove the profile is a protected authorization source:
+
+- self-update is allowlisted to `displayName`, `phone`, `photoURL`, and `updatedAt`;
+- clients cannot change `role`, `tenantId`, or `status`;
+- client profile creation is restricted to an active `customer` profile;
+- client deletion is denied.
+
+The exact third document removed from photo authorization is
+`tenants/{tenantId}`. The object path and booking lookup establish the requested tenant;
+the protected profile establishes the caller's tenant and role. Employees must also match
+`assignedEmployeeAuthUid`, have an active profile, and access only a scheduled or completed
+booking that is neither archived nor deleted.
+
+| Operation | First document | Second document | Potential third access | Maximum | Local test |
+| --- | --- | --- | --- | ---: | --- |
+| Tenant admin photo create | Protected user profile | Tenant-scoped booking | None | 2 | Own-tenant unassigned upload; cross-tenant denial |
+| Tenant admin photo read | Protected user profile | Tenant-scoped booking | None | 2 | Own-tenant read; cross-tenant denial |
+| Assigned employee photo create | Protected user profile | Assigned active booking | None | 2 | Scheduled/completed upload; unassigned/cancelled/archived/deleted denial |
+| Assigned employee photo read | Protected user profile | Assigned active booking | None | 2 | Read, reassignment, and former-employee denial |
+| Super-admin photo create/read | Protected user profile | Tenant-scoped booking | None | 2 | Explicit canonical booking path |
+| Customer photo create/read | Protected user profile | Tenant-scoped booking | None | 2 | Customer and guessed-path denial |
+| Cross-tenant create/read | Protected user profile | Requested-tenant booking | None | 2 | Admin and employee cross-tenant denial |
+| Missing profile or booking | Requested profile resource | Requested booking resource | None | 2 | Missing-profile and missing-booking denial |
+| Anonymous create/read | None | None | Helper short-circuited before access | 0 | Anonymous denial |
+| Photo overwrite/delete | None | None | Explicit `false` | 0 | Employee/admin overwrite and delete denial |
+| Super-admin branding create/read | Protected user profile | Tenant root existence | None | 2 | Super-admin allow; all other roles denied |
+
+The source-level Storage test extracts the helper graph and verifies one profile lookup and
+one booking lookup with no tenant-document helper. This limit does not depend on repeated
+same-document caching. Canonical and shared Storage rules remain byte-identical.
+
+Branding remains the existing mounted super-admin-only compatibility surface. It still
+uses two documents and was not expanded to tenant admins.
+
+End-to-end Firestore booking and photo-metadata rules continue to enforce tenant membership.
+Because the Storage object rule cannot read a third document, access revocation must update
+the protected profile and/or booking assignment rather than only removing a UID from tenant
+membership arrays. No application or Firestore rule change is included in this correction.
+
 ## Owner/Admin Photo Smoke
 
-The production photo smoke remains stopped before upload because the canonical rules can
-exceed the two-document Firestore access limit on intended allowed operations. Therefore:
+The production photo smoke remains stopped because production still runs the prior rules,
+the local correction has not been reviewed or deployed, and the cross-service permission
+has not been approved or enabled. Therefore:
 
 - before-photo upload: not run;
 - after-photo upload: not run;
@@ -182,7 +233,7 @@ exceed the two-document Firestore access limit on intended allowed operations. T
 | Web build | Pass: 324 modules; existing chunk and dynamic-import warnings only |
 | Cloud Functions tests | Pass: 39/39 |
 | Firestore rules tests | Pass: 35/35 |
-| Storage rules tests | Pass: 15/15 |
+| Storage rules tests | Pass: 20/20 for the local correction |
 | Rules parity | Pass |
 | `git diff --check` | Pass; line-ending conversion warnings only |
 | Sensitive-data scan | Pass; no key, private-key, or email patterns in changed documents |
@@ -194,13 +245,8 @@ removed and the running smoke environment was not changed.
 
 ## Next Action
 
-Do not enable the cross-service permission yet. First prepare a separately reviewed rule
-change that keeps tenant membership, admin role, employee assignment, customer denial, and
-cross-tenant denial while reducing every intended allowed Storage operation to at most two
-Firestore documents. Rerun the full Storage rules suite and repeat this matrix before
-returning to the Firebase Console permission gate.
-
-Only after the call limit is proven should the Console proposal be inspected and reported
-for separate approval. The local production-connected photo smoke remains blocked. Keep
-`http://127.0.0.1:5173` in CORS until that smoke eventually passes; remove it only in a
-separate approved CORS update.
+Review the local correction first. Under separate approval, deploy only the corrected
+Storage rules. Then inspect and report the Firebase-managed cross-service permission,
+approve and enable it separately, and run the controlled production-connected photo smoke.
+Keep `http://127.0.0.1:5173` in CORS until that smoke passes; remove it only in a separate
+approved CORS update.

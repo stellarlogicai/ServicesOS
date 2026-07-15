@@ -1,3 +1,4 @@
+const assert = require('node:assert/strict');
 const { readFile } = require('node:fs/promises');
 const path = require('node:path');
 const { after, before, beforeEach, describe, test } = require('node:test');
@@ -13,13 +14,14 @@ const TENANT_B = 'tenant-b';
 const PHOTO_PATH = `tenants/${TENANT_A}/bookings/booking-a/field-photos/before/photo-a.jpg`;
 const BRANDING_PATH = `tenants/${TENANT_A}/branding/logo_test.png`;
 let testEnvironment;
+let storageRulesSource;
 
 async function seedAccessData() {
   await testEnvironment.withSecurityRulesDisabled(async context => {
     const database = context.firestore();
     await database.doc(`tenants/${TENANT_A}`).set({
-      adminUsers: ['admin-a'],
-      users: ['admin-a', 'employee-a', 'employee-a-2', 'employee-inactive', 'employee-disabled', 'employee-suspended', 'employee-tenantless'],
+      adminUsers: ['admin-a', 'admin-inactive', 'admin-like'],
+      users: ['admin-a', 'admin-inactive', 'admin-like', 'employee-a', 'employee-a-2', 'employee-inactive', 'employee-disabled', 'employee-suspended', 'employee-tenantless'],
     });
     await database.doc(`tenants/${TENANT_B}`).set({
       adminUsers: ['admin-b'],
@@ -28,6 +30,8 @@ async function seedAccessData() {
     const profiles = {
       'admin-a': { role: 'admin', status: 'active', tenantId: TENANT_A },
       'admin-b': { role: 'admin', status: 'active', tenantId: TENANT_B },
+      'admin-inactive': { role: 'admin', status: 'inactive', tenantId: TENANT_A },
+      'admin-like': { role: 'contractor', status: 'active', tenantId: TENANT_A },
       'employee-a': { role: 'employee', status: 'active', tenantId: TENANT_A },
       'employee-a-2': { role: 'employee', status: 'active', tenantId: TENANT_A },
       'employee-b': { role: 'employee', status: 'active', tenantId: TENANT_B },
@@ -49,6 +53,24 @@ async function seedAccessData() {
     await database.doc(`tenants/${TENANT_A}/bookings/unassigned-booking`).set({
       status: 'scheduled',
     });
+    await database.doc(`tenants/${TENANT_A}/bookings/completed-booking`).set({
+      status: 'completed',
+      assignedEmployeeAuthUid: 'employee-a',
+    });
+    await database.doc(`tenants/${TENANT_A}/bookings/cancelled-booking`).set({
+      status: 'cancelled',
+      assignedEmployeeAuthUid: 'employee-a',
+    });
+    await database.doc(`tenants/${TENANT_A}/bookings/archived-booking`).set({
+      status: 'scheduled',
+      assignedEmployeeAuthUid: 'employee-a',
+      isArchived: true,
+    });
+    await database.doc(`tenants/${TENANT_A}/bookings/deleted-booking`).set({
+      status: 'scheduled',
+      assignedEmployeeAuthUid: 'employee-a',
+      isDeleted: true,
+    });
     await database.doc(`tenants/${TENANT_B}/bookings/booking-b`).set({
       status: 'scheduled',
       assignedEmployeeAuthUid: 'employee-b',
@@ -61,12 +83,19 @@ const upload = (uid, objectPath, contentType, bytes = 32) => storageFor(uid)
   .ref(objectPath)
   .put(new Uint8Array(bytes), { contentType });
 
+function ruleFunctionSource(functionName) {
+  const match = storageRulesSource.match(new RegExp(`function ${functionName}\\([^)]*\\) \\{[\\s\\S]*?\\n    \\}`));
+  assert.ok(match, `${functionName} must exist in the deployed Storage rules source`);
+  return match[0];
+}
+
 describe('tenant-scoped Field Mode Storage rules', () => {
   before(async () => {
     const [firestoreRules, storageRules] = await Promise.all([
       readFile(path.join(__dirname, '..', 'firestore.rules'), 'utf8'),
       readFile(path.join(__dirname, '..', 'storage.rules'), 'utf8'),
     ]);
+    storageRulesSource = storageRules;
     testEnvironment = await initializeTestEnvironment({
       projectId: PROJECT_ID,
       firestore: { rules: firestoreRules },
@@ -78,6 +107,20 @@ describe('tenant-scoped Field Mode Storage rules', () => {
     await testEnvironment.clearStorage();
     await testEnvironment.clearFirestore();
     await seedAccessData();
+  });
+
+  test('field-photo authorization has exactly one profile and one booking lookup', () => {
+    const accessSource = ruleFunctionSource('canAccessFieldPhoto');
+    const profileSource = ruleFunctionSource('userProfileDocument');
+    const bookingSource = ruleFunctionSource('bookingDocument');
+    const accessCalls = accessSource.match(/\b(?:userProfileDocument|bookingDocument|tenantExists|tenantRecord)\(/g) || [];
+    const firestoreCalls = `${profileSource}\n${bookingSource}`.match(/firestore\.(?:get|exists)\(/g) || [];
+
+    assert.deepEqual(accessCalls, ['userProfileDocument(', 'bookingDocument(']);
+    assert.equal(firestoreCalls.length, 2);
+    assert.doesNotMatch(accessSource, /tenantExists|tenantRecord/);
+    assert.match(storageRulesSource, /allow read: if isAllowedPhase\(phase\) &&\s+isAuthenticated\(\) &&\s+canAccessFieldPhoto/);
+    assert.match(storageRulesSource, /allow create: if isAllowedPhase\(phase\) &&\s+isAuthenticated\(\) &&\s+canAccessFieldPhoto/);
   });
 
   after(async () => {
@@ -108,6 +151,17 @@ describe('tenant-scoped Field Mode Storage rules', () => {
     await assertFails(upload('admin-b', unassignedAdminPath.replace('admin-photo', 'cross-admin'), 'image/jpeg'));
   });
 
+  test('inactive and admin-like tenant members cannot create or read field photos', async () => {
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await context.storage().ref(PHOTO_PATH).put(new Uint8Array(32), { contentType: 'image/jpeg' });
+    });
+
+    for (const uid of ['admin-inactive', 'admin-like']) {
+      await assertFails(upload(uid, `tenants/${TENANT_A}/bookings/unassigned-booking/field-photos/before/${uid}.jpg`, 'image/jpeg'));
+      await assertFails(storageFor(uid).ref(PHOTO_PATH).getDownloadURL());
+    }
+  });
+
   test('employee upload rejects unsupported type, extension mismatch, zero bytes, and over 10 MB', async () => {
     await assertFails(upload('employee-a', `${PHOTO_PATH}.pdf`, 'application/pdf'));
     await assertFails(upload('employee-a', PHOTO_PATH, 'image/png'));
@@ -120,6 +174,28 @@ describe('tenant-scoped Field Mode Storage rules', () => {
     await assertFails(upload('employee-a', `tenants/${TENANT_A}/bookings/booking-a/field-photos/during/photo.jpg`, 'image/jpeg'));
     await assertFails(upload('employee-a', 'tenants/DEFAULT/bookings/booking-a/field-photos/before/photo.jpg', 'image/jpeg'));
     await assertFails(upload('employee-a', 'jobPhotos/booking-a/photo.jpg', 'image/jpeg'));
+  });
+
+  test('employee access requires exact assignment and an active non-archived booking', async () => {
+    const deniedBookings = ['unassigned-booking', 'cancelled-booking', 'archived-booking', 'deleted-booking'];
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      for (const bookingId of deniedBookings) {
+        await context.storage().ref(`tenants/${TENANT_A}/bookings/${bookingId}/field-photos/before/existing.jpg`)
+          .put(new Uint8Array(32), { contentType: 'image/jpeg' });
+      }
+    });
+
+    for (const bookingId of deniedBookings) {
+      const basePath = `tenants/${TENANT_A}/bookings/${bookingId}/field-photos/before`;
+      await assertFails(storageFor('employee-a').ref(`${basePath}/existing.jpg`).getDownloadURL());
+      await assertFails(upload('employee-a', `${basePath}/new.jpg`, 'image/jpeg'));
+    }
+  });
+
+  test('assigned employee can create and read evidence for a completed booking', async () => {
+    const completedPath = `tenants/${TENANT_A}/bookings/completed-booking/field-photos/after/completed.png`;
+    await assertSucceeds(upload('employee-a', completedPath, 'image/png'));
+    await assertSucceeds(storageFor('employee-a').ref(completedPath).getDownloadURL());
   });
 
   test('inactive, disabled, suspended, tenantless, and cross-tenant employees cannot upload', async () => {
@@ -137,6 +213,13 @@ describe('tenant-scoped Field Mode Storage rules', () => {
     const anonymous = testEnvironment.unauthenticatedContext().storage();
     await assertFails(anonymous.ref(`tenants/${TENANT_A}/bookings/booking-a/field-photos/before/anonymous.jpg`).put(new Uint8Array(32), { contentType: 'image/jpeg' }));
     await assertFails(anonymous.ref(PHOTO_PATH).getDownloadURL());
+  });
+
+  test('customer path guessing and missing booking paths remain denied', async () => {
+    const guessedPath = `tenants/${TENANT_A}/bookings/missing-booking/field-photos/before/guessed.jpg`;
+    await assertFails(upload('customer-a', guessedPath, 'image/jpeg'));
+    await assertFails(storageFor('customer-a').ref(guessedPath).getDownloadURL());
+    await assertFails(upload('admin-a', guessedPath, 'image/jpeg'));
   });
 
   test('tenant admin, matching employee, and super-admin can read while another tenant admin cannot', async () => {

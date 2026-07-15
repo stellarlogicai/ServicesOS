@@ -2,9 +2,10 @@
 
 ## Status
 
-This document defines the ServicesOS V1 before/after Field Mode photo evidence slice implemented on the separated lab branch `v1-lab-field-photo-evidence-mvp`.
-
-The rules and application changes in this branch have not been deployed. Production and the protected July 20 smoke-test candidate remain unchanged.
+This document defines the ServicesOS V1 before/after Field Mode photo evidence contract and
+the local two-document Storage authorization correction. The correction is implemented on
+`v1-lab-storage-rules-two-document-fix` and has not been deployed. Production still requires
+separate rules review/deployment, cross-service permission approval, and photo smoke.
 
 ## V1 Purpose
 
@@ -101,13 +102,23 @@ Photo access requires all of the following:
 - `role` is exactly `employee`.
 - `status` is exactly `active`.
 - The profile `tenantId` matches the requested tenant path.
-- The UID is present in `tenants/{tenantId}.users`.
 
-The employee may create and read evidence only when the parent booking's `assignedEmployeeAuthUid` equals the authenticated UID. Persisted metadata and Storage objects cannot be updated or deleted by the employee.
+The employee may create and read Storage evidence only when the parent booking's
+`assignedEmployeeAuthUid` equals the authenticated UID, its status is `scheduled` or
+`completed`, and it is not archived or deleted. Persisted metadata and Storage objects
+cannot be updated or deleted by the employee.
+
+Firestore booking and photo-metadata rules still require membership in
+`tenants/{tenantId}.users`. Storage authorization uses the protected profile plus booking
+because Storage Rules permit only two Firestore documents.
 
 ### Tenant admin
 
-A matching active tenant admin in `tenants/{tenantId}.adminUsers` may capture evidence for an own-tenant booking from Field Mode without employee assignment. The same evidence is read-only in Booking Details. Admins cannot overwrite or delete persisted evidence.
+An active admin whose protected profile `tenantId` matches the booking tenant may capture
+Storage evidence for an existing own-tenant booking without employee assignment. Firestore
+booking and metadata access still requires `tenants/{tenantId}.adminUsers` membership. The
+same evidence is read-only in Booking Details. Admins cannot overwrite or delete persisted
+evidence.
 
 ### Super-admin
 
@@ -116,6 +127,19 @@ An active super-admin may capture evidence only after the application has an exp
 ### Customer, cross-tenant, and anonymous users
 
 Customer, cross-tenant, inactive, disabled, suspended, tenantless, unknown-profile, and anonymous access is denied by Firestore and Storage rules. Customer Portal does not mount the field photo service or evidence components.
+
+### Protected profile trust
+
+Canonical Firestore rules allow users to update only `displayName`, `phone`, `photoURL`,
+and `updatedAt` on their own profile. `role`, `tenantId`, and `status` are not client
+writable. Client-created profiles can only be active customer profiles. Storage rules can
+therefore use `users/{uid}` as the role, status, and tenant authorization source without
+trusting object metadata or adding a third tenant-document lookup.
+
+Removing a UID only from tenant membership arrays does not revoke raw Storage-object
+authorization under the two-document model. Offboarding must also deactivate or otherwise
+correct the protected profile and clear/reassign booking assignments. Firestore application
+access continues to enforce tenant membership independently.
 
 ## Assignment Isolation
 
@@ -160,4 +184,5 @@ Before any deployment, run:
 
 The authenticated smoke must verify employee and owner/admin upload persistence after refresh, unsupported and oversized rejection, optional completion warning, read-only owner review, Customer Portal privacy, and unchanged payment/price/schedule/customer/assignment fields.
 
-No Firebase or Storage rules from this lab slice are deployed yet.
+The two-document correction is local only. Do not deploy it or enable cross-service
+permissions without the separate production approval sequence.

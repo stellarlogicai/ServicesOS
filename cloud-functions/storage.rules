@@ -5,13 +5,8 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function hasUserProfile() {
-      return isAuthenticated() &&
-             firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
-    }
-
-    function userProfile() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    function userProfileDocument() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid));
     }
 
     function tenantExists(tenantId) {
@@ -19,42 +14,34 @@ service firebase.storage {
              firestore.exists(/databases/(default)/documents/tenants/$(tenantId));
     }
 
-    function tenantRecord(tenantId) {
-      return firestore.get(/databases/(default)/documents/tenants/$(tenantId)).data;
+    function bookingDocument(tenantId, bookingId) {
+      return firestore.get(/databases/(default)/documents/tenants/$(tenantId)/bookings/$(bookingId));
     }
 
-    function isSuperAdmin() {
-      return hasUserProfile() &&
-             userProfile().role == 'super-admin' &&
-             userProfile().status == 'active';
+    function canAccessFieldPhoto(tenantId, bookingId) {
+      let profile = userProfileDocument();
+      let booking = bookingDocument(tenantId, bookingId);
+      return tenantId != 'DEFAULT' &&
+             profile != null &&
+             booking != null &&
+             profile.data.status == 'active' &&
+             (profile.data.role == 'super-admin' ||
+              (profile.data.tenantId == tenantId &&
+               (profile.data.role == 'admin' ||
+                (profile.data.role == 'employee' &&
+                 'assignedEmployeeAuthUid' in booking.data &&
+                 booking.data.assignedEmployeeAuthUid == request.auth.uid &&
+                 booking.data.status in ['scheduled', 'completed'] &&
+                 (!('isDeleted' in booking.data) || booking.data.isDeleted != true) &&
+                 (!('isArchived' in booking.data) || booking.data.isArchived != true)))));
     }
 
-    function isTenantAdmin(tenantId) {
+    function canAccessBranding(tenantId) {
+      let profile = userProfileDocument();
       return tenantExists(tenantId) &&
-             hasUserProfile() &&
-             userProfile().role == 'admin' &&
-             userProfile().status == 'active' &&
-             userProfile().tenantId == tenantId &&
-             request.auth.uid in tenantRecord(tenantId).adminUsers;
-    }
-
-    function isTenantFieldUser(tenantId) {
-      return tenantExists(tenantId) &&
-             hasUserProfile() &&
-             userProfile().role == 'employee' &&
-             userProfile().status == 'active' &&
-             userProfile().tenantId == tenantId &&
-             request.auth.uid in tenantRecord(tenantId).users;
-    }
-
-    function isAssignedTenantFieldUser(tenantId, bookingId) {
-      return isTenantFieldUser(tenantId) &&
-             firestore.exists(/databases/(default)/documents/tenants/$(tenantId)/bookings/$(bookingId)) &&
-             firestore.get(/databases/(default)/documents/tenants/$(tenantId)/bookings/$(bookingId)).data.assignedEmployeeAuthUid == request.auth.uid;
-    }
-
-    function bookingExists(tenantId, bookingId) {
-      return firestore.exists(/databases/(default)/documents/tenants/$(tenantId)/bookings/$(bookingId));
+             profile != null &&
+             profile.data.role == 'super-admin' &&
+             profile.data.status == 'active';
     }
 
     function isAllowedPhase(phase) {
@@ -85,10 +72,11 @@ service firebase.storage {
 
     match /tenants/{tenantId}/bookings/{bookingId}/field-photos/{phase}/{fileName} {
       allow read: if isAllowedPhase(phase) &&
-                     (isSuperAdmin() || isTenantAdmin(tenantId) || isAssignedTenantFieldUser(tenantId, bookingId));
+                     isAuthenticated() &&
+                     canAccessFieldPhoto(tenantId, bookingId);
       allow create: if isAllowedPhase(phase) &&
-                       bookingExists(tenantId, bookingId) &&
-                       (isSuperAdmin() || isTenantAdmin(tenantId) || isAssignedTenantFieldUser(tenantId, bookingId)) &&
+                       isAuthenticated() &&
+                       canAccessFieldPhoto(tenantId, bookingId) &&
                        resource == null &&
                        validPhotoObject(fileName);
       allow update, delete: if false;
@@ -96,9 +84,9 @@ service firebase.storage {
 
     // Company Settings is a mounted super-admin compatibility surface.
     match /tenants/{tenantId}/branding/{fileName} {
-      allow read: if tenantExists(tenantId) && isSuperAdmin();
-      allow create: if tenantExists(tenantId) &&
-                       isSuperAdmin() &&
+      allow read: if isAuthenticated() && canAccessBranding(tenantId);
+      allow create: if isAuthenticated() &&
+                       canAccessBranding(tenantId) &&
                        resource == null &&
                        validBrandingObject();
       allow update, delete: if false;
