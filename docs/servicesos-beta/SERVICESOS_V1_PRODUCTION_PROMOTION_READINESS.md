@@ -19,6 +19,13 @@ Storage is not initialized, canonical admin tenant memberships are absent, no em
 profiles exist, all inspected bookings are unassigned, and customer ownership preparation
 is incomplete. Overall classification remains **D - production promotion blocked**.
 
+Storage-readiness follow-up: see `SERVICESOS_V1_PRODUCTION_STORAGE_READINESS.md`. The
+deployed canonical Storage rules can reach three Firestore documents for intended
+tenant-admin photo creates and assigned-employee photo reads/creates, exceeding the
+two-document Storage Rules limit. The Firebase cross-service permission action and
+production photo smoke remain blocked until a separately reviewed least-privilege rules
+correction passes the call-count audit.
+
 ## Executive Result
 
 The V1 lab history is complete, linear, pushed, and locally validated. Repository

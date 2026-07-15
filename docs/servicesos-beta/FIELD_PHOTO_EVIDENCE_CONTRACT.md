@@ -135,6 +135,12 @@ Completion remains separate from payment truth and does not update payment field
 
 ## Deferred Work
 
+- Field Job card UX: keep `Open Job` or `Continue Job` as the primary action; make
+  Directions and Call Customer secondary quick actions; keep Copy Address inside the
+  packet or overflow menu; never expose Start Job on the summary card; show one employee
+  execution status; hide employee payment status; consolidate duplicate scheduled and
+  not-started badges. This is an audit decision only and is not implemented in the
+  production Storage-readiness phase.
 - Full offline upload queue and background retry
 - Admin evidence deletion and orphan-reconciliation operations
 - Photo enlargement/download/share workflows
