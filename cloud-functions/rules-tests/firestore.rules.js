@@ -411,6 +411,7 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       { stripePaymentIntentId: 'pi_test_employee' },
       { assignedEmployeeId: 'employee-b' },
       { assignedEmployeeAuthUid: 'employee-a-2' },
+      { jobChecklistSnapshot: { ownerApproved: true } },
       { assignedEmployees: ['employee-b'] },
       { isDeleted: true },
       { unexpectedField: true }
@@ -642,6 +643,18 @@ describe('tenant-scoped customer intake Firestore rules', () => {
 
     await assertSucceeds(getDoc(adminBooking));
     await assertSucceeds(updateDoc(adminBooking, { agreedPrice: 225 }));
+    await assertSucceeds(updateDoc(adminBooking, {
+      jobChecklistSnapshot: {
+        snapshotVersion: 1,
+        templateId: 'standard-one-time',
+        ownerApproved: true,
+        reviewedBy: 'admin-a',
+        items: [{ id: 'task-1', area: 'Kitchen', label: 'Clean countertops', required: true }],
+      },
+      fieldChecklist: [{ id: 'task-1', area: 'Kitchen', label: 'Clean countertops', required: true, completed: false }],
+      fieldChecklistSummary: { completed: 0, total: 1 },
+      updatedAt: '2026-07-17T12:00:00.000Z',
+    }));
     await assertSucceeds(getDoc(superBooking));
     await assertSucceeds(updateDoc(superBooking, { status: 'completed' }));
   });

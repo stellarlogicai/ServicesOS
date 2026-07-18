@@ -1,6 +1,7 @@
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FieldMode from '../components/FieldMode';
+import { assembleBookingChecklist } from '../core/checklists/bookingChecklistAssembly';
 
 const mocks = vi.hoisted(() => ({
   getJobs: vi.fn(),
@@ -60,6 +61,25 @@ const dateKey = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad
 const today = new Date();
 const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+const approvedChecklist = {
+  jobChecklistSnapshot: {
+    ownerApproved: true,
+    provenance: { sourceScopeSignature: assembleBookingChecklist({}).sourceScopeSignature },
+    notes: 'Pack clean microfiber cloths.',
+    warnings: ['Surface/material note: sealed wood island.'],
+    items: [
+      {
+        id: 'walkthrough', area: 'Property Arrival / Review', fixtureOrSurface: 'Review',
+        label: 'Review job scope before starting', completionCriteria: 'Scope and access details have been reviewed.',
+        jobAidSteps: [{ label: 'Walk through the home before starting', condition: '', note: '' }],
+        required: true, completed: false,
+      },
+      { id: 'service-areas', area: 'Service Areas', label: 'Complete the requested cleaning areas', jobAidSteps: [], required: true, completed: false },
+      { id: 'final-check', area: 'Final Walkthrough', label: 'Do a final quality check before leaving', required: true, completed: false },
+      { id: 'clean-towel', area: 'Kitchen', label: 'Place a clean towel by the island', condition: 'if requested', required: false, completed: false },
+    ],
+  },
+};
 
 describe('FieldMode read-only field surface', () => {
   beforeEach(() => {
@@ -329,20 +349,30 @@ describe('FieldMode read-only field surface', () => {
 
   it('saves checklist progress without changing payment status', async () => {
     mocks.getJobs.mockResolvedValue({ success: true, data: [{
-      id: 'checklist-job', customerName: 'Checklist Customer', date: dateKey(today), paymentStatus: 'not_paid',
+      id: 'checklist-job', customerName: 'Checklist Customer', date: dateKey(today), paymentStatus: 'not_paid', ...approvedChecklist,
     }] });
     render(<FieldMode />);
     await screen.findByText('Checklist Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
 
-    fireEvent.click(screen.getByLabelText('Walk through the home before starting'));
+    expect(screen.getByText('Pack clean microfiber cloths.')).toBeInTheDocument();
+    expect(screen.getByText('Surface/material note: sealed wood island.')).toBeInTheDocument();
+    expect(screen.getAllByText('Required')).not.toHaveLength(0);
+    expect(screen.getByText('Optional')).toBeInTheDocument();
+    expect(screen.getByText('View steps')).toBeInTheDocument();
+    expect(screen.getByText('Scope and access details have been reviewed.')).toBeInTheDocument();
+    expect(screen.getByText('Walk through the home before starting')).toBeInTheDocument();
+    expect(screen.getByText('Condition: if requested')).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(4);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Review job scope before starting/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Save checklist' }));
 
     await waitFor(() => expect(mocks.updateBookingFieldExecution).toHaveBeenCalled());
     const patch = mocks.updateBookingFieldExecution.mock.calls[0][2];
     expect(patch.fieldChecklist[0]).toMatchObject({
       id: 'walkthrough',
-      label: 'Walk through the home before starting',
+      label: 'Review job scope before starting',
       completed: true,
     });
     expect(patch).not.toHaveProperty('paymentStatus');
@@ -372,13 +402,13 @@ describe('FieldMode read-only field surface', () => {
 
   it('marks a job complete without marking it paid', async () => {
     mocks.getJobs.mockResolvedValue({ success: true, data: [{
-      id: 'complete-job', customerName: 'Complete Customer', date: dateKey(today), paymentStatus: 'not_paid',
+      id: 'complete-job', customerName: 'Complete Customer', date: dateKey(today), paymentStatus: 'not_paid', ...approvedChecklist,
     }] });
     render(<FieldMode />);
     await screen.findByText('Complete Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
 
-    fireEvent.click(screen.getByLabelText('Complete the requested cleaning areas'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Complete the requested cleaning areas/ }));
     fireEvent.change(screen.getByLabelText('Employee notes'), { target: { value: 'Ready for owner review.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
     fireEvent.click(screen.getByRole('button', { name: 'Complete anyway' }));
@@ -394,6 +424,66 @@ describe('FieldMode read-only field surface', () => {
     expect(patch).not.toHaveProperty('paymentStatus');
     expect(patch).not.toHaveProperty('amountReceived');
     expect(await screen.findByText('Job marked complete.')).toBeInTheDocument();
+  });
+
+  it('does not expose an unapproved suggested checklist to Field Mode', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'unapproved-job', customerName: 'Unapproved Customer', date: dateKey(today), paymentStatus: 'not_paid',
+    }] });
+    render(<FieldMode />);
+    await screen.findByText('Unapproved Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    expect(screen.getByText('No checklist assigned to this job.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save checklist' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Walk through the home before starting')).not.toBeInTheDocument();
+  });
+
+  it('rejects an approved checklist snapshot with duplicate item IDs', async () => {
+    const duplicateSnapshot = {
+      ...approvedChecklist.jobChecklistSnapshot,
+      items: [
+        { id: 'duplicate', area: 'Kitchen', label: 'First task', required: true, completed: false },
+        { id: 'duplicate', area: 'Bathroom', label: 'Second task', required: true, completed: false },
+      ],
+    };
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'duplicate-job', customerName: 'Duplicate Checklist Customer', date: dateKey(today), paymentStatus: 'not_paid',
+      jobChecklistSnapshot: duplicateSnapshot,
+      fieldChecklist: duplicateSnapshot.items,
+    }] });
+
+    render(<FieldMode />);
+    await screen.findByText('Duplicate Checklist Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    expect(screen.getByText('No checklist assigned to this job.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('First task')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Second task')).not.toBeInTheDocument();
+  });
+
+  it('degrades safely when job-aid steps are malformed', async () => {
+    const malformedSnapshot = {
+      ...approvedChecklist.jobChecklistSnapshot,
+      items: [{
+        id: 'safe-parent', area: 'Kitchen / Faucet', label: 'Clean and polish faucet',
+        required: true, completed: false, completionCriteria: 'Faucet is visibly clean.', jobAidSteps: { invalid: true },
+        warnings: ['Use a surface-compatible method.'],
+      }],
+    };
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'malformed-aid-job', customerName: 'Malformed Aid Customer', date: dateKey(today), paymentStatus: 'not_paid',
+      jobChecklistSnapshot: malformedSnapshot,
+      fieldChecklist: malformedSnapshot.items,
+    }] });
+
+    render(<FieldMode />);
+    await screen.findByText('Malformed Aid Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    expect(screen.getByLabelText(/Clean and polish faucet/)).toBeInTheDocument();
+    expect(screen.getByText('Faucet is visibly clean.')).toBeInTheDocument();
+    expect(screen.getByText('Use a surface-compatible method.')).toBeInTheDocument();
+    expect(screen.getByText('View steps').closest('details').querySelector('ol')).not.toBeInTheDocument();
   });
 
   it('warns an employee before completion when no uploaded after evidence exists', async () => {

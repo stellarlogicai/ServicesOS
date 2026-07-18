@@ -8,5 +8,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.js',
     css: true,
+    // Keep concurrent jsdom suites below the point where five-second test-local timeouts become CPU-bound.
+    maxWorkers: 4,
   },
 });

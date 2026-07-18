@@ -8,6 +8,7 @@ import {
 } from '../core/scheduling/schedulingService';
 import { useAuth } from '../contexts/AuthContext';
 import { FieldPhotoUploadPanel } from './FieldPhotoEvidence';
+import { isApprovedChecklistCurrent } from '../core/checklists/bookingChecklistAssembly';
 import {
   bookingAddress,
   bookingCustomerName,
@@ -49,12 +50,6 @@ function shouldUseMapsFallback() {
   return host === 'localhost' || host === '127.0.0.1' || host === '';
 }
 
-const DEFAULT_FIELD_CHECKLIST = [
-  { id: 'walkthrough', label: 'Walk through the home before starting', completed: false },
-  { id: 'service-areas', label: 'Complete the requested cleaning areas', completed: false },
-  { id: 'final-check', label: 'Do a final quality check before leaving', completed: false },
-];
-
 function fieldStatusValue(booking = {}) {
   const status = typeof booking.fieldStatus === 'string' && booking.fieldStatus.trim()
     ? booking.fieldStatus.trim()
@@ -66,17 +61,57 @@ function fieldStatusLabel(booking = {}) {
   return BOOKING_FIELD_STATUS_LABELS[fieldStatusValue(booking)];
 }
 
-function normalizeChecklist(items) {
-  if (!Array.isArray(items) || items.length === 0) {
-    return DEFAULT_FIELD_CHECKLIST.map(item => ({ ...item }));
-  }
-  return items
+function normalizeChecklist(items, approvedSnapshot) {
+  const sourceItems = Array.isArray(items) && items.length > 0
+    ? items
+    : (approvedSnapshot?.ownerApproved === true && Array.isArray(approvedSnapshot.items)
+      ? approvedSnapshot.items
+      : []);
+  const seenIds = new Set();
+  return sourceItems
     .filter(item => item && typeof item === 'object')
     .map((item, index) => ({
       id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `item-${index + 1}`,
+      area: typeof item.area === 'string' && item.area.trim() ? item.area.trim() : 'General',
+      fixtureOrSurface: typeof item.fixtureOrSurface === 'string' ? item.fixtureOrSurface.trim() : '',
       label: typeof item.label === 'string' && item.label.trim() ? item.label.trim() : `Checklist item ${index + 1}`,
+      completionCriteria: typeof item.completionCriteria === 'string' ? item.completionCriteria.trim() : '',
+      jobAidSteps: normalizeJobAidSteps(item.jobAidSteps),
+      warnings: Array.isArray(item.warnings)
+        ? item.warnings.filter(warning => typeof warning === 'string' && warning.trim()).map(warning => warning.trim())
+        : [],
+      note: typeof item.note === 'string' ? item.note : '',
+      condition: typeof item.condition === 'string' ? item.condition : '',
+      required: item.required === true,
       completed: item.completed === true,
-    }));
+      approvedMethodIds: Array.isArray(item.approvedMethodIds) ? [...item.approvedMethodIds] : [],
+      preferredMethodId: item.preferredMethodId || null,
+      sourceReferences: Array.isArray(item.sourceReferences)
+        ? item.sourceReferences.filter(reference => typeof reference === 'string' && reference.trim())
+        : [],
+    }))
+    .filter(item => {
+      if (seenIds.has(item.id)) return false;
+      seenIds.add(item.id);
+      return true;
+    });
+}
+
+function normalizeJobAidSteps(steps) {
+  if (!Array.isArray(steps)) return [];
+  return steps.map(step => {
+    if (typeof step === 'string') return { label: step.trim(), note: '', condition: '' };
+    if (!step || typeof step !== 'object') return null;
+    return {
+      label: typeof step.label === 'string' ? step.label.trim() : '',
+      note: typeof step.note === 'string' ? step.note.trim() : '',
+      condition: typeof step.condition === 'string' ? step.condition.trim() : '',
+    };
+  }).filter(step => step?.label);
+}
+
+function checklistRoom(area = '') {
+  return String(area).split('/')[0].trim() || 'General';
 }
 
 function fieldSafeInstructions(booking = {}) {
@@ -119,7 +154,11 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
   const [executionError, setExecutionError] = useState('');
   const [savingAction, setSavingAction] = useState('');
   const [fieldStatus, setFieldStatus] = useState(fieldStatusValue(booking));
-  const [checklist, setChecklist] = useState(() => normalizeChecklist(booking.fieldChecklist));
+  const approvedChecklistCurrent = isApprovedChecklistCurrent(booking);
+  const [checklist, setChecklist] = useState(() => normalizeChecklist(
+    approvedChecklistCurrent ? booking.fieldChecklist : [],
+    approvedChecklistCurrent ? booking.jobChecklistSnapshot : null
+  ));
   const [fieldNotes, setFieldNotes] = useState(typeof booking.fieldNotes === 'string' ? booking.fieldNotes : '');
   const [fieldIssue, setFieldIssue] = useState(typeof booking.fieldIssue === 'string' ? booking.fieldIssue : '');
   const [photoEvidence, setPhotoEvidence] = useState({ loading: true, photos: [] });
@@ -134,6 +173,20 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
   const callFallbackMessage = 'If nothing opened, your device/browser may not support phone calls from this page.';
   const displayedActionMessage = actionMessage || defaultActionMessage;
   const completedCount = checklist.filter(item => item.completed).length;
+  const checklistGroups = useMemo(() => checklist.reduce((groups, item) => {
+    const room = checklistRoom(item.area);
+    const existing = groups.find(group => group.room === room);
+    if (existing) existing.items.push(item);
+    else groups.push({ room, items: [item] });
+    return groups;
+  }, []), [checklist]);
+  const hasApprovedChecklist = approvedChecklistCurrent;
+  const approvedPacketNotes = typeof booking.jobChecklistSnapshot?.notes === 'string'
+    ? booking.jobChecklistSnapshot.notes.trim()
+    : '';
+  const approvedPacketWarnings = Array.isArray(booking.jobChecklistSnapshot?.warnings)
+    ? booking.jobChecklistSnapshot.warnings.filter(warning => typeof warning === 'string' && warning.trim())
+    : [];
   const saving = Boolean(savingAction);
 
   const handleCallCustomer = event => {
@@ -293,32 +346,91 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
           )}
           <div className="field-job-checklist">
             <h4>Checklist</h4>
-            <p>{completedCount} of {checklist.length} complete</p>
-            <div className="field-job-checklist-items">
-              {checklist.map(item => (
-                <label key={item.id} className="field-job-checklist-item">
-                  <input
-                    type="checkbox"
-                    checked={item.completed}
-                    onChange={event => {
-                      const checked = event.target.checked;
-                      setChecklist(current => current.map(existing => (
-                        existing.id === item.id ? { ...existing, completed: checked } : existing
-                      )));
-                    }}
-                  />
-                  <span>{item.label}</span>
-                </label>
-              ))}
-            </div>
-            <button
-              className="v1-button v1-button-secondary"
-              type="button"
-              onClick={saveChecklist}
-              disabled={saving}
-            >
-              {savingAction === 'checklist' ? 'Saving...' : 'Save checklist'}
-            </button>
+            {!hasApprovedChecklist || checklist.length === 0 ? (
+              <p className="field-job-checklist-empty">No checklist assigned to this job.</p>
+            ) : (
+              <>
+                {(approvedPacketNotes || approvedPacketWarnings.length > 0) && (
+                  <div className="field-job-prep-context">
+                    <h4>Owner-approved job prep</h4>
+                    {approvedPacketNotes && <p><strong>Job notes:</strong> {approvedPacketNotes}</p>}
+                    {approvedPacketWarnings.length > 0 && (
+                      <ul>{approvedPacketWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+                    )}
+                  </div>
+                )}
+                <p>{completedCount} of {checklist.length} complete</p>
+                <div className="field-job-checklist-groups">
+                  {checklistGroups.map(group => {
+                    const groupCompleted = group.items.filter(item => item.completed).length;
+                    return (
+                      <section className="field-job-checklist-area" key={group.room}>
+                        <div className="field-job-checklist-area-heading">
+                          <h5>{group.room}</h5>
+                          <span>{groupCompleted} of {group.items.length} complete</span>
+                        </div>
+                        <div className="field-job-checklist-items">
+                          {group.items.map(item => (
+                            <div key={item.id} className="field-job-checklist-item">
+                              <label className="field-job-checklist-item-main">
+                                <input
+                                  type="checkbox"
+                                  checked={item.completed}
+                                  onChange={event => {
+                                    const checked = event.target.checked;
+                                    setChecklist(current => current.map(existing => (
+                                      existing.id === item.id ? { ...existing, completed: checked } : existing
+                                    )));
+                                  }}
+                                />
+                                <span>
+                                  <strong>{item.fixtureOrSurface || item.area}</strong>
+                                  <small className="field-job-checklist-requirement">{item.required ? 'Required' : 'Optional'}</small>
+                                  {item.label}
+                                  {item.condition && <small>Condition: {item.condition}</small>}
+                                  {item.note && <small>{item.note}</small>}
+                                </span>
+                              </label>
+                              {(item.completionCriteria || item.jobAidSteps.length > 0 || item.warnings.length > 0) && (
+                                <details className="field-job-checklist-job-aid">
+                                  <summary>View steps</summary>
+                                  {item.completionCriteria && <p><strong>Completion criteria:</strong> {item.completionCriteria}</p>}
+                                  {item.jobAidSteps.length > 0 && (
+                                    <ol>
+                                      {item.jobAidSteps.map((step, index) => (
+                                        <li key={`${item.id}-step-${index + 1}`}>
+                                          {step.label}
+                                          {step.condition && <small>Condition: {step.condition}</small>}
+                                          {step.note && <small>{step.note}</small>}
+                                        </li>
+                                      ))}
+                                    </ol>
+                                  )}
+                                  {item.warnings.length > 0 && (
+                                    <div className="field-job-checklist-warnings">
+                                      <strong>Warnings</strong>
+                                      <ul>{item.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+                                    </div>
+                                  )}
+                                </details>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+                <button
+                  className="v1-button v1-button-secondary"
+                  type="button"
+                  onClick={saveChecklist}
+                  disabled={saving}
+                >
+                  {savingAction === 'checklist' ? 'Saving...' : 'Save checklist'}
+                </button>
+              </>
+            )}
           </div>
           <div className="field-job-notes">
             <label>

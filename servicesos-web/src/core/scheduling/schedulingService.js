@@ -24,6 +24,9 @@ const BOOKING_ADMIN_UPDATE_ALLOWED_FIELDS = new Set([
   'notes',
   'agreedPrice',
   'assignedEmployeeAuthUid',
+  'jobChecklistSnapshot',
+  'fieldChecklist',
+  'fieldChecklistSummary',
 ]);
 const BOOKING_ADMIN_STATUS_VALUES = new Set(['scheduled', 'completed', 'cancelled']);
 const FIELD_MODE_ACTIVE_BOOKING_STATUSES = ['scheduled', 'completed'];
@@ -81,8 +84,21 @@ const BOOKING_MANUAL_PAYMENT_UPDATED_BY_MAX_LENGTH = 128;
 const BOOKING_PAYMENT_NOTE_MAX_LENGTH = 500;
 const BOOKING_FIELD_NOTE_MAX_LENGTH = 1000;
 const BOOKING_FIELD_ISSUE_MAX_LENGTH = 750;
-const BOOKING_FIELD_CHECKLIST_MAX_ITEMS = 25;
+const BOOKING_FIELD_CHECKLIST_MAX_ITEMS = 500;
 const BOOKING_FIELD_CHECKLIST_LABEL_MAX_LENGTH = 120;
+const BOOKING_FIELD_CHECKLIST_AREA_MAX_LENGTH = 120;
+const BOOKING_FIELD_CHECKLIST_DETAIL_MAX_LENGTH = 500;
+const BOOKING_FIELD_CHECKLIST_JOB_AID_MAX_STEPS = 50;
+const BOOKING_FIELD_CHECKLIST_SOURCE_MAX_REFERENCES = 20;
+const BOOKING_FIELD_CHECKLIST_SOURCE_REFERENCE_MAX_LENGTH = 300;
+const BOOKING_CHECKLIST_SCOPE_ROOM_KEYS = new Set([
+  'bedroom', 'bathroom', 'kitchen', 'livingRoom', 'diningRoom', 'office', 'laundryRoom', 'closet',
+]);
+const BOOKING_CHECKLIST_SCOPE_SERVICE_KEYS = new Set([
+  'oven', 'fridge', 'insideCabinets', 'baseboards', 'windows', 'blindCleaning', 'wallSpotCleaning',
+  'laundryRoomCleaning', 'garageCleaning', 'closetOrganization', 'pantryOrganization',
+  'basementCleaning', 'petWasteRemoval', 'ceilingFanCleaning', 'dishes', 'organization',
+]);
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_ONLY_PATTERN = /^\d{2}:\d{2}$/;
 
@@ -236,6 +252,26 @@ export function buildBookingAdminUpdatePatch(proposedPatch, { now = new Date().t
       : assignedEmployeeAuthUid.trim();
   }
 
+  if (Object.hasOwn(proposedPatch, 'jobChecklistSnapshot')) {
+    const snapshot = normalizeApprovedChecklistSnapshot(proposedPatch.jobChecklistSnapshot);
+    if (!snapshot.success) return snapshot;
+    payload.jobChecklistSnapshot = snapshot.data;
+  }
+
+  if (Object.hasOwn(proposedPatch, 'fieldChecklist')) {
+    const checklist = normalizeFieldChecklist(proposedPatch.fieldChecklist);
+    if (!checklist.success) return checklist;
+    payload.fieldChecklist = checklist.data;
+    payload.fieldChecklistSummary = {
+      completed: checklist.data.filter(item => item.completed).length,
+      total: checklist.data.length,
+    };
+  }
+
+  if (Object.hasOwn(proposedPatch, 'fieldChecklistSummary') && !Object.hasOwn(proposedPatch, 'fieldChecklist')) {
+    return bookingAdminValidationError('Booking checklist summary is derived from fieldChecklist.');
+  }
+
   if (Object.keys(payload).length === 0) {
     return bookingAdminValidationError('Booking update patch must include at least one supported field.');
   }
@@ -379,14 +415,165 @@ function normalizeFieldChecklist(fieldChecklist) {
     if (label.length > BOOKING_FIELD_CHECKLIST_LABEL_MAX_LENGTH) {
       return bookingAdminValidationError(`Booking field checklist labels must be ${BOOKING_FIELD_CHECKLIST_LABEL_MAX_LENGTH} characters or fewer.`);
     }
+    const area = typeof item.area === 'string' ? item.area.trim() : '';
+    const fixtureOrSurface = typeof item.fixtureOrSurface === 'string' ? item.fixtureOrSurface.trim() : '';
+    const completionCriteria = typeof item.completionCriteria === 'string' ? item.completionCriteria.trim() : '';
+    const note = typeof item.note === 'string' ? item.note.trim() : '';
+    const condition = typeof item.condition === 'string' ? item.condition.trim() : '';
+    if (area.length > BOOKING_FIELD_CHECKLIST_AREA_MAX_LENGTH || fixtureOrSurface.length > BOOKING_FIELD_CHECKLIST_AREA_MAX_LENGTH) {
+      return bookingAdminValidationError(`Booking field checklist areas and fixtures must be ${BOOKING_FIELD_CHECKLIST_AREA_MAX_LENGTH} characters or fewer.`);
+    }
+    if (note.length > BOOKING_FIELD_CHECKLIST_DETAIL_MAX_LENGTH || condition.length > BOOKING_FIELD_CHECKLIST_DETAIL_MAX_LENGTH || completionCriteria.length > BOOKING_FIELD_CHECKLIST_DETAIL_MAX_LENGTH) {
+      return bookingAdminValidationError(`Booking field checklist details must be ${BOOKING_FIELD_CHECKLIST_DETAIL_MAX_LENGTH} characters or fewer.`);
+    }
+    if (item.jobAidSteps !== undefined && !Array.isArray(item.jobAidSteps)) {
+      return bookingAdminValidationError('Booking field checklist job-aid steps must be an array.');
+    }
+    if ((item.jobAidSteps || []).length > BOOKING_FIELD_CHECKLIST_JOB_AID_MAX_STEPS) {
+      return bookingAdminValidationError(`Booking field checklist outcomes must include ${BOOKING_FIELD_CHECKLIST_JOB_AID_MAX_STEPS} job-aid steps or fewer.`);
+    }
+    const jobAidSteps = [];
+    for (const step of item.jobAidSteps || []) {
+      if (!step || typeof step !== 'object' || Array.isArray(step)) {
+        return bookingAdminValidationError('Booking field checklist job-aid steps must be objects.');
+      }
+      const stepLabel = typeof step.label === 'string' ? step.label.trim() : '';
+      const stepNote = typeof step.note === 'string' ? step.note.trim() : '';
+      const stepCondition = typeof step.condition === 'string' ? step.condition.trim() : '';
+      if (!stepLabel) {
+        return bookingAdminValidationError('Booking field checklist job-aid steps require a label.');
+      }
+      if (stepLabel.length > BOOKING_FIELD_CHECKLIST_LABEL_MAX_LENGTH || stepNote.length > BOOKING_FIELD_CHECKLIST_DETAIL_MAX_LENGTH || stepCondition.length > BOOKING_FIELD_CHECKLIST_DETAIL_MAX_LENGTH) {
+        return bookingAdminValidationError('Booking field checklist job-aid step details are too long.');
+      }
+      jobAidSteps.push({ label: stepLabel, note: stepNote, condition: stepCondition });
+    }
+    if (item.warnings !== undefined && !Array.isArray(item.warnings)) {
+      return bookingAdminValidationError('Booking field checklist warnings must be an array.');
+    }
+    const warnings = [];
+    for (const warning of item.warnings || []) {
+      if (typeof warning !== 'string' || !warning.trim()) continue;
+      const normalizedWarning = warning.trim();
+      if (normalizedWarning.length > BOOKING_FIELD_CHECKLIST_DETAIL_MAX_LENGTH) {
+        return bookingAdminValidationError(`Booking field checklist warnings must be ${BOOKING_FIELD_CHECKLIST_DETAIL_MAX_LENGTH} characters or fewer.`);
+      }
+      warnings.push(normalizedWarning);
+    }
+    if (item.sourceReferences !== undefined && !Array.isArray(item.sourceReferences)) {
+      return bookingAdminValidationError('Booking field checklist source references must be an array.');
+    }
+    const sourceReferences = (item.sourceReferences || [])
+      .filter(value => typeof value === 'string' && value.trim())
+      .map(value => value.trim())
+      .filter(value => value.length <= BOOKING_FIELD_CHECKLIST_SOURCE_REFERENCE_MAX_LENGTH)
+      .slice(0, BOOKING_FIELD_CHECKLIST_SOURCE_MAX_REFERENCES);
+    const approvedMethodIds = Array.isArray(item.approvedMethodIds)
+      ? item.approvedMethodIds.filter(value => typeof value === 'string' && value.trim()).map(value => value.trim()).slice(0, 20)
+      : [];
     normalized.push({
       id,
+      area: area || 'General',
+      fixtureOrSurface,
       label,
+      completionCriteria,
+      jobAidSteps,
+      warnings: warnings.slice(0, 10),
+      note,
+      condition,
+      required: item.required === true,
       completed: item.completed === true,
+      approvedMethodIds,
+      preferredMethodId: typeof item.preferredMethodId === 'string' && item.preferredMethodId.trim()
+        ? item.preferredMethodId.trim()
+        : null,
+      sourceReferences,
     });
   }
 
   return successResponse(normalized);
+}
+
+function normalizeApprovedChecklistSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+    return bookingAdminValidationError('Approved booking checklist snapshot must be an object.');
+  }
+  if (snapshot.ownerApproved !== true || typeof snapshot.reviewedBy !== 'string' || !snapshot.reviewedBy.trim()) {
+    return bookingAdminValidationError('Approved booking checklist snapshot requires owner review metadata.');
+  }
+  if (!snapshot.provenance || snapshot.provenance.ownerApproved !== true) {
+    return bookingAdminValidationError('Approved booking checklist snapshot requires provenance.');
+  }
+  const items = normalizeFieldChecklist(snapshot.items);
+  if (!items.success) return items;
+  if (!items.data.some(item => item.required)) {
+    return bookingAdminValidationError('Approved booking checklist must include at least one required task.');
+  }
+  const provenance = snapshot.provenance;
+  const sourceScope = provenance.sourceScopeSnapshot && typeof provenance.sourceScopeSnapshot === 'object'
+    ? provenance.sourceScopeSnapshot
+    : {};
+  const roomCounts = sourceScope.roomCounts && typeof sourceScope.roomCounts === 'object'
+    ? Object.fromEntries(Object.entries(sourceScope.roomCounts)
+      .filter(([key, value]) => BOOKING_CHECKLIST_SCOPE_ROOM_KEYS.has(key) && (value === null || Number.isFinite(Number(value))))
+      .map(([key, value]) => [key, value === null ? null : Number(value)]))
+    : {};
+  const serviceScope = sourceScope.serviceScope && typeof sourceScope.serviceScope === 'object'
+    ? Object.fromEntries(Object.entries(sourceScope.serviceScope)
+      .filter(([key, value]) => BOOKING_CHECKLIST_SCOPE_SERVICE_KEYS.has(key) && typeof value === 'boolean'))
+    : {};
+  return successResponse({
+    snapshotVersion: Number(snapshot.snapshotVersion) || 1,
+    label: typeof snapshot.label === 'string' ? snapshot.label.trim() : '',
+    notes: typeof snapshot.notes === 'string' ? snapshot.notes.trim().slice(0, BOOKING_ADMIN_NOTES_MAX_LENGTH) : '',
+    warnings: Array.isArray(snapshot.warnings)
+      ? snapshot.warnings.filter(value => typeof value === 'string').map(value => value.trim()).filter(Boolean).slice(0, 50)
+      : [],
+    items: items.data.map(item => ({ ...item, completed: false })),
+    ownerApproved: true,
+    reviewedAt: typeof snapshot.reviewedAt === 'string' ? snapshot.reviewedAt : '',
+    reviewedBy: snapshot.reviewedBy.trim(),
+    sourceRepository: typeof snapshot.sourceRepository === 'string' ? snapshot.sourceRepository : '',
+    sourceFiles: Array.isArray(snapshot.sourceFiles)
+      ? snapshot.sourceFiles.filter(value => typeof value === 'string').slice(0, 30)
+      : [],
+    sourceVersionOrDate: typeof snapshot.sourceVersionOrDate === 'string' ? snapshot.sourceVersionOrDate : '',
+    importedAt: typeof snapshot.importedAt === 'string' ? snapshot.importedAt : '',
+    templateId: typeof snapshot.templateId === 'string' ? snapshot.templateId : '',
+    templateName: typeof snapshot.templateName === 'string' ? snapshot.templateName : '',
+    templateVersion: typeof snapshot.templateVersion === 'string' ? snapshot.templateVersion : '',
+    provenance: {
+      assemblyMethod: provenance.assemblyMethod === 'recurring_reuse' ? 'recurring_reuse' : 'booking_scope',
+      sourceBookingId: typeof provenance.sourceBookingId === 'string' ? provenance.sourceBookingId : '',
+      sourceEstimateId: typeof provenance.sourceEstimateId === 'string' ? provenance.sourceEstimateId : null,
+      sourceServiceType: typeof provenance.sourceServiceType === 'string' ? provenance.sourceServiceType : null,
+      sourceScopeSnapshot: {
+        serviceType: typeof sourceScope.serviceType === 'string' ? sourceScope.serviceType : null,
+        frequency: typeof sourceScope.frequency === 'string' ? sourceScope.frequency : null,
+        roomCounts,
+        serviceScope,
+        propertyType: typeof sourceScope.propertyType === 'string' ? sourceScope.propertyType : null,
+        surfaceNotes: typeof sourceScope.surfaceNotes === 'string' ? sourceScope.surfaceNotes : null,
+        hazards: Array.isArray(sourceScope.hazards) ? sourceScope.hazards.filter(value => typeof value === 'string').slice(0, 30) : [],
+        accessInstructions: typeof sourceScope.accessInstructions === 'string' ? sourceScope.accessInstructions : null,
+        customerInstructions: typeof sourceScope.customerInstructions === 'string' ? sourceScope.customerInstructions : null,
+        petCount: Number.isFinite(Number(sourceScope.petCount)) ? Number(sourceScope.petCount) : 0,
+        petHairLevel: typeof sourceScope.petHairLevel === 'string' ? sourceScope.petHairLevel : null,
+        serviceAddressPresent: sourceScope.serviceAddressPresent === true,
+        sourceEstimateId: typeof sourceScope.sourceEstimateId === 'string' ? sourceScope.sourceEstimateId : null,
+      },
+      sourceScopeSignature: typeof provenance.sourceScopeSignature === 'string' ? provenance.sourceScopeSignature : '',
+      templateIds: Array.isArray(provenance.templateIds) ? provenance.templateIds.filter(value => typeof value === 'string').slice(0, 50) : [],
+      templateVersions: Array.isArray(provenance.templateVersions) ? provenance.templateVersions.filter(value => typeof value === 'string').slice(0, 50) : [],
+      assembledAt: typeof provenance.assembledAt === 'string' ? provenance.assembledAt : '',
+      assembledBy: typeof provenance.assembledBy === 'string' ? provenance.assembledBy : '',
+      reviewedAt: typeof provenance.reviewedAt === 'string' ? provenance.reviewedAt : '',
+      reviewedBy: typeof provenance.reviewedBy === 'string' ? provenance.reviewedBy : '',
+      ownerApproved: true,
+      ...(typeof provenance.reusedFromBookingId === 'string' ? { reusedFromBookingId: provenance.reusedFromBookingId } : {}),
+      ...(typeof provenance.reusedFromReviewedAt === 'string' ? { reusedFromReviewedAt: provenance.reusedFromReviewedAt } : {}),
+    },
+  });
 }
 
 export function buildBookingFieldExecutionPatch(proposedPatch, { now = new Date().toISOString(), updatedBy } = {}) {

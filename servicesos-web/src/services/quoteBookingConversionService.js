@@ -1,6 +1,10 @@
 import { collection, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { addSchemaVersion } from '../shared/schemas/schemaVersioning';
+import {
+  buildQuoteRequestSnapshot,
+  normalizeQuoteIntakeData,
+} from './customerPortalQuoteRequestMapper';
 
 function localDateParts(date) {
   const pad = value => String(value).padStart(2, '0');
@@ -79,6 +83,12 @@ export function buildQuoteBookingConversion({
   const end = localDateParts(endDate);
   const notes = String(bookingData?.notes || '').trim();
   const customerDisplay = buildCustomerDisplaySnapshot(lead);
+  const legacySnapshots = lead.formData && (!lead.propertySnapshot || !lead.requestSnapshot)
+    ? buildQuoteRequestSnapshot({
+        normalizedData: normalizeQuoteIntakeData(lead.formData),
+        submittedAt: lead.createdAt || now,
+      })
+    : null;
 
   const booking = addSchemaVersion({
     tenantId: lead.tenantId || null,
@@ -89,8 +99,8 @@ export function buildQuoteBookingConversion({
     propertyId: lead.propertyId || null,
     ...(customerDisplay.customerName ? { customerName: customerDisplay.customerName } : {}),
     customerSnapshot: customerDisplay.customerSnapshot,
-    propertySnapshot: lead.propertySnapshot || null,
-    requestSnapshot: lead.requestSnapshot || null,
+    propertySnapshot: lead.propertySnapshot || legacySnapshots?.propertySnapshot || null,
+    requestSnapshot: lead.requestSnapshot || legacySnapshots?.requestSnapshot || null,
     appointmentRequest: lead.appointmentRequest || null,
     date: start.date,
     startTime: start.time,

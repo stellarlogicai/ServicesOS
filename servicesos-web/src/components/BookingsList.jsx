@@ -32,6 +32,7 @@ import {
   getActiveTenantEmployeeProfiles,
 } from '../services/employeeProfileService';
 import { BookingFieldPhotoReview } from './FieldPhotoEvidence';
+import { BookingChecklistPrep, OwnerTodayJobPrep } from './BookingChecklistPrep';
 
 const customerMessageButtonStyle = {
   border: '1px solid #cbd5e1',
@@ -44,7 +45,7 @@ const customerMessageButtonStyle = {
 };
 
 export default function BookingsList() {
-  const { tenantId, isAdmin } = useAuth();
+  const { tenantId, isAdmin, user } = useAuth();
   const loadRequestRef = useRef(0);
   const employeeLoadRequestRef = useRef(0);
   const canManageAssignment = isAdmin?.() === true;
@@ -449,6 +450,20 @@ export default function BookingsList() {
     setAssignmentStatus(assignmentValue ? 'Employee assignment saved.' : 'Booking is now unassigned.');
   };
 
+  const applyChecklistPatch = patch => {
+    setSelectedBooking(current => current ? { ...current, ...patch } : current);
+    setBookings(current => current.map(booking => booking.id === selectedBooking?.id
+      ? { ...booking, ...patch }
+      : booking));
+  };
+
+  const applyTodayChecklistPatch = (bookingId, patch) => {
+    setBookings(current => current.map(booking => booking.id === bookingId
+      ? { ...booking, ...patch }
+      : booking));
+    setSelectedBooking(current => current?.id === bookingId ? { ...current, ...patch } : current);
+  };
+
   const saveBookingEdit = async (event) => {
     event.preventDefault();
     if (!selectedBooking?.id) {
@@ -507,6 +522,17 @@ export default function BookingsList() {
           <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No bookings yet</div>
           <div style={{ fontSize: 14 }}>Approve a quote request or create a booking from an estimate to schedule the first job.</div>
         </div>
+      )}
+
+      {canManageAssignment && !loading && !error && visibleBookings.length > 0 && (
+        <OwnerTodayJobPrep
+          bookings={visibleBookings}
+          employeeProfiles={employeesTenantId === tenantId ? employeeProfiles : []}
+          tenantId={tenantId}
+          reviewedBy={user?.uid}
+          onOpenBooking={openBookingDetails}
+          onChecklistSaved={applyTodayChecklistPatch}
+        />
       )}
 
       {!loading && !error && visibleBookings.length > 0 && (
@@ -643,6 +669,17 @@ export default function BookingsList() {
               </section>
             )}
 
+            {canManageAssignment && (
+              <BookingChecklistPrep
+                key={selectedBooking.id}
+                booking={selectedBooking}
+                allBookings={visibleBookings}
+                tenantId={tenantId}
+                reviewedBy={user?.uid}
+                onSaved={applyChecklistPatch}
+              />
+            )}
+
             <section style={{ marginTop: 24, padding: 20, border: '1px solid #dbeafe', background: '#eff6ff', borderRadius: 12 }}>
               <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18, fontWeight: 600 }}>Field completion</h3>
               <p style={{ margin: '0 0 16px', color: '#1d4ed8', fontSize: 14, lineHeight: 1.5 }}>
@@ -668,6 +705,48 @@ export default function BookingsList() {
                     <DetailItem label="Employee notes" value={bookingFieldNotes(selectedBooking)} />
                     <DetailItem label="Issue/problem" value={bookingFieldIssue(selectedBooking)} />
                   </dl>
+                  {bookingFieldChecklistItems(selectedBooking).length > 0 && (
+                    <div aria-label="Field checklist review" style={{ marginTop: 18, display: 'grid', gap: 8 }}>
+                      <h4 style={{ margin: 0, color: '#0f172a', fontSize: 15 }}>Checklist items</h4>
+                      {bookingFieldChecklistItems(selectedBooking).map(item => (
+                        <div key={item.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 12, padding: '10px 12px', border: '1px solid #bfdbfe', borderRadius: 8, background: '#fff' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <strong style={{ display: 'block', color: '#475569', fontSize: 12 }}>{item.fixtureOrSurface || item.area}</strong>
+                            <span style={{ color: '#0f172a', fontSize: 14 }}>{item.label}</span>
+                            {(item.completionCriteria || item.jobAidSteps.length > 0 || item.warnings.length > 0) && (
+                              <details style={{ marginTop: 6, color: '#334155', fontSize: 13 }}>
+                                <summary style={{ width: 'fit-content', cursor: 'pointer', color: '#1d4ed8', fontWeight: 700 }}>View job aid</summary>
+                                {item.completionCriteria && <p style={{ margin: '8px 0 0' }}><strong>Completion criteria:</strong> {item.completionCriteria}</p>}
+                                {item.jobAidSteps.length > 0 && (
+                                  <ol style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+                                    {item.jobAidSteps.map((step, index) => (
+                                      <li key={`${item.id}-step-${index + 1}`}>
+                                        {step.label}
+                                        {step.condition && <small style={{ display: 'block', color: '#64748b' }}>Condition: {step.condition}</small>}
+                                        {step.note && <small style={{ display: 'block', color: '#64748b' }}>{step.note}</small>}
+                                      </li>
+                                    ))}
+                                  </ol>
+                                )}
+                                {item.warnings.length > 0 && (
+                                  <div style={{ marginTop: 8, padding: 8, border: '1px solid #fbbf24', background: '#fffbeb', color: '#92400e', borderRadius: 6 }}>
+                                    <strong>Warnings</strong>
+                                    <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+                                      {item.warnings.map(warning => <li key={warning}>{warning}</li>)}
+                                    </ul>
+                                  </div>
+                                )}
+                              </details>
+                            )}
+                          </div>
+                          <div style={{ display: 'grid', justifyItems: 'end', alignContent: 'start', gap: 2, color: '#475569', fontSize: 12, fontWeight: 700 }}>
+                            <span>{item.completed ? 'Completed' : 'Incomplete'}</span>
+                            <span>{item.required ? 'Required' : 'Optional'}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </section>
@@ -1312,15 +1391,57 @@ function bookingFieldUpdatedAt(booking = {}) {
 }
 
 function bookingChecklistSummary(booking = {}) {
+  if (Array.isArray(booking.fieldChecklist) && booking.fieldChecklist.length > 0) {
+    const checklist = bookingFieldChecklistItems(booking);
+    const completed = checklist.filter(item => item.completed).length;
+    return `${completed} of ${checklist.length} complete`;
+  }
   const summary = booking.fieldChecklistSummary;
   if (summary && Number.isFinite(Number(summary.completed)) && Number.isFinite(Number(summary.total))) {
-    return `${Number(summary.completed)} of ${Number(summary.total)} complete`;
-  }
-  if (Array.isArray(booking.fieldChecklist) && booking.fieldChecklist.length > 0) {
-    const completed = booking.fieldChecklist.filter(item => item?.completed === true).length;
-    return `${completed} of ${booking.fieldChecklist.length} complete`;
+    const total = Math.max(0, Number(summary.total));
+    const completed = Math.min(total, Math.max(0, Number(summary.completed)));
+    return `${completed} of ${total} complete`;
   }
   return 'No checklist saved';
+}
+
+function bookingFieldChecklistItems(booking = {}) {
+  if (!Array.isArray(booking.fieldChecklist)) return [];
+  const seenIds = new Set();
+  return booking.fieldChecklist.reduce((items, item, index) => {
+    if (!item || typeof item !== 'object') return items;
+    const id = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `field-item-${index + 1}`;
+    const label = typeof item.label === 'string' ? item.label.trim() : '';
+    if (!label || seenIds.has(id)) return items;
+    seenIds.add(id);
+    items.push({
+      id,
+      area: typeof item.area === 'string' && item.area.trim() ? item.area.trim() : 'General',
+      fixtureOrSurface: typeof item.fixtureOrSurface === 'string' ? item.fixtureOrSurface.trim() : '',
+      label,
+      completionCriteria: typeof item.completionCriteria === 'string' ? item.completionCriteria.trim() : '',
+      jobAidSteps: normalizeBookingJobAidSteps(item.jobAidSteps),
+      warnings: Array.isArray(item.warnings)
+        ? item.warnings.filter(warning => typeof warning === 'string' && warning.trim()).map(warning => warning.trim())
+        : [],
+      required: item.required === true,
+      completed: item.completed === true,
+    });
+    return items;
+  }, []);
+}
+
+function normalizeBookingJobAidSteps(steps) {
+  if (!Array.isArray(steps)) return [];
+  return steps.map(step => {
+    if (typeof step === 'string') return { label: step.trim(), note: '', condition: '' };
+    if (!step || typeof step !== 'object') return null;
+    return {
+      label: typeof step.label === 'string' ? step.label.trim() : '',
+      note: typeof step.note === 'string' ? step.note.trim() : '',
+      condition: typeof step.condition === 'string' ? step.condition.trim() : '',
+    };
+  }).filter(step => step?.label);
 }
 
 function bookingFieldNotes(booking = {}) {

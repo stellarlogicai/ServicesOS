@@ -234,6 +234,74 @@ describe('booking admin update whitelist helper', () => {
     });
   });
 
+  it('allows only a validated owner-approved checklist snapshot and derived execution copy', () => {
+    const item = {
+      id: 'kitchen-countertops',
+      area: 'Kitchen / Countertops',
+      fixtureOrSurface: 'Countertops',
+      label: 'Clean countertops, edges, and corners',
+      completionCriteria: 'Countertops and corners are free of visible debris and removable residue.',
+      jobAidSteps: [
+        { label: 'Clean countertops', note: '', condition: '' },
+        { label: 'Clean corners', note: '', condition: '' },
+      ],
+      warnings: ['Use only an approved surface-compatible method.'],
+      note: '',
+      condition: '',
+      required: true,
+      completed: false,
+      approvedMethodIds: [],
+      preferredMethodId: null,
+      sourceReferences: ['01_ServicesOS/Service Checklist/Kitchen Checklist.md'],
+    };
+    const result = buildBookingAdminUpdatePatch({
+      jobChecklistSnapshot: {
+        snapshotVersion: 1,
+        templateId: 'standard-one-time',
+        ownerApproved: true,
+        reviewedAt: now,
+        reviewedBy: 'owner-a',
+        provenance: { ownerApproved: true },
+        items: [item],
+      },
+      fieldChecklist: [item],
+    }, { now });
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        jobChecklistSnapshot: { ownerApproved: true, reviewedBy: 'owner-a' },
+        fieldChecklist: [item],
+        fieldChecklistSummary: { completed: 0, total: 1 },
+        updatedAt: now,
+      },
+    });
+    expect(result.data).not.toHaveProperty('paymentStatus');
+    expect(result.data.jobChecklistSnapshot.items[0]).toMatchObject({
+      fixtureOrSurface: 'Countertops',
+      completionCriteria: 'Countertops and corners are free of visible debris and removable residue.',
+      jobAidSteps: [
+        { label: 'Clean countertops', note: '', condition: '' },
+        { label: 'Clean corners', note: '', condition: '' },
+      ],
+      warnings: ['Use only an approved surface-compatible method.'],
+      sourceReferences: ['01_ServicesOS/Service Checklist/Kitchen Checklist.md'],
+    });
+    expect(result.data.fieldChecklist[0].jobAidSteps).toHaveLength(2);
+  });
+
+  it('rejects unapproved checklist snapshots and independently supplied summaries', () => {
+    expect(buildBookingAdminUpdatePatch({
+      jobChecklistSnapshot: { ownerApproved: false, items: [] },
+    }, { now }).success).toBe(false);
+    expect(buildBookingAdminUpdatePatch({
+      fieldChecklistSummary: { completed: 1, total: 1 },
+    }, { now })).toMatchObject({
+      success: false,
+      message: 'Booking checklist summary is derived from fieldChecklist.',
+    });
+  });
+
   it('requires at least one supported field', () => {
     expect(buildBookingAdminUpdatePatch({}, { now })).toMatchObject({
       success: false,
@@ -476,6 +544,12 @@ describe('booking field execution whitelist helper', () => {
     expect(buildBookingFieldExecutionPatch({ fieldChecklist: [{ id: '', label: 'Missing id' }] }, { now })).toMatchObject({
       success: false,
       message: 'Booking field checklist items require id and label.',
+    });
+    expect(buildBookingFieldExecutionPatch({
+      fieldChecklist: [{ id: 'countertops', label: 'Clean countertops', jobAidSteps: 'not-an-array' }],
+    }, { now })).toMatchObject({
+      success: false,
+      message: 'Booking field checklist job-aid steps must be an array.',
     });
   });
 });

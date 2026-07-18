@@ -260,7 +260,7 @@ describe('read-only Bookings admin list', () => {
 
     await user.click(screen.getByRole('button', { name: 'Close booking details' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
+  }, 10_000);
 
   it('shows safe fallbacks in the read-only detail view for incomplete bookings', async () => {
     const user = userEvent.setup();
@@ -416,6 +416,15 @@ describe('read-only Bookings admin list', () => {
         fieldStatusUpdatedAt: '2026-07-02T16:30:00.000Z',
         completedAt: '2026-07-02T16:30:00.000Z',
         fieldChecklistSummary: { completed: 2, total: 3 },
+        fieldChecklist: [
+          {
+            id: 'kitchen', area: 'Kitchen / Countertops', fixtureOrSurface: 'Countertops',
+            label: 'Clean countertops, edges, and corners', completionCriteria: 'Countertops are visibly clean.',
+            jobAidSteps: [{ label: 'Remove visible residue', condition: '', note: '' }],
+            required: true, completed: true,
+          },
+          { id: 'bathroom', area: 'Bathroom', label: 'Polish mirror', required: false, completed: false },
+        ],
         fieldNotes: 'Finished upstairs first.',
         fieldIssue: 'Back door lock sticks.',
         paymentStatus: 'not_paid',
@@ -432,7 +441,15 @@ describe('read-only Bookings admin list', () => {
     expect(dialog).toHaveTextContent('Completed');
     expect(dialog).toHaveTextContent('Started');
     expect(dialog).toHaveTextContent('Last field update');
-    expect(dialog).toHaveTextContent('2 of 3 complete');
+    expect(dialog).toHaveTextContent('1 of 2 complete');
+    expect(dialog).toHaveTextContent('Clean countertops, edges, and corners');
+    expect(dialog).toHaveTextContent('Countertops are visibly clean.');
+    expect(dialog).toHaveTextContent('Remove visible residue');
+    expect(dialog).toHaveTextContent('View job aid');
+    expect(dialog).toHaveTextContent('Polish mirror');
+    expect(dialog).toHaveTextContent('Required');
+    expect(dialog).toHaveTextContent('Optional');
+    expect(dialog).toHaveTextContent('Incomplete');
     expect(dialog).toHaveTextContent('Finished upstairs first.');
     expect(dialog).toHaveTextContent('Issue flagged by field worker');
     expect(dialog).toHaveTextContent('Back door lock sticks.');

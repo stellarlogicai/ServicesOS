@@ -156,7 +156,13 @@ describe('quote booking conversion', () => {
         email: 'display-smoke@example.com',
         phone: '555-0630',
         address: '630 Display Lane',
-        cleaningType: 'standard'
+        cleaningType: 'standard',
+        frequency: 'one-time',
+        bedroomCount: 2,
+        bathroomCount: 1,
+        kitchenCount: 1,
+        extras: { oven: true, fridge: false },
+        specialRequests: 'Protect the wood table.'
       },
       estimate: {
         priceLow: 190,
@@ -188,6 +194,15 @@ describe('quote booking conversion', () => {
       },
       address: '630 Display Lane',
       serviceType: 'standard',
+      propertySnapshot: {
+        roomCounts: expect.objectContaining({ bedrooms: 2, bathrooms: 1, kitchens: 1 })
+      },
+      requestSnapshot: {
+        cleaningType: 'standard',
+        frequency: 'one-time',
+        serviceScope: expect.objectContaining({ oven: true, fridge: false }),
+        specialRequests: 'Protect the wood table.'
+      },
       agreedPrice: 205,
       status: 'scheduled'
     });
