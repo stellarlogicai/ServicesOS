@@ -32,11 +32,18 @@ Codex-instruction setup branch:
 
 This setup branch was created from the known clean V1 checkpoint above and adds only Codex instruction/current-state files.
 
-Active local feature branch:
+Active local remediation branch:
 
-`feature/v1-daily-prep-summary`
+`fix/v1-manual-payment-authorization`
 
-This branch starts from the completed Phase 2 checklist-method mapping checkpoint `4d7c912`. Its uncommitted Phase 3 working tree derives one owner-only Daily Prep summary from today's ordered, approved checklist snapshots and their saved tenant method IDs.
+This branch starts from the completed V1 release-candidate audit base `52e2195`.
+The confirmed manual-payment authorization blocker is fixed locally by propagating
+the authenticated admin UID through the existing service option, rejecting missing
+or caller-forged actor identity before a write, and preserving the existing Firestore
+rule that requires `paymentStatusUpdatedBy == request.auth.uid`.
+
+The next controlled release-blocker slice after review is required-checklist
+completion enforcement.
 
 ## Completed production gates
 
@@ -125,15 +132,17 @@ Unless Jamie explicitly changes scope, keep these parked:
 
 ## Established local validation baselines
 
-Latest known green baselines for the active Phase 3 working tree:
+Latest known green baselines for the manual-payment authorization remediation:
 
-- focused Daily Prep and Today’s Jobs web: 10 tests
-- full web: 454 tests
+- focused booking payment component/service: 95 tests
+- full web: 456 tests
 - Cloud Functions: 39 tests
 - Firestore rules: 42 tests
 - Storage rules: 20 tests
 - lint: passed
 - build: passed
-- Firestore and Storage rules were unchanged by Phase 3; their existing green baselines remain the current rule evidence.
+- Firestore and Storage rules were unchanged by this remediation; the local
+  authenticated emulator smoke confirmed own-tenant admin success, persisted actor
+  identity, and unauthorized-role/cross-tenant denial.
 
 Treat these as checkpoint evidence, not permanent expected totals. Report current totals honestly after future changes.

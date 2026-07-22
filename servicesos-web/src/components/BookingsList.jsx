@@ -296,6 +296,11 @@ export default function BookingsList() {
       setPaymentStatusError('Booking payment details could not be updated. Please close and try again.');
       return;
     }
+    const authenticatedActorUid = typeof user?.uid === 'string' ? user.uid.trim() : '';
+    if (!authenticatedActorUid) {
+      setPaymentStatusError('Booking payment details could not be updated because your signed-in account could not be verified. Please sign in again.');
+      return;
+    }
 
     setSavingPaymentStatus(true);
     setPaymentStatusError('');
@@ -311,7 +316,8 @@ export default function BookingsList() {
     const result = await updateBookingManualPaymentStatus(
       tenantId,
       selectedBooking.id,
-      patch.data
+      patch.data,
+      { updatedBy: authenticatedActorUid }
     );
     if (!result.success) {
       setSavingPaymentStatus(false);

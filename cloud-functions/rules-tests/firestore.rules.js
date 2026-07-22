@@ -1121,16 +1121,46 @@ describe('tenant-scoped customer intake Firestore rules', () => {
   test('manual booking payment updates require the acting admin and cannot fabricate Stripe confirmation', async () => {
     const database = authenticatedDatabase('admin-a');
     const booking = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking');
+    const updatedAt = '2026-07-22T14:00:00.000Z';
 
     await assertSucceeds(updateDoc(booking, {
       paymentStatus: 'paid_cash',
-      paymentStatusUpdatedAt: '2026-07-13T14:00:00.000Z',
+      paymentStatusUpdatedAt: updatedAt,
       paymentMethod: 'cash',
-      amountReceived: 190,
-      receivedAt: '2026-07-13T14:00:00.000Z',
+      amountReceived: 185,
+      receivedAt: '2026-07-22',
       paymentNote: 'Paid at the job.',
       paymentStatusUpdatedBy: 'admin-a',
-      updatedAt: '2026-07-13T14:00:00.000Z'
+      updatedAt
+    }));
+
+    const persistedBooking = (await assertSucceeds(getDoc(booking))).data();
+    assert.equal(persistedBooking.paymentStatus, 'paid_cash');
+    assert.equal(persistedBooking.paymentMethod, 'cash');
+    assert.equal(persistedBooking.amountReceived, 185);
+    assert.equal(persistedBooking.receivedAt, '2026-07-22');
+    assert.equal(persistedBooking.paymentStatusUpdatedAt, updatedAt);
+    assert.equal(persistedBooking.paymentStatusUpdatedBy, 'admin-a');
+
+    await assertFails(updateDoc(
+      doc(authenticatedDatabase('admin-b'), 'tenants', TENANT_A, 'bookings', 'field-booking'),
+      { paymentStatus: 'paid_cash', paymentStatusUpdatedBy: 'admin-b' }
+    ));
+    await assertFails(updateDoc(
+      doc(authenticatedDatabase('employee-a'), 'tenants', TENANT_A, 'bookings', 'field-booking'),
+      { paymentStatus: 'paid_cash', paymentStatusUpdatedBy: 'employee-a' }
+    ));
+    await assertFails(updateDoc(
+      doc(authenticatedDatabase('customer-a-auth'), 'tenants', TENANT_A, 'bookings', 'field-booking'),
+      { paymentStatus: 'paid_cash', paymentStatusUpdatedBy: 'customer-a-auth' }
+    ));
+    await assertFails(updateDoc(
+      doc(testEnvironment.unauthenticatedContext().firestore(), 'tenants', TENANT_A, 'bookings', 'field-booking'),
+      { paymentStatus: 'paid_cash', paymentStatusUpdatedBy: 'anonymous' }
+    ));
+    await assertFails(updateDoc(booking, {
+      paymentStatus: 'paid_cash',
+      paymentStatusUpdatedBy: 'admin-b'
     }));
 
     await assertFails(updateDoc(booking, {

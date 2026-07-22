@@ -13,10 +13,15 @@ const mocks = vi.hoisted(() => ({
   getActiveTenantEmployeeProfiles: vi.fn(),
   tenantId: 'tenant-a',
   adminAccess: true,
+  userUid: 'admin-a',
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
-  useAuth: () => ({ tenantId: mocks.tenantId, isAdmin: () => mocks.adminAccess }),
+  useAuth: () => ({
+    tenantId: mocks.tenantId,
+    isAdmin: () => mocks.adminAccess,
+    user: mocks.userUid ? { uid: mocks.userUid } : null,
+  }),
 }));
 
 vi.mock('../core/scheduling/schedulingService', () => ({
@@ -77,6 +82,7 @@ describe('read-only Bookings admin list', () => {
   beforeEach(() => {
     mocks.tenantId = 'tenant-a';
     mocks.adminAccess = true;
+    mocks.userUid = 'admin-a';
     mocks.getJobs.mockReset();
     mocks.createBookingCheckoutSession.mockReset();
     mocks.updateBookingAdminFields.mockReset();
@@ -930,7 +936,8 @@ describe('read-only Bookings admin list', () => {
           amountReceived: 200,
           receivedAt: '2026-07-07',
           paymentNote: 'Paid at walkthrough',
-        }
+        },
+        { updatedBy: 'admin-a' }
       );
     });
     expect(JSON.stringify(mocks.updateBookingManualPaymentStatus.mock.calls[0][2])).not.toMatch(/deposit|balance|tip|fee|stripe|refund|paymentLink|invoice|lead|customer/i);
@@ -987,9 +994,38 @@ describe('read-only Bookings admin list', () => {
           amountReceived: '',
           receivedAt: '',
           paymentNote: '',
-        }
+        },
+        { updatedBy: 'admin-a' }
       );
     });
+  });
+
+  it('fails safely before writing when the authenticated actor UID is unavailable', async () => {
+    const user = userEvent.setup();
+    mocks.userUid = '';
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-payment-no-actor',
+        customerName: 'Payment Actor Customer',
+        paymentStatus: 'not_paid',
+        agreedPrice: 185,
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Payment Actor Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Edit Payment Details' }));
+    await user.selectOptions(screen.getByLabelText('Payment status'), 'paid_cash');
+    await user.click(screen.getByRole('button', { name: 'Save payment details' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Booking payment details could not be updated because your signed-in account could not be verified. Please sign in again.'
+    );
+    expect(mocks.updateBookingManualPaymentStatus).not.toHaveBeenCalled();
+    expect(screen.getByRole('form', { name: 'Edit booking payment details' })).toBeInTheDocument();
   });
 
   it('shows amount received and owed as unavailable when job price is missing', async () => {

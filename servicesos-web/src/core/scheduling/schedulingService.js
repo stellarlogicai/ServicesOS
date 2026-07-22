@@ -724,8 +724,31 @@ export async function updateBookingManualPaymentStatus(tenantId, bookingId, prop
     if (!bookingId) {
       return errorResponse('Booking ID is required', 'VALIDATION_ERROR');
     }
+    const authenticatedUpdatedBy = typeof options?.updatedBy === 'string'
+      ? options.updatedBy.trim()
+      : '';
+    if (!authenticatedUpdatedBy) {
+      return errorResponse(
+        'Authenticated user ID is required to update booking manual payment status.',
+        'VALIDATION_ERROR'
+      );
+    }
+    if (
+      proposedPatch &&
+      typeof proposedPatch === 'object' &&
+      !Array.isArray(proposedPatch) &&
+      Object.hasOwn(proposedPatch, 'paymentStatusUpdatedBy')
+    ) {
+      return errorResponse(
+        'Booking manual payment status actor is managed by the authenticated session.',
+        'VALIDATION_ERROR'
+      );
+    }
 
-    const builtPatch = buildBookingManualPaymentStatusPatch(proposedPatch, options);
+    const builtPatch = buildBookingManualPaymentStatusPatch(proposedPatch, {
+      ...options,
+      updatedBy: authenticatedUpdatedBy,
+    });
     if (!builtPatch.success) {
       return builtPatch;
     }
