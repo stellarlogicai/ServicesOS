@@ -2,9 +2,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BookingChecklistPrep, OwnerTodayJobPrep } from '../components/BookingChecklistPrep';
 import { assembleBookingChecklist, buildApprovedChecklistSnapshot } from '../core/checklists/bookingChecklistAssembly';
+import { buildSystemDefaultAdoption } from '../modules/cleaning/products/cleaningProductModel';
+import { getStarterCleaningMethods } from '../modules/cleaning/products/starterCleaningMethods';
 
 const mocks = vi.hoisted(() => ({
   updateBookingAdminFields: vi.fn(),
+  listTenantCleaningRecords: vi.fn(),
 }));
 
 vi.mock('../core/scheduling/schedulingService', () => ({
@@ -13,6 +16,10 @@ vi.mock('../core/scheduling/schedulingService', () => ({
     not_paid: 'Not paid',
   },
   BOOKING_PAYMENT_METHOD_LABELS: {},
+}));
+
+vi.mock('../modules/cleaning/products/cleaningProductService', () => ({
+  listTenantCleaningRecords: mocks.listTenantCleaningRecords,
 }));
 
 const pad = value => String(value).padStart(2, '0');
@@ -47,13 +54,29 @@ const booking = (overrides = {}) => ({
   ...overrides,
 });
 
+function approvedTenantMethod(sourceId) {
+  const source = getStarterCleaningMethods().find(record => record.id === sourceId);
+  return {
+    ...buildSystemDefaultAdoption(source, {
+      id: `adopted-${sourceId}`,
+      tenantId: 'tenant-a',
+      actorUid: 'owner-a',
+    }),
+    status: 'approved',
+    employeeVisible: true,
+    ownerReviewNotes: 'Approved for tenant use.',
+  };
+}
+
 describe('BookingChecklistPrep', () => {
   beforeEach(() => {
     mocks.updateBookingAdminFields.mockReset();
     mocks.updateBookingAdminFields.mockResolvedValue({ success: true, data: { id: 'booking-a' } });
+    mocks.listTenantCleaningRecords.mockReset();
+    mocks.listTenantCleaningRecords.mockResolvedValue([]);
   });
 
-  it('automatically suggests a booking-scoped checklist and requires owner review', () => {
+  it('automatically suggests a booking-scoped checklist and requires owner review', async () => {
     render(<BookingChecklistPrep booking={booking()} tenantId="tenant-a" reviewedBy="owner-a" />);
     expect(screen.getByText('Suggested from booking details — owner review required.')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Standard One-Time Clean')).toBeInTheDocument();
@@ -62,12 +85,13 @@ describe('BookingChecklistPrep', () => {
     expect(screen.queryByText(/Complete .* outcome/i)).not.toBeInTheDocument();
     expect(screen.getAllByText('View job aid').length).toBeGreaterThan(0);
     expect(screen.getByText('Review service request')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve checklist for Field Mode' })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Approve checklist for Field Mode' })).toBeEnabled());
   });
 
   it('approves an immutable snapshot and execution copy without payment fields', async () => {
     const onSaved = vi.fn();
     render(<BookingChecklistPrep booking={booking()} tenantId="tenant-a" reviewedBy="owner-a" onSaved={onSaved} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Approve checklist for Field Mode' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Approve checklist for Field Mode' }));
 
     await waitFor(() => expect(mocks.updateBookingAdminFields).toHaveBeenCalledTimes(1));
@@ -80,6 +104,30 @@ describe('BookingChecklistPrep', () => {
     expect(patch.fieldChecklist).toHaveLength(patch.jobChecklistSnapshot.items.length);
     expect(JSON.stringify(patch)).not.toMatch(/paymentStatus|amountReceived|agreedPrice|stripe/i);
     expect(await screen.findByText('Job checklist approved and assigned to Field Mode.')).toBeInTheDocument();
+  });
+
+  it('shows approved method guidance and saves stable method IDs without adding outcomes', async () => {
+    const showerMethod = approvedTenantMethod('ab-dawn-vinegar-shower-cleaner');
+    mocks.listTenantCleaningRecords.mockResolvedValue([showerMethod]);
+    render(<BookingChecklistPrep booking={booking()} tenantId="tenant-a" reviewedBy="owner-a" />);
+
+    expect((await screen.findAllByText('Preferred: Dawn and Vinegar Shower Cleaner')).length).toBeGreaterThan(0);
+    const beforeCount = screen.getAllByRole('button', { name: 'Remove' }).length;
+    const approveButton = screen.getByRole('button', { name: 'Approve checklist for Field Mode' });
+    await waitFor(() => expect(approveButton).toBeEnabled());
+    fireEvent.click(approveButton);
+
+    await waitFor(() => expect(mocks.updateBookingAdminFields).toHaveBeenCalledTimes(1));
+    const patch = mocks.updateBookingAdminFields.mock.calls[0][2];
+    expect(patch.jobChecklistSnapshot.items).toHaveLength(beforeCount);
+    expect(patch.jobChecklistSnapshot.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'standard-one-time-bathroom-shower-or-tub-required-1',
+        approvedMethodIds: [showerMethod.id],
+        preferredMethodId: showerMethod.id,
+      }),
+    ]));
+    expect(JSON.stringify(patch)).not.toMatch(/paymentStatus|amountReceived|agreedPrice|stripe/i);
   });
 
   it('requires explicit confirmation before removing a required task', () => {

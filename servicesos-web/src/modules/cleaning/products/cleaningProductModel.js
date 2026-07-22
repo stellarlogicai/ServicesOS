@@ -73,6 +73,11 @@ export function normalizeCleaningRecord(record = {}) {
     updatedBy: text(record.updatedBy),
     reviewedAt: record.reviewedAt ?? null,
     reviewedBy: text(record.reviewedBy),
+    sourceDefaultId: text(record.sourceDefaultId),
+    sourceDefaultName: text(record.sourceDefaultName),
+    sourceDefaultVersion: text(record.sourceDefaultVersion),
+    adoptedAt: record.adoptedAt ?? null,
+    adoptedBy: text(record.adoptedBy),
   };
 
   if (recordType === 'company_mix') {
@@ -164,6 +169,58 @@ export function getCommercialApprovalIssues(record = {}) {
   return issues;
 }
 
+export function getCompanyMethodApprovalIssues(record = {}) {
+  const value = normalizeCleaningRecord({ ...record, recordType: 'company_mix' });
+  const issues = [];
+  if (!value.sourceDefaultId || !value.sourceDefaultName || !value.sourceDefaultVersion) {
+    issues.push('System-default provenance is required.');
+  }
+  if (value.classification !== 'cleaning') issues.push('Company methods must remain cleaning-only.');
+  if (value.intendedUses.length === 0) issues.push('The method must include an approved intended use.');
+  if (value.dangerousCombinations.length === 0) issues.push('The method must retain its safety warnings.');
+  if (!value.applicationInstructions && value.measurements.length === 0 && value.formulaVariants.length === 0) {
+    issues.push('The method must include application or formula instructions.');
+  }
+  if (!value.ownerReviewNotes) issues.push('Add owner review notes.');
+  return issues;
+}
+
+export function getCleaningRecordApprovalIssues(record = {}) {
+  return record.recordType === 'company_mix'
+    ? getCompanyMethodApprovalIssues(record)
+    : getCommercialApprovalIssues(record);
+}
+
+export function buildSystemDefaultAdoption(systemDefault, { id, tenantId, actorUid, now = null } = {}) {
+  const source = normalizeCleaningRecord(systemDefault);
+  if (source.scope !== 'system_default' || source.recordType !== 'company_mix') {
+    throw new Error('Only immutable system-default company methods can be adopted.');
+  }
+  const normalized = normalizeCleaningRecord({
+    ...source,
+    id,
+    scope: 'tenant',
+    tenantId,
+    status: 'pending_review',
+    employeeVisible: false,
+    ownerReviewNotes: '',
+    sourceDefaultId: source.id,
+    sourceDefaultName: source.name,
+    sourceDefaultVersion: text(source.updatedAt) || 'unknown',
+    adoptedAt: now,
+    adoptedBy: actorUid,
+    createdAt: now,
+    createdBy: actorUid,
+    updatedAt: now,
+    updatedBy: actorUid,
+    reviewedAt: null,
+    reviewedBy: '',
+  });
+  const result = validateCleaningRecord(normalized);
+  if (!result.valid) throw new Error(result.errors.join(' '));
+  return result.record;
+}
+
 export function buildCommercialProductCreate(record, { tenantId, actorUid, now = null } = {}) {
   const normalized = normalizeCleaningRecord({
     ...record,
@@ -209,11 +266,11 @@ export function buildCommercialProductDetailsUpdate(existing, proposed, { actorU
   return result.record;
 }
 
-export function buildCommercialProductReview(record, action, { actorUid, ownerReviewNotes, now = null } = {}) {
+export function buildTenantCleaningRecordReview(record, action, { actorUid, ownerReviewNotes, now = null } = {}) {
   const allowedActions = new Set(['approved', 'restricted', 'rejected', 'expired', 'retired']);
   if (!allowedActions.has(action)) throw new Error('Review action is invalid.');
-  if (record.recordType !== 'commercial_product' || record.scope !== 'tenant') {
-    throw new Error('Only tenant commercial products can be reviewed.');
+  if (!CLEANING_RECORD_TYPES.includes(record.recordType) || record.scope !== 'tenant') {
+    throw new Error('Only tenant cleaning records can be reviewed.');
   }
 
   const next = normalizeCleaningRecord({
@@ -228,7 +285,7 @@ export function buildCommercialProductReview(record, action, { actorUid, ownerRe
   });
 
   if (action === 'approved' || action === 'restricted') {
-    const issues = getCommercialApprovalIssues(next);
+    const issues = getCleaningRecordApprovalIssues(next);
     if (issues.length > 0) throw new Error(issues.join(' '));
   }
   if (action === 'restricted' && !next.ownerReviewNotes && next.prohibitedSurfaces.length === 0) {
@@ -238,4 +295,11 @@ export function buildCommercialProductReview(record, action, { actorUid, ownerRe
   const result = validateCleaningRecord(next);
   if (!result.valid) throw new Error(result.errors.join(' '));
   return result.record;
+}
+
+export function buildCommercialProductReview(record, action, options = {}) {
+  if (record.recordType !== 'commercial_product') {
+    throw new Error('Only tenant commercial products can use the commercial product review helper.');
+  }
+  return buildTenantCleaningRecordReview(record, action, options);
 }

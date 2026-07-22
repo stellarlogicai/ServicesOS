@@ -24,11 +24,16 @@ vi.mock('firebase/firestore', () => ({
 }));
 
 import {
+  adoptSystemDefaultMethod,
   createTenantCommercialProduct,
+  getEmployeeUsableCleaningRecordsByIds,
+  listTenantCleaningRecords,
   listTenantCommercialProducts,
+  reviewTenantCleaningRecord,
   reviewTenantCommercialProduct,
   updateTenantCommercialProduct,
 } from '../modules/cleaning/products/cleaningProductService';
+import { getStarterCleaningMethods } from '../modules/cleaning/products/starterCleaningMethods';
 
 const completeRecord = {
   id: 'product-one',
@@ -90,6 +95,73 @@ describe('cleaning product service', () => {
     });
     const records = await listTenantCommercialProducts('tenant-a');
     expect(records.map(record => record.name)).toEqual(['Alpha', 'Zulu']);
+  });
+
+  it('lists all tenant cleaning records while retaining the commercial-only compatibility helper', async () => {
+    firestore.getDocs.mockResolvedValue({
+      docs: [
+        { id: 'product', data: () => completeRecord },
+        { id: 'method', data: () => ({
+          ...getStarterCleaningMethods()[0],
+          id: 'method', scope: 'tenant', tenantId: 'tenant-a', status: 'approved', employeeVisible: true,
+        }) },
+      ],
+    });
+    expect(await listTenantCleaningRecords('tenant-a')).toHaveLength(2);
+    expect(await listTenantCommercialProducts('tenant-a')).toHaveLength(1);
+  });
+
+  it('adopts a system default once as a deterministic pending tenant record', async () => {
+    firestore.getDoc.mockResolvedValue({ exists: () => false });
+    const source = getStarterCleaningMethods().find(record => record.id === 'ab-mirror-cleaner');
+    const adopted = await adoptSystemDefaultMethod('tenant-a', source, { actorUid: 'admin-a' });
+    expect(adopted).toMatchObject({
+      id: 'adopted-ab-mirror-cleaner',
+      status: 'pending_review',
+      employeeVisible: false,
+      sourceDefaultId: 'ab-mirror-cleaner',
+    });
+    expect(firestore.setDoc).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'adopted-ab-mirror-cleaner' }),
+      expect.objectContaining({ sourceDefaultId: 'ab-mirror-cleaner', adoptedBy: 'admin-a' }),
+    );
+  });
+
+  it('returns only approved or restricted employee-visible records for explicit IDs', async () => {
+    firestore.getDoc.mockImplementation(async reference => {
+      const id = reference.id;
+      const status = id === 'approved' ? 'approved' : 'pending_review';
+      return {
+        exists: () => true,
+        id,
+        data: () => ({ ...completeRecord, id, status, employeeVisible: status === 'approved' }),
+      };
+    });
+    const records = await getEmployeeUsableCleaningRecordsByIds('tenant-a', ['approved', 'pending', 'approved']);
+    expect(records.map(record => record.id)).toEqual(['approved']);
+  });
+
+  it('reviews an adopted tenant method through the shared lifecycle without rewriting source content', async () => {
+    const source = getStarterCleaningMethods().find(record => record.id === 'ab-mirror-cleaner');
+    const existing = {
+      ...source,
+      id: 'adopted-ab-mirror-cleaner',
+      scope: 'tenant',
+      tenantId: 'tenant-a',
+      status: 'pending_review',
+      employeeVisible: false,
+      sourceDefaultId: source.id,
+      sourceDefaultName: source.name,
+      sourceDefaultVersion: source.updatedAt,
+    };
+    firestore.getDoc.mockResolvedValue({ exists: () => true, id: existing.id, data: () => existing });
+    const reviewed = await reviewTenantCleaningRecord('tenant-a', existing.id, 'approved', {
+      actorUid: 'admin-a',
+      ownerReviewNotes: 'Approved for tenant use.',
+    });
+    expect(reviewed.employeeVisible).toBe(true);
+    expect(firestore.updateDoc.mock.calls[0][1]).not.toHaveProperty('formulaVariants');
+    expect(firestore.updateDoc.mock.calls[0][1]).not.toHaveProperty('sourceDefaultId');
   });
 
   it('reviews through the existing tenant record and writes only review state', async () => {

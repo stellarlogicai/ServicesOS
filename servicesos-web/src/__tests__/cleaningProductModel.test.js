@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildSystemDefaultAdoption,
+  buildTenantCleaningRecordReview,
   buildCommercialProductCreate,
   buildCommercialProductReview,
   getCommercialApprovalIssues,
@@ -84,6 +86,45 @@ describe('cleaning product and method model', () => {
     expect(created.employeeVisible).toBe(false);
     expect(created.tenantId).toBe('tenant-a');
     expect(created.createdBy).toBe('admin-a');
+  });
+
+  it('adopts an immutable system default as a pending tenant copy with source provenance', () => {
+    const source = getStarterCleaningMethods().find(record => record.id === 'ab-dawn-vinegar-shower-cleaner');
+    const adopted = buildSystemDefaultAdoption(source, {
+      id: 'adopted-ab-dawn-vinegar-shower-cleaner',
+      tenantId: 'tenant-a',
+      actorUid: 'admin-a',
+      now: 'adopted-time',
+    });
+    expect(adopted).toMatchObject({
+      id: 'adopted-ab-dawn-vinegar-shower-cleaner',
+      scope: 'tenant',
+      tenantId: 'tenant-a',
+      status: 'pending_review',
+      employeeVisible: false,
+      sourceDefaultId: source.id,
+      sourceDefaultName: source.name,
+      adoptedBy: 'admin-a',
+    });
+    expect(source.scope).toBe('system_default');
+    expect(source.status).toBe('owner_tested');
+  });
+
+  it('requires explicit owner review before an adopted method becomes employee-visible', () => {
+    const source = getStarterCleaningMethods().find(record => record.id === 'ab-mirror-cleaner');
+    const adopted = buildSystemDefaultAdoption(source, {
+      id: 'adopted-ab-mirror-cleaner',
+      tenantId: 'tenant-a',
+      actorUid: 'admin-a',
+    });
+    expect(() => buildTenantCleaningRecordReview(adopted, 'approved', { actorUid: 'admin-a' }))
+      .toThrow('Add owner review notes');
+    const approved = buildTenantCleaningRecordReview(adopted, 'approved', {
+      actorUid: 'admin-a',
+      ownerReviewNotes: 'Reviewed for tenant use.',
+      now: 'review-time',
+    });
+    expect(approved).toMatchObject({ status: 'approved', employeeVisible: true, reviewedBy: 'admin-a' });
   });
 
   it('blocks incomplete approval and allows an explicit complete owner approval', () => {

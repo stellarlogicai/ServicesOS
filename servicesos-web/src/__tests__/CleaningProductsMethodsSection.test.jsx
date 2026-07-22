@@ -4,15 +4,17 @@ import CleaningProductsMethodsSection from '../components/CleaningProductsMethod
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
+  adopt: vi.fn(),
   list: vi.fn(),
   review: vi.fn(),
   update: vi.fn(),
 }));
 
 vi.mock('../modules/cleaning/products/cleaningProductService', () => ({
+  adoptSystemDefaultMethod: mocks.adopt,
   createTenantCommercialProduct: mocks.create,
-  listTenantCommercialProducts: mocks.list,
-  reviewTenantCommercialProduct: mocks.review,
+  listTenantCleaningRecords: mocks.list,
+  reviewTenantCleaningRecord: mocks.review,
   updateTenantCommercialProduct: mocks.update,
 }));
 
@@ -52,6 +54,16 @@ describe('CleaningProductsMethodsSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.list.mockResolvedValue([]);
+    mocks.adopt.mockImplementation(async (tenantId, record) => ({
+      ...record,
+      id: `adopted-${record.id}`,
+      scope: 'tenant',
+      tenantId,
+      status: 'pending_review',
+      employeeVisible: false,
+      sourceDefaultId: record.id,
+      sourceDefaultName: record.name,
+    }));
     mocks.create.mockImplementation(async (_tenantId, record) => ({
       ...pendingProduct,
       ...record,
@@ -68,7 +80,7 @@ describe('CleaningProductsMethodsSection', () => {
 
   it('shows immutable starter methods and both shower formulas to an owner/admin', async () => {
     render(<CleaningProductsMethodsSection tenantId="tenant-a" actorUid="admin-a" canManage />);
-    expect(await screen.findByText('No commercial products have been added for this tenant.')).toBeInTheDocument();
+    expect(await screen.findByText('No company methods or commercial products have been added for this tenant.')).toBeInTheDocument();
     const companyGroup = screen.getByText('Company methods').closest('details');
     expect(companyGroup).toHaveTextContent('10 system defaults');
     fireEvent.click(within(companyGroup).getByText('Company methods'));
@@ -80,12 +92,13 @@ describe('CleaningProductsMethodsSection', () => {
     expect(within(shower).getByText('Not employee-visible')).toBeInTheDocument();
     expect(within(shower).getByText('14 days')).toBeInTheDocument();
     expect(within(shower).getByText(/inspect only · not employee-visible/i)).toBeInTheDocument();
-    expect(within(shower).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(shower).getByRole('button', { name: 'Use for my company' })).toBeInTheDocument();
+    expect(within(shower).queryByRole('button', { name: /edit|delete/i })).not.toBeInTheDocument();
   });
 
   it('adds a commercial product as pending review without claiming approval', async () => {
     render(<CleaningProductsMethodsSection tenantId="tenant-a" actorUid="admin-a" canManage />);
-    await screen.findByText('No commercial products have been added for this tenant.');
+    await screen.findByText('No company methods or commercial products have been added for this tenant.');
     const form = screen.getByRole('form', { name: 'Commercial product intake' });
     fireEvent.change(within(form).getByLabelText('Brand *'), { target: { value: 'Brand' } });
     fireEvent.change(within(form).getByLabelText('Product *'), { target: { value: 'Product' } });
@@ -107,6 +120,23 @@ describe('CleaningProductsMethodsSection', () => {
     expect(await screen.findByText(/added as pending review/i)).toBeInTheDocument();
     expect(screen.getAllByText('Pending review — do not use yet.').length).toBeGreaterThan(0);
     expect(screen.queryByText(/product approved/i)).not.toBeInTheDocument();
+  });
+
+  it('adopts a system default as a separate pending company copy', async () => {
+    render(<CleaningProductsMethodsSection tenantId="tenant-a" actorUid="admin-a" canManage />);
+    await screen.findByText('No company methods or commercial products have been added for this tenant.');
+    const companyGroup = screen.getByText('Company methods').closest('details');
+    fireEvent.click(within(companyGroup).getByText('Company methods'));
+    const shower = screen.getByText('Dawn and Vinegar Shower Cleaner').closest('details');
+    fireEvent.click(within(shower).getByRole('button', { name: 'Use for my company' }));
+    await waitFor(() => expect(mocks.adopt).toHaveBeenCalledWith(
+      'tenant-a',
+      expect.objectContaining({ id: 'ab-dawn-vinegar-shower-cleaner', scope: 'system_default' }),
+      { actorUid: 'admin-a' },
+    ));
+    expect(await screen.findByText(/added for owner review/i)).toBeInTheDocument();
+    expect(within(shower).getByText(/Company copy: Pending review/i)).toBeInTheDocument();
+    expect(within(shower).getByText(/System default · inspect only/i)).toBeInTheDocument();
   });
 
   it('shows an actionable approval failure and does not fabricate a status change', async () => {

@@ -278,6 +278,59 @@ const commercialProduct = ({
   dateCode: '',
 });
 
+const adoptedCompanyMethod = ({
+  id = 'adopted-ab-dawn-vinegar-shower-cleaner',
+  tenantId = TENANT_A,
+  status = 'pending_review',
+  employeeVisible = false,
+  actorUid = 'admin-a',
+} = {}) => ({
+  id,
+  recordType: 'company_mix',
+  scope: 'tenant',
+  tenantId,
+  name: 'Dawn and Vinegar Shower Cleaner',
+  category: 'shower cleaner',
+  classification: 'cleaning',
+  status,
+  intendedUses: ['Soap scum'],
+  compatibleSurfaces: ['Owner-approved acid-safe shower surfaces'],
+  prohibitedSurfaces: ['Natural stone'],
+  requiredTools: ['Non-scratch cleaning cloth'],
+  requiredPPE: ['Gloves'],
+  dwellTime: '5-10 minutes',
+  applicationInstructions: 'Apply only to an approved surface.',
+  rinseInstructions: 'Rinse thoroughly.',
+  dryingInstructions: 'Dry after rinsing.',
+  dangerousCombinations: ['Never mix with bleach.'],
+  storageInstructions: 'Store in the dedicated labeled container.',
+  shelfLife: '14 days',
+  evidence: ['Jamie-approved ServicesOS V1 starter method'],
+  ownerReviewNotes: status === 'pending_review' ? '' : 'Approved for tenant use.',
+  employeeVisible,
+  createdAt: serverTimestamp(),
+  createdBy: actorUid,
+  updatedAt: serverTimestamp(),
+  updatedBy: actorUid,
+  reviewedAt: status === 'pending_review' ? null : serverTimestamp(),
+  reviewedBy: status === 'pending_review' ? '' : actorUid,
+  ingredients: ['Distilled white vinegar', 'Warm water', 'Dawn dish soap'],
+  measurements: [],
+  formulaVariants: [{ id: 'standard', name: 'Standard', measurements: ['2 cups vinegar'], expectedYield: 'Approximately 25 oz' }],
+  expectedYield: '',
+  bottleSize: '32 oz',
+  approvedContainer: 'Dedicated chemical-resistant spray bottle',
+  mixingOrder: ['Add warm water.', 'Add vinegar.', 'Add Dawn slowly.'],
+  preparationFrequency: 'Prepare as needed.',
+  mixedOnLabelRequired: true,
+  discardDateLabelRequired: true,
+  sourceDefaultId: 'ab-dawn-vinegar-shower-cleaner',
+  sourceDefaultName: 'Dawn and Vinegar Shower Cleaner',
+  sourceDefaultVersion: 'servicesos-v1-2026-07-18',
+  adoptedAt: serverTimestamp(),
+  adoptedBy: actorUid,
+});
+
 describe('tenant-scoped customer intake Firestore rules', () => {
   before(async () => {
     const rules = await readFile(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
@@ -880,6 +933,63 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       updatedAt: serverTimestamp(),
       updatedBy: 'admin-a',
     }));
+  });
+
+  test('tenant admin can adopt only an approved system default ID as a deterministic pending company method', async () => {
+    const database = authenticatedDatabase('admin-a');
+    const adopted = doc(database, 'tenants', TENANT_A, 'cleaningProductsMethods', 'adopted-ab-dawn-vinegar-shower-cleaner');
+    await assertSucceeds(setDoc(adopted, adoptedCompanyMethod()));
+    await assertFails(setDoc(
+      doc(database, 'tenants', TENANT_A, 'cleaningProductsMethods', 'wrong-record-id'),
+      adoptedCompanyMethod({ id: 'wrong-record-id' })
+    ));
+    await assertFails(setDoc(
+      doc(database, 'tenants', TENANT_A, 'cleaningProductsMethods', 'adopted-unapproved-method'),
+      {
+        ...adoptedCompanyMethod({ id: 'adopted-unapproved-method' }),
+        sourceDefaultId: 'unapproved-method',
+      }
+    ));
+    await assertFails(setDoc(
+      doc(database, 'tenants', TENANT_A, 'cleaningProductsMethods', 'adopted-ab-mirror-cleaner'),
+      {
+        ...adoptedCompanyMethod({ id: 'adopted-ab-mirror-cleaner', employeeVisible: true, status: 'approved' }),
+        sourceDefaultId: 'ab-mirror-cleaner',
+        sourceDefaultName: 'Mirror Cleaner',
+      }
+    ));
+  });
+
+  test('tenant admin can review an adopted method while source content stays immutable and employee reads stay lifecycle-gated', async () => {
+    const admin = authenticatedDatabase('admin-a');
+    const adopted = doc(admin, 'tenants', TENANT_A, 'cleaningProductsMethods', 'adopted-ab-dawn-vinegar-shower-cleaner');
+    await assertSucceeds(setDoc(adopted, adoptedCompanyMethod()));
+    await assertFails(getDoc(doc(
+      authenticatedDatabase('employee-a'),
+      'tenants', TENANT_A, 'cleaningProductsMethods', 'adopted-ab-dawn-vinegar-shower-cleaner'
+    )));
+    await assertSucceeds(updateDoc(adopted, {
+      status: 'approved',
+      employeeVisible: true,
+      ownerReviewNotes: 'Approved for tenant use.',
+      reviewedAt: serverTimestamp(),
+      reviewedBy: 'admin-a',
+      updatedAt: serverTimestamp(),
+      updatedBy: 'admin-a',
+    }));
+    await assertSucceeds(getDoc(doc(
+      authenticatedDatabase('employee-a'),
+      'tenants', TENANT_A, 'cleaningProductsMethods', 'adopted-ab-dawn-vinegar-shower-cleaner'
+    )));
+    await assertFails(updateDoc(adopted, {
+      applicationInstructions: 'Rewritten instruction.',
+      updatedAt: serverTimestamp(),
+      updatedBy: 'admin-a',
+    }));
+    await assertFails(getDoc(doc(
+      authenticatedDatabase('employee-a'),
+      'tenants', TENANT_B, 'cleaningProductsMethods', 'adopted-ab-dawn-vinegar-shower-cleaner'
+    )));
   });
 
   test('employees can read only own-tenant approved or restricted visible products and cannot manage them', async () => {

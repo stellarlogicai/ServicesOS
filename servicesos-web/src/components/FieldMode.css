@@ -53,6 +53,11 @@
 .field-job-checklist-job-aid li + li { margin-top: 4px; }
 .field-job-checklist-warnings { margin-top: 12px; padding: 10px 12px; border: 1px solid #fbbf24; border-radius: 6px; background: #fffbeb; color: #92400e; }
 .field-job-checklist-warnings ul { margin: 4px 0 0; padding-left: 20px; }
+.field-job-checklist-method { margin-left: 28px; border-top: 1px solid #dbeafe; padding-top: 8px; color: #334155; font-size: 13px; }
+.field-job-checklist-method summary { width: fit-content; cursor: pointer; color: #0f766e; font-weight: 700; }
+.field-job-checklist-method h6 { margin: 10px 0 4px; color: #134e4a; font-size: 14px; }
+.field-job-checklist-method p, .field-job-checklist-method ol, .field-job-checklist-method ul { margin: 5px 0 0; }
+.field-job-checklist-method .checklist-method-warning { color: #92400e; }
 .field-job-checklist-empty { margin: 0; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px; color: var(--v1-muted); }
 .field-job-notes { display: grid; gap: 12px; }
 .field-job-notes label { display: grid; gap: 6px; color: var(--v1-text); font-size: 13px; font-weight: 700; }

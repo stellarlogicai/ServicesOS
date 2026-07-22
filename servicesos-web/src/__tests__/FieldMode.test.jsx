@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   loadFieldPhotoBlob: vi.fn(),
   uploadFieldPhoto: vi.fn(),
   validateFieldPhoto: vi.fn(),
+  getEmployeeUsableCleaningRecordsByIds: vi.fn(),
   tenantId: 'tenant-a',
   user: { uid: 'field-user-1' },
   role: 'admin',
@@ -56,6 +57,10 @@ vi.mock('../services/fieldPhotoService', () => ({
   validateFieldPhoto: mocks.validateFieldPhoto,
 }));
 
+vi.mock('../modules/cleaning/products/cleaningProductService', () => ({
+  getEmployeeUsableCleaningRecordsByIds: mocks.getEmployeeUsableCleaningRecordsByIds,
+}));
+
 const pad = value => String(value).padStart(2, '0');
 const dateKey = date => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 const today = new Date();
@@ -81,6 +86,35 @@ const approvedChecklist = {
   },
 };
 
+const approvedShowerMethod = {
+  id: 'adopted-ab-dawn-vinegar-shower-cleaner',
+  recordType: 'company_mix',
+  scope: 'tenant',
+  tenantId: 'tenant-a',
+  name: 'Dawn and Vinegar Shower Cleaner',
+  classification: 'cleaning',
+  status: 'approved',
+  employeeVisible: true,
+  formulaVariants: [{
+    id: 'standard',
+    name: 'Standard',
+    measurements: ['2 cups distilled white vinegar', '1 cup warm water', '2 tablespoons Dawn'],
+    expectedYield: 'Approximately 25 oz',
+  }],
+  measurements: [],
+  intendedUses: ['Soap scum'],
+  compatibleSurfaces: ['Owner-approved acid-safe shower surfaces'],
+  prohibitedSurfaces: ['Natural stone'],
+  requiredPPE: ['Gloves'],
+  requiredTools: ['Non-scratch cleaning cloth'],
+  dwellTime: '5–10 minutes',
+  applicationInstructions: 'Apply only to an approved surface.',
+  rinseInstructions: 'Rinse thoroughly.',
+  dryingInstructions: 'Dry after rinsing.',
+  mixingOrder: ['Add warm water.', 'Add vinegar.', 'Add Dawn slowly.'],
+  dangerousCombinations: ['Never mix with bleach.'],
+};
+
 describe('FieldMode read-only field surface', () => {
   beforeEach(() => {
     mocks.tenantId = 'tenant-a';
@@ -92,6 +126,8 @@ describe('FieldMode read-only field surface', () => {
     mocks.loadFieldPhotoBlob.mockReset();
     mocks.uploadFieldPhoto.mockReset();
     mocks.validateFieldPhoto.mockReset();
+    mocks.getEmployeeUsableCleaningRecordsByIds.mockReset();
+    mocks.getEmployeeUsableCleaningRecordsByIds.mockResolvedValue([]);
     mocks.listFieldPhotos.mockResolvedValue([]);
     mocks.validateFieldPhoto.mockReturnValue({ success: true });
     mocks.updateBookingFieldExecution.mockImplementation(async (_tenantId, bookingId, patch) => ({
@@ -377,6 +413,69 @@ describe('FieldMode read-only field surface', () => {
     });
     expect(patch).not.toHaveProperty('paymentStatus');
     expect(await screen.findByText('Checklist saved.')).toBeInTheDocument();
+  });
+
+  it('shows collapsed read-only guidance only for employee-usable snapshot methods', async () => {
+    const methodItem = {
+      id: 'standard-one-time-bathroom-shower-or-tub-required-1',
+      area: 'Bathroom / Shower or tub',
+      fixtureOrSurface: 'Shower or tub',
+      label: 'Clean shower or tub',
+      jobAidSteps: [],
+      warnings: [],
+      required: true,
+      completed: false,
+      approvedMethodIds: [approvedShowerMethod.id, 'pending-method'],
+      preferredMethodId: approvedShowerMethod.id,
+    };
+    const snapshot = { ...approvedChecklist.jobChecklistSnapshot, items: [methodItem] };
+    mocks.getEmployeeUsableCleaningRecordsByIds.mockResolvedValue([approvedShowerMethod]);
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'method-job', customerName: 'Method Customer', date: dateKey(today), paymentStatus: 'not_paid',
+      jobChecklistSnapshot: snapshot,
+      fieldChecklist: snapshot.items,
+    }] });
+
+    render(<FieldMode />);
+    await screen.findByText('Method Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    const methodAction = await screen.findByText('View method');
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    fireEvent.click(methodAction);
+    expect(screen.getByText('Dawn and Vinegar Shower Cleaner')).toBeInTheDocument();
+    expect(screen.getByText('5–10 minutes')).toBeInTheDocument();
+    expect(screen.getByText('Natural stone')).toBeInTheDocument();
+    expect(screen.getByText('Never mix with bleach.')).toBeInTheDocument();
+    expect(mocks.getEmployeeUsableCleaningRecordsByIds).toHaveBeenCalledWith(
+      'tenant-a',
+      [approvedShowerMethod.id, 'pending-method'],
+    );
+  });
+
+  it('hides unavailable or pending method IDs without affecting checklist outcomes', async () => {
+    const pendingItem = {
+      id: 'standard-one-time-bathroom-mirror-required-1',
+      area: 'Bathroom / Mirror',
+      label: 'Clean mirror',
+      jobAidSteps: [],
+      warnings: [],
+      required: true,
+      completed: false,
+      approvedMethodIds: ['pending-method'],
+      preferredMethodId: 'pending-method',
+    };
+    const snapshot = { ...approvedChecklist.jobChecklistSnapshot, items: [pendingItem] };
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'pending-method-job', customerName: 'Pending Method Customer', date: dateKey(today),
+      jobChecklistSnapshot: snapshot,
+      fieldChecklist: snapshot.items,
+    }] });
+    render(<FieldMode />);
+    await screen.findByText('Pending Method Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    await waitFor(() => expect(mocks.getEmployeeUsableCleaningRecordsByIds).toHaveBeenCalled());
+    expect(screen.queryByText('View method')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
   });
 
   it('saves employee notes and issue text for owner review', async () => {

@@ -341,6 +341,40 @@
   font-weight: 700;
 }
 
+.checklist-method-review {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  border-left: 3px solid #0f766e;
+  padding: 10px 12px;
+  background: #f0fdfa;
+  color: #134e4a;
+  font-size: 13px;
+}
+
+.checklist-method-review p,
+.checklist-method-review ul,
+.checklist-method-instructions p,
+.checklist-method-instructions ol,
+.checklist-method-instructions ul {
+  margin: 4px 0 0;
+}
+
+.checklist-method-review summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.checklist-method-instructions {
+  display: grid;
+  gap: 5px;
+  padding-top: 8px;
+}
+
+.checklist-method-warning {
+  color: #92400e;
+}
+
 .job-prep-card-actions {
   display: flex;
   flex-wrap: wrap;

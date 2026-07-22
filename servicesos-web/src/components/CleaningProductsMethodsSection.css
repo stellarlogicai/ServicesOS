@@ -228,6 +228,13 @@
 .cleaning-method-error { background: #fef2f2; color: #991b1b; }
 .cleaning-method-success { background: #f0fdf4; color: #166534; }
 
+.cleaning-adopted-copy {
+  margin: 12px 0 0;
+  color: #166534;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 @media (max-width: 640px) {
   .cleaning-methods-section {
     padding: 18px;

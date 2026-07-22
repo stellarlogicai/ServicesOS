@@ -1,6 +1,6 @@
 # ServicesOS V1 Current State
 
-Updated: 2026-07-18
+Updated: 2026-07-22
 
 This file contains the changing ServicesOS checkpoint. Keep durable repository rules in `AGENTS.md` files and update this document when the active branch, blocker, completed gate, or next task changes.
 
@@ -34,9 +34,9 @@ This setup branch was created from the known clean V1 checkpoint above and adds 
 
 Active local feature branch:
 
-`feature/v1-cleaning-products-methods`
+`feature/v1-checklist-method-mapping`
 
-This branch implements Phase 1 of the tenant-scoped Approved Cleaning Products & Methods Library. It does not connect product records to checklist outcomes, Field Mode, or Daily Prep yet.
+This branch implements Phase 2 of the tenant-scoped Approved Cleaning Products & Methods Library from the Phase 1 checkpoint `d4eba89`. It connects a conservative set of stable checklist outcomes to owner-approved tenant methods and exposes read-only employee guidance in Field Mode. Daily Prep aggregation remains a separate Phase 3 slice.
 
 ## Completed production gates
 
@@ -86,8 +86,9 @@ Do not begin customer identity remediation before the photo path is proven and t
 ## Current local V1 slice
 
 - Owner job prep and outcome checklists are implemented at the `c638aa2` checkpoint.
-- Phase 1 cleaning-product work adds immutable starter company methods, tenant commercial-product review, and tenant-scoped Firestore authorization.
-- Checklist method mappings, Field Mode method display, and Daily Prep product aggregation remain deferred to the next explicitly approved slice.
+- Phase 1 cleaning-product work at `d4eba89` adds immutable starter company methods, tenant commercial-product review, and tenant-scoped Firestore authorization.
+- Phase 2 adds deterministic tenant adoption of immutable system defaults, owner approval lifecycle enforcement, stable outcome-level mappings, owner review guidance, and employee-safe read-only Field Mode guidance.
+- Daily Prep product, tool, PPE, and warning aggregation remains deferred to the next explicitly approved slice.
 
 ## Remaining customer-facing V1 blockers
 
@@ -97,7 +98,7 @@ Do not begin customer identity remediation before the photo path is proven and t
   - customer/profile tenant mismatch
   - customer linked to a non-customer role
   - production customer privacy smoke
-- Cleaning method mappings from approved checklist outcomes to reviewed product/method records.
+- Daily Prep aggregation from approved checklist-method mappings.
 - Cohesive Field Job Workspace redesign centered on the real checklist.
 - Required employee assignment index, real employee setup/assignment, and production employee smoke before claiming the employee workflow production-ready.
 - Controlled release integration, production deployment, and final customer-facing smoke.
@@ -125,12 +126,12 @@ Unless Jamie explicitly changes scope, keep these parked:
 
 ## Established local validation baselines
 
-Latest known green baselines:
+Latest known green baselines for the active Phase 2 working tree:
 
-- focused field-photo web: 77 tests
-- full web: 388 tests
+- focused checklist/product/Field Mode web: 59 tests
+- full web: 451 tests
 - Cloud Functions: 39 tests
-- Firestore rules: 35 tests
+- Firestore rules: 42 tests
 - Storage rules: 20 tests
 - lint: passed
 - build: passed

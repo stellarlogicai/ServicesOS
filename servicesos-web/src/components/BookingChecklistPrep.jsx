@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CHECKLIST_READINESS,
   CHECKLIST_SUGGESTED_LABEL,
@@ -11,7 +11,13 @@ import {
   isApprovedChecklistCurrent,
 } from '../core/checklists/bookingChecklistAssembly';
 import { listChecklistTemplates } from '../core/checklists/checklistTemplateRegistry';
+import {
+  applyChecklistMethodMappings,
+  resolveSnapshotMethodGuidance,
+} from '../core/checklists/checklistMethodMappingRegistry';
 import { updateBookingAdminFields } from '../core/scheduling/schedulingService';
+import { listTenantCleaningRecords } from '../modules/cleaning/products/cleaningProductService';
+import { getStarterCleaningMethods } from '../modules/cleaning/products/starterCleaningMethods';
 import {
   bookingAddress,
   bookingCustomerName,
@@ -20,6 +26,7 @@ import {
   bookingServiceType,
 } from './bookingDisplay';
 import { employeeAssignmentLabel } from '../services/employeeProfileService';
+import { OwnerChecklistMethodGuidance } from './ChecklistMethodGuidance';
 import './BookingChecklistPrep.css';
 
 const READINESS_LABELS = {
@@ -306,8 +313,37 @@ export function BookingChecklistPrep({ booking, allBookings = [], tenantId, revi
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [reuseSource, setReuseSource] = useState(null);
+  const [tenantMethods, setTenantMethods] = useState([]);
+  const [methodLoading, setMethodLoading] = useState(true);
+  const [methodLoadError, setMethodLoadError] = useState('');
   const templates = useMemo(() => listChecklistTemplates(), []);
+  const systemDefaults = useMemo(() => getStarterCleaningMethods(), []);
   const approved = isApprovedChecklistCurrent(booking);
+  const mappedReview = useMemo(
+    () => applyChecklistMethodMappings(items, tenantMethods, systemDefaults),
+    [items, systemDefaults, tenantMethods],
+  );
+
+  useEffect(() => {
+    let active = true;
+    Promise.resolve().then(async () => {
+      if (!active) return;
+      setMethodLoading(true);
+      setMethodLoadError('');
+      try {
+        const records = await listTenantCleaningRecords(tenantId);
+        if (active) setTenantMethods(records);
+      } catch {
+        if (active) {
+          setTenantMethods([]);
+          setMethodLoadError('Approved cleaning methods could not be loaded. Checklist tasks are still available for review.');
+        }
+      } finally {
+        if (active) setMethodLoading(false);
+      }
+    });
+    return () => { active = false; };
+  }, [tenantId]);
 
   const selectTemplate = templateId => {
     const next = assembleBookingChecklist(booking, { templateId });
@@ -387,7 +423,7 @@ export function BookingChecklistPrep({ booking, allBookings = [], tenantId, revi
     const built = buildApprovedChecklistSnapshot({
       booking,
       assembly,
-      items,
+      items: mappedReview.items,
       notes: packetNotes,
       reviewedBy,
       reuseSource,
@@ -437,6 +473,7 @@ export function BookingChecklistPrep({ booking, allBookings = [], tenantId, revi
                     {item.condition && <small>Condition: {item.condition}</small>}
                     {item.note && <small>{item.note}</small>}
                     <ChecklistJobAid item={item} />
+                    <OwnerChecklistMethodGuidance guidance={resolveSnapshotMethodGuidance(item, tenantMethods)} />
                   </div>
                   <span>{item.required ? 'Required' : 'Optional'}</span>
                 </div>
@@ -480,6 +517,8 @@ export function BookingChecklistPrep({ booking, allBookings = [], tenantId, revi
           <ul>{assembly.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
         </div>
       )}
+      {methodLoading && <p role="status" className="v1-muted">Loading approved cleaning methods...</p>}
+      {methodLoadError && <p className="booking-checklist-warning">{methodLoadError}</p>}
 
       {items.length === 0 ? (
         <div className="job-prep-empty">No valid checklist tasks are available. Select a mapped template or correct the booking scope.</div>
@@ -496,6 +535,7 @@ export function BookingChecklistPrep({ booking, allBookings = [], tenantId, revi
                     {item.condition && <small>Condition: {item.condition}</small>}
                     {item.note && <small>{item.note}</small>}
                     <ChecklistJobAid item={item} />
+                    <OwnerChecklistMethodGuidance guidance={mappedReview.guidanceByItemId.get(item.id)} />
                   </div>
                   <div className="booking-checklist-item-actions">
                     <span>{item.required ? 'Required' : 'Optional'}</span>
@@ -523,7 +563,7 @@ export function BookingChecklistPrep({ booking, allBookings = [], tenantId, revi
 
       {error && <p role="alert" className="booking-checklist-error">{error}</p>}
       {status && <p role="status" className="booking-checklist-success">{status}</p>}
-      <button type="button" className="v1-button v1-button-primary" disabled={saving || items.length === 0} onClick={approveChecklist}>
+      <button type="button" className="v1-button v1-button-primary" disabled={saving || methodLoading || items.length === 0} onClick={approveChecklist}>
         {saving ? 'Approving checklist...' : 'Approve checklist for Field Mode'}
       </button>
     </section>

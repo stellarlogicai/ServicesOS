@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  adoptSystemDefaultMethod,
   createTenantCommercialProduct,
-  listTenantCommercialProducts,
-  reviewTenantCommercialProduct,
+  listTenantCleaningRecords,
+  reviewTenantCleaningRecord,
   updateTenantCommercialProduct,
 } from '../modules/cleaning/products/cleaningProductService';
-import { getCommercialApprovalIssues } from '../modules/cleaning/products/cleaningProductModel';
+import { getCleaningRecordApprovalIssues } from '../modules/cleaning/products/cleaningProductModel';
 import { getStarterCleaningMethods } from '../modules/cleaning/products/starterCleaningMethods';
 import './CleaningProductsMethodsSection.css';
 
@@ -124,7 +125,7 @@ export default function CleaningProductsMethodsSection({ tenantId, actorUid, can
     setLoading(true);
     setError('');
     try {
-      setTenantRecords(await listTenantCommercialProducts(tenantId));
+      setTenantRecords(await listTenantCleaningRecords(tenantId));
     } catch {
       setError('Cleaning products could not be loaded. Please try again.');
     } finally {
@@ -186,7 +187,7 @@ export default function CleaningProductsMethodsSection({ tenantId, actorUid, can
     setError('');
     setSuccess('');
     try {
-      const updated = await reviewTenantCommercialProduct(tenantId, record.id, action, {
+      const updated = await reviewTenantCleaningRecord(tenantId, record.id, action, {
         actorUid,
         ownerReviewNotes: reviewNotes[record.id] ?? record.ownerReviewNotes,
       });
@@ -194,6 +195,24 @@ export default function CleaningProductsMethodsSection({ tenantId, actorUid, can
       setSuccess(`${updated.name} marked ${statusLabel(action).toLowerCase()}.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Product review could not be saved.');
+    } finally {
+      setActingId('');
+    }
+  };
+
+  const adopt = async record => {
+    setActingId(record.id);
+    setError('');
+    setSuccess('');
+    try {
+      const adopted = await adoptSystemDefaultMethod(tenantId, record, { actorUid });
+      setTenantRecords(current => [
+        ...current.filter(item => item.id !== adopted.id),
+        adopted,
+      ].sort((left, right) => left.name.localeCompare(right.name)));
+      setSuccess(`${record.name} added for owner review. It is not employee-usable yet.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Company method could not be adopted.');
     } finally {
       setActingId('');
     }
@@ -210,16 +229,24 @@ export default function CleaningProductsMethodsSection({ tenantId, actorUid, can
       <details className="cleaning-methods-group">
         <summary>Company methods <span>{systemDefaults.length} system defaults</span></summary>
         <div className="cleaning-methods-list">
-          {systemDefaults.map(record => (
-            <details className="cleaning-method-card" key={record.id}>
+          {systemDefaults.map(record => {
+            const adopted = tenantRecords.find(item => item.sourceDefaultId === record.id);
+            return <details className="cleaning-method-card" key={record.id}>
               <summary>
                 <span>{record.name}</span>
                 <span className={`cleaning-status cleaning-status-${record.status}`}>{statusLabel(record.status)}</span>
               </summary>
               <p className="cleaning-method-immutable">System default · inspect only · not employee-visible</p>
               <MethodDetails record={record} />
+              {adopted ? (
+                <p className="cleaning-adopted-copy">Company copy: {statusLabel(adopted.status)}.</p>
+              ) : (
+                <button type="button" className="v1-button v1-button-secondary" disabled={actingId === record.id} onClick={() => adopt(record)}>
+                  {actingId === record.id ? 'Adding...' : 'Use for my company'}
+                </button>
+              )}
             </details>
-          ))}
+          })}
         </div>
       </details>
 
@@ -287,23 +314,30 @@ export default function CleaningProductsMethodsSection({ tenantId, actorUid, can
       </div>
 
       <div className="cleaning-methods-group">
-        <h3>Tenant commercial products</h3>
+        <h3>Company methods and commercial products</h3>
         {loading && <p role="status">Loading cleaning products...</p>}
-        {!loading && tenantRecords.length === 0 && <p className="v1-muted">No commercial products have been added for this tenant.</p>}
+        {!loading && tenantRecords.length === 0 && <p className="v1-muted">No company methods or commercial products have been added for this tenant.</p>}
         <div className="cleaning-methods-list">
           {tenantRecords.map(record => {
-            const approvalIssues = getCommercialApprovalIssues(record);
+            const approvalIssues = getCleaningRecordApprovalIssues(record);
             return (
               <article className="cleaning-method-card cleaning-commercial-card" key={record.id}>
                 <div className="cleaning-commercial-title">
-                  <div><h4>{record.name}</h4><p>{record.manufacturer} · {record.containerSize}</p></div>
+                  <div>
+                    <h4>{record.name}</h4>
+                    <p>{record.recordType === 'company_mix' ? 'Adopted company method' : `${record.manufacturer} · ${record.containerSize}`}</p>
+                  </div>
                   <span className={`cleaning-status cleaning-status-${record.status}`}>{statusLabel(record.status)}</span>
                 </div>
                 {record.status === 'pending_review' && <p className="cleaning-pending-copy">Pending review — do not use yet.</p>}
                 {record.status === 'restricted' && <p className="cleaning-method-warning"><strong>Restrictions:</strong> {record.ownerReviewNotes || record.prohibitedSurfaces.join(', ')}</p>}
-                <p><strong>Classification:</strong> {record.classification}</p>
-                <p><strong>Uses:</strong> {record.intendedUses.join(', ') || 'Not entered'}</p>
-                <p><strong>Surfaces:</strong> {record.compatibleSurfaces.join(', ') || record.prohibitedSurfaces.join(', ') || 'Not entered'}</p>
+                {record.recordType === 'company_mix' ? <MethodDetails record={record} /> : (
+                  <>
+                    <p><strong>Classification:</strong> {record.classification}</p>
+                    <p><strong>Uses:</strong> {record.intendedUses.join(', ') || 'Not entered'}</p>
+                    <p><strong>Surfaces:</strong> {record.compatibleSurfaces.join(', ') || record.prohibitedSurfaces.join(', ') || 'Not entered'}</p>
+                  </>
+                )}
                 {approvalIssues.length > 0 && (
                   <div className="cleaning-approval-issues">
                     <strong>Before approval</strong>
@@ -318,7 +352,9 @@ export default function CleaningProductsMethodsSection({ tenantId, actorUid, can
                   />
                 </label>
                 <div className="cleaning-review-actions" aria-label={`Review ${record.name}`}>
-                  <button type="button" disabled={actingId === record.id} onClick={() => { setEditingId(record.id); setForm(recordToForm(record)); setError(''); setSuccess(''); }}>Edit details</button>
+                  {record.recordType === 'commercial_product' && (
+                    <button type="button" disabled={actingId === record.id} onClick={() => { setEditingId(record.id); setForm(recordToForm(record)); setError(''); setSuccess(''); }}>Edit details</button>
+                  )}
                   <button type="button" disabled={actingId === record.id} onClick={() => review(record, 'approved')}>Approve</button>
                   <button type="button" disabled={actingId === record.id} onClick={() => review(record, 'restricted')}>Restrict</button>
                   <button type="button" disabled={actingId === record.id} onClick={() => review(record, 'rejected')}>Reject</button>

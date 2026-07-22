@@ -8,7 +8,9 @@ import {
 } from '../core/scheduling/schedulingService';
 import { useAuth } from '../contexts/AuthContext';
 import { FieldPhotoUploadPanel } from './FieldPhotoEvidence';
+import { FieldChecklistMethodGuidance } from './ChecklistMethodGuidance';
 import { isApprovedChecklistCurrent } from '../core/checklists/bookingChecklistAssembly';
+import { getEmployeeUsableCleaningRecordsByIds } from '../modules/cleaning/products/cleaningProductService';
 import {
   bookingAddress,
   bookingCustomerName,
@@ -162,6 +164,7 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
   const [fieldNotes, setFieldNotes] = useState(typeof booking.fieldNotes === 'string' ? booking.fieldNotes : '');
   const [fieldIssue, setFieldIssue] = useState(typeof booking.fieldIssue === 'string' ? booking.fieldIssue : '');
   const [photoEvidence, setPhotoEvidence] = useState({ loading: true, photos: [] });
+  const [methodRecords, setMethodRecords] = useState([]);
   const [showCompletionWarning, setShowCompletionWarning] = useState(false);
   const phone = bookingCustomerPhone(booking);
   const address = bookingAddress(booking);
@@ -173,6 +176,15 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
   const callFallbackMessage = 'If nothing opened, your device/browser may not support phone calls from this page.';
   const displayedActionMessage = actionMessage || defaultActionMessage;
   const completedCount = checklist.filter(item => item.completed).length;
+  const methodIds = useMemo(() => Array.from(new Set(checklist.flatMap(item => [
+    ...(Array.isArray(item.approvedMethodIds) ? item.approvedMethodIds : []),
+    item.preferredMethodId,
+  ]).filter(Boolean))).sort(), [checklist]);
+  const methodIdsKey = methodIds.join('|');
+  const methodRecordById = useMemo(
+    () => new Map(methodRecords.map(record => [record.id, record])),
+    [methodRecords],
+  );
   const checklistGroups = useMemo(() => checklist.reduce((groups, item) => {
     const room = checklistRoom(item.area);
     const existing = groups.find(group => group.room === room);
@@ -188,6 +200,24 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
     ? booking.jobChecklistSnapshot.warnings.filter(warning => typeof warning === 'string' && warning.trim())
     : [];
   const saving = Boolean(savingAction);
+
+  useEffect(() => {
+    let active = true;
+    const requestedMethodIds = methodIdsKey ? methodIdsKey.split('|') : [];
+    Promise.resolve().then(async () => {
+      if (!active) return;
+      setMethodRecords([]);
+      if (!tenantId || requestedMethodIds.length === 0) return;
+      try {
+        const records = await getEmployeeUsableCleaningRecordsByIds(tenantId, requestedMethodIds);
+        if (active) setMethodRecords(records);
+      } catch {
+        if (active) setMethodRecords([]);
+      }
+    });
+
+    return () => { active = false; };
+  }, [tenantId, methodIdsKey]);
 
   const handleCallCustomer = event => {
     event.stopPropagation();
@@ -414,6 +444,12 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
                                   )}
                                 </details>
                               )}
+                              <FieldChecklistMethodGuidance
+                                records={(item.approvedMethodIds || [])
+                                  .map(recordId => methodRecordById.get(recordId))
+                                  .filter(Boolean)}
+                                preferredMethodId={item.preferredMethodId}
+                              />
                             </div>
                           ))}
                         </div>

@@ -421,14 +421,18 @@ service cloud.firestore {
                'brand', 'productName', 'variant', 'manufacturer', 'containerSize', 'UPC', 'productCategory',
                'donatedProduct', 'containerCondition', 'labelInformationComplete', 'labelDirections',
                'dilutionInstructions', 'requiresDilution', 'contactTime', 'rinseRequired',
-               'epaRegistrationNumber', 'sdsReference', 'expirationDate', 'dateCode'
+               'epaRegistrationNumber', 'sdsReference', 'expirationDate', 'dateCode',
+               'ingredients', 'measurements', 'formulaVariants', 'expectedYield', 'bottleSize',
+               'approvedContainer', 'mixingOrder', 'preparationFrequency', 'mixedOnLabelRequired',
+               'discardDateLabelRequired', 'sourceDefaultId', 'sourceDefaultName',
+               'sourceDefaultVersion', 'adoptedAt', 'adoptedBy'
              ]);
     }
 
     function cleaningProductCoreIsValid(tenantId, recordId) {
       return cleaningProductKeysOnly() &&
              request.resource.data.id == recordId &&
-             request.resource.data.recordType == 'commercial_product' &&
+             request.resource.data.recordType in ['commercial_product', 'company_mix'] &&
              request.resource.data.scope == 'tenant' &&
              request.resource.data.tenantId == tenantId &&
              request.resource.data.name is string &&
@@ -446,6 +450,30 @@ service cloud.firestore {
              (!request.resource.data.employeeVisible || request.resource.data.status in ['approved', 'restricted']) &&
              request.resource.data.updatedBy == request.auth.uid &&
              request.resource.data.updatedAt == request.time;
+    }
+
+    function approvedSystemDefaultId(sourceDefaultId) {
+      return sourceDefaultId in [
+        'ab-dawn-vinegar-shower-cleaner',
+        'ab-everyday-mild-surface-cleaner',
+        'ab-kitchen-grease-cleaner',
+        'ab-window-glass-vinegar-cleaner',
+        'ab-mirror-cleaner',
+        'ab-baking-soda-cleaning-paste',
+        'ab-hard-floor-maintenance-cleaner',
+        'ab-stainless-steel-everyday-method',
+        'ab-routine-toilet-bowl-cleaning-method',
+        'ab-dry-baking-soda-odor-control-method'
+      ];
+    }
+
+    function companyMethodProvenanceIsValid(recordId) {
+      return request.resource.data.recordType == 'company_mix' &&
+             request.resource.data.classification == 'cleaning' &&
+             approvedSystemDefaultId(request.resource.data.sourceDefaultId) &&
+             recordId == 'adopted-' + request.resource.data.sourceDefaultId &&
+             request.resource.data.sourceDefaultName is string && request.resource.data.sourceDefaultName.size() > 0 &&
+             request.resource.data.sourceDefaultVersion is string && request.resource.data.sourceDefaultVersion.size() > 0;
     }
 
     function cleaningProductApprovalIsComplete() {
@@ -471,14 +499,33 @@ service cloud.firestore {
                (request.resource.data.epaRegistrationNumber is string && request.resource.data.epaRegistrationNumber.size() > 0));
     }
 
+    function companyMethodApprovalIsComplete() {
+      return companyMethodProvenanceIsValid(request.resource.data.id) &&
+             request.resource.data.intendedUses.size() > 0 &&
+             request.resource.data.dangerousCombinations.size() > 0 &&
+             request.resource.data.ownerReviewNotes is string && request.resource.data.ownerReviewNotes.size() > 0 &&
+             ((request.resource.data.applicationInstructions is string && request.resource.data.applicationInstructions.size() > 0) ||
+              (request.resource.data.measurements is list && request.resource.data.measurements.size() > 0) ||
+              (request.resource.data.formulaVariants is list && request.resource.data.formulaVariants.size() > 0));
+    }
+
+    function cleaningRecordApprovalIsComplete() {
+      return request.resource.data.recordType == 'company_mix'
+        ? companyMethodApprovalIsComplete()
+        : cleaningProductApprovalIsComplete();
+    }
+
     function isValidCleaningProductCreate(tenantId, recordId) {
       return tenantExists(tenantId) &&
              (isSuperAdmin() || isTenantAdmin(tenantId)) &&
              cleaningProductCoreIsValid(tenantId, recordId) &&
+             (request.resource.data.recordType == 'commercial_product' || companyMethodProvenanceIsValid(recordId)) &&
              request.resource.data.status == 'pending_review' &&
              request.resource.data.employeeVisible == false &&
              request.resource.data.createdBy == request.auth.uid &&
              request.resource.data.createdAt == request.time &&
+             (request.resource.data.recordType != 'company_mix' || request.resource.data.adoptedAt == request.time) &&
+             (request.resource.data.recordType != 'company_mix' || request.resource.data.adoptedBy == request.auth.uid) &&
              request.resource.data.reviewedAt == null &&
              request.resource.data.reviewedBy == '';
     }
@@ -493,7 +540,16 @@ service cloud.firestore {
              request.resource.data.tenantId == resource.data.tenantId &&
              request.resource.data.createdAt == resource.data.createdAt &&
              request.resource.data.createdBy == resource.data.createdBy &&
-             (!(request.resource.data.status in ['approved', 'restricted']) || cleaningProductApprovalIsComplete()) &&
+             (request.resource.data.recordType != 'company_mix' ||
+               (request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                 'status', 'ownerReviewNotes', 'employeeVisible', 'reviewedAt', 'reviewedBy', 'updatedAt', 'updatedBy'
+               ]) &&
+                request.resource.data.sourceDefaultId == resource.data.sourceDefaultId &&
+                request.resource.data.sourceDefaultName == resource.data.sourceDefaultName &&
+                request.resource.data.sourceDefaultVersion == resource.data.sourceDefaultVersion &&
+                request.resource.data.adoptedAt == resource.data.adoptedAt &&
+                request.resource.data.adoptedBy == resource.data.adoptedBy)) &&
+             (!(request.resource.data.status in ['approved', 'restricted']) || cleaningRecordApprovalIsComplete()) &&
              (request.resource.data.status == resource.data.status ||
                (request.resource.data.reviewedBy == request.auth.uid && request.resource.data.reviewedAt == request.time));
     }
