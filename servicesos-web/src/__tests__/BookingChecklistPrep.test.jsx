@@ -174,7 +174,7 @@ describe('BookingChecklistPrep', () => {
 });
 
 describe("OwnerTodayJobPrep", () => {
-  it('shows today jobs in scheduled order with readiness reasons and owner-only payment status', () => {
+  it('shows today jobs in scheduled order with readiness reasons and owner-only payment status', async () => {
     const onOpenBooking = vi.fn();
     render(<OwnerTodayJobPrep
       bookings={[
@@ -188,9 +188,51 @@ describe("OwnerTodayJobPrep", () => {
     expect(headings.indexOf('Earlier Customer')).toBeLessThan(headings.indexOf('Later Customer'));
     expect(screen.getAllByText('Needs attention').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Not paid').length).toBe(2);
-    expect(screen.getByText(/Product and method mappings are not available yet/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Mix before leaving' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Commercial products' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Needs attention' })).toBeInTheDocument();
+    expect(await screen.findByText('Approved tenant methods are unavailable until a tenant is selected.')).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: 'Review job prep' })[0]);
     expect(onOpenBooking).toHaveBeenCalledWith(expect.objectContaining({ id: 'earlier' }));
+  });
+
+  it('renders one deduplicated Daily Prep mixture with every affected job', async () => {
+    const showerMethod = approvedTenantMethod('ab-dawn-vinegar-shower-cleaner');
+    mocks.listTenantCleaningRecords.mockResolvedValue([showerMethod]);
+    const earlier = booking({ id: 'earlier-ready', customerName: 'Earlier Ready', startTime: '08:00' });
+    const later = booking({ id: 'later-ready', customerName: 'Later Ready', startTime: '13:00' });
+    const showerItem = {
+      id: 'standard-one-time-bathroom-shower-or-tub-required-1',
+      area: 'Bathroom / Shower or Tub',
+      fixtureOrSurface: 'Shower or Tub',
+      label: 'Complete shower or tub',
+      required: true,
+      completed: false,
+      approvedMethodIds: [showerMethod.id],
+      preferredMethodId: showerMethod.id,
+    };
+    const ready = value => ({
+      ...value,
+      jobChecklistSnapshot: {
+        ownerApproved: true,
+        items: [showerItem],
+        provenance: { sourceScopeSignature: assembleBookingChecklist(value).sourceScopeSignature },
+      },
+    });
+
+    render(<OwnerTodayJobPrep
+      bookings={[ready(later), ready(earlier)]}
+      tenantId="tenant-a"
+      reviewedBy="owner-a"
+      onOpenBooking={vi.fn()}
+    />);
+
+    expect(await screen.findByRole('heading', { name: 'Dawn and Vinegar Shower Cleaner' })).toBeInTheDocument();
+    expect(screen.getAllByText('Earlier Ready, Later Ready').length).toBeGreaterThan(0);
+    expect(screen.getByText(/Dedicated 32 oz chemical-resistant Zep spray bottle/)).toBeInTheDocument();
+    expect(screen.getByText(/5–10 minutes/)).toBeInTheDocument();
+    expect(screen.getAllByText('Gloves')).toHaveLength(1);
+    expect(screen.getAllByText(/Never mix with bleach/)).toHaveLength(1);
   });
 
   it('confirms an unchanged recurring packet from Today\'s Jobs with one narrow write', async () => {

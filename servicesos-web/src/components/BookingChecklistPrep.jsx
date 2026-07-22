@@ -6,7 +6,6 @@ import {
   bookingChecklistReadiness,
   buildApprovedChecklistSnapshot,
   checklistExecutionCopy,
-  extractBookingChecklistScope,
   findRecurringChecklistReuseCandidate,
   isApprovedChecklistCurrent,
 } from '../core/checklists/bookingChecklistAssembly';
@@ -27,6 +26,7 @@ import {
 } from './bookingDisplay';
 import { employeeAssignmentLabel } from '../services/employeeProfileService';
 import { OwnerChecklistMethodGuidance } from './ChecklistMethodGuidance';
+import { DailyPrepSummary } from './DailyPrepSummary';
 import './BookingChecklistPrep.css';
 
 const READINESS_LABELS = {
@@ -34,23 +34,6 @@ const READINESS_LABELS = {
   [CHECKLIST_READINESS.NEEDS_ATTENTION]: 'Needs attention',
   [CHECKLIST_READINESS.READY]: 'Ready',
   [CHECKLIST_READINESS.COMPLETED]: 'Completed',
-};
-
-const ADD_ON_LABELS = {
-  oven: 'Inside oven',
-  fridge: 'Inside refrigerator',
-  insideCabinets: 'Inside cabinets',
-  baseboards: 'Baseboards',
-  windows: 'Interior windows',
-  blindCleaning: 'Blind cleaning',
-  wallSpotCleaning: 'Wall cleaning',
-  laundryRoomCleaning: 'Laundry room',
-  garageCleaning: 'Garage cleaning',
-  closetOrganization: 'Closet organization',
-  pantryOrganization: 'Pantry organization',
-  basementCleaning: 'Basement cleaning',
-  petWasteRemoval: 'Pet waste removal',
-  ceilingFanCleaning: 'Ceiling fan cleaning',
 };
 
 function localDateKey(date = new Date()) {
@@ -109,17 +92,37 @@ export function OwnerTodayJobPrep({
     .filter(booking => bookingDateKey(booking) === today && booking.status !== 'cancelled')
     .sort((a, b) => String(a.startTime || a.scheduledAt || '').localeCompare(String(b.startTime || b.scheduledAt || '')));
   const readiness = todayJobs.map(booking => ({ booking, result: bookingChecklistReadiness(booking, bookings) }));
-  const addOns = new Set();
-  const preparationWarnings = [];
+  const [tenantMethods, setTenantMethods] = useState([]);
+  const [methodsLoading, setMethodsLoading] = useState(true);
+  const [methodsError, setMethodsError] = useState('');
 
-  todayJobs.forEach(booking => {
-    const scope = extractBookingChecklistScope(booking);
-    Object.entries(scope.serviceScope).forEach(([key, enabled]) => {
-      if (enabled) addOns.add(ADD_ON_LABELS[key] || key);
+  useEffect(() => {
+    let active = true;
+    Promise.resolve().then(async () => {
+      if (!tenantId) {
+        if (active) {
+          setTenantMethods([]);
+          setMethodsLoading(false);
+          setMethodsError('Approved tenant methods are unavailable until a tenant is selected.');
+        }
+        return;
+      }
+      setMethodsLoading(true);
+      setMethodsError('');
+      try {
+        const records = await listTenantCleaningRecords(tenantId);
+        if (active) setTenantMethods(records);
+      } catch {
+        if (active) {
+          setTenantMethods([]);
+          setMethodsError('Approved tenant methods could not be loaded. No method-based supplies are shown.');
+        }
+      } finally {
+        if (active) setMethodsLoading(false);
+      }
     });
-    if (scope.surfaceNotes) preparationWarnings.push(`${bookingCustomerName(booking)}: ${scope.surfaceNotes}`);
-    scope.hazards.forEach(hazard => preparationWarnings.push(`${bookingCustomerName(booking)}: ${hazard}`));
-  });
+    return () => { active = false; };
+  }, [tenantId]);
 
   const confirmRecurringPacket = async (booking, reuseCandidate) => {
     const assembly = assembleBookingChecklist(booking);
@@ -219,27 +222,13 @@ export function OwnerTodayJobPrep({
             ))}
           </div>
 
-          <aside className="job-prep-summary" aria-labelledby="daily-prep-summary-title">
-            <h3 id="daily-prep-summary-title">Daily prep summary</h3>
-            <div>
-              <h4>Special add-ons</h4>
-              <p>{addOns.size ? [...addOns].join(', ') : 'No structured add-ons recorded.'}</p>
-            </div>
-            <div>
-              <h4>Property and surface warnings</h4>
-              {preparationWarnings.length
-                ? <ul>{preparationWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
-                : <p>No structured warnings recorded.</p>}
-            </div>
-            <div>
-              <h4>Products, tools, equipment, and PPE</h4>
-              <p>Product and method mappings are not available yet. Review approved job packets and business standards before loading kits.</p>
-            </div>
-            <div>
-              <h4>Refill and mixing</h4>
-              <p>No approved refill or mixing mappings are available in this checklist foundation.</p>
-            </div>
-          </aside>
+          <DailyPrepSummary
+            bookings={todayJobs}
+            tenantId={tenantId}
+            tenantMethods={tenantMethods}
+            loading={methodsLoading}
+            error={methodsError}
+          />
         </div>
       )}
     </section>

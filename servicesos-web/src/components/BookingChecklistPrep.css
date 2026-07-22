@@ -82,7 +82,7 @@
 
 .job-prep-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.34fr);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.55fr);
   gap: 18px;
   margin-top: 18px;
 }

@@ -1,0 +1,65 @@
+.daily-prep-summary {
+  display: grid;
+  gap: 0;
+}
+
+.daily-prep-summary > section {
+  padding-top: 14px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.daily-prep-summary h4,
+.daily-prep-summary h5 {
+  margin: 0 0 6px;
+  color: #0f172a;
+}
+
+.daily-prep-summary h5 {
+  font-size: 13px;
+}
+
+.daily-prep-summary ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.daily-prep-summary li + li {
+  margin-top: 8px;
+}
+
+.daily-prep-item {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  border-left: 3px solid #0f766e;
+  padding-left: 10px;
+}
+
+.daily-prep-item p,
+.daily-prep-formula p,
+.daily-prep-affected,
+.daily-prep-empty-copy {
+  margin: 0;
+  font-size: 13px;
+}
+
+.daily-prep-formula {
+  margin-top: 4px;
+}
+
+.daily-prep-affected {
+  color: #475569;
+}
+
+.daily-prep-needs-attention {
+  color: #78350f;
+}
+
+.daily-prep-needs-attention h4 {
+  color: #92400e;
+}
+
+.daily-prep-alert {
+  color: #991b1b;
+  font-weight: 700;
+}
