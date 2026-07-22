@@ -494,6 +494,57 @@ function normalizeFieldChecklist(fieldChecklist) {
   return successResponse(normalized);
 }
 
+export function getRequiredChecklistCompletion(fieldChecklist) {
+  const checklist = normalizeFieldChecklist(fieldChecklist);
+  if (!checklist.success) return checklist;
+
+  const requiredItems = checklist.data.filter(item => item.required);
+  const incompleteRequiredItems = requiredItems.filter(item => !item.completed);
+  return successResponse({
+    requiredTotal: requiredItems.length,
+    requiredCompleted: requiredItems.length - incompleteRequiredItems.length,
+    incompleteRequiredItems: incompleteRequiredItems.map(item => ({
+      id: item.id,
+      area: item.area,
+      label: item.label,
+    })),
+  });
+}
+
+function preserveApprovedChecklistStructure(fieldChecklist, approvedSnapshot) {
+  const submitted = normalizeFieldChecklist(fieldChecklist);
+  if (!submitted.success) return submitted;
+  if (approvedSnapshot?.ownerApproved !== true || !Array.isArray(approvedSnapshot.items)) {
+    return submitted;
+  }
+
+  const approved = normalizeFieldChecklist(approvedSnapshot.items);
+  if (!approved.success) {
+    return bookingAdminValidationError('The owner-approved checklist is invalid. Owner review is required.');
+  }
+  if (submitted.data.length !== approved.data.length) {
+    return bookingAdminValidationError('Owner-approved checklist structure cannot be changed in Field Mode.');
+  }
+
+  const submittedById = new Map(submitted.data.map(item => [item.id, item]));
+  const preserved = [];
+  for (const approvedItem of approved.data) {
+    const submittedItem = submittedById.get(approvedItem.id);
+    if (!submittedItem) {
+      return bookingAdminValidationError('Owner-approved checklist structure cannot be changed in Field Mode.');
+    }
+    const approvedStructure = { ...approvedItem };
+    delete approvedStructure.completed;
+    const { completed: submittedCompleted, ...submittedStructure } = submittedItem;
+    if (JSON.stringify(submittedStructure) !== JSON.stringify(approvedStructure)) {
+      return bookingAdminValidationError('Owner-approved checklist structure cannot be changed in Field Mode.');
+    }
+    preserved.push({ ...approvedStructure, completed: submittedCompleted });
+  }
+
+  return successResponse(preserved);
+}
+
 function normalizeApprovedChecklistSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
     return bookingAdminValidationError('Approved booking checklist snapshot must be an object.');
@@ -595,6 +646,27 @@ export function buildBookingFieldExecutionPatch(proposedPatch, { now = new Date(
   const normalizedUpdatedBy = normalizeFieldUpdatedBy(updatedBy, 'Booking field execution updatedBy');
   if (!normalizedUpdatedBy.success) return normalizedUpdatedBy;
 
+  let normalizedChecklist;
+  if (Object.hasOwn(proposedPatch, 'fieldChecklist')) {
+    const checklist = normalizeFieldChecklist(proposedPatch.fieldChecklist);
+    if (!checklist.success) return checklist;
+    normalizedChecklist = checklist.data;
+  }
+
+  if (proposedPatch.fieldStatus === 'completed') {
+    if (!normalizedChecklist) {
+      return bookingAdminValidationError('The current checklist is required before finishing the job.');
+    }
+    const completion = getRequiredChecklistCompletion(normalizedChecklist);
+    if (!completion.success) return completion;
+    if (completion.data.incompleteRequiredItems.length > 0) {
+      const remaining = completion.data.incompleteRequiredItems.map(item => item.label).join('; ');
+      return bookingAdminValidationError(
+        `${completion.data.incompleteRequiredItems.length} required checklist outcome${completion.data.incompleteRequiredItems.length === 1 ? ' remains' : 's remain'} incomplete: ${remaining}.`
+      );
+    }
+  }
+
   if (Object.hasOwn(proposedPatch, 'fieldStatus')) {
     if (!BOOKING_FIELD_STATUS_VALUES.has(proposedPatch.fieldStatus)) {
       return bookingAdminValidationError('Booking field status is not allowed.');
@@ -611,14 +683,12 @@ export function buildBookingFieldExecutionPatch(proposedPatch, { now = new Date(
     }
   }
 
-  if (Object.hasOwn(proposedPatch, 'fieldChecklist')) {
-    const checklist = normalizeFieldChecklist(proposedPatch.fieldChecklist);
-    if (!checklist.success) return checklist;
-    const completed = checklist.data.filter(item => item.completed).length;
-    payload.fieldChecklist = checklist.data;
+  if (normalizedChecklist) {
+    const completed = normalizedChecklist.filter(item => item.completed).length;
+    payload.fieldChecklist = normalizedChecklist;
     payload.fieldChecklistSummary = {
       completed,
-      total: checklist.data.length,
+      total: normalizedChecklist.length,
     };
   }
 
@@ -691,7 +761,22 @@ export async function updateBookingFieldExecution(tenantId, bookingId, proposedP
       return errorResponse('Booking ID is required', 'VALIDATION_ERROR');
     }
 
-    const builtPatch = buildBookingFieldExecutionPatch(proposedPatch, options);
+    let trustedPatch = proposedPatch;
+    if (Object.hasOwn(proposedPatch || {}, 'fieldChecklist')) {
+      const bookingRef = doc(db, 'tenants', tenantId, COLLECTION_NAME, bookingId);
+      const bookingSnapshot = await getDoc(bookingRef);
+      if (!bookingSnapshot.exists()) {
+        return errorResponse('Booking not found', ERROR_CODES.NOT_FOUND);
+      }
+      const checklist = preserveApprovedChecklistStructure(
+        proposedPatch.fieldChecklist,
+        bookingSnapshot.data()?.jobChecklistSnapshot,
+      );
+      if (!checklist.success) return checklist;
+      trustedPatch = { ...proposedPatch, fieldChecklist: checklist.data };
+    }
+
+    const builtPatch = buildBookingFieldExecutionPatch(trustedPatch, options);
     if (!builtPatch.success) {
       return builtPatch;
     }

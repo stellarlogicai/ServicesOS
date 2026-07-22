@@ -31,6 +31,20 @@ vi.mock('../core/scheduling/schedulingService', () => ({
     booking?.isDeleted !== true &&
     booking?.isArchived !== true
   ),
+  getRequiredChecklistCompletion: items => {
+    const requiredItems = items.filter(item => item.required === true);
+    const incompleteRequiredItems = requiredItems
+      .filter(item => item.completed !== true)
+      .map(item => ({ id: item.id, area: item.area, label: item.label }));
+    return {
+      success: true,
+      data: {
+        requiredTotal: requiredItems.length,
+        requiredCompleted: requiredItems.length - incompleteRequiredItems.length,
+        incompleteRequiredItems,
+      },
+    };
+  },
   updateBookingFieldExecution: mocks.updateBookingFieldExecution,
 }));
 
@@ -85,6 +99,34 @@ const approvedChecklist = {
     ],
   },
 };
+
+function approvedChecklistWithRequiredOutcomes(requiredCount, completedCount = 0) {
+  const requiredItems = Array.from({ length: requiredCount }, (_, index) => ({
+    id: `required-${index + 1}`,
+    area: index % 2 === 0 ? 'Kitchen' : 'Bathroom',
+    label: `Required outcome ${index + 1}`,
+    completionCriteria: `Outcome ${index + 1} is complete.`,
+    jobAidSteps: [{ label: `Detailed guidance ${index + 1}` }],
+    required: true,
+    completed: index < completedCount,
+  }));
+  const optionalItem = {
+    id: 'optional-1',
+    area: 'General',
+    label: 'Optional finishing touch',
+    jobAidSteps: [{ label: 'Optional detailed guidance' }],
+    required: false,
+    completed: false,
+  };
+  return {
+    jobChecklistSnapshot: {
+      ownerApproved: true,
+      provenance: { sourceScopeSignature: assembleBookingChecklist({}).sourceScopeSignature },
+      items: [...requiredItems.map(item => ({ ...item, completed: false })), optionalItem],
+    },
+    fieldChecklist: [...requiredItems, optionalItem],
+  };
+}
 
 const approvedShowerMethod = {
   id: 'adopted-ab-dawn-vinegar-shower-cleaner',
@@ -507,7 +549,9 @@ describe('FieldMode read-only field surface', () => {
     await screen.findByText('Complete Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
 
+    fireEvent.click(screen.getByRole('checkbox', { name: /Review job scope before starting/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: /Complete the requested cleaning areas/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Do a final quality check before leaving/ }));
     fireEvent.change(screen.getByLabelText('Employee notes'), { target: { value: 'Ready for owner review.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
     fireEvent.click(screen.getByRole('button', { name: 'Complete anyway' }));
@@ -523,6 +567,76 @@ describe('FieldMode read-only field surface', () => {
     expect(patch).not.toHaveProperty('paymentStatus');
     expect(patch).not.toHaveProperty('amountReceived');
     expect(await screen.findByText('Job marked complete.')).toBeInTheDocument();
+  });
+
+  it('blocks completion when zero of 40 required parent outcomes are complete', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'zero-required-complete',
+      customerName: 'Zero Complete Customer',
+      date: dateKey(today),
+      paymentStatus: 'not_paid',
+      ...approvedChecklistWithRequiredOutcomes(40),
+    }] });
+
+    render(<FieldMode />);
+    await screen.findByText('Zero Complete Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    expect(screen.getByText('40 required outcomes remain.')).toBeInTheDocument();
+    expect(screen.getByText('Kitchen: Required outcome 1')).toBeInTheDocument();
+    expect(screen.getByText('Bathroom: Required outcome 40')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark Complete' })).toBeDisabled();
+    expect(mocks.updateBookingFieldExecution).not.toHaveBeenCalled();
+  });
+
+  it('blocks completion with one of 40 required outcomes remaining after refresh data loads', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'one-required-remaining',
+      customerName: 'One Remaining Customer',
+      date: dateKey(today),
+      paymentStatus: 'not_paid',
+      ...approvedChecklistWithRequiredOutcomes(40, 39),
+    }] });
+
+    render(<FieldMode />);
+    await screen.findByText('One Remaining Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    expect(screen.getByText('1 required outcome remains.')).toBeInTheDocument();
+    expect(screen.getByText('Bathroom: Required outcome 40')).toBeInTheDocument();
+    expect(screen.queryByText('Kitchen: Required outcome 1')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark Complete' })).toBeDisabled();
+    expect(mocks.updateBookingFieldExecution).not.toHaveBeenCalled();
+  });
+
+  it('allows completion when every required parent outcome is complete and optional outcomes remain', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'all-required-complete',
+      customerName: 'Required Complete Customer',
+      date: dateKey(today),
+      paymentStatus: 'not_paid',
+      ...approvedChecklistWithRequiredOutcomes(40, 40),
+    }] });
+
+    render(<FieldMode />);
+    await screen.findByText('Required Complete Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    expect(screen.queryByText(/required outcomes? remain/)).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Optional finishing touch/ })).not.toBeChecked();
+    expect(screen.getAllByText('View steps')).toHaveLength(41);
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete anyway' }));
+
+    await waitFor(() => expect(mocks.updateBookingFieldExecution).toHaveBeenCalled());
+    const completionPatch = mocks.updateBookingFieldExecution.mock.calls[0][2];
+    expect(completionPatch.fieldStatus).toBe('completed');
+    expect(completionPatch.fieldChecklist.filter(item => item.required && item.completed)).toHaveLength(40);
+    expect(completionPatch.fieldChecklist.find(item => item.id === 'optional-1')).toMatchObject({
+      required: false,
+      completed: false,
+    });
+    expect(completionPatch).not.toHaveProperty('paymentStatus');
   });
 
   it('does not expose an unapproved suggested checklist to Field Mode', async () => {

@@ -34,16 +34,25 @@ This setup branch was created from the known clean V1 checkpoint above and adds 
 
 Active local remediation branch:
 
-`fix/v1-manual-payment-authorization`
+`fix/v1-required-checklist-completion`
 
-This branch starts from the completed V1 release-candidate audit base `52e2195`.
-The confirmed manual-payment authorization blocker is fixed locally by propagating
-the authenticated admin UID through the existing service option, rejecting missing
-or caller-forged actor identity before a write, and preserving the existing Firestore
-rule that requires `paymentStatusUpdatedBy == request.auth.uid`.
+This branch starts from the committed manual-payment authorization fix `7e2443c`.
+The required-checklist completion blocker is fixed locally through the supported
+Field Mode and scheduling-service path. Field Mode lists incomplete required parent
+outcomes and disables completion until they are complete. The scheduling service
+also rejects completion without the current checklist, rejects incomplete required
+outcomes, and preserves owner-approved checklist structure. Optional outcomes and
+job-aid steps do not block completion.
 
-The next controlled release-blocker slice after review is required-checklist
-completion enforcement.
+Firestore rules cannot derive required completion from the current arbitrary list
+shape, so this slice does not claim server-side enforcement against a caller that
+bypasses the supported client service and writes directly through the Firebase SDK.
+A trusted backend or enforcement-oriented data contract would be required for that
+stronger boundary.
+
+Separate narrow beta defect to fix after required-checklist enforcement and before
+the final release-candidate smoke: date-only payment values are parsed as UTC and
+can display one calendar day early in Central time.
 
 ## Completed production gates
 
@@ -132,17 +141,20 @@ Unless Jamie explicitly changes scope, keep these parked:
 
 ## Established local validation baselines
 
-Latest known green baselines for the manual-payment authorization remediation:
+Latest known green baselines for the required-checklist completion remediation:
 
-- focused booking payment component/service: 95 tests
-- full web: 456 tests
+- focused Field Mode and scheduling service: 89 tests
+- full web: 465 tests
 - Cloud Functions: 39 tests
 - Firestore rules: 42 tests
 - Storage rules: 20 tests
 - lint: passed
 - build: passed
-- Firestore and Storage rules were unchanged by this remediation; the local
-  authenticated emulator smoke confirmed own-tenant admin success, persisted actor
-  identity, and unauthorized-role/cross-tenant denial.
+- Firestore and Storage rules were unchanged by this remediation. The local
+  authenticated emulator smoke confirmed blocked states with zero completed
+  required outcomes and with one required outcome remaining, refresh persistence,
+  completion with all required outcomes and one
+  optional outcome open, persisted notes/issues, and unchanged payment, price,
+  schedule, assignment, and customer fields.
 
 Treat these as checkpoint evidence, not permanent expected totals. Report current totals honestly after future changes.

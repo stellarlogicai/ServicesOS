@@ -30,6 +30,9 @@
 .field-job-execution-header p, .field-job-checklist p { margin: 5px 0 0; color: var(--v1-muted); font-size: 13px; line-height: 1.45; }
 .field-job-execution-controls { display: flex; flex-wrap: wrap; gap: 10px; }
 .field-job-execution-controls .v1-button, .field-job-checklist .v1-button, .field-job-notes .v1-button { min-height: 44px; }
+.field-completion-required { padding: 11px 13px; border: 1px solid #fbbf24; border-radius: 6px; background: #fffbeb; color: #78350f; }
+.field-completion-required p { margin: 4px 0 0; color: #92400e; font-size: 13px; }
+.field-completion-required ul { margin: 7px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.45; }
 .field-job-checklist { display: grid; gap: 10px; }
 .field-job-prep-context { display: grid; gap: 8px; padding: 12px; border: 1px solid #fde68a; border-radius: 8px; background: #fffbeb; color: #78350f; }
 .field-job-prep-context p, .field-job-prep-context ul { margin: 0; font-size: 13px; line-height: 1.5; }

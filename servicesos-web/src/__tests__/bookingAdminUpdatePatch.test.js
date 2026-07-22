@@ -32,6 +32,7 @@ import {
   buildBookingAdminUpdatePatch,
   buildBookingFieldExecutionPatch,
   buildBookingManualPaymentStatusPatch,
+  getRequiredChecklistCompletion,
   updateBookingAdminFields,
   updateBookingFieldExecution,
   updateBookingManualPaymentStatus,
@@ -467,8 +468,8 @@ describe('booking field execution whitelist helper', () => {
     const result = buildBookingFieldExecutionPatch({
       fieldStatus: 'completed',
       fieldChecklist: [
-        { id: 'walkthrough', label: 'Walk through', completed: true },
-        { id: 'final', label: 'Final check', completed: false },
+        { id: 'walkthrough', label: 'Walk through', required: true, completed: true },
+        { id: 'final', label: 'Final check', required: false, completed: false },
       ],
       fieldNotes: '  Finished upstairs first.  ',
       fieldIssue: ' Back door lock sticks. ',
@@ -552,20 +553,85 @@ describe('booking field execution whitelist helper', () => {
       message: 'Booking field checklist job-aid steps must be an array.',
     });
   });
+
+  it('counts only required parent outcomes and ignores job-aid steps', () => {
+    expect(getRequiredChecklistCompletion([
+      {
+        id: 'required-complete', label: 'Required complete', required: true, completed: true,
+        jobAidSteps: [{ label: 'A detailed step that has no completion state' }],
+      },
+      { id: 'required-open', label: 'Required open', required: true, completed: false },
+      { id: 'optional-open', label: 'Optional open', required: false, completed: false },
+    ])).toMatchObject({
+      success: true,
+      data: {
+        requiredTotal: 2,
+        requiredCompleted: 1,
+        incompleteRequiredItems: [{ id: 'required-open', label: 'Required open' }],
+      },
+    });
+  });
+
+  it('rejects completion with zero or one required parent outcome remaining', () => {
+    const checklist = Array.from({ length: 40 }, (_, index) => ({
+      id: `required-${index + 1}`,
+      label: `Required outcome ${index + 1}`,
+      required: true,
+      completed: false,
+      jobAidSteps: [{ label: `Detailed guidance ${index + 1}` }],
+    }));
+
+    expect(buildBookingFieldExecutionPatch({
+      fieldStatus: 'completed',
+      fieldChecklist: checklist,
+    }, { now, updatedBy: 'field-user-1' })).toMatchObject({
+      success: false,
+      message: expect.stringContaining('40 required checklist outcomes remain incomplete'),
+    });
+
+    const oneRemaining = checklist.map((item, index) => ({ ...item, completed: index < 39 }));
+    expect(buildBookingFieldExecutionPatch({
+      fieldStatus: 'completed',
+      fieldChecklist: oneRemaining,
+    }, { now, updatedBy: 'field-user-1' })).toMatchObject({
+      success: false,
+      message: expect.stringContaining('1 required checklist outcome remains incomplete: Required outcome 40'),
+    });
+  });
+
+  it('requires the current checklist on every completion request', () => {
+    expect(buildBookingFieldExecutionPatch({ fieldStatus: 'completed' }, {
+      now,
+      updatedBy: 'field-user-1',
+    })).toMatchObject({
+      success: false,
+      message: 'The current checklist is required before finishing the job.',
+    });
+  });
 });
 
 describe('booking field execution write wrapper', () => {
   beforeEach(() => {
     firestoreMocks.updateDoc.mockClear();
     firestoreMocks.doc.mockClear();
+    firestoreMocks.getDoc.mockReset();
     firestoreMocks.updateDoc.mockResolvedValue(undefined);
     firestoreMocks.doc.mockImplementation((db, ...path) => ({ db, path }));
+    firestoreMocks.getDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({
+        jobChecklistSnapshot: {
+          ownerApproved: true,
+          items: [{ id: 'final', label: 'Final check', required: true, completed: false }],
+        },
+      }),
+    });
   });
 
   it('writes only sanitized field execution payload to the tenant-scoped booking document path', async () => {
     const result = await updateBookingFieldExecution('tenant-a', 'booking-1', {
       fieldStatus: 'completed',
-      fieldChecklist: [{ id: 'final', label: 'Final check', completed: true }],
+      fieldChecklist: [{ id: 'final', label: 'Final check', required: true, completed: true }],
       fieldNotes: 'Done',
     }, { now, updatedBy: 'field-user-1' });
 
@@ -589,6 +655,31 @@ describe('booking field execution write wrapper', () => {
       })
     );
     expect(JSON.stringify(firestoreMocks.updateDoc.mock.calls[0][1])).not.toMatch(/payment|stripe|customer|lead/i);
+  });
+
+  it('rejects normal service completion while a required outcome remains incomplete', async () => {
+    const result = await updateBookingFieldExecution('tenant-a', 'booking-1', {
+      fieldStatus: 'completed',
+      fieldChecklist: [{ id: 'final', label: 'Final check', required: true, completed: false }],
+    }, { now, updatedBy: 'field-user-1' });
+
+    expect(result).toMatchObject({
+      success: false,
+      message: expect.stringContaining('1 required checklist outcome remains incomplete'),
+    });
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects Field Mode attempts to alter owner-approved checklist structure', async () => {
+    const result = await updateBookingFieldExecution('tenant-a', 'booking-1', {
+      fieldChecklist: [{ id: 'final', label: 'Changed by employee', required: false, completed: true }],
+    }, { now, updatedBy: 'field-user-1' });
+
+    expect(result).toMatchObject({
+      success: false,
+      message: 'Owner-approved checklist structure cannot be changed in Field Mode.',
+    });
+    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
   });
 
   it('does not write when field execution patch includes unsafe fields', async () => {

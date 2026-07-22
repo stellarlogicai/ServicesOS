@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BOOKING_FIELD_STATUS_LABELS,
   bookingMatchesEmployeeFieldVisibility,
+  getRequiredChecklistCompletion,
   getAssignedFieldJobs,
   getJobs,
   updateBookingFieldExecution,
@@ -176,6 +177,13 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
   const callFallbackMessage = 'If nothing opened, your device/browser may not support phone calls from this page.';
   const displayedActionMessage = actionMessage || defaultActionMessage;
   const completedCount = checklist.filter(item => item.completed).length;
+  const requiredChecklistCompletion = useMemo(
+    () => getRequiredChecklistCompletion(checklist),
+    [checklist],
+  );
+  const incompleteRequiredItems = requiredChecklistCompletion.success
+    ? requiredChecklistCompletion.data.incompleteRequiredItems
+    : [];
   const methodIds = useMemo(() => Array.from(new Set(checklist.flatMap(item => [
     ...(Array.isArray(item.approvedMethodIds) ? item.approvedMethodIds : []),
     item.preferredMethodId,
@@ -278,12 +286,22 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
   const saveChecklist = () => saveFieldExecution({ fieldChecklist: checklist }, 'Checklist saved.', 'checklist');
   const saveNotes = () => saveFieldExecution({ fieldNotes, fieldIssue }, 'Notes saved.', 'notes');
   const updatePhotoEvidence = useCallback(evidence => setPhotoEvidence(evidence), []);
-  const completeJob = () => saveFieldExecution({
-    fieldStatus: 'completed',
-    fieldChecklist: checklist,
-    fieldNotes,
-    fieldIssue,
-  }, 'Job marked complete.', 'complete');
+  const completeJob = () => {
+    if (incompleteRequiredItems.length > 0) {
+      setShowCompletionWarning(false);
+      setExecutionMessage('');
+      setExecutionError(
+        `${incompleteRequiredItems.length} required checklist outcome${incompleteRequiredItems.length === 1 ? '' : 's'} must be completed before finishing the job.`
+      );
+      return;
+    }
+    saveFieldExecution({
+      fieldStatus: 'completed',
+      fieldChecklist: checklist,
+      fieldNotes,
+      fieldIssue,
+    }, 'Job marked complete.', 'complete');
+  };
   const markComplete = () => {
     const hasUploadedAfterPhoto = photoEvidence.photos.some(photo => photo.phase === 'after');
     if (fieldPhotoAccess && !hasUploadedAfterPhoto) {
@@ -349,11 +367,24 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
               className="v1-button v1-button-secondary"
               type="button"
               onClick={markComplete}
-              disabled={saving || fieldStatus === 'completed'}
+              disabled={saving || fieldStatus === 'completed' || incompleteRequiredItems.length > 0}
             >
               {savingAction === 'complete' ? 'Completing...' : 'Mark Complete'}
             </button>
           </div>
+          {hasApprovedChecklist && incompleteRequiredItems.length > 0 && (
+            <div className="field-completion-required" role="status">
+              <strong>
+                {incompleteRequiredItems.length} required outcome{incompleteRequiredItems.length === 1 ? ' remains' : 's remain'}.
+              </strong>
+              <p>Complete these outcomes before finishing the job:</p>
+              <ul>
+                {incompleteRequiredItems.map(item => (
+                  <li key={item.id}>{item.area}: {item.label}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {showCompletionWarning && (
             <div className="field-completion-warning" role="alertdialog" aria-labelledby="field-completion-warning-title">
               <p id="field-completion-warning-title">No after photos have been uploaded. Complete the job anyway?</p>
