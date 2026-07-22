@@ -34,15 +34,21 @@ This setup branch was created from the known clean V1 checkpoint above and adds 
 
 Active local remediation branch:
 
-`fix/v1-required-checklist-completion`
+`fix/v1-checkout-confirmation-wording`
 
-This branch starts from the committed manual-payment authorization fix `7e2443c`.
-The required-checklist completion blocker is fixed locally through the supported
-Field Mode and scheduling-service path. Field Mode lists incomplete required parent
-outcomes and disables completion until they are complete. The scheduling service
-also rejects completion without the current checklist, rejects incomplete required
-outcomes, and preserves owner-approved checklist structure. Optional outcomes and
-job-aid steps do not block completion.
+This branch starts from the committed required-checklist completion fix `d04afff`.
+The public Stripe Checkout return page no longer treats the client-controlled
+`stripe_booking_checkout=success` query parameter as proof of payment. It shows a
+pending confirmation state instead. Confirmed Stripe-paid wording remains in the
+authenticated Booking Detail view and is driven by the booking payment fields that
+the verified Stripe webhook updates.
+
+The required-checklist completion blocker is fixed in `d04afff` through the
+supported Field Mode and scheduling-service path. Field Mode lists incomplete
+required parent outcomes and disables completion until they are complete. The
+scheduling service also rejects completion without the current checklist, rejects
+incomplete required outcomes, and preserves owner-approved checklist structure.
+Optional outcomes and job-aid steps do not block completion.
 
 Firestore rules cannot derive required completion from the current arbitrary list
 shape, so this slice does not claim server-side enforcement against a caller that
@@ -158,3 +164,19 @@ Latest known green baselines for the required-checklist completion remediation:
   schedule, assignment, and customer fields.
 
 Treat these as checkpoint evidence, not permanent expected totals. Report current totals honestly after future changes.
+
+Latest checkout-confirmation wording validation on `fix/v1-checkout-confirmation-wording`:
+
+- focused checkout and payment safety: 65 tests
+- full web: 465 tests
+- Cloud Functions: 39 tests
+- lint: passed
+- build: passed
+- local fake-data smoke: a forged success return remained confirmation-pending
+  after refresh; cancelled, failed, expired, incomplete, and unpaid return values
+  showed no confirmed-payment claim; an authenticated webhook-confirmed fake booking
+  showed `Paid in full` and `Stripe (confirmed by Stripe)`; no console errors or
+  payment-state mutations occurred.
+- Stripe checkout creation, Connect, webhook processing, payment-link generation,
+  manual-payment behavior, Firestore rules, and production configuration were
+  unchanged.

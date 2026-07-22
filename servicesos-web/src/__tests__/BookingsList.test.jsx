@@ -1066,6 +1066,8 @@ describe('read-only Bookings admin list', () => {
         paymentMethod: 'stripe',
         amountReceived: 190,
         agreedPrice: 190,
+        paymentStatusUpdatedBy: 'stripe_webhook',
+        stripePaidAt: '2026-07-22T18:00:00.000Z',
       }],
     });
 
@@ -1075,6 +1077,7 @@ describe('read-only Bookings admin list', () => {
     await user.click(screen.getByRole('button', { name: 'View Details' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Stripe Confirmed Customer' });
+    expect(dialog).toHaveTextContent('Paid in full');
     expect(dialog).toHaveTextContent('Stripe (confirmed by Stripe)');
 
     await user.click(screen.getByRole('button', { name: 'Edit Payment Details' }));

@@ -462,21 +462,31 @@ describe('App onboarding router context', () => {
   });
 
   it('detects Stripe booking checkout return query states', () => {
-    expect(getStripeBookingCheckoutResult('?stripe_booking_checkout=success&session_id=cs_test_123')).toBe('success');
+    expect(getStripeBookingCheckoutResult('?stripe_booking_checkout=success&session_id=cs_test_123')).toBe('returned');
     expect(getStripeBookingCheckoutResult('?stripe_booking_checkout=cancelled')).toBe('cancelled');
     expect(getStripeBookingCheckoutResult('?stripe_booking_checkout=canceled')).toBe('cancelled');
+    ['failed', 'expired', 'incomplete', 'unpaid'].forEach(result => {
+      expect(getStripeBookingCheckoutResult(`?stripe_booking_checkout=${result}`)).toBeNull();
+    });
     expect(getStripeBookingCheckoutResult('?other=value')).toBeNull();
   });
 
-  it('renders Stripe checkout success without entering the authenticated shell', () => {
+  it('treats a Stripe checkout return parameter as confirmation pending without entering the authenticated shell', () => {
     window.history.pushState({}, '', '/?stripe_booking_checkout=success&session_id=cs_test_123');
 
-    render(<App />);
+    const { unmount } = render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'Payment received. Thank you.' })).toBeInTheDocument();
-    expect(screen.getByText('Payment confirmation may take a moment to appear for the business.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Payment confirmation pending.' })).toBeInTheDocument();
+    expect(screen.getByText("If you finished checkout, we're securely confirming the payment. The booking will update once confirmation is received.")).toBeInTheDocument();
+    expect(screen.queryByText(/Payment received/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Wife Beta Dashboard' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Customer Portal Screen' })).not.toBeInTheDocument();
+    expect(authState.logout).not.toHaveBeenCalled();
+
+    unmount();
+    render(<App />);
+    expect(screen.getByRole('heading', { name: 'Payment confirmation pending.' })).toBeInTheDocument();
+    expect(screen.queryByText(/Payment received/i)).not.toBeInTheDocument();
   });
 
   it('renders Stripe checkout cancellation without entering the authenticated shell', () => {

@@ -189,7 +189,7 @@ function defaultPage(role) {
 }
 
 function StripeBookingCheckoutResult({ result }) {
-  const isSuccess = result === "success";
+  const isReturned = result === "returned";
   return (
     <div style={{
       minHeight: "100vh",
@@ -214,15 +214,15 @@ function StripeBookingCheckoutResult({ result }) {
           width: 48,
           height: 48,
           borderRadius: 999,
-          background: isSuccess ? "#dcfce7" : "#fef3c7",
-          color: isSuccess ? "#15803d" : "#92400e",
+          background: "#fef3c7",
+          color: "#92400e",
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
           fontSize: 24,
           marginBottom: 18,
         }}>
-          {isSuccess ? "✓" : "!"}
+          {isReturned ? "…" : "!"}
         </div>
         <h1 id="stripe-payment-result-title" style={{
           margin: "0 0 10px",
@@ -230,7 +230,7 @@ function StripeBookingCheckoutResult({ result }) {
           fontSize: 24,
           lineHeight: 1.2,
         }}>
-          {isSuccess ? "Payment received. Thank you." : "Payment was cancelled."}
+          {isReturned ? "Payment confirmation pending." : "Payment was cancelled."}
         </h1>
         <p style={{
           margin: 0,
@@ -238,8 +238,8 @@ function StripeBookingCheckoutResult({ result }) {
           fontSize: 15,
           lineHeight: 1.6,
         }}>
-          {isSuccess
-            ? "Payment confirmation may take a moment to appear for the business."
+          {isReturned
+            ? "If you finished checkout, we're securely confirming the payment. The booking will update once confirmation is received."
             : "You can close this page or contact the business."}
         </p>
       </main>
