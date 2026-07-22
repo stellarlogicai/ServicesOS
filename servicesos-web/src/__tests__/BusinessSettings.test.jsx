@@ -12,7 +12,20 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
-  useAuth: () => ({ tenantId: mocks.tenantId, user: { uid: 'admin-test' } }),
+  useAuth: () => ({
+    tenantId: mocks.tenantId,
+    user: { uid: 'admin-test' },
+    role: 'admin',
+    isAdmin: () => true,
+  }),
+}));
+
+vi.mock('../components/CleaningProductsMethodsSection', () => ({
+  default: ({ tenantId, actorUid, canManage }) => (
+    canManage
+      ? <section aria-label="Cleaning Products & Methods test section">{tenantId}:{actorUid}</section>
+      : null
+  ),
 }));
 
 vi.mock('../services/businessSettingsService', () => ({

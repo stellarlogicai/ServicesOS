@@ -20,9 +20,9 @@ Operational checkpoint branch:
 
 `v1-lab-production-storage-rules-smoke`
 
-Latest known checkpoint commit before this Codex-instruction setup branch:
+Latest known owner job-prep and outcome-checklist checkpoint:
 
-`5d71894463087a8ec4a68b767636976b1fd9422d`
+`c638aa205627a4bb6a7a66dd119983448d14f83a`
 
 The two-document Storage-rules correction commit `af05274` is in that history.
 
@@ -31,6 +31,12 @@ Codex-instruction setup branch:
 `v1-lab-codex-instructions-setup`
 
 This setup branch was created from the known clean V1 checkpoint above and adds only Codex instruction/current-state files.
+
+Active local feature branch:
+
+`feature/v1-cleaning-products-methods`
+
+This branch implements Phase 1 of the tenant-scoped Approved Cleaning Products & Methods Library. It does not connect product records to checklist outcomes, Field Mode, or Daily Prep yet.
 
 ## Completed production gates
 
@@ -61,7 +67,7 @@ Canonical V1 Firestore rules contain this contract and pass the local Firestore 
 
 No production photo objects or field-photo metadata were created during the blocked smoke. Booking, payment, price, schedule, customer, lead, assignment, status, and Stripe fields remained unchanged.
 
-## Next task
+## Next production task
 
 Perform the controlled canonical-versus-deployed Firestore rules compatibility review.
 
@@ -77,6 +83,12 @@ Only when current-app compatibility is proven:
 
 Do not begin customer identity remediation before the photo path is proven and the Storage/photo evidence is committed.
 
+## Current local V1 slice
+
+- Owner job prep and outcome checklists are implemented at the `c638aa2` checkpoint.
+- Phase 1 cleaning-product work adds immutable starter company methods, tenant commercial-product review, and tenant-scoped Firestore authorization.
+- Checklist method mappings, Field Mode method display, and Daily Prep product aggregation remain deferred to the next explicitly approved slice.
+
 ## Remaining customer-facing V1 blockers
 
 - Production Firestore `fieldPhotos` metadata contract and full photo smoke.
@@ -85,11 +97,7 @@ Do not begin customer identity remediation before the photo path is proven and t
   - customer/profile tenant mismatch
   - customer linked to a non-customer role
   - production customer privacy smoke
-- Real clean-type checklist integration:
-  - approved templates
-  - booking snapshots
-  - Field Mode execution
-  - owner review
+- Cleaning method mappings from approved checklist outcomes to reviewed product/method records.
 - Cohesive Field Job Workspace redesign centered on the real checklist.
 - Required employee assignment index, real employee setup/assignment, and production employee smoke before claiming the employee workflow production-ready.
 - Controlled release integration, production deployment, and final customer-facing smoke.

@@ -6,6 +6,7 @@ import {
   saveBusinessSettings,
 } from '../services/businessSettingsService';
 import StripeConnectOnboarding from './StripeConnectOnboarding';
+import CleaningProductsMethodsSection from './CleaningProductsMethodsSection';
 
 const emptyForm = {
   businessName: '',
@@ -28,7 +29,10 @@ const emptyForm = {
 };
 
 export default function BusinessSettings() {
-  const { tenantId, user } = useAuth();
+  const { tenantId, user, role, isAdmin } = useAuth();
+  const canManageCleaningMethods = typeof isAdmin === 'function'
+    ? isAdmin()
+    : role === 'admin' || role === 'super-admin';
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -208,6 +212,12 @@ export default function BusinessSettings() {
             tenantId={tenantId}
             initialBusinessEmail={form.businessEmail}
             initialBusinessName={form.businessName}
+          />
+
+          <CleaningProductsMethodsSection
+            tenantId={tenantId}
+            actorUid={user?.uid}
+            canManage={canManageCleaningMethods}
           />
         </div>
       )}

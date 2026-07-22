@@ -408,7 +408,103 @@ service cloud.firestore {
                'updatedByUid'
              ]) &&
              businessSettingsKeysOnly() &&
-             (!('updatedByUid' in request.resource.data) || request.resource.data.updatedByUid == request.auth.uid);
+              (!('updatedByUid' in request.resource.data) || request.resource.data.updatedByUid == request.auth.uid);
+    }
+
+    function cleaningProductKeysOnly() {
+      return request.resource.data.keys().hasOnly([
+               'id', 'recordType', 'scope', 'tenantId', 'name', 'category', 'classification', 'status',
+               'intendedUses', 'compatibleSurfaces', 'prohibitedSurfaces', 'requiredTools', 'requiredPPE',
+               'dwellTime', 'applicationInstructions', 'rinseInstructions', 'dryingInstructions',
+               'dangerousCombinations', 'storageInstructions', 'shelfLife', 'evidence', 'ownerReviewNotes',
+               'employeeVisible', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy', 'reviewedAt', 'reviewedBy',
+               'brand', 'productName', 'variant', 'manufacturer', 'containerSize', 'UPC', 'productCategory',
+               'donatedProduct', 'containerCondition', 'labelInformationComplete', 'labelDirections',
+               'dilutionInstructions', 'requiresDilution', 'contactTime', 'rinseRequired',
+               'epaRegistrationNumber', 'sdsReference', 'expirationDate', 'dateCode'
+             ]);
+    }
+
+    function cleaningProductCoreIsValid(tenantId, recordId) {
+      return cleaningProductKeysOnly() &&
+             request.resource.data.id == recordId &&
+             request.resource.data.recordType == 'commercial_product' &&
+             request.resource.data.scope == 'tenant' &&
+             request.resource.data.tenantId == tenantId &&
+             request.resource.data.name is string &&
+             request.resource.data.name.size() > 0 &&
+             request.resource.data.category is string &&
+             request.resource.data.category.size() > 0 &&
+             request.resource.data.classification in ['cleaning', 'sanitizing', 'disinfecting'] &&
+             request.resource.data.status in ['pending_review', 'approved', 'restricted', 'rejected', 'expired', 'retired'] &&
+             request.resource.data.intendedUses is list &&
+             request.resource.data.compatibleSurfaces is list &&
+             request.resource.data.prohibitedSurfaces is list &&
+             request.resource.data.requiredPPE is list &&
+             request.resource.data.dangerousCombinations is list &&
+             request.resource.data.employeeVisible is bool &&
+             (!request.resource.data.employeeVisible || request.resource.data.status in ['approved', 'restricted']) &&
+             request.resource.data.updatedBy == request.auth.uid &&
+             request.resource.data.updatedAt == request.time;
+    }
+
+    function cleaningProductApprovalIsComplete() {
+      return request.resource.data.brand is string && request.resource.data.brand.size() > 0 &&
+             request.resource.data.productName is string && request.resource.data.productName.size() > 0 &&
+             request.resource.data.variant is string && request.resource.data.variant.size() > 0 &&
+             request.resource.data.manufacturer is string && request.resource.data.manufacturer.size() > 0 &&
+             request.resource.data.containerSize is string && request.resource.data.containerSize.size() > 0 &&
+             request.resource.data.productCategory is string && request.resource.data.productCategory.size() > 0 &&
+             request.resource.data.containerCondition == 'good' &&
+             request.resource.data.labelInformationComplete == true &&
+             request.resource.data.labelDirections is string && request.resource.data.labelDirections.size() > 0 &&
+             request.resource.data.intendedUses.size() > 0 &&
+             (request.resource.data.compatibleSurfaces.size() > 0 || request.resource.data.prohibitedSurfaces.size() > 0) &&
+             request.resource.data.requiredPPE.size() > 0 &&
+             request.resource.data.dangerousCombinations.size() > 0 &&
+             request.resource.data.ownerReviewNotes is string && request.resource.data.ownerReviewNotes.size() > 0 &&
+             (request.resource.data.requiresDilution != true ||
+               (request.resource.data.dilutionInstructions is string && request.resource.data.dilutionInstructions.size() > 0)) &&
+             (!(request.resource.data.classification in ['sanitizing', 'disinfecting']) ||
+               (request.resource.data.contactTime is string && request.resource.data.contactTime.size() > 0)) &&
+             (request.resource.data.classification != 'disinfecting' ||
+               (request.resource.data.epaRegistrationNumber is string && request.resource.data.epaRegistrationNumber.size() > 0));
+    }
+
+    function isValidCleaningProductCreate(tenantId, recordId) {
+      return tenantExists(tenantId) &&
+             (isSuperAdmin() || isTenantAdmin(tenantId)) &&
+             cleaningProductCoreIsValid(tenantId, recordId) &&
+             request.resource.data.status == 'pending_review' &&
+             request.resource.data.employeeVisible == false &&
+             request.resource.data.createdBy == request.auth.uid &&
+             request.resource.data.createdAt == request.time &&
+             request.resource.data.reviewedAt == null &&
+             request.resource.data.reviewedBy == '';
+    }
+
+    function isValidCleaningProductUpdate(tenantId, recordId) {
+      return tenantExists(tenantId) &&
+             (isSuperAdmin() || isTenantAdmin(tenantId)) &&
+             cleaningProductCoreIsValid(tenantId, recordId) &&
+             request.resource.data.id == resource.data.id &&
+             request.resource.data.recordType == resource.data.recordType &&
+             request.resource.data.scope == resource.data.scope &&
+             request.resource.data.tenantId == resource.data.tenantId &&
+             request.resource.data.createdAt == resource.data.createdAt &&
+             request.resource.data.createdBy == resource.data.createdBy &&
+             (!(request.resource.data.status in ['approved', 'restricted']) || cleaningProductApprovalIsComplete()) &&
+             (request.resource.data.status == resource.data.status ||
+               (request.resource.data.reviewedBy == request.auth.uid && request.resource.data.reviewedAt == request.time));
+    }
+
+    function canReadCleaningProduct(tenantId) {
+      return tenantExists(tenantId) &&
+             (isSuperAdmin() ||
+              isTenantAdmin(tenantId) ||
+              (isTenantFieldUser(tenantId) &&
+               resource.data.employeeVisible == true &&
+               resource.data.status in ['approved', 'restricted']));
     }
 
     match /tenants/{tenantId} {
@@ -446,6 +542,13 @@ service cloud.firestore {
                        (isSuperAdmin() || isTenantAdmin(tenantId) || isOwnCustomerRecord(tenantId));
         allow create, update, delete: if tenantExists(tenantId) &&
                                         (isSuperAdmin() || isTenantAdmin(tenantId));
+      }
+
+      match /cleaningProductsMethods/{recordId} {
+        allow read: if canReadCleaningProduct(tenantId);
+        allow create: if isValidCleaningProductCreate(tenantId, recordId);
+        allow update: if isValidCleaningProductUpdate(tenantId, recordId);
+        allow delete: if false;
       }
 
       match /payments/{paymentId} {

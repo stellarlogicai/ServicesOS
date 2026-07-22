@@ -164,6 +164,28 @@ async function seedFirestore() {
     await setDoc(doc(database, 'tenants', TENANT_A, 'employees', 'staff-a'), { name: 'Staff A' });
     await setDoc(doc(database, 'tenants', TENANT_A, 'payments', 'payment-a'), { status: 'pending' });
     await setDoc(doc(database, 'tenants', TENANT_B, 'payments', 'payment-b'), { status: 'pending' });
+    await setDoc(
+      doc(database, 'tenants', TENANT_A, 'cleaningProductsMethods', 'product-pending'),
+      commercialProduct()
+    );
+    await setDoc(
+      doc(database, 'tenants', TENANT_A, 'cleaningProductsMethods', 'product-approved'),
+      commercialProduct({ id: 'product-approved', status: 'approved', employeeVisible: true })
+    );
+    await setDoc(
+      doc(database, 'tenants', TENANT_A, 'cleaningProductsMethods', 'product-incomplete'),
+      commercialProduct({ id: 'product-incomplete', labelDirections: '' })
+    );
+    await setDoc(
+      doc(database, 'tenants', TENANT_B, 'cleaningProductsMethods', 'product-other'),
+      commercialProduct({
+        id: 'product-other',
+        tenantId: TENANT_B,
+        status: 'approved',
+        employeeVisible: true,
+        createdBy: 'admin-b',
+      })
+    );
     await setDoc(doc(database, 'tenants', TENANT_A, 'branding', 'config'), { primaryColor: '#123456' });
     await setDoc(doc(database, 'tenants', TENANT_A, 'insurance', 'policy'), { status: 'active' });
     await setDoc(doc(database, 'tenants', TENANT_A, 'time_clock', 'clock-a'), { status: 'open' });
@@ -196,6 +218,64 @@ const fieldPhotoMetadata = ({
   contentType,
   sizeBytes: 256,
   ...extra,
+});
+
+const commercialProduct = ({
+  id = 'product-pending',
+  tenantId = TENANT_A,
+  status = 'pending_review',
+  employeeVisible = false,
+  createdBy = 'admin-a',
+  labelDirections = 'Follow the exact container label.',
+} = {}) => ({
+  id,
+  recordType: 'commercial_product',
+  scope: 'tenant',
+  tenantId,
+  name: 'Exact Brand Exact Product Original',
+  category: 'surface cleaner',
+  classification: 'cleaning',
+  status,
+  intendedUses: ['Sealed counters'],
+  compatibleSurfaces: ['Sealed washable counters'],
+  prohibitedSurfaces: ['Natural stone'],
+  requiredTools: ['Microfiber cloth'],
+  requiredPPE: ['Gloves'],
+  dwellTime: '',
+  applicationInstructions: 'Follow the exact container label.',
+  rinseInstructions: '',
+  dryingInstructions: '',
+  dangerousCombinations: ['Do not mix with bleach'],
+  storageInstructions: 'Store according to the label.',
+  shelfLife: '',
+  evidence: ['Exact container label'],
+  ownerReviewNotes: status === 'pending_review' ? '' : 'Exact label reviewed.',
+  employeeVisible,
+  createdAt: '2026-07-18T12:00:00.000Z',
+  createdBy,
+  updatedAt: '2026-07-18T12:00:00.000Z',
+  updatedBy: createdBy,
+  reviewedAt: status === 'pending_review' ? null : '2026-07-18T12:00:00.000Z',
+  reviewedBy: status === 'pending_review' ? '' : createdBy,
+  brand: 'Exact Brand',
+  productName: 'Exact Product',
+  variant: 'Original',
+  manufacturer: 'Exact Manufacturer',
+  containerSize: '32 oz',
+  UPC: '',
+  productCategory: 'surface cleaner',
+  donatedProduct: false,
+  containerCondition: 'good',
+  labelInformationComplete: true,
+  labelDirections,
+  dilutionInstructions: '',
+  requiresDilution: false,
+  contactTime: '',
+  rinseRequired: false,
+  epaRegistrationNumber: '',
+  sdsReference: '',
+  expirationDate: '',
+  dateCode: '',
 });
 
 describe('tenant-scoped customer intake Firestore rules', () => {
@@ -729,6 +809,145 @@ describe('tenant-scoped customer intake Firestore rules', () => {
 
     const anonymousDatabase = testEnvironment.unauthenticatedContext().firestore();
     await assertFails(getDoc(doc(anonymousDatabase, 'tenants', TENANT_A)));
+  });
+
+  test('tenant admin can create pending commercial products and explicitly review complete records', async () => {
+    const database = authenticatedDatabase('admin-a');
+    const createdRef = doc(database, 'tenants', TENANT_A, 'cleaningProductsMethods', 'admin-created');
+    await assertSucceeds(setDoc(createdRef, {
+      ...commercialProduct({ id: 'admin-created' }),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }));
+    await assertSucceeds(updateDoc(createdRef, {
+      labelDirections: 'Corrected exact container directions.',
+      updatedAt: serverTimestamp(),
+      updatedBy: 'admin-a',
+    }));
+    await assertFails(updateDoc(
+      doc(authenticatedDatabase('admin-b'), 'tenants', TENANT_A, 'cleaningProductsMethods', 'admin-created'),
+      {
+        labelDirections: 'Cross-tenant edit.',
+        updatedAt: serverTimestamp(),
+        updatedBy: 'admin-b',
+      }
+    ));
+
+    const pending = doc(database, 'tenants', TENANT_A, 'cleaningProductsMethods', 'product-pending');
+    await assertSucceeds(getDoc(pending));
+    await assertSucceeds(updateDoc(pending, {
+      status: 'approved',
+      employeeVisible: true,
+      ownerReviewNotes: 'Exact label reviewed and approved.',
+      reviewedAt: serverTimestamp(),
+      reviewedBy: 'admin-a',
+      updatedAt: serverTimestamp(),
+      updatedBy: 'admin-a',
+    }));
+
+    for (const [status, employeeVisible] of [
+      ['restricted', true],
+      ['rejected', false],
+      ['expired', false],
+      ['retired', false],
+    ]) {
+      await assertSucceeds(updateDoc(pending, {
+        status,
+        employeeVisible,
+        ownerReviewNotes: status === 'restricted' ? 'Use only on listed sealed surfaces.' : 'Owner review recorded.',
+        reviewedAt: serverTimestamp(),
+        reviewedBy: 'admin-a',
+        updatedAt: serverTimestamp(),
+        updatedBy: 'admin-a',
+      }));
+    }
+  });
+
+  test('incomplete commercial products cannot be approved or made employee-visible', async () => {
+    const database = authenticatedDatabase('admin-a');
+    const incomplete = doc(database, 'tenants', TENANT_A, 'cleaningProductsMethods', 'product-incomplete');
+    await assertFails(updateDoc(incomplete, {
+      status: 'approved',
+      employeeVisible: true,
+      ownerReviewNotes: 'Attempted approval.',
+      reviewedAt: serverTimestamp(),
+      reviewedBy: 'admin-a',
+      updatedAt: serverTimestamp(),
+      updatedBy: 'admin-a',
+    }));
+    await assertFails(updateDoc(incomplete, {
+      employeeVisible: true,
+      updatedAt: serverTimestamp(),
+      updatedBy: 'admin-a',
+    }));
+  });
+
+  test('employees can read only own-tenant approved or restricted visible products and cannot manage them', async () => {
+    const employee = authenticatedDatabase('employee-a');
+    const approved = doc(employee, 'tenants', TENANT_A, 'cleaningProductsMethods', 'product-approved');
+    await assertSucceeds(getDoc(approved));
+    await assertFails(getDoc(doc(employee, 'tenants', TENANT_A, 'cleaningProductsMethods', 'product-pending')));
+    await assertFails(getDoc(doc(employee, 'tenants', TENANT_B, 'cleaningProductsMethods', 'product-other')));
+    await assertFails(updateDoc(approved, {
+      status: 'retired',
+      employeeVisible: false,
+      reviewedAt: serverTimestamp(),
+      reviewedBy: 'employee-a',
+      updatedAt: serverTimestamp(),
+      updatedBy: 'employee-a',
+    }));
+    await assertFails(setDoc(
+      doc(employee, 'tenants', TENANT_A, 'cleaningProductsMethods', 'employee-created'),
+      { ...commercialProduct({ id: 'employee-created', createdBy: 'employee-a' }), createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: 'employee-a' }
+    ));
+  });
+
+  test('customers, anonymous users, and other-tenant admins cannot access cleaning product records', async () => {
+    const paths = ['product-pending', 'product-approved'];
+    for (const recordId of paths) {
+      await assertFails(getDoc(doc(
+        authenticatedDatabase('customer-a-auth'),
+        'tenants', TENANT_A, 'cleaningProductsMethods', recordId
+      )));
+      await assertFails(getDoc(doc(
+        authenticatedDatabase('admin-b'),
+        'tenants', TENANT_A, 'cleaningProductsMethods', recordId
+      )));
+      await assertFails(getDoc(doc(
+        testEnvironment.unauthenticatedContext().firestore(),
+        'tenants', TENANT_A, 'cleaningProductsMethods', recordId
+      )));
+    }
+  });
+
+  test('super-admin follows explicit tenant paths while system-default writes and deletion remain denied', async () => {
+    const superAdmin = authenticatedDatabase('super-admin');
+    await assertSucceeds(getDoc(doc(superAdmin, 'tenants', TENANT_A, 'cleaningProductsMethods', 'product-pending')));
+    await assertSucceeds(getDoc(doc(superAdmin, 'tenants', TENANT_B, 'cleaningProductsMethods', 'product-other')));
+
+    const superCreated = doc(superAdmin, 'tenants', TENANT_B, 'cleaningProductsMethods', 'super-created');
+    await assertSucceeds(setDoc(superCreated, {
+      ...commercialProduct({ id: 'super-created', tenantId: TENANT_B, createdBy: 'super-admin' }),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedBy: 'super-admin',
+    }));
+    await assertFails(setDoc(
+      doc(superAdmin, 'tenants', TENANT_A, 'cleaningProductsMethods', 'system-default-write'),
+      {
+        ...commercialProduct({ id: 'system-default-write', createdBy: 'super-admin' }),
+        scope: 'system_default',
+        tenantId: '',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedBy: 'super-admin',
+      }
+    ));
+    await assertFails(deleteDoc(superCreated));
+    await assertFails(deleteDoc(doc(
+      authenticatedDatabase('admin-a'),
+      'tenants', TENANT_A, 'cleaningProductsMethods', 'product-pending'
+    )));
   });
 
   test('tenant payment documents are admin-readable but client-immutable', async () => {
