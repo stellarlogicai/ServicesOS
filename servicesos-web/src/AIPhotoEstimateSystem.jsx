@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { analyzePhotos } from "./services/aiService";
 import { calculateEstimate } from "./lib/estimateEngine";
 import { saveQuote } from "./services/crmService";
 import { sendQuoteEmail } from "./services/emailService";
@@ -70,12 +69,10 @@ export default function AIPhotoEstimateSystem({
     },
     specialRequests: ""
   });
-  const [photoFiles, setPhotoFiles] = useState([]);
+  const [, setPhotoFiles] = useState([]);
   const [photoPreviews, setPhotoPreviews] = useState([]);
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [estimate, setEstimate] = useState(null);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [aiMessage, setAiMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [notificationStatus, setNotificationStatus] = useState(null);
@@ -146,25 +143,6 @@ export default function AIPhotoEstimateSystem({
       );
     } finally {
       setCompressing(false);
-    }
-  };
-
-  const runAI = async () => {
-    setAnalyzing(true);
-    setAiMessage("");
-
-    try {
-      const result = await analyzePhotos(photoFiles);
-      if (!result || result.error) {
-        throw new Error(result?.error || "AI analysis is unavailable");
-      }
-      setAiAnalysis(result);
-    } catch (error) {
-      console.error("AI analysis failed:", error);
-      setAiAnalysis(null);
-      setAiMessage("AI photo analysis is unavailable. You can still save a manual estimate.");
-    } finally {
-      setAnalyzing(false);
     }
   };
 
@@ -734,10 +712,10 @@ export default function AIPhotoEstimateSystem({
 
         <div style={{ marginBottom: 24 }}>
           <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-            Photos (Optional)
+            Photos (Preview only)
           </h3>
           <p style={{ fontSize: 14, color: "#64748b", marginBottom: 12 }}>
-            Upload up to 5 photos for optional AI-powered analysis. Manual estimates do not require photos or AI. {compressing && "Compressing images..."}
+            Photos can be previewed here but are not saved with this estimate. AI photo analysis is unavailable in this release. {compressing && "Compressing images..."}
           </p>
           <input
             type="file"
@@ -877,21 +855,22 @@ export default function AIPhotoEstimateSystem({
             Back
           </button>
           <button
-            onClick={runAI}
-            disabled={analyzing || photoFiles.length === 0}
+            type="button"
+            disabled
+            aria-describedby="ai-analysis-unavailable"
             style={{
               padding: "12px 24px",
-              background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
-              color: "white",
-              border: "none",
+              background: "#e2e8f0",
+              color: "#475569",
+              border: "1px solid #cbd5e1",
               borderRadius: 8,
               fontSize: 14,
               fontWeight: 600,
-              cursor: analyzing || photoFiles.length === 0 ? "not-allowed" : "pointer",
-              opacity: analyzing || photoFiles.length === 0 ? 0.5 : 1
+              cursor: "not-allowed",
+              opacity: 0.8
             }}
           >
-            {analyzing ? "Analyzing..." : "Run AI Analysis"}
+            AI Analysis Unavailable
           </button>
           <button
             onClick={generate}
@@ -911,16 +890,9 @@ export default function AIPhotoEstimateSystem({
             {saving ? "Saving Estimate..." : aiAnalysis ? "Save AI-Enhanced Estimate" : "Save Manual Estimate"}
           </button>
         </div>
-        {photoFiles.length === 0 && (
-          <p style={{ marginTop: 12, fontSize: 14, color: "#64748b" }}>
-            Add photos to use AI analysis, or save the estimate manually.
-          </p>
-        )}
-        {aiMessage && (
-          <div role="status" style={{ marginTop: 12, padding: 12, borderRadius: 8, background: "#fff7ed", color: "#9a3412" }}>
-            {aiMessage}
-          </div>
-        )}
+        <p id="ai-analysis-unavailable" role="status" style={{ marginTop: 12, fontSize: 14, color: "#64748b" }}>
+          AI photo analysis is unavailable in this release. You can still save a manual estimate.
+        </p>
         {saveError && (
           <div role="alert" style={{ marginTop: 12, padding: 12, borderRadius: 8, background: "#fef2f2", color: "#b91c1c" }}>
             {saveError}

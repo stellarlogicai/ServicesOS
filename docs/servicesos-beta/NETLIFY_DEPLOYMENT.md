@@ -47,7 +47,6 @@ VITE_BUSINESS_NAME=
 VITE_BUSINESS_PHONE=
 VITE_BOOKING_URL=
 VITE_EMAIL_FROM=
-VITE_ANTHROPIC_API_KEY=
 VITE_FUNCTIONS_URL=
 VITE_ORS_API_KEY=
 VITE_TWILIO_ACCOUNT_SID=
@@ -56,6 +55,8 @@ VITE_TWILIO_PHONE_NUMBER=
 ```
 
 Do not add Resend API keys as Vite variables. Resend keys must stay server-side in Firebase Functions as `RESEND_API_KEY`.
+
+Do not add AI-provider secrets as Vite variables. Provider credentials belong only in trusted server-side environments; browser photo analysis is unavailable until a reviewed server-side implementation exists.
 
 No Stripe publishable key is required for the approved wife-beta owner/admin surfaces to build or load safely. Booking-scoped Stripe payment links call Firebase Functions; refunds, invoices, Tap to Pay, and broad payment modules remain deferred.
 

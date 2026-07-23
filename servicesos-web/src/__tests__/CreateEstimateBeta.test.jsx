@@ -190,8 +190,7 @@ describe('Create Estimate wife-beta flow', () => {
     );
   });
 
-  it('keeps manual saving available after optional AI analysis fails', async () => {
-    mocks.analyzePhotos.mockRejectedValue(new Error('AI unavailable'));
+  it('disables optional browser AI analysis and keeps manual saving available', async () => {
     const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-manual' });
     render(<AIPhotoEstimateSystem onLeadSaved={onLeadSaved} />);
     completeRequiredFields();
@@ -202,12 +201,12 @@ describe('Create Estimate wife-beta flow', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Run AI Analysis' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: 'Run AI Analysis' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'AI Analysis Unavailable' })).toBeDisabled());
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'AI photo analysis is unavailable. You can still save a manual estimate.'
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'AI photo analysis is unavailable in this release. You can still save a manual estimate.'
     );
+    expect(mocks.analyzePhotos).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Save Manual Estimate' })).toBeEnabled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save Manual Estimate' }));

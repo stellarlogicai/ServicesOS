@@ -6,7 +6,7 @@
  *
  * Phase 0 guarantees:
  *  ✅ No browser-side AI API calls (Anthropic, OpenAI, Gemini, Firebase AI)
- *  ✅ No VITE_ANTHROPIC_API_KEY usage
+ *  ✅ No browser-exposed AI provider secret usage
  *  ✅ No real credit deduction — estimated only
  *  ✅ No auto-posting
  *  ✅ No image generation API

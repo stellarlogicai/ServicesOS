@@ -14,8 +14,6 @@
  */
 
 import { useState, useRef } from "react";
-import { useAuth } from '../../contexts/AuthContext';
-import { checkCredits, deductCredits, getCreditCost } from '../../services/aiUsageEngineService';
 
 // ─── Calculation engine (same formula as before) ──────────────────────────────
 function calculateEstimate(fd, aiAnalysis) {
@@ -382,7 +380,6 @@ function StepCleaning({ fd, set }) {
 
 // ─── Step 4: Environmental + Photos ───────────────────────────────────────────
 function StepEnvironment({ fd, set, aiAnalysis, setAiAnalysis, analyzing, setAnalyzing }) {
-  const { currentTenant } = useAuth();
   const toggleArr = (field, val) =>
     set(field, (fd[field] || []).includes(val)
       ? (fd[field] || []).filter(v => v !== val)
@@ -398,86 +395,14 @@ function StepEnvironment({ fd, set, aiAnalysis, setAiAnalysis, analyzing, setAna
 
   const petTypes = ["Dog", "Cat", "Bird", "Rabbit", "Other"];
 
-  const handlePhotos = async (e) => {
+  const handlePhotos = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
-    
-    // Check credits before AI analysis
-    const creditCost = getCreditCost('photo_analysis');
-    if (currentTenant) {
-      const creditCheck = await checkCredits(currentTenant.id, creditCost);
-      if (!creditCheck.hasEnough) {
-        setAiAnalysis({ 
-          error: `Insufficient AI credits. You need ${creditCost} credit(s) but only have ${creditCheck.creditsRemaining} remaining.`, 
-          confidence: 0 
-        });
-        return;
-      }
-    }
-    
-    setAnalyzing(true);
-    setAiAnalysis(null);
-
-    try {
-      const b64s = await Promise.all(files.slice(0, 5).map(f => new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload  = () => res(r.result.split(",")[1]);
-        r.onerror = rej;
-        r.readAsDataURL(f);
-      })));
-
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `Analyze these property photos for a cleaning service quote. Respond ONLY with valid JSON, no markdown:
-{
-  "condition": "light"|"moderate"|"heavy",
-  "confidence": 0-100,
-  "requiresReview": boolean,
-  "observations": { "overall": "string", "kitchen": "string", "bathrooms": "string", "floors": "string" },
-  "hazardsDetected": ["mold","biohazard","rodents","fleas","hoarding"],
-  "estimatedAddTime": 0-3,
-  "recommendations": ["string"]
-}`
-              },
-              ...b64s.map(data => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } }))
-            ]
-          }]
-        })
-      });
-
-      const data   = await resp.json();
-      const text   = (data.content || []).find(c => c.type === "text")?.text || "{}";
-      const clean  = text.replace(/```json|```/g, "").trim();
-      const result = JSON.parse(clean);
-
-      // Deduct credits after successful analysis
-      if (currentTenant) {
-        await deductCredits(currentTenant.id, creditCost, 'photo_analysis', { photoCount: files.length });
-      }
-
-      setAiAnalysis(result);
-      set("condition", result.condition || fd.condition);
-
-      // Auto-flag hazards detected by AI
-      if (result.hazardsDetected?.length) {
-        const existing = fd.hazards || [];
-        const merged   = [...new Set([...existing, ...result.hazardsDetected])];
-        set("hazards", merged);
-      }
-    } catch {
-      setAiAnalysis({ error: "Could not analyze photos. Please select condition manually.", confidence: 0 });
-    } finally {
-      setAnalyzing(false);
-    }
+    setAnalyzing(false);
+    setAiAnalysis({
+      error: "AI photo analysis is unavailable in this release. Please select the condition manually.",
+      confidence: 0,
+    });
   };
 
   const conditionOpts = [
@@ -572,9 +497,9 @@ function StepEnvironment({ fd, set, aiAnalysis, setAiAnalysis, analyzing, setAna
         )}
       </Section>
 
-      <Section title="AI photo analysis (optional but recommended)">
+      <Section title="Photo analysis unavailable">
         <div style={{ marginBottom: 10, fontSize: 13, color: "var(--color-text-secondary)" }}>
-          Upload 3–5 photos of your space. AI will auto-set the condition and flag any issues.
+          AI photo analysis is unavailable in this release. Select the property condition manually.
         </div>
         <input type="file" accept="image/*" multiple onChange={handlePhotos} disabled={analyzing} style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "0.5px solid var(--color-border-tertiary)", borderRadius: "var(--border-radius-md)", background: "var(--color-background-primary)" }} />
         {analyzing && (

@@ -34,9 +34,16 @@ This setup branch was created from the known clean V1 checkpoint above and adds 
 
 Active local remediation branch:
 
-`fix/v1-checkout-confirmation-wording`
+`fix/v1-browser-ai-release-gate`
 
-This branch starts from the committed required-checklist completion fix `d04afff`.
+This branch starts from the committed truthful checkout-confirmation fix `d828bba`.
+Browser photo analysis no longer reads a Vite-exposed provider credential or calls
+an AI provider directly. The optional photo-analysis action is unavailable with
+honest owner-facing wording, while manual estimate creation remains available. The
+unmounted legacy intake path is also prevented from calling an AI provider.
+
+The checkout-confirmation fix in `d828bba` starts from the committed
+required-checklist completion fix `d04afff`.
 The public Stripe Checkout return page no longer treats the client-controlled
 `stripe_booking_checkout=success` query parameter as proof of payment. It shows a
 pending confirmation state instead. Confirmed Stripe-paid wording remains in the
@@ -180,3 +187,19 @@ Latest checkout-confirmation wording validation on `fix/v1-checkout-confirmation
 - Stripe checkout creation, Connect, webhook processing, payment-link generation,
   manual-payment behavior, Firestore rules, and production configuration were
   unchanged.
+
+Latest browser AI release-gate validation on `fix/v1-browser-ai-release-gate`:
+
+- focused Create Estimate and browser AI security: 11 tests
+- full web: 468 tests
+- Cloud Functions: 39 tests
+- lint: passed
+- normal production build: passed
+- fake-sentinel production build: passed; the sentinel, provider endpoint, provider
+  key header, and browser secret variable patterns were absent from built assets
+- tracked repository provider-secret pattern scan: clean
+- authenticated local emulator smoke: the optional AI action was disabled with
+  honest wording, a fake manual estimate saved successfully, and no console errors
+  occurred
+- no AI-provider request, production access, backend change, payment change, rules
+  change, deployment, or GrowthAI behavior change occurred.
