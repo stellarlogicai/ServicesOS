@@ -32,7 +32,7 @@ Codex-instruction setup branch:
 
 This setup branch was created from the known clean V1 checkpoint above and adds only Codex instruction/current-state files.
 
-Active local remediation branch:
+Latest completed local remediation branch:
 
 `fix/v1-field-photo-firestore-authorization`
 
@@ -42,6 +42,17 @@ employee field-photo access: the employee must remain exactly assigned to a sche
 completed booking that is neither archived nor deleted. Cancelled, archived, deleted,
 statusless, unsupported-status, unassigned, reassigned-away, cross-tenant, customer, and
 anonymous metadata access is denied. Production rules have not been deployed.
+
+Active production preflight branch:
+
+`release/v1-firestore-rules-deployment-preflight`
+
+At `a1221c8`, the currently deployed Firestore `cloud.firestore` release was captured
+through read-only Rules API GET operations into a private local rollback directory. The
+deployed ruleset was created/updated on 2026-06-16 and does not match the candidate:
+production lacks the nested `fieldPhotos` contract and retains the legacy broad
+authenticated booking update. The private rollback source hash was verified, and both
+forward and rollback commands target only Firestore rules. Nothing was deployed.
 
 The browser AI release-gate branch starts from the committed truthful checkout-confirmation
 fix `d828bba`.
@@ -106,17 +117,21 @@ No production photo objects or field-photo metadata were created during the bloc
 
 ## Next production task
 
-Perform the controlled canonical-versus-deployed Firestore rules compatibility review.
+Review the completed Firestore rules deployment preflight in
+`SERVICESOS_V1_FIRESTORE_RULES_DEPLOYMENT_PREFLIGHT.md`.
 
-Only when current-app compatibility is proven:
+Only after a separate explicit production deployment approval:
 
-1. Capture the deployed Firestore rollback reference.
-2. Deploy only canonical Firestore rules.
-3. Confirm indexes, Storage rules, IAM, CORS, Auth, Functions, Hosting, and application code remain untouched.
-4. Complete owner/admin before-and-after photo smoke.
-5. Confirm refresh persistence and Booking Detail read-only review.
-6. Verify own-tenant success and cross-tenant/anonymous denial.
-7. Record and commit sanitized evidence.
+1. Re-capture the deployed rules and stop if the private ruleset/hash changed.
+2. Reconfirm the private Firestore-only rollback package.
+3. Deploy only canonical Firestore rules.
+4. Confirm indexes, Storage rules, IAM, CORS, Auth, Functions, Hosting, and application code remain untouched.
+5. Complete owner/admin before-and-after photo smoke.
+6. Confirm refresh persistence and Booking Detail read-only review.
+7. Verify own-tenant success and cross-tenant/anonymous denial.
+8. Run customer-role denial only with a proven, unambiguous customer identity.
+9. Roll back immediately on unexpected authorization or data-integrity behavior.
+10. Record and commit sanitized evidence.
 
 Do not begin customer identity remediation before the photo path is proven and the Storage/photo evidence is committed.
 
