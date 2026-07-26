@@ -1,6 +1,6 @@
 # ServicesOS V1 Current State
 
-Updated: 2026-07-22
+Updated: 2026-07-26
 
 This file contains the changing ServicesOS checkpoint. Keep durable repository rules in `AGENTS.md` files and update this document when the active branch, blocker, completed gate, or next task changes.
 
@@ -34,9 +34,17 @@ This setup branch was created from the known clean V1 checkpoint above and adds 
 
 Active local remediation branch:
 
-`fix/v1-browser-ai-release-gate`
+`fix/v1-field-photo-firestore-authorization`
 
-This branch starts from the committed truthful checkout-confirmation fix `d828bba`.
+This branch starts from the committed browser-side AI release-gate fix `b4bbec6`.
+Canonical and mirrored Firestore rules now match the existing Storage contract for
+employee field-photo access: the employee must remain exactly assigned to a scheduled or
+completed booking that is neither archived nor deleted. Cancelled, archived, deleted,
+statusless, unsupported-status, unassigned, reassigned-away, cross-tenant, customer, and
+anonymous metadata access is denied. Production rules have not been deployed.
+
+The browser AI release-gate branch starts from the committed truthful checkout-confirmation
+fix `d828bba`.
 Browser photo analysis no longer reads a Vite-exposed provider credential or calls
 an AI provider directly. The optional photo-analysis action is unavailable with
 honest owner-facing wording, while manual estimate creation remains available. The
@@ -203,3 +211,21 @@ Latest browser AI release-gate validation on `fix/v1-browser-ai-release-gate`:
   occurred
 - no AI-provider request, production access, backend change, payment change, rules
   change, deployment, or GrowthAI behavior change occurred.
+
+Latest employee field-photo metadata authorization validation on
+`fix/v1-field-photo-firestore-authorization`:
+
+- focused Firestore field-photo authorization: 7 tests
+- full Firestore rules: 44 tests
+- Storage rules lifecycle parity: 20 tests
+- full web: 468 tests
+- Cloud Functions: 39 tests
+- lint: passed
+- build: passed with existing chunk and dynamic-import warnings only
+- canonical/shared Firestore and Storage rules parity: passed
+- fake emulator users confirmed scheduled/completed create and read access; cancelled,
+  archived, deleted, statusless, unsupported-status, reassigned-away, customer, anonymous,
+  and cross-tenant access remained denied
+- Storage rules, application photo services and UI, booking lifecycle behavior, payments,
+  Stripe, customer identity, deployment configuration, and production resources were
+  unchanged.

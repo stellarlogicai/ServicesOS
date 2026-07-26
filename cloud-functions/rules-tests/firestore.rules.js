@@ -151,6 +151,37 @@ async function seedFirestore() {
       assignedEmployeeAuthUid: 'employee-a-2',
       updatedAt: '2026-07-13T12:00:00.000Z'
     });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'completed-field-booking'), {
+      status: 'completed',
+      assignedEmployeeAuthUid: 'employee-a',
+      updatedAt: '2026-07-13T12:00:00.000Z'
+    });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'cancelled-field-booking'), {
+      status: 'cancelled',
+      assignedEmployeeAuthUid: 'employee-a',
+      updatedAt: '2026-07-13T12:00:00.000Z'
+    });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'archived-field-booking'), {
+      status: 'scheduled',
+      assignedEmployeeAuthUid: 'employee-a',
+      isArchived: true,
+      updatedAt: '2026-07-13T12:00:00.000Z'
+    });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'deleted-field-booking'), {
+      status: 'scheduled',
+      assignedEmployeeAuthUid: 'employee-a',
+      isDeleted: true,
+      updatedAt: '2026-07-13T12:00:00.000Z'
+    });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'statusless-field-booking'), {
+      assignedEmployeeAuthUid: 'employee-a',
+      updatedAt: '2026-07-13T12:00:00.000Z'
+    });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'unsupported-status-field-booking'), {
+      status: 'in_progress',
+      assignedEmployeeAuthUid: 'employee-a',
+      updatedAt: '2026-07-13T12:00:00.000Z'
+    });
     await setDoc(doc(database, 'tenants', TENANT_B, 'bookings', 'other-booking'), {
       status: 'scheduled',
       assignedEmployeeAuthUid: 'employee-b',
@@ -592,12 +623,55 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     await assertFails(updateDoc(profile, { status: 'inactive' }));
   });
 
-  test('active matching employee can create and read valid field photo metadata', async () => {
+  test('active matching employee can create and read valid field photo metadata for a scheduled booking', async () => {
     const database = authenticatedDatabase('employee-a');
     const photo = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'photo-valid');
 
     await assertSucceeds(setDoc(photo, fieldPhotoMetadata()));
     await assertSucceeds(getDoc(photo));
+  });
+
+  test('active matching employee can create and read valid field photo metadata for a completed booking', async () => {
+    const database = authenticatedDatabase('employee-a');
+    const photo = doc(database, 'tenants', TENANT_A, 'bookings', 'completed-field-booking', 'fieldPhotos', 'completed-photo');
+
+    await assertSucceeds(setDoc(photo, fieldPhotoMetadata({
+      bookingId: 'completed-field-booking',
+      photoId: 'completed-photo',
+    })));
+    await assertSucceeds(getDoc(photo));
+  });
+
+  test('employee field photo metadata access rejects inactive or unsupported booking states', async () => {
+    const deniedBookingIds = [
+      'cancelled-field-booking',
+      'archived-field-booking',
+      'deleted-field-booking',
+      'statusless-field-booking',
+      'unsupported-status-field-booking',
+    ];
+
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      const database = context.firestore();
+      for (const bookingId of deniedBookingIds) {
+        await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', bookingId, 'fieldPhotos', 'existing-photo'), {
+          ...fieldPhotoMetadata({ bookingId, photoId: 'existing-photo' }),
+          uploadedAt: new Date('2026-07-13T12:00:00.000Z'),
+        });
+      }
+    });
+
+    const database = authenticatedDatabase('employee-a');
+    for (const bookingId of deniedBookingIds) {
+      await assertFails(getDoc(doc(
+        database,
+        'tenants', TENANT_A, 'bookings', bookingId, 'fieldPhotos', 'existing-photo'
+      )));
+      await assertFails(setDoc(
+        doc(database, 'tenants', TENANT_A, 'bookings', bookingId, 'fieldPhotos', 'new-photo'),
+        fieldPhotoMetadata({ bookingId, photoId: 'new-photo' })
+      ));
+    }
   });
 
   test('tenant admin can create valid photo metadata without assignment and parent booking stays unchanged', async () => {

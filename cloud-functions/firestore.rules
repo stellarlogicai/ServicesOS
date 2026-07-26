@@ -61,7 +61,13 @@ service cloud.firestore {
     function isAssignedFieldPhotoUser(tenantId, bookingId) {
       return isTenantFieldUser(tenantId) &&
              exists(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)) &&
-             get(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)).data.assignedEmployeeAuthUid == request.auth.uid;
+             get(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)).data.assignedEmployeeAuthUid == request.auth.uid &&
+             'status' in get(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)).data &&
+             get(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)).data.status in ['scheduled', 'completed'] &&
+             (!('isArchived' in get(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)).data) ||
+              get(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)).data.isArchived != true) &&
+             (!('isDeleted' in get(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)).data) ||
+              get(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)).data.isDeleted != true);
     }
 
     function isCustomerUser() {
