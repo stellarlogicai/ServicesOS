@@ -219,6 +219,59 @@ describe('FieldMode read-only field surface', () => {
     expect(dialog).toHaveTextContent('Maps opens in a new tab/window where supported. Calls require a phone-capable device.');
   });
 
+  it('keeps the existing close action in the long packet scroll container and preserves persisted state on reopen', async () => {
+    const longChecklist = approvedChecklistWithRequiredOutcomes(40, 2);
+    mocks.listFieldPhotos.mockResolvedValue([{
+      id: 'before-photo-1',
+      phase: 'before',
+      storagePath: 'safe/before-photo-1.jpg',
+      uploadedAt: new Date(),
+    }]);
+    mocks.loadFieldPhotoBlob.mockResolvedValue(new Blob(['photo'], { type: 'image/jpeg' }));
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:before-photo') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'long-packet-job',
+      customerName: 'Long Packet Customer',
+      date: dateKey(today),
+      status: 'scheduled',
+      ...longChecklist,
+      fieldNotes: 'Persisted field note.',
+      fieldIssue: 'Persisted field issue.',
+    }] });
+
+    render(<FieldMode />);
+    await screen.findByText('Long Packet Customer');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    const dialog = screen.getByRole('dialog', { name: 'Long Packet Customer' });
+    expect(dialog).toHaveClass('v1-modal', 'field-job-packet');
+    expect(within(dialog).getAllByRole('checkbox')).toHaveLength(41);
+    const packetHeader = dialog.querySelector('.field-job-packet-header');
+    expect(packetHeader).not.toBeNull();
+    const closeButton = within(packetHeader).getByRole('button', { name: 'Close' });
+    expect(closeButton).toHaveClass('v1-button');
+    expect(await within(dialog).findByRole('img', { name: 'before job evidence' })).toBeInTheDocument();
+
+    fireEvent.click(closeButton);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    const reopenedDialog = screen.getByRole('dialog', { name: 'Long Packet Customer' });
+    expect(within(reopenedDialog).getByRole('checkbox', { name: /Required outcome 1\b/ })).toBeChecked();
+    expect(within(reopenedDialog).getByRole('checkbox', { name: /Required outcome 2\b/ })).toBeChecked();
+    expect(within(reopenedDialog).getByLabelText('Employee notes')).toHaveValue('Persisted field note.');
+    expect(within(reopenedDialog).getByLabelText('Issue/problem to flag')).toHaveValue('Persisted field issue.');
+    expect(await within(reopenedDialog).findByRole('img', { name: 'before job evidence' })).toBeInTheDocument();
+    expect(mocks.listFieldPhotos).toHaveBeenCalledTimes(2);
+  });
+
   it('hides payment and private owner notes while showing approved instructions to an employee', async () => {
     mocks.role = 'employee';
     mocks.getJobs.mockResolvedValue({ success: true, data: [{
