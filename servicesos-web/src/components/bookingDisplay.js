@@ -2,6 +2,7 @@ import {
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS,
   BOOKING_PAYMENT_METHOD_LABELS,
 } from '../core/scheduling/schedulingService';
+import { formatDateOnly } from '../utils/dateOnly';
 
 function firstText(...values) {
   return values.find(value => typeof value === 'string' && value.trim())?.trim() || '';
@@ -141,6 +142,8 @@ export function bookingStillOwed(booking = {}) {
 export function bookingReceivedDate(booking = {}) {
   const receivedAt = firstText(booking.receivedAt);
   if (!receivedAt) return '';
+  const dateOnly = formatDateOnly(receivedAt);
+  if (dateOnly) return dateOnly;
   const date = toDate(receivedAt);
   return date
     ? date.toLocaleDateString('en-US', { dateStyle: 'medium' })

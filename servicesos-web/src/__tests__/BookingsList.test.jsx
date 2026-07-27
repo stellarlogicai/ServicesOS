@@ -947,6 +947,79 @@ describe('read-only Bookings admin list', () => {
     expect(screen.getAllByText('Paid cash').length).toBeGreaterThan(0);
     expect(screen.getAllByText('$200.00').length).toBeGreaterThan(0);
     expect(screen.getByText('$45.00')).toBeInTheDocument();
+    expect(screen.getByText('Jul 7, 2026')).toBeInTheDocument();
+  });
+
+  it('displays date-only manual payment values without timezone conversion', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-payment-date-only',
+        customerName: 'Payment Date Customer',
+        paymentStatus: 'paid_cash',
+        paymentMethod: 'cash',
+        amountReceived: 185,
+        receivedAt: '2026-07-22',
+        agreedPrice: 185,
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Payment Date Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Payment Date Customer' });
+    expect(dialog).toHaveTextContent('Received date');
+    expect(dialog).toHaveTextContent('Jul 22, 2026');
+  });
+
+  it('uses an honest fallback for missing or invalid manual payment dates', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-payment-invalid-date',
+        customerName: 'Invalid Payment Date Customer',
+        paymentStatus: 'payment_issue',
+        receivedAt: 'not-a-date',
+        agreedPrice: 185,
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Invalid Payment Date Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Invalid Payment Date Customer' });
+    expect(dialog).toHaveTextContent('Received date');
+    expect(dialog).toHaveTextContent('Not recorded');
+  });
+
+  it('keeps legacy full ISO payment dates on the existing instant-formatting path', async () => {
+    const user = userEvent.setup();
+    const receivedAt = '2026-07-22T18:00:00.000Z';
+    mocks.getJobs.mockResolvedValue({
+      success: true,
+      data: [{
+        id: 'booking-payment-timestamp-date',
+        customerName: 'Timestamp Payment Date Customer',
+        paymentStatus: 'paid_cash',
+        receivedAt,
+        agreedPrice: 185,
+      }],
+    });
+
+    render(<BookingsList />);
+
+    expect(await screen.findByRole('heading', { name: 'Timestamp Payment Date Customer' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View Details' }));
+
+    const expectedDate = new Date(receivedAt).toLocaleDateString('en-US', { dateStyle: 'medium' });
+    const dialog = await screen.findByRole('dialog', { name: 'Timestamp Payment Date Customer' });
+    expect(dialog).toHaveTextContent(expectedDate);
   });
 
   it('sends blank optional payment details when admin clears existing values', async () => {
