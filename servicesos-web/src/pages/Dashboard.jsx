@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { getLeads, setLeadStatus, deleteLead } from "../services/crmService";
 import { approveQuoteRequestAndCreateBooking } from "../services/quoteBookingConversionService";
@@ -81,7 +81,10 @@ function BookModal({ lead, onClose, onSave, onCheckAvailability, onCheckConflict
   const [conflict, setConflict] = useState(null);
   const [checkError, setCheckError] = useState("");
   const [checking, setChecking] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const submissionRef = useRef(false);
   const validPrice = Number(price) > 0;
+  const busy = checking || creating;
 
   const bookingData = () => ({
     scheduledAt: new Date(`${date}T${time}`).toISOString(),
@@ -95,23 +98,49 @@ function BookModal({ lead, onClose, onSave, onCheckAvailability, onCheckConflict
     setCheckError("");
   };
 
+  const submitBooking = async (nextBooking) => {
+    setCreating(true);
+    try {
+      return await onSave(nextBooking);
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const checkConflictAndSave = async (nextBooking) => {
     const foundConflict = await onCheckConflict(nextBooking);
     if (foundConflict) {
       setConflict(foundConflict);
       return;
     }
-    onSave(nextBooking);
+    await submitBooking(nextBooking);
+  };
+
+  const bookingActionError = error => {
+    if (error?.code === 'booking-conversion-inconsistent') return error.message;
+    if (error?.message === 'Booking conflict check failed.') {
+      return 'Could not check for booking conflicts. Please try again before scheduling.';
+    }
+    if (error?.message === 'Business availability check failed.') {
+      return 'Could not check business availability. Please try again before scheduling.';
+    }
+    return 'Booking could not be created. Refresh the dashboard and try again.';
   };
 
   const handleSave = async (skipAvailability = false) => {
-    if (!date || !validPrice || checking) return;
+    if (!date || !validPrice || submissionRef.current) return;
+    submissionRef.current = true;
     setChecking(true);
     setCheckError("");
     try {
       const nextBooking = bookingData();
       if (!skipAvailability) {
-        const availability = await onCheckAvailability(nextBooking);
+        let availability;
+        try {
+          availability = await onCheckAvailability(nextBooking);
+        } catch {
+          throw new Error('Business availability check failed.');
+        }
         if (!availability.available) {
           setAvailabilityWarning(true);
           setConflict(null);
@@ -123,11 +152,23 @@ function BookModal({ lead, onClose, onSave, onCheckAvailability, onCheckConflict
     } catch (error) {
       setAvailabilityWarning(false);
       setConflict(null);
-      setCheckError(error?.message === 'Booking conflict check failed.'
-        ? "Could not check for booking conflicts. Please try again before scheduling."
-        : "Could not check business availability. Please try again before scheduling.");
+      setCheckError(bookingActionError(error));
     } finally {
       setChecking(false);
+      submissionRef.current = false;
+    }
+  };
+
+  const handleConflictOverride = async () => {
+    if (submissionRef.current) return;
+    submissionRef.current = true;
+    setCheckError("");
+    try {
+      await submitBooking(bookingData());
+    } catch (error) {
+      setCheckError(bookingActionError(error));
+    } finally {
+      submissionRef.current = false;
     }
   };
 
@@ -183,8 +224,10 @@ function BookModal({ lead, onClose, onSave, onCheckAvailability, onCheckConflict
               This day is marked unavailable for this business. Choose another day or schedule anyway.
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button type="button" onClick={() => setAvailabilityWarning(false)}>Choose another day</button>
-              <button type="button" onClick={() => handleSave(true)}>Schedule anyway</button>
+              <button type="button" onClick={() => setAvailabilityWarning(false)} disabled={busy}>Choose another day</button>
+              <button type="button" onClick={() => handleSave(true)} disabled={busy}>
+                {creating ? "Creating booking…" : "Schedule anyway"}
+              </button>
             </div>
           </div>
         )}
@@ -199,18 +242,20 @@ function BookModal({ lead, onClose, onSave, onCheckAvailability, onCheckConflict
               {bookingCustomerName(conflict)} · {bookingServiceType(conflict)} · {bookingSchedule(conflict)} · {bookingAddress(conflict)}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button type="button" onClick={() => setConflict(null)}>Choose another time</button>
-              <button type="button" onClick={() => onSave(bookingData())}>Schedule anyway</button>
+              <button type="button" onClick={() => setConflict(null)} disabled={busy}>Choose another time</button>
+              <button type="button" onClick={handleConflictOverride} disabled={busy}>
+                {creating ? "Creating booking…" : "Schedule anyway"}
+              </button>
             </div>
           </div>
         )}
 
         <div style={{ display: "flex", gap: 12 }}>
-          <button type="button" onClick={onClose} style={{ flex: 1, padding: "12px", background: "#fff", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+          <button type="button" onClick={onClose} disabled={busy} style={{ flex: 1, padding: "12px", background: "#fff", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: busy ? "not-allowed" : "pointer" }}>
             Cancel
           </button>
-          <button onClick={() => handleSave()} disabled={!date || !validPrice || checking} style={{ flex: 2, padding: "12px", background: date && validPrice ? "#059669" : "#e5e7eb", color: date && validPrice ? "#fff" : "#9ca3af", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: date && validPrice ? "pointer" : "not-allowed" }}>
-            {checking ? "Checking schedule…" : pendingOwnerReview ? "Approve / Create Booking" : "Confirm booking"}
+          <button onClick={() => handleSave()} disabled={!date || !validPrice || busy} style={{ flex: 2, padding: "12px", background: date && validPrice ? "#059669" : "#e5e7eb", color: date && validPrice ? "#fff" : "#9ca3af", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: date && validPrice && !busy ? "pointer" : "not-allowed" }}>
+            {creating ? "Creating booking…" : checking ? "Checking schedule…" : pendingOwnerReview ? "Approve / Create Booking" : "Confirm booking"}
           </button>
         </div>
       </div>
@@ -486,11 +531,18 @@ export default function Dashboard() {
       setLeads(updatedLeads);
       setBookings(updatedBookings?.success && Array.isArray(updatedBookings.data) ? updatedBookings.data : []);
       setBookingLead(null);
-      setSelected(l => l?.id === lead.id ? { ...l, ...conversion.leadPatch } : l);
-      alert(`${getFormData(lead).fullName} booked.`);
+      setSelected(current => {
+        if (current?.id !== lead.id) return current;
+        return updatedLeads.find(item => item.id === lead.id) || { ...current, ...conversion.leadPatch };
+      });
+      alert(conversion.alreadyConverted
+        ? `A booking already exists for ${getFormData(lead).fullName}.`
+        : `${getFormData(lead).fullName} booked.`);
+      return conversion;
     } catch (error) {
+      if (error?.code === 'booking-conversion-inconsistent') throw error;
       console.error('Error booking lead:', error);
-      alert('Failed to book lead. Please try again.');
+      throw new Error('Booking could not be created. Refresh the dashboard and try again.', { cause: error });
     }
   }, [currentTenant, reviewerUid]);
 

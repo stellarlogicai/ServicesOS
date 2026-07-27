@@ -210,6 +210,69 @@ describe('Dashboard pending quote review', () => {
       });
     });
   }, 10000);
+
+  it('locks rapid booking submissions until the conversion finishes', async () => {
+    let resolveConversion;
+    dashboardMocks.approveQuoteRequestAndCreateBooking.mockImplementation(() => new Promise(resolve => {
+      resolveConversion = resolve;
+    }));
+
+    const { container } = render(<Dashboard />);
+    expect(await screen.findByText('Snapshot Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Approve / Create Booking' })[0]);
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '245' } });
+    expect(container.querySelector('input[type="date"]').value).toBe('2026-07-15');
+
+    const submit = screen.getAllByRole('button', { name: 'Approve / Create Booking' }).at(-1);
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(dashboardMocks.approveQuoteRequestAndCreateBooking).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'Creating booking…' })).toBeDisabled();
+
+    resolveConversion({
+      bookingId: 'booking-test',
+      alreadyConverted: false,
+      leadPatch: { status: 'booked', booking: { bookingId: 'booking-test' } },
+    });
+    await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Snapshot Customer booked.'));
+  });
+
+  it('reports an existing valid conversion honestly', async () => {
+    dashboardMocks.approveQuoteRequestAndCreateBooking.mockResolvedValue({
+      bookingId: 'booking-existing',
+      alreadyConverted: true,
+      leadPatch: bookedLead,
+    });
+
+    render(<Dashboard />);
+    expect(await screen.findByText('Snapshot Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Approve / Create Booking' })[0]);
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '245' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Approve / Create Booking' }).at(-1));
+
+    await waitFor(() => {
+      expect(window.alert).toHaveBeenCalledWith('A booking already exists for Snapshot Customer.');
+    });
+    expect(dashboardMocks.approveQuoteRequestAndCreateBooking).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the modal open and displays an inconsistent conversion state', async () => {
+    const error = new Error('This request is marked as booked, but its booking reference is missing. Review the request before trying again.');
+    error.code = 'booking-conversion-inconsistent';
+    dashboardMocks.approveQuoteRequestAndCreateBooking.mockRejectedValue(error);
+    window.alert.mockClear();
+
+    render(<Dashboard />);
+    expect(await screen.findByText('Snapshot Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Approve / Create Booking' })[0]);
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '245' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Approve / Create Booking' }).at(-1));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('booking reference is missing');
+    expect(screen.getByRole('heading', { name: 'Approve quote and create booking' })).toBeInTheDocument();
+    expect(window.alert).not.toHaveBeenCalled();
+  });
 });
 
 describe('Dashboard null-safety', () => {

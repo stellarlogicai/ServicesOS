@@ -14,6 +14,7 @@ const {
   getDoc,
   getDocs,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -1190,6 +1191,100 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       tenantId: TENANT_B,
       status: 'scheduled'
     }));
+  });
+
+  test('tenant admin can atomically convert one lead to one safe booking', async () => {
+    const database = authenticatedDatabase('admin-a');
+    const leadReference = doc(database, 'tenants', TENANT_A, 'leads', 'request-a');
+    const bookingReference = doc(database, 'tenants', TENANT_A, 'bookings', 'transaction-booking');
+
+    await assertSucceeds(runTransaction(database, async transaction => {
+      const leadSnapshot = await transaction.get(leadReference);
+      assert.equal(leadSnapshot.exists(), true);
+      transaction.set(bookingReference, {
+        schemaVersion: 1,
+        tenantId: TENANT_A,
+        leadId: 'request-a',
+        sourceLeadId: 'request-a',
+        source: 'customer-portal',
+        customerId: 'customer-a',
+        propertyId: null,
+        customerName: 'Customer A',
+        customerSnapshot: { name: 'Customer A' },
+        propertySnapshot: { address: '1 Test Street' },
+        requestSnapshot: { cleaningType: 'standard' },
+        appointmentRequest: null,
+        date: '2026-07-20',
+        startTime: '09:00',
+        endTime: '11:00',
+        scheduledAt: '2026-07-20T14:00:00.000Z',
+        agreedPrice: 190,
+        status: 'scheduled',
+        serviceType: 'standard',
+        address: '1 Test Street',
+        notes: '',
+        createdBy: 'admin-a',
+        createdAt: '2026-07-13T14:00:00.000Z',
+        updatedAt: '2026-07-13T14:00:00.000Z'
+      });
+      transaction.update(leadReference, {
+        status: 'booked',
+        booking: { bookingId: 'transaction-booking', status: 'scheduled' },
+        updatedAt: '2026-07-13T14:00:00.000Z'
+      });
+    }));
+
+    const persistedLead = await assertSucceeds(getDoc(leadReference));
+    const persistedBooking = await assertSucceeds(getDoc(bookingReference));
+    assert.equal(persistedLead.data().booking.bookingId, 'transaction-booking');
+    assert.equal(persistedBooking.data().leadId, 'request-a');
+  });
+
+  test('cross-tenant admin, employee, customer, and anonymous cannot run lead conversion writes', async () => {
+    const attempts = [
+      ['admin-b', authenticatedDatabase('admin-b')],
+      ['employee-a', authenticatedDatabase('employee-a')],
+      ['customer-a-auth', authenticatedDatabase('customer-a-auth')],
+      ['anonymous', testEnvironment.unauthenticatedContext().firestore()],
+    ];
+
+    for (const [label, database] of attempts) {
+      const leadReference = doc(database, 'tenants', TENANT_A, 'leads', 'request-b');
+      const bookingReference = doc(database, 'tenants', TENANT_A, 'bookings', `denied-conversion-${label}`);
+      await assertFails(runTransaction(database, async transaction => {
+        await transaction.get(leadReference);
+        transaction.set(bookingReference, {
+          schemaVersion: 1,
+          tenantId: TENANT_A,
+          leadId: 'request-b',
+          sourceLeadId: 'request-b',
+          source: 'customer-portal',
+          customerId: 'customer-b',
+          propertyId: null,
+          customerSnapshot: { name: 'Customer B' },
+          propertySnapshot: { address: '2 Test Street' },
+          requestSnapshot: { cleaningType: 'standard' },
+          appointmentRequest: null,
+          date: '2026-07-20',
+          startTime: '09:00',
+          endTime: '11:00',
+          scheduledAt: '2026-07-20T14:00:00.000Z',
+          agreedPrice: 190,
+          status: 'scheduled',
+          serviceType: 'standard',
+          address: '2 Test Street',
+          notes: '',
+          createdBy: label,
+          createdAt: '2026-07-13T14:00:00.000Z',
+          updatedAt: '2026-07-13T14:00:00.000Z'
+        });
+        transaction.update(leadReference, {
+          status: 'booked',
+          booking: { bookingId: `denied-conversion-${label}` },
+          updatedAt: '2026-07-13T14:00:00.000Z'
+        });
+      }));
+    }
   });
 
   test('manual booking payment updates require the acting admin and cannot fabricate Stripe confirmation', async () => {

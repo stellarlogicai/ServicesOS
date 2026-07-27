@@ -1,4 +1,4 @@
-import { collection, doc, writeBatch } from 'firebase/firestore';
+import { collection, doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import { addSchemaVersion } from '../shared/schemas/schemaVersioning';
 import {
@@ -16,6 +16,78 @@ function localDateParts(date) {
 
 function firstText(...values) {
   return values.find(value => typeof value === 'string' && value.trim())?.trim() || '';
+}
+
+const CONVERSION_ERROR_CODE = 'booking-conversion-inconsistent';
+
+function conversionStateError(message) {
+  const error = new Error(message);
+  error.code = CONVERSION_ERROR_CODE;
+  return error;
+}
+
+function bookingReference(lead) {
+  const bookingId = firstText(lead?.booking?.bookingId);
+  const approvedBookingId = firstText(lead?.appointmentRequest?.approvedBookingId);
+
+  if (bookingId && approvedBookingId && bookingId !== approvedBookingId) {
+    throw conversionStateError(
+      'This request has conflicting booking references. Review the request before trying again.'
+    );
+  }
+
+  const hasPartialBookingState = lead?.status === 'booked' || approvedBookingId || lead?.booking;
+  if (!bookingId && hasPartialBookingState) {
+    throw conversionStateError(
+      'This request is marked as booked, but its booking reference is missing. Review the request before trying again.'
+    );
+  }
+
+  return bookingId;
+}
+
+function validateStoredLead(lead, tenantId, leadId) {
+  if (!lead || typeof lead !== 'object') {
+    throw conversionStateError('This request no longer exists. Refresh the dashboard before trying again.');
+  }
+  if (lead.tenantId !== tenantId) {
+    throw conversionStateError(
+      'This request does not belong to the selected tenant. Refresh the dashboard before trying again.'
+    );
+  }
+  if (!leadId || lead.id && lead.id !== leadId) {
+    throw conversionStateError('This request has inconsistent identity data and cannot be booked safely.');
+  }
+}
+
+function validateExistingBooking({ booking, bookingId, tenantId, leadId, lead }) {
+  if (!booking) {
+    throw conversionStateError(
+      'This request references a booking that could not be found. Review the request before trying again.'
+    );
+  }
+  const matchesLead = booking.leadId === leadId || booking.sourceLeadId === leadId;
+  if (lead.status !== 'booked' || booking.tenantId !== tenantId || !matchesLead) {
+    throw conversionStateError(
+      'This request has an inconsistent booking relationship. Review it before trying again.'
+    );
+  }
+  if (lead.appointmentRequest && firstText(lead.appointmentRequest.approvedBookingId) !== bookingId) {
+    throw conversionStateError(
+      'This request has an incomplete appointment-to-booking link. Review it before trying again.'
+    );
+  }
+}
+
+function existingLeadPatch(lead) {
+  return {
+    status: lead.status,
+    booking: lead.booking || null,
+    estimate: lead.estimate || null,
+    review: lead.review || null,
+    appointmentRequest: lead.appointmentRequest || null,
+    updatedAt: lead.updatedAt || null,
+  };
 }
 
 function joinedName(source) {
@@ -165,23 +237,58 @@ export async function approveQuoteRequestAndCreateBooking({
   reviewedBy
 }) {
   if (!tenantId) throw new Error('Tenant ID is required.');
+  if (!lead?.id) throw new Error('Lead ID is required.');
 
   const bookingRef = doc(collection(db, 'tenants', tenantId, 'bookings'));
-  const leadRef = doc(db, 'tenants', tenantId, 'leads', lead?.id);
-  const conversion = buildQuoteBookingConversion({
-    lead: { ...lead, tenantId },
-    bookingData,
-    reviewedBy,
-    bookingId: bookingRef.id
+  const leadRef = doc(db, 'tenants', tenantId, 'leads', lead.id);
+  const operationNow = new Date().toISOString();
+
+  return runTransaction(db, async transaction => {
+    const leadSnapshot = await transaction.get(leadRef);
+    if (!leadSnapshot.exists()) {
+      throw conversionStateError('This request no longer exists. Refresh the dashboard before trying again.');
+    }
+
+    const storedLead = { id: leadSnapshot.id, ...leadSnapshot.data() };
+    validateStoredLead(storedLead, tenantId, lead.id);
+    const existingBookingId = bookingReference(storedLead);
+
+    if (existingBookingId) {
+      const existingBookingRef = doc(db, 'tenants', tenantId, 'bookings', existingBookingId);
+      const existingBookingSnapshot = await transaction.get(existingBookingRef);
+      const existingBooking = existingBookingSnapshot.exists()
+        ? { id: existingBookingSnapshot.id, ...existingBookingSnapshot.data() }
+        : null;
+      validateExistingBooking({
+        booking: existingBooking,
+        bookingId: existingBookingId,
+        tenantId,
+        leadId: lead.id,
+        lead: storedLead,
+      });
+      return {
+        bookingId: existingBookingId,
+        booking: existingBooking,
+        leadPatch: existingLeadPatch(storedLead),
+        alreadyConverted: true,
+      };
+    }
+
+    const conversion = buildQuoteBookingConversion({
+      lead: storedLead,
+      bookingData,
+      reviewedBy,
+      bookingId: bookingRef.id,
+      now: operationNow,
+    });
+
+    transaction.set(bookingRef, conversion.booking);
+    transaction.update(leadRef, conversion.leadPatch);
+
+    return {
+      bookingId: bookingRef.id,
+      ...conversion,
+      alreadyConverted: false,
+    };
   });
-
-  const batch = writeBatch(db);
-  batch.set(bookingRef, conversion.booking);
-  batch.update(leadRef, conversion.leadPatch);
-  await batch.commit();
-
-  return {
-    bookingId: bookingRef.id,
-    ...conversion
-  };
 }
