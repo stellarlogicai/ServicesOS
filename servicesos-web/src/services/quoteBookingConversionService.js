@@ -50,7 +50,8 @@ function validateStoredLead(lead, tenantId, leadId) {
   if (!lead || typeof lead !== 'object') {
     throw conversionStateError('This request no longer exists. Refresh the dashboard before trying again.');
   }
-  if (lead.tenantId !== tenantId) {
+  const tenantIdIsMissing = lead.tenantId === undefined || lead.tenantId === null || lead.tenantId === '';
+  if (!tenantIdIsMissing && lead.tenantId !== tenantId) {
     throw conversionStateError(
       'This request does not belong to the selected tenant. Refresh the dashboard before trying again.'
     );
@@ -58,6 +59,8 @@ function validateStoredLead(lead, tenantId, leadId) {
   if (!leadId || lead.id && lead.id !== leadId) {
     throw conversionStateError('This request has inconsistent identity data and cannot be booked safely.');
   }
+
+  return tenantIdIsMissing;
 }
 
 function validateExistingBooking({ booking, bookingId, tenantId, leadId, lead }) {
@@ -250,8 +253,11 @@ export async function approveQuoteRequestAndCreateBooking({
     }
 
     const storedLead = { id: leadSnapshot.id, ...leadSnapshot.data() };
-    validateStoredLead(storedLead, tenantId, lead.id);
-    const existingBookingId = bookingReference(storedLead);
+    const tenantIdRequiresNormalization = validateStoredLead(storedLead, tenantId, lead.id);
+    const trustedStoredLead = tenantIdRequiresNormalization
+      ? { ...storedLead, tenantId }
+      : storedLead;
+    const existingBookingId = bookingReference(trustedStoredLead);
 
     if (existingBookingId) {
       const existingBookingRef = doc(db, 'tenants', tenantId, 'bookings', existingBookingId);
@@ -264,30 +270,41 @@ export async function approveQuoteRequestAndCreateBooking({
         bookingId: existingBookingId,
         tenantId,
         leadId: lead.id,
-        lead: storedLead,
+        lead: trustedStoredLead,
       });
+      if (tenantIdRequiresNormalization) {
+        transaction.update(leadRef, { tenantId });
+      }
       return {
         bookingId: existingBookingId,
         booking: existingBooking,
-        leadPatch: existingLeadPatch(storedLead),
+        leadPatch: {
+          ...existingLeadPatch(trustedStoredLead),
+          ...(tenantIdRequiresNormalization ? { tenantId } : {}),
+        },
         alreadyConverted: true,
       };
     }
 
     const conversion = buildQuoteBookingConversion({
-      lead: storedLead,
+      lead: trustedStoredLead,
       bookingData,
       reviewedBy,
       bookingId: bookingRef.id,
       now: operationNow,
     });
+    const leadPatch = {
+      ...conversion.leadPatch,
+      ...(tenantIdRequiresNormalization ? { tenantId } : {}),
+    };
 
     transaction.set(bookingRef, conversion.booking);
-    transaction.update(leadRef, conversion.leadPatch);
+    transaction.update(leadRef, leadPatch);
 
     return {
       bookingId: bookingRef.id,
       ...conversion,
+      leadPatch,
       alreadyConverted: false,
     };
   });

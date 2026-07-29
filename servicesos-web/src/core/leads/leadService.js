@@ -163,22 +163,28 @@ export async function getLeadById(tenantId, leadId) {
  */
 export async function createLead(tenantId, leadData) {
   try {
-    if (!tenantId) {
+    if (typeof tenantId !== 'string' || !tenantId.trim()) {
       return errorResponse('Tenant ID is required', 'VALIDATION_ERROR');
     }
 
-    // Add schema version
-    const leadWithVersion = addSchemaVersion(leadData, SCHEMA_TYPE);
+    // The collection path is the trusted tenant boundary. Keep the stored identity aligned with it.
+    const leadWithVersion = addSchemaVersion({
+      ...leadData,
+      tenantId
+    }, SCHEMA_TYPE);
+    const timestamp = new Date().toISOString();
+    const persistedLead = {
+      ...leadWithVersion,
+      tenantId,
+      status: 'new',
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
 
     const leadsRef = collection(db, 'tenants', tenantId, COLLECTION_NAME);
-    const docRef = await addDoc(leadsRef, {
-      ...leadWithVersion,
-      status: 'new',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
+    const docRef = await addDoc(leadsRef, persistedLead);
 
-    return successResponse({ id: docRef.id, ...leadWithVersion }, 'Lead created successfully');
+    return successResponse({ id: docRef.id, ...persistedLead }, 'Lead created successfully');
   } catch (error) {
     logError({
       message: 'Failed to create lead',

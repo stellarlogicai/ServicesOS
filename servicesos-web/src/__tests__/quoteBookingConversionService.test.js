@@ -172,6 +172,30 @@ describe('quote booking conversion', () => {
     expect(JSON.stringify(firestoreMocks.set.mock.calls)).not.toContain('payment');
   });
 
+  it('normalizes a legacy missing tenant ID inside the conversion transaction', async () => {
+    const legacyLead = storedPendingLead();
+    delete legacyLead.tenantId;
+    firestoreMocks.get.mockResolvedValue(snapshot(pendingLead.id, legacyLead));
+
+    const result = await approveQuoteRequestAndCreateBooking({
+      tenantId: 'tenant-test',
+      lead: pendingLead,
+      bookingData: { scheduledAt: '2026-07-15T15:30:00.000Z', agreedPrice: 245 },
+      reviewedBy: 'admin-test'
+    });
+
+    expect(firestoreMocks.set).toHaveBeenCalledWith(
+      generatedBookingReference,
+      expect.objectContaining({ tenantId: 'tenant-test', leadId: pendingLead.id })
+    );
+    expect(firestoreMocks.update).toHaveBeenCalledWith(
+      leadReference,
+      expect.objectContaining({ tenantId: 'tenant-test', status: 'booked' })
+    );
+    expect(result.leadPatch).toMatchObject({ tenantId: 'tenant-test', status: 'booked' });
+    expect(JSON.stringify(firestoreMocks.set.mock.calls)).not.toMatch(/payment|stripe/i);
+  });
+
   it('returns the existing booking on a repeated retry without writing', async () => {
     const convertedLead = storedPendingLead({
       status: 'booked',
@@ -204,6 +228,44 @@ describe('quote booking conversion', () => {
     expect(result.booking).toMatchObject(existingBooking);
     expect(firestoreMocks.set).not.toHaveBeenCalled();
     expect(firestoreMocks.update).not.toHaveBeenCalled();
+  });
+
+  it('normalizes a legacy converted lead on retry without creating another booking', async () => {
+    const convertedLead = storedPendingLead({
+      status: 'booked',
+      booking: { bookingId: 'booking-existing', status: 'scheduled', agreedPrice: 245 },
+      appointmentRequest: {
+        ...pendingLead.appointmentRequest,
+        status: 'approved',
+        approvedBookingId: 'booking-existing',
+      },
+    });
+    delete convertedLead.tenantId;
+    const existingBooking = {
+      tenantId: 'tenant-test',
+      leadId: pendingLead.id,
+      sourceLeadId: pendingLead.id,
+      status: 'scheduled',
+      agreedPrice: 245,
+    };
+    firestoreMocks.get.mockImplementation(async reference => reference.kind === 'lead'
+      ? snapshot(pendingLead.id, convertedLead)
+      : snapshot('booking-existing', existingBooking));
+
+    const result = await approveQuoteRequestAndCreateBooking({
+      tenantId: 'tenant-test',
+      lead: pendingLead,
+      bookingData: { scheduledAt: '2026-07-15T15:30:00.000Z', agreedPrice: 245 },
+      reviewedBy: 'admin-test',
+    });
+
+    expect(result).toMatchObject({
+      bookingId: 'booking-existing',
+      alreadyConverted: true,
+      leadPatch: { tenantId: 'tenant-test' }
+    });
+    expect(firestoreMocks.set).not.toHaveBeenCalled();
+    expect(firestoreMocks.update).toHaveBeenCalledWith(leadReference, { tenantId: 'tenant-test' });
   });
 
   it('serializes concurrent conversion attempts to one booking relationship', async () => {
