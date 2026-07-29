@@ -36,6 +36,10 @@ function completeRequiredFields() {
   fireEvent.change(screen.getByLabelText('Phone *'), { target: { value: '555-0199' } });
 }
 
+function getPreferredTimeSelect() {
+  return document.querySelector('select[name="preferredTime"]');
+}
+
 describe('Create Estimate wife-beta flow', () => {
   beforeEach(() => {
     Object.values(mocks).forEach(mock => {
@@ -54,6 +58,8 @@ describe('Create Estimate wife-beta flow', () => {
 
     expect(screen.getByRole('heading', { name: 'Create Estimate' })).toBeInTheDocument();
     completeRequiredFields();
+    fireEvent.change(screen.getByLabelText('Preferred Date'), { target: { value: '2026-08-12' } });
+    fireEvent.change(getPreferredTimeSelect(), { target: { value: 'afternoon' } });
     fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
 
     expect(screen.getByRole('button', { name: 'Save Manual Estimate' })).toBeEnabled();
@@ -65,17 +71,46 @@ describe('Create Estimate wife-beta flow', () => {
         firstName: 'Manual',
         lastName: 'Customer',
         email: 'manual@example.com',
-        phone: '555-0199'
+        phone: '555-0199',
+        preferredDate: '2026-08-12',
+        preferredTime: 'afternoon'
       }),
       expect.objectContaining({ priceLow: expect.any(Number), priceHigh: expect.any(Number), aiEnhanced: false }),
       null
     );
     expect(onLeadSaved.mock.calls[0]).toHaveLength(3);
+    expect(onLeadSaved.mock.calls[0][0]).not.toHaveProperty('bookingId');
+    expect(onLeadSaved.mock.calls[0][0]).not.toHaveProperty('scheduledDate');
+    expect(onLeadSaved.mock.calls[0][0]).not.toHaveProperty('scheduledTime');
     expect(screen.queryByRole('button', { name: 'Proceed to Payment' })).not.toBeInTheDocument();
     expect(JSON.stringify(onLeadSaved.mock.calls)).not.toMatch(/booking|payment/i);
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Estimate saved successfully. Customer notification sent.'
     );
+  });
+
+  it('keeps the native Preferred Date control accessible and preserves broad time windows', () => {
+    render(<AIPhotoEstimateSystem />);
+
+    const preferredDate = screen.getByLabelText('Preferred Date');
+    const preferredTime = getPreferredTimeSelect();
+
+    expect(preferredTime).not.toBeNull();
+    expect(preferredDate).toHaveAttribute('id', 'create-estimate-preferred-date');
+    expect(preferredDate).toHaveAttribute('type', 'date');
+    expect(preferredDate).toHaveAttribute('name', 'preferredDate');
+    expect(preferredDate).toHaveAttribute('min', expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
+    expect(preferredDate).toHaveClass('create-estimate-date-field');
+
+    fireEvent.change(preferredDate, { target: { value: '2026-08-12' } });
+    expect(preferredDate).toHaveValue('2026-08-12');
+
+    expect(Array.from(preferredTime.options, option => [option.value, option.textContent])).toEqual([
+      ['', 'Select a time'],
+      ['morning', 'Morning (8AM - 12PM)'],
+      ['afternoon', 'Afternoon (12PM - 5PM)'],
+      ['evening', 'Evening (5PM - 8PM)'],
+    ]);
   });
 
   it('does not expose the removed payment form or fake payment success flow by default', async () => {

@@ -8,6 +8,7 @@ import { downloadQuotePDF } from "./services/pdfService";
 import { compressImages } from "./services/imageCompressionService";
 import { useAuth } from "./contexts/AuthContext";
 import { getPricingProfileForTenant } from "./core/estimates/pricingProfiles";
+import { formatLocalDateInputValue } from "./utils/dateOnly";
 
 const OWNER_EXTRA_KEYS = [
   "oven", "fridge", "windows", "baseboards", "cabinetsInside", "garageCleaning",
@@ -331,17 +332,19 @@ export default function AIPhotoEstimateSystem({
           <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
             Preferred Appointment Time
           </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="create-estimate-schedule-grid">
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
+              <label htmlFor="create-estimate-preferred-date" style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
                 Preferred Date
               </label>
               <input
+                id="create-estimate-preferred-date"
+                className="create-estimate-date-field"
                 type="date"
                 name="preferredDate"
                 value={formData.preferredDate}
                 onChange={handleInputChange}
-                min={new Date().toISOString().split('T')[0]}
+                min={formatLocalDateInputValue()}
                 style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
