@@ -417,16 +417,23 @@ describe('Dashboard null-safety', () => {
       }
     });
 
-    const { container } = render(<Dashboard />);
+    render(<Dashboard />);
 
     expect(await screen.findByText('Manual Time Bucket Customer')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Create Booking' }));
 
-    const dateInput = container.querySelector('input[type="date"]');
-    const timeInput = container.querySelector('input[type="time"]');
+    const dateInput = screen.getByLabelText('Date *');
+    const timeInput = screen.getByLabelText('Time');
+    expect(dateInput).toHaveAttribute('type', 'date');
+    expect(timeInput).toHaveAttribute('type', 'time');
+    expect(dateInput).toHaveClass('booking-date-time-field');
+    expect(timeInput).toHaveClass('booking-date-time-field');
     expect(timeInput.value).toBe('09:00');
 
     fireEvent.change(dateInput, { target: { value: '2026-07-02' } });
+    fireEvent.change(timeInput, { target: { value: '11:45' } });
+    expect(dateInput.value).toBe('2026-07-02');
+    expect(timeInput.value).toBe('11:45');
     fireEvent.click(screen.getByRole('button', { name: 'Confirm booking' }));
 
     await waitFor(() => {
@@ -434,7 +441,7 @@ describe('Dashboard null-safety', () => {
         tenantId: 'tenant-test',
         lead: manualEstimate,
         bookingData: expect.objectContaining({
-          scheduledAt: '2026-07-02T14:00:00.000Z',
+          scheduledAt: new Date('2026-07-02T11:45').toISOString(),
           agreedPrice: 180
         }),
         reviewedBy: 'admin-test'

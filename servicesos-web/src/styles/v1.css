@@ -48,6 +48,10 @@
 .business-settings-form fieldset { border-color: var(--v1-border) !important; background: #fbfcfe; }
 .dashboard-page { background: var(--v1-bg) !important; }
 .dashboard-page .dashboard-top-nav { margin: 0 -24px; padding-left: 24px; padding-right: 24px; }
+.booking-date-time-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; }
+.booking-date-time-grid > div { min-width: 0; }
+.servicesos-main .booking-date-time-field { min-width: 0; min-height: 44px; color-scheme: light; }
+.servicesos-main .booking-date-time-field::-webkit-calendar-picker-indicator { opacity: 1; cursor: pointer; }
 
 .servicesos-main input,
 .servicesos-main select,
@@ -62,6 +66,7 @@
   .v1-page-title { font-size: 26px; }
   .v1-modal-overlay { align-items: flex-end; padding: 0; }
   .v1-modal { width: 100% !important; max-height: 88vh; border-radius: 18px 18px 0 0; padding: 20px 16px; }
+  .booking-date-time-grid { grid-template-columns: 1fr; gap: 12px; }
   .booking-list-card { padding: 18px; }
   .booking-list-main { grid-template-columns: 1fr auto; gap: 12px 16px; }
   .booking-list-customer { grid-column: 1; }

@@ -185,14 +185,14 @@ function BookModal({ lead, onClose, onSave, onCheckAvailability, onCheckConflict
         </h2>
         <p style={{ margin: "0 0 24px", fontSize: 14, color: "#6b7280" }}>{display.fullName} · {display.address}</p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <div className="booking-date-time-grid">
           <div>
-            <div style={label}>Date *</div>
-            <input type="date" value={date} onChange={e => { setDate(e.target.value); resetChecks(); }} style={field} />
+            <label htmlFor="booking-date" style={label}>Date *</label>
+            <input id="booking-date" className="booking-date-time-field" type="date" value={date} onChange={e => { setDate(e.target.value); resetChecks(); }} style={field} />
           </div>
           <div>
-            <div style={label}>Time</div>
-            <input type="time" value={time} onChange={e => { setTime(e.target.value); resetChecks(); }} style={field} />
+            <label htmlFor="booking-time" style={label}>Time</label>
+            <input id="booking-time" className="booking-date-time-field" type="time" value={time} onChange={e => { setTime(e.target.value); resetChecks(); }} style={field} />
           </div>
         </div>
 
