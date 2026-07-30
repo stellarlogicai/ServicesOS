@@ -20,6 +20,10 @@
  */
 
 import { createLead as createLeadFirestore, getLeads as getLeadsFirestore, updateLead as updateLeadFirestore, deleteLead as deleteLeadFirestore } from '../core/leads/leadService';
+import {
+  buildQuoteRequestSnapshot,
+  normalizeQuoteIntakeData,
+} from './customerPortalQuoteRequestMapper';
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
@@ -27,7 +31,7 @@ import { createLead as createLeadFirestore, getLeads as getLeadsFirestore, updat
  * Save a new lead from the intake form.
  * Returns the saved lead object (with generated id + timestamps).
  */
-export async function saveLead(tenantId, formData, estimate, aiAnalysis = null) {
+export async function saveLead(tenantId, formData, estimate, aiAnalysis = null, existingCustomerContext = null) {
   if (!tenantId) {
     console.error('[CRM Service] Tenant ID is required for saving leads');
     throw new Error('Tenant ID is required');
@@ -45,13 +49,30 @@ export async function saveLead(tenantId, formData, estimate, aiAnalysis = null) 
     ...estimate,
     aiEnhanced: !!(aiAnalysis && !aiAnalysis.error)
   };
+  const customerId = typeof existingCustomerContext?.customerId === 'string'
+    ? existingCustomerContext.customerId.trim()
+    : '';
+  const linkedSnapshots = customerId
+    ? buildQuoteRequestSnapshot({
+        normalizedData: normalizeQuoteIntakeData(formData, 'ai-photo-estimate'),
+        customerProfile: { customerId },
+        propertyProfile: {},
+        submittedAt: new Date().toISOString(),
+      })
+    : null;
   const leadData = {
     type: 'lead',
-    source: 'admin',
+    source: customerId ? 'admin-existing-customer' : 'admin',
     formData: normalizedFormData,
     estimate: normalizedEstimate,
     aiAnalysis: aiAnalysis || null,
     booking: null,
+    ...(customerId ? {
+      customerId,
+      customerSnapshot: linkedSnapshots.customerSnapshot,
+      propertySnapshot: linkedSnapshots.propertySnapshot,
+      requestSnapshot: linkedSnapshots.requestSnapshot,
+    } : {}),
   };
 
   const result = await createLeadFirestore(tenantId, leadData);
@@ -63,11 +84,17 @@ export async function saveLead(tenantId, formData, estimate, aiAnalysis = null) 
       updatedAt: result.data.updatedAt,
       status: result.data.status,
       type: 'lead',
-      source: 'admin',
+      source: leadData.source,
       formData: normalizedFormData,
       estimate: normalizedEstimate,
       booking: null,
       aiAnalysis: aiAnalysis || null,
+      ...(customerId ? {
+        customerId,
+        customerSnapshot: linkedSnapshots.customerSnapshot,
+        propertySnapshot: linkedSnapshots.propertySnapshot,
+        requestSnapshot: linkedSnapshots.requestSnapshot,
+      } : {}),
     };
   } else {
     console.error('[CRM Service] Failed to save lead:', result.error);

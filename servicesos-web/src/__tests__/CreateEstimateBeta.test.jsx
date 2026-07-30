@@ -113,6 +113,44 @@ describe('Create Estimate wife-beta flow', () => {
     ]);
   });
 
+  it('prefills only saved customer and property fields for a new estimate', async () => {
+    const onLeadSaved = vi.fn().mockResolvedValue({ id: 'lead-repeat-customer' });
+    const existingCustomerContext = { customerId: 'customer-existing' };
+    render(
+      <AIPhotoEstimateSystem
+        onLeadSaved={onLeadSaved}
+        existingCustomerContext={existingCustomerContext}
+        initialCustomerPrefill={{
+          firstName: 'Repeat', lastName: 'Customer', email: 'repeat@example.com', phone: '555-0161',
+          address: '110 Example Lane', city: 'Test City', state: 'TX', zip: '00000',
+        }}
+      />
+    );
+
+    expect(screen.getByLabelText('First Name *')).toHaveValue('Repeat');
+    expect(screen.getByLabelText('Last Name *')).toHaveValue('Customer');
+    expect(screen.getByLabelText('Email *')).toHaveValue('repeat@example.com');
+    expect(screen.getByLabelText('Street Address')).toHaveValue('110 Example Lane');
+    expect(screen.getByLabelText('City')).toHaveValue('Test City');
+    expect(screen.getByLabelText('State')).toHaveValue('TX');
+    expect(screen.getByLabelText('ZIP')).toHaveValue('00000');
+    expect(screen.getByLabelText('Preferred Date')).toHaveValue('');
+    expect(getPreferredTimeSelect()).toHaveValue('');
+    expect(document.querySelector('select[name="cleaningType"]')).toHaveValue('standard');
+    expect(screen.getByLabelText('Inside Oven (+1h)')).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review & Generate Estimate' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Manual Estimate' }));
+    await screen.findByRole('heading', { name: 'Estimate Results' });
+
+    expect(onLeadSaved).toHaveBeenCalledWith(
+      expect.objectContaining({ firstName: 'Repeat', address: '110 Example Lane', city: 'Test City', state: 'TX', zip: '00000', preferredDate: '', extras: expect.any(Object) }),
+      expect.any(Object),
+      null,
+      existingCustomerContext,
+    );
+  });
+
   it('keeps every estimate input available in the scoped owner layout', () => {
     const { container } = render(<AIPhotoEstimateSystem />);
 

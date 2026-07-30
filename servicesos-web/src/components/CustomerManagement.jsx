@@ -1,7 +1,12 @@
 // src/components/CustomerManagement.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getCustomers, createCustomer, updateCustomer, archiveCustomer } from '../core/customers/customerService';
+import {
+  createExistingCustomerBooking,
+  mapExistingCustomerToEstimatePrefill,
+} from '../services/existingCustomerBookingService';
 import { useAuth } from '../contexts/AuthContext';
+import { formatLocalDateInputValue } from '../utils/dateOnly';
 import {
   getCustomerPortalQuoteRequests,
   updateCustomerPortalQuoteRequestStatus
@@ -10,7 +15,7 @@ import './CustomerManagement.css';
 
 const DUPLICATE_CUSTOMER_MESSAGE = 'Possible duplicate customer found. A customer with this email or phone already exists. Please review the existing customer before creating another record.';
 
-export default function CustomerManagement() {
+export default function CustomerManagement({ onCreateEstimate, onBookingCreated }) {
   const { currentTenant, user } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [customerRequests, setCustomerRequests] = useState([]);
@@ -21,6 +26,8 @@ export default function CustomerManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [bookingCustomer, setBookingCustomer] = useState(null);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -174,6 +181,29 @@ export default function CustomerManagement() {
       console.error('Error archiving customer:', error);
       alert('Error archiving customer: ' + error.message);
     }
+  };
+
+  const isActiveCustomer = customer => Boolean(
+    customer?.id &&
+    customer.isArchived !== true &&
+    activeCustomers.some(activeCustomer => activeCustomer.id === customer.id)
+  );
+
+  const handleCreateEstimate = customer => {
+    if (!isActiveCustomer(customer)) {
+      window.alert('This customer is no longer active. Refresh Customers and try again.');
+      return;
+    }
+    onCreateEstimate?.({ ...customer, ...mapExistingCustomerToEstimatePrefill(customer) });
+  };
+
+  const handleOpenBooking = customer => {
+    if (!isActiveCustomer(customer)) {
+      window.alert('This customer is no longer active. Refresh Customers and try again.');
+      return;
+    }
+    setSelectedCustomer(null);
+    setBookingCustomer(customer);
   };
 
   const handleSearch = (e) => {
@@ -364,12 +394,35 @@ export default function CustomerManagement() {
                     <div className="customers-row-actions">
                     <button
                       className="v1-button v1-button-secondary"
+                      type="button"
+                      onClick={() => setSelectedCustomer(customer)}
+                    >
+                      View customer
+                    </button>
+                    <button
+                      className="v1-button v1-button-primary"
+                      type="button"
+                      onClick={() => handleCreateEstimate(customer)}
+                    >
+                      Create Estimate
+                    </button>
+                    <button
+                      className="v1-button v1-button-secondary"
+                      type="button"
+                      onClick={() => handleOpenBooking(customer)}
+                    >
+                      Book New Job
+                    </button>
+                    <button
+                      className="v1-button v1-button-secondary"
+                      type="button"
                       onClick={() => handleEdit(customer)}
                     >
                       Edit
                     </button>
                     <button
                       className="v1-button customers-archive-button"
+                      type="button"
                       onClick={() => handleArchive(customer.id)}
                     >
                       Archive customer
@@ -532,6 +585,153 @@ export default function CustomerManagement() {
           </div>
         </div>
       )}
+
+      {selectedCustomer && (
+        <CustomerDetailPanel
+          customer={selectedCustomer}
+          onClose={() => setSelectedCustomer(null)}
+          onCreateEstimate={() => handleCreateEstimate(selectedCustomer)}
+          onBookNewJob={() => handleOpenBooking(selectedCustomer)}
+          onEdit={() => {
+            setSelectedCustomer(null);
+            handleEdit(selectedCustomer);
+          }}
+        />
+      )}
+
+      {bookingCustomer && (
+        <ExistingCustomerBookingModal
+          customer={bookingCustomer}
+          tenantId={currentTenant.id}
+          createdBy={user?.uid}
+          onClose={() => setBookingCustomer(null)}
+          onCreated={() => {
+            setBookingCustomer(null);
+            onBookingCreated?.();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SavedProperty({ customer }) {
+  const property = [customer?.address, customer?.city, customer?.state, customer?.zip].filter(Boolean).join(', ');
+  return <>{property || 'No saved property address'}</>;
+}
+
+function CustomerDetailPanel({ customer, onClose, onCreateEstimate, onBookNewJob, onEdit }) {
+  return (
+    <div className="v1-modal-overlay customers-modal-overlay" role="presentation" onClick={onClose}>
+      <section className="v1-modal customers-detail-panel" role="dialog" aria-modal="true" aria-labelledby="customer-detail-title" onClick={event => event.stopPropagation()}>
+        <div className="customers-modal-header">
+          <div>
+            <p>Saved customer record</p>
+            <h2 id="customer-detail-title">{customer.name || 'Customer'}</h2>
+          </div>
+          <button className="customers-close-button" type="button" aria-label="Close customer details" onClick={onClose}>×</button>
+        </div>
+        <dl className="customers-detail-list">
+          <dt>Email</dt><dd>{customer.email || 'Not provided'}</dd>
+          <dt>Phone</dt><dd>{customer.phone || 'Not provided'}</dd>
+          <dt>Saved property</dt><dd><SavedProperty customer={customer} /></dd>
+          {customer.notes && <><dt>Notes</dt><dd>{customer.notes}</dd></>}
+        </dl>
+        <div className="customers-detail-actions">
+          <button className="v1-button v1-button-primary" type="button" onClick={onCreateEstimate}>Create Estimate</button>
+          <button className="v1-button v1-button-secondary" type="button" onClick={onBookNewJob}>Book New Job</button>
+          <button className="v1-button v1-button-secondary" type="button" onClick={onEdit}>Edit Customer</button>
+          <button className="v1-button v1-button-secondary" type="button" onClick={onClose}>Close</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ExistingCustomerBookingModal({ customer, tenantId, createdBy, onClose, onCreated }) {
+  const [form, setForm] = useState({ serviceType: '', date: '', startTime: '', agreedPrice: '', notes: '' });
+  const [error, setError] = useState('');
+  const [savingBooking, setSavingBooking] = useState(false);
+  const submissionRef = useRef(false);
+
+  const updateField = event => {
+    setError('');
+    setForm(current => ({ ...current, [event.target.name]: event.target.value }));
+  };
+
+  const handleSubmit = async event => {
+    event.preventDefault();
+    if (submissionRef.current) return;
+    submissionRef.current = true;
+    setSavingBooking(true);
+    setError('');
+    try {
+      const result = await createExistingCustomerBooking({
+        tenantId,
+        customerId: customer.id,
+        bookingInput: form,
+        createdBy,
+      });
+      if (!result.success) {
+        setError(result.message || 'Booking could not be created.');
+        return;
+      }
+      onCreated(result.data);
+    } catch (bookingError) {
+      console.error('Existing customer booking failed:', bookingError);
+      setError('Booking could not be created. Check your connection and try again.');
+    } finally {
+      setSavingBooking(false);
+      submissionRef.current = false;
+    }
+  };
+
+  return (
+    <div className="v1-modal-overlay customers-modal-overlay" role="presentation" onClick={savingBooking ? undefined : onClose}>
+      <section className="v1-modal customers-modal customers-booking-modal" role="dialog" aria-modal="true" aria-labelledby="existing-customer-booking-title" onClick={event => event.stopPropagation()}>
+        <div className="customers-modal-header">
+          <div>
+            <p>New job for saved customer</p>
+            <h2 id="existing-customer-booking-title">Book New Job</h2>
+          </div>
+        </div>
+        <div className="customers-booking-saved-data">
+          <strong>{customer.name || 'Customer'}</strong>
+          <span>{customer.email || 'No email'} · {customer.phone || 'No phone'}</span>
+          <span><strong>Saved property:</strong> <SavedProperty customer={customer} /></span>
+        </div>
+        <form className="customers-form" onSubmit={handleSubmit}>
+          <div className="customers-form-field">
+            <label htmlFor="existing-customer-service-type">Service type or job title *</label>
+            <input id="existing-customer-service-type" name="serviceType" value={form.serviceType} onChange={updateField} required />
+          </div>
+          <div className="customers-booking-date-time">
+            <div className="customers-form-field">
+              <label htmlFor="existing-customer-booking-date">Scheduled date *</label>
+              <input id="existing-customer-booking-date" className="booking-date-time-field" type="date" name="date" min={formatLocalDateInputValue()} value={form.date} onChange={updateField} required />
+            </div>
+            <div className="customers-form-field">
+              <label htmlFor="existing-customer-booking-time">Scheduled time *</label>
+              <input id="existing-customer-booking-time" className="booking-date-time-field" type="time" name="startTime" value={form.startTime} onChange={updateField} required />
+            </div>
+          </div>
+          <div className="customers-form-field">
+            <label htmlFor="existing-customer-approved-price">Approved price ($) *</label>
+            <input id="existing-customer-approved-price" type="number" name="agreedPrice" min="0.01" step="0.01" value={form.agreedPrice} onChange={updateField} required />
+          </div>
+          <div className="customers-form-field">
+            <label htmlFor="existing-customer-booking-notes">Service scope and notes</label>
+            <textarea id="existing-customer-booking-notes" name="notes" rows={3} value={form.notes} onChange={updateField} />
+          </div>
+          {error && <div className="customers-form-alert" role="alert">{error}</div>}
+          <div className="customers-modal-actions">
+            <button className="v1-button v1-button-secondary" type="button" onClick={onClose} disabled={savingBooking}>Cancel</button>
+            <button className="v1-button v1-button-primary" type="submit" disabled={savingBooking}>
+              {savingBooking ? 'Creating booking...' : 'Create booking'}
+            </button>
+          </div>
+        </form>
+      </section>
     </div>
   );
 }

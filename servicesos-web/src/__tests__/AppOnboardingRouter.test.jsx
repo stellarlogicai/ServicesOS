@@ -1,18 +1,40 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext } from '../contexts/AuthContextValue';
+
+const repeatWorkflowMocks = vi.hoisted(() => ({
+  selectedCustomer: null,
+  estimateProps: null,
+}));
 
 vi.mock('../pages/Dashboard', () => ({
   default: () => <h1>Wife Beta Dashboard</h1>
 }));
 
 vi.mock('../AIPhotoEstimateSystem', () => ({
-  default: () => <h1>Create Estimate Screen</h1>
+  default: ({ initialCustomerPrefill, existingCustomerContext }) => {
+    repeatWorkflowMocks.estimateProps = { initialCustomerPrefill, existingCustomerContext };
+    return (
+      <section>
+        <h1>Create Estimate Screen</h1>
+        <p data-testid="estimate-prefill-name">{initialCustomerPrefill?.firstName || 'No customer prefill'}</p>
+        <p data-testid="estimate-prefill-address">{initialCustomerPrefill?.address || 'No customer address'}</p>
+        <p data-testid="estimate-prefill-context">{existingCustomerContext?.tenantId || 'No customer context'}</p>
+      </section>
+    );
+  }
 }));
 
 vi.mock('../components/CustomerManagement', () => ({
-  default: () => <h1>Customers Screen</h1>
+  default: ({ onCreateEstimate }) => (
+    <section>
+      <h1>Customers Screen</h1>
+      <button type="button" onClick={() => onCreateEstimate?.(repeatWorkflowMocks.selectedCustomer)}>
+        Create repeat-customer estimate
+      </button>
+    </section>
+  )
 }));
 
 vi.mock('../components/BookingsList', () => ({
@@ -122,6 +144,19 @@ describe('App onboarding router context', () => {
     authState.tenantId = 'tenant-test';
     authState.tenantLoading = false;
     authState.userProfile = { uid: 'admin-test', onboardingCompleted: false };
+    repeatWorkflowMocks.selectedCustomer = {
+      id: 'customer-a',
+      name: 'Tenant A Customer',
+      firstName: 'Tenant',
+      lastName: 'A Customer',
+      email: 'tenant-a@example.test',
+      phone: '555-0101',
+      address: '110 Example Lane',
+      city: 'Test City',
+      state: 'TX',
+      zip: '00000',
+    };
+    repeatWorkflowMocks.estimateProps = null;
   });
 
   it('bypasses legacy onboarding for current ServicesOS beta', () => {
@@ -366,6 +401,71 @@ describe('App onboarding router context', () => {
     rerender(<App />);
     expect(screen.getByRole('heading', { name: 'Select a tenant to view this area.' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Bookings Screen' })).not.toBeInTheDocument();
+  });
+
+  it('clears and rejects repeat-customer estimate context when a super-admin changes tenants', async () => {
+    authState.role = 'super-admin';
+    authState.isSuperAdmin = () => true;
+    authState.userProfile = { uid: 'super-admin-test', role: 'super-admin', onboardingCompleted: true };
+    authState.currentTenant = { id: 'tenant-a', businessName: 'Tenant A' };
+    authState.tenantId = 'tenant-a';
+
+    const { rerender } = render(<App />);
+    fireEvent.click(screen.getByText('Customers'));
+    fireEvent.click(screen.getByRole('button', { name: 'Create repeat-customer estimate' }));
+
+    expect(screen.getByTestId('estimate-prefill-name')).toHaveTextContent('Tenant');
+    expect(screen.getByTestId('estimate-prefill-address')).toHaveTextContent('110 Example Lane');
+    expect(screen.getByTestId('estimate-prefill-context')).toHaveTextContent('tenant-a');
+    expect(repeatWorkflowMocks.estimateProps.existingCustomerContext).toMatchObject({
+      tenantId: 'tenant-a',
+      customerId: 'customer-a',
+    });
+
+    authState.currentTenant = { id: 'tenant-b', businessName: 'Tenant B' };
+    authState.tenantId = 'tenant-b';
+    await act(async () => {
+      rerender(<App />);
+    });
+
+    expect(screen.getByTestId('estimate-prefill-name')).toHaveTextContent('No customer prefill');
+    expect(screen.getByTestId('estimate-prefill-address')).toHaveTextContent('No customer address');
+    expect(screen.getByTestId('estimate-prefill-context')).toHaveTextContent('No customer context');
+    expect(repeatWorkflowMocks.estimateProps.initialCustomerPrefill).toBeUndefined();
+    expect(repeatWorkflowMocks.estimateProps.existingCustomerContext).toBeNull();
+
+    repeatWorkflowMocks.selectedCustomer = {
+      ...repeatWorkflowMocks.selectedCustomer,
+      id: 'customer-b',
+      name: 'Tenant B Customer',
+      firstName: 'Tenant',
+      lastName: 'B Customer',
+      email: 'tenant-b@example.test',
+      address: '220 Example Road',
+      city: 'Other City',
+      state: 'MO',
+      zip: '65613',
+    };
+    fireEvent.click(screen.getByText('Customers'));
+    fireEvent.click(screen.getByRole('button', { name: 'Create repeat-customer estimate' }));
+
+    expect(screen.getByTestId('estimate-prefill-name')).toHaveTextContent('Tenant');
+    expect(screen.getByTestId('estimate-prefill-address')).toHaveTextContent('220 Example Road');
+    expect(screen.getByTestId('estimate-prefill-context')).toHaveTextContent('tenant-b');
+    expect(repeatWorkflowMocks.estimateProps.existingCustomerContext).toMatchObject({
+      tenantId: 'tenant-b',
+      customerId: 'customer-b',
+    });
+
+    authState.currentTenant = null;
+    authState.tenantId = null;
+    await act(async () => {
+      rerender(<App />);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Select a tenant to view this area.' })).toBeInTheDocument();
+    });
   });
 
   it('does not expose GrowthAI to customer users', () => {

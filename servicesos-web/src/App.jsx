@@ -291,6 +291,18 @@ function AuthenticatedApp() {
   });
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [estimateCustomerContext, setEstimateCustomerContext] = useState(null);
+  const [estimateContextTenantId, setEstimateContextTenantId] = useState(tenantId);
+
+  // Reset repeat-customer context before rendering any tenant change.
+  if (estimateContextTenantId !== tenantId) {
+    setEstimateContextTenantId(tenantId);
+    setEstimateCustomerContext(null);
+  }
+
+  const activeEstimateCustomerContext = (
+    tenantId && estimateCustomerContext?.tenantId === tenantId
+  ) ? estimateCustomerContext : null;
 
   // Redirect if current page becomes inaccessible
   useEffect(() => {
@@ -324,7 +336,22 @@ function AuthenticatedApp() {
 
   const navigate = (id) => {
     if (!canView(NAV_ITEMS.find(n => n.id === id) ?? {})) return;
+    if (id === 'intake') {
+      setEstimateCustomerContext(null);
+    }
     setPage(id);
+    setMobileMenuOpen(false);
+  };
+
+  const createEstimateForExistingCustomer = (customer) => {
+    if (!tenantId || !customer?.id || customer.isArchived === true) return;
+    setEstimateCustomerContext({ tenantId, customerId: customer.id, customer });
+    setPage('intake');
+    setMobileMenuOpen(false);
+  };
+
+  const showBookingsAfterCustomerBooking = () => {
+    setPage('bookings');
     setMobileMenuOpen(false);
   };
 
@@ -429,9 +456,9 @@ function AuthenticatedApp() {
     }
 
     switch (page) {
-      case "intake":            return <div className="v1-page create-estimate-page-shell" key={tenantId}><AIPhotoEstimateSystem onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
+      case "intake":            return <div className="v1-page create-estimate-page-shell" key={`${tenantId}-${activeEstimateCustomerContext?.customerId || 'manual'}`}><AIPhotoEstimateSystem initialCustomerPrefill={activeEstimateCustomerContext?.customer} existingCustomerContext={activeEstimateCustomerContext} onLeadSaved={(formData, estimate, aiAnalysis, customerContext) => saveLead(tenantId, formData, estimate, aiAnalysis, customerContext)} /></div>;
       case "dashboard":         return <Dashboard key={tenantId} />;
-      case "customers":         return <CustomerManagement key={tenantId} />;
+      case "customers":         return <CustomerManagement key={tenantId} onCreateEstimate={createEstimateForExistingCustomer} onBookingCreated={showBookingsAfterCustomerBooking} />;
       case "bookings":          return <BookingsList key={tenantId} />;
       case "field-mode":        return <FieldMode key={tenantId} />;
       case "staff-scheduling":  return <StaffScheduling key={tenantId} tenantId={tenantId} />;

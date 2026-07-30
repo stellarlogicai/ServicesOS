@@ -16,20 +16,16 @@ const OWNER_EXTRA_KEYS = [
   "petWasteRemoval", "blindCleaning", "ceilingFanCleaning", "wallSpotCleaning"
 ];
 
-export default function AIPhotoEstimateSystem({
-  onLeadSaved = null
-}) {
-  const { currentTenant } = useAuth();
-  const [step, setStep] = useState("intake");
-  const [formData, setFormData] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    address: "",
-    city: "",
-    state: "",
-    zip: "",
+function initialEstimateFormData(prefill = {}) {
+  return {
+    firstName: prefill.firstName || "",
+    lastName: prefill.lastName || "",
+    email: prefill.email || "",
+    phone: prefill.phone || "",
+    address: prefill.address || "",
+    city: prefill.city || "",
+    state: prefill.state || "",
+    zip: prefill.zip || "",
     bedroomCount: 3,
     bathroomCount: 2,
     kitchenCount: 1,
@@ -69,7 +65,17 @@ export default function AIPhotoEstimateSystem({
       organizationLevel: "none"
     },
     specialRequests: ""
-  });
+  };
+}
+
+export default function AIPhotoEstimateSystem({
+  onLeadSaved = null,
+  initialCustomerPrefill = null,
+  existingCustomerContext = null,
+}) {
+  const { currentTenant } = useAuth();
+  const [step, setStep] = useState("intake");
+  const [formData, setFormData] = useState(() => initialEstimateFormData(initialCustomerPrefill || {}));
   const [, setPhotoFiles] = useState([]);
   const [photoPreviews, setPhotoPreviews] = useState([]);
   const [aiAnalysis, setAiAnalysis] = useState(null);
@@ -158,7 +164,11 @@ export default function AIPhotoEstimateSystem({
       const tenantId = typeof currentTenant === "string" ? currentTenant : currentTenant?.id;
 
       if (onLeadSaved) {
-        await onLeadSaved(formData, result, aiAnalysis);
+        if (existingCustomerContext?.customerId) {
+          await onLeadSaved(formData, result, aiAnalysis, existingCustomerContext);
+        } else {
+          await onLeadSaved(formData, result, aiAnalysis);
+        }
       } else {
         await saveQuote(tenantId, formData, result, aiAnalysis);
       }

@@ -69,4 +69,29 @@ describe('crmService manual estimate persistence', () => {
     expect(payload).not.toHaveProperty('paymentId');
     expect(saved).toMatchObject({ status: 'new', booking: null, source: 'admin' });
   });
+
+  it('keeps a repeat estimate linked to the saved customer with fresh snapshots only', async () => {
+    await saveLead(
+      'tenant-test',
+      {
+        firstName: 'Repeat', lastName: 'Customer', email: 'repeat@example.com', phone: '555-0161',
+        address: '16 Repeat Lane', city: 'Bolivar', state: 'MO', zip: '65613',
+        bedroomCount: 3, bathroomCount: 2, clutterLevel: 'normal', cleaningType: 'deep', frequency: 'one-time'
+      },
+      { laborHours: 4, appointmentDuration: 4, priceLow: 200, priceHigh: 240 },
+      null,
+      { customerId: 'customer-existing' }
+    );
+
+    const payload = leadServiceMocks.createLead.mock.calls[0][1];
+    expect(payload).toMatchObject({
+      source: 'admin-existing-customer',
+      customerId: 'customer-existing',
+      customerSnapshot: { customerId: 'customer-existing', fullName: 'Repeat Customer', email: 'repeat@example.com' },
+      propertySnapshot: { address: '16 Repeat Lane', city: 'Bolivar', zipCode: '65613' },
+      requestSnapshot: { cleaningType: 'deep' },
+      booking: null,
+    });
+    expect(JSON.stringify(payload)).not.toMatch(/payment|stripe|assignment|checklist|photo/i);
+  });
 });

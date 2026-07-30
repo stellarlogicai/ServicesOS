@@ -55,10 +55,15 @@ describe('V1 smoke emulator seed safety', () => {
     const unassignedBooking = documents.get(`tenants/${TENANT_A}/bookings/booking-smoke-a-payment-pending`);
     const otherEmployeeBooking = documents.get(`tenants/${TENANT_A}/bookings/booking-smoke-a-other-employee`);
     const cancelledBooking = documents.get(`tenants/${TENANT_A}/bookings/booking-smoke-a-cancelled`);
+    const customer = documents.get(`tenants/${TENANT_A}/customers/customer-smoke-a`);
 
     assert.equal(tenantA.businessSettings.businessName, 'Aunt B Smoke Cleaning A');
     assert.equal(tenantB.businessSettings.businessName, 'ServicesOS Smoke Cleaning B');
     assert.notDeepEqual(tenantA.adminUsers, tenantB.adminUsers);
+    assert.deepEqual(
+      { address: customer.address, city: customer.city, state: customer.state, zip: customer.zip },
+      { address: '110 Example Lane', city: 'Test City', state: 'TX', zip: '00000' },
+    );
     assert.equal(fieldBooking.paymentStatus, 'not_paid');
     assert.equal(fieldBooking.fieldStatus, 'not_started');
     assert.equal(fieldBooking.assignedEmployeeAuthUid, 'smoke-employee-a');

@@ -15,12 +15,27 @@ const requestMocks = vi.hoisted(() => ({
   updateCustomerPortalQuoteRequestStatus: vi.fn()
 }));
 
+const repeatWorkflowMocks = vi.hoisted(() => ({
+  createExistingCustomerBooking: vi.fn(),
+  mapExistingCustomerToEstimatePrefill: vi.fn(customer => ({
+    firstName: customer.name.split(' ')[0],
+    lastName: customer.name.split(' ').slice(1).join(' '),
+    email: customer.email,
+    phone: customer.phone,
+    address: customer.address,
+    city: customer.city,
+    state: customer.state,
+    zip: customer.zip,
+  })),
+}));
+
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({ currentTenant: { id: 'tenant-test' }, user: { uid: 'admin-test' } })
 }));
 
 vi.mock('../core/customers/customerService', () => customerMocks);
 vi.mock('../services/customerPortalQuoteRequestService', () => requestMocks);
+vi.mock('../services/existingCustomerBookingService', () => repeatWorkflowMocks);
 
 import CustomerManagement from '../components/CustomerManagement';
 
@@ -87,6 +102,8 @@ describe('CustomerManagement restoration safety gate', () => {
     requestMocks.getCustomerPortalQuoteRequests.mockResolvedValue({ success: true, data: [] });
     requestMocks.updateCustomerPortalQuoteRequestStatus.mockReset();
     requestMocks.updateCustomerPortalQuoteRequestStatus.mockResolvedValue({ success: true });
+    repeatWorkflowMocks.createExistingCustomerBooking.mockReset();
+    repeatWorkflowMocks.createExistingCustomerBooking.mockResolvedValue({ success: true, data: { id: 'booking-new' } });
     vi.spyOn(window, 'alert').mockImplementation(() => {});
     vi.spyOn(window, 'confirm').mockImplementation(() => true);
   });
@@ -152,6 +169,82 @@ describe('CustomerManagement restoration safety gate', () => {
     expect(await screen.findByText('Linked Customer')).toBeInTheDocument();
     expect(screen.getByText('Second Customer')).toBeInTheDocument();
     expect(screen.queryByText('Archived Customer')).not.toBeInTheDocument();
+  });
+
+  it('exposes accessible repeat-customer actions for each active customer only', async () => {
+    render(<CustomerManagement />);
+
+    expect(await screen.findByText('Linked Customer')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'View customer' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Create Estimate' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Book New Job' })).toHaveLength(2);
+    expect(screen.queryByText('Archived Customer')).not.toBeInTheDocument();
+  });
+
+  it('shows saved customer details and clears them when closed', async () => {
+    render(<CustomerManagement />);
+
+    expect(await screen.findByText('Linked Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'View customer' })[0]);
+
+    expect(screen.getByRole('dialog', { name: 'Linked Customer' })).toBeInTheDocument();
+    expect(screen.getByText('Saved property')).toBeInTheDocument();
+    expect(screen.getByText('10 Customer Lane, Bolivar, MO, 65613')).toBeInTheDocument();
+    expect(screen.getByText('Existing note')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close customer details' }));
+    expect(screen.queryByRole('dialog', { name: 'Linked Customer' })).not.toBeInTheDocument();
+  });
+
+  it('hands trusted customer/property fields to the estimate workflow without mutating the saved customer', async () => {
+    const onCreateEstimate = vi.fn();
+    render(<CustomerManagement onCreateEstimate={onCreateEstimate} />);
+
+    expect(await screen.findByText('Linked Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create Estimate' })[0]);
+
+    expect(onCreateEstimate).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'customer-linked',
+      firstName: 'Linked',
+      lastName: 'Customer',
+      email: 'linked@example.com',
+      address: '10 Customer Lane',
+      zip: '65613',
+    }));
+    expect(linkedCustomer).toEqual(expect.objectContaining({
+      name: 'Linked Customer',
+      email: 'linked@example.com',
+      address: '10 Customer Lane',
+    }));
+  });
+
+  it('creates one fresh direct booking with new job inputs and no payment state', async () => {
+    const onBookingCreated = vi.fn();
+    render(<CustomerManagement onBookingCreated={onBookingCreated} />);
+
+    expect(await screen.findByText('Linked Customer')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Book New Job' })[0]);
+    fireEvent.change(screen.getByLabelText('Service type or job title *'), { target: { value: 'Deep clean' } });
+    fireEvent.change(screen.getByLabelText('Scheduled date *'), { target: { value: '2026-08-12' } });
+    fireEvent.change(screen.getByLabelText('Scheduled time *'), { target: { value: '09:30' } });
+    fireEvent.change(screen.getByLabelText('Approved price ($) *'), { target: { value: '240' } });
+    fireEvent.change(screen.getByLabelText('Service scope and notes'), { target: { value: 'Kitchen focus' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create booking' }));
+
+    await waitFor(() => expect(repeatWorkflowMocks.createExistingCustomerBooking).toHaveBeenCalledWith({
+      tenantId: 'tenant-test',
+      customerId: 'customer-linked',
+      createdBy: 'admin-test',
+      bookingInput: {
+        serviceType: 'Deep clean',
+        date: '2026-08-12',
+        startTime: '09:30',
+        agreedPrice: '240',
+        notes: 'Kitchen focus',
+      },
+    }));
+    expect(onBookingCreated).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(repeatWorkflowMocks.createExistingCustomerBooking.mock.calls)).not.toMatch(/stripe|payment/i);
   });
 
   it('allows adding a unique customer through the active tenant service boundary', async () => {
