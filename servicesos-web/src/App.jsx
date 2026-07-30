@@ -429,7 +429,7 @@ function AuthenticatedApp() {
     }
 
     switch (page) {
-      case "intake":            return <div className="v1-page" style={{ maxWidth: 720 }} key={tenantId}><AIPhotoEstimateSystem onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
+      case "intake":            return <div className="v1-page create-estimate-page-shell" key={tenantId}><AIPhotoEstimateSystem onLeadSaved={(formData, estimate, aiAnalysis) => saveLead(tenantId, formData, estimate, aiAnalysis)} /></div>;
       case "dashboard":         return <Dashboard key={tenantId} />;
       case "customers":         return <CustomerManagement key={tenantId} />;
       case "bookings":          return <BookingsList key={tenantId} />;

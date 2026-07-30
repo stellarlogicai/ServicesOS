@@ -113,6 +113,37 @@ describe('Create Estimate wife-beta flow', () => {
     ]);
   });
 
+  it('keeps every estimate input available in the scoped owner layout', () => {
+    const { container } = render(<AIPhotoEstimateSystem />);
+
+    expect(container.querySelector('.create-estimate-page')).toBeInTheDocument();
+    expect(container.querySelector('.create-estimate-form-layout')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Customer Information' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Property Address' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Appointment Preference' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Service Details' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Room Details' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Property Condition' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Additional Services' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Photos Preview only' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Special Requests' })).toBeInTheDocument();
+
+    [
+      'firstName', 'lastName', 'email', 'phone', 'address', 'city', 'state', 'zip',
+      'preferredDate', 'preferredTime', 'bedroomCount', 'bathroomCount', 'kitchenCount',
+      'livingRoomCount', 'diningRoomCount', 'officeCount', 'basementCount', 'stairsCount',
+      'petHairLevel', 'clutterLevel', 'lastCleaned', 'cleaningType', 'frequency',
+      'marketType', 'specialRequests'
+    ].forEach((name) => {
+      expect(container.querySelector(`[name="${name}"]`)).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('checkbox', { name: 'Has stairs' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Inside Oven (+1h)' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Upload estimate photos')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Review & Generate Estimate' })).toBeInTheDocument();
+  });
+
   it('does not expose the removed payment form or fake payment success flow by default', async () => {
     render(<AIPhotoEstimateSystem />);
 

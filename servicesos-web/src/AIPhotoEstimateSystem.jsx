@@ -219,295 +219,234 @@ export default function AIPhotoEstimateSystem({
 
   if (step === "intake") {
     return (
-      <div style={{ padding: "24px", maxWidth: 800, margin: "0 auto" }}>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24 }}>
-          Create Estimate
-        </h2>
+      <section className="create-estimate-page" aria-labelledby="create-estimate-title">
+        <header className="v1-page-header create-estimate-page-header">
+          <h1 className="v1-page-title" id="create-estimate-title">Create Estimate</h1>
+          <p className="v1-page-subtitle">Create an estimate for a customer and their property, then review the details before saving.</p>
+        </header>
 
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-            Contact Information
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <div>
-              <label htmlFor="estimate-first-name" style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                First Name *
-              </label>
-              <input
-                id="estimate-first-name"
-                type="text"
-                name="firstName"
-                required
-                value={formData.firstName}
-                onChange={handleInputChange}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-              />
+        <div className="create-estimate-form-layout">
+          <section className="v1-card create-estimate-section" aria-labelledby="create-estimate-contact-title">
+            <h2 className="create-estimate-section-title" id="create-estimate-contact-title">Customer Information</h2>
+            <div className="create-estimate-field-grid create-estimate-field-grid-two">
+              <div className="create-estimate-field">
+                <label htmlFor="estimate-first-name">First Name <span aria-hidden="true">*</span></label>
+                <input id="estimate-first-name" className="create-estimate-control" type="text" name="firstName" required value={formData.firstName} onChange={handleInputChange} />
+              </div>
+              <div className="create-estimate-field">
+                <label htmlFor="estimate-last-name">Last Name <span aria-hidden="true">*</span></label>
+                <input id="estimate-last-name" className="create-estimate-control" type="text" name="lastName" required value={formData.lastName} onChange={handleInputChange} />
+              </div>
+              <div className="create-estimate-field">
+                <label htmlFor="estimate-email">Email <span aria-hidden="true">*</span></label>
+                <input id="estimate-email" className="create-estimate-control" type="email" name="email" required value={formData.email} onChange={handleInputChange} />
+              </div>
+              <div className="create-estimate-field">
+                <label htmlFor="estimate-phone">Phone <span aria-hidden="true">*</span></label>
+                <input id="estimate-phone" className="create-estimate-control" type="tel" name="phone" required value={formData.phone} onChange={handleInputChange} />
+              </div>
             </div>
-            <div>
-              <label htmlFor="estimate-last-name" style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Last Name *
-              </label>
-              <input
-                id="estimate-last-name"
-                type="text"
-                name="lastName"
-                required
-                value={formData.lastName}
-                onChange={handleInputChange}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-              />
-            </div>
-            <div>
-              <label htmlFor="estimate-email" style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Email *
-              </label>
-              <input
-                id="estimate-email"
-                type="email"
-                name="email"
-                required
-                value={formData.email}
-                onChange={handleInputChange}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-              />
-            </div>
-            <div>
-              <label htmlFor="estimate-phone" style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Phone *
-              </label>
-              <input
-                id="estimate-phone"
-                type="tel"
-                name="phone"
-                required
-                value={formData.phone}
-                onChange={handleInputChange}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-              />
-            </div>
-          </div>
-        </div>
+          </section>
 
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-            Address
-          </h3>
-          <input
-            type="text"
-            name="address"
-            placeholder="Street Address"
-            value={formData.address}
-            onChange={handleInputChange}
-            style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6, marginBottom: 8 }}
-          />
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8 }}>
-            <input
-              type="text"
-              name="city"
-              placeholder="City"
-              value={formData.city}
-              onChange={handleInputChange}
-              style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-            />
-            <input
-              type="text"
-              name="state"
-              placeholder="State"
-              value={formData.state}
-              onChange={handleInputChange}
-              style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-            />
-            <input
-              type="text"
-              name="zip"
-              placeholder="ZIP"
-              value={formData.zip}
-              onChange={handleInputChange}
-              style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-            />
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-            Preferred Appointment Time
-          </h3>
-          <div className="create-estimate-schedule-grid">
-            <div>
-              <label htmlFor="create-estimate-preferred-date" style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Preferred Date
-              </label>
-              <input
-                id="create-estimate-preferred-date"
-                className="create-estimate-date-field"
-                type="date"
-                name="preferredDate"
-                value={formData.preferredDate}
-                onChange={handleInputChange}
-                min={formatLocalDateInputValue()}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-              />
+          <section className="v1-card create-estimate-section" aria-labelledby="create-estimate-address-title">
+            <h2 className="create-estimate-section-title" id="create-estimate-address-title">Property Address</h2>
+            <div className="create-estimate-address-fields">
+              <div className="create-estimate-field">
+                <label htmlFor="estimate-address">Street Address</label>
+                <input id="estimate-address" className="create-estimate-control" type="text" name="address" placeholder="Street Address" value={formData.address} onChange={handleInputChange} />
+              </div>
+              <div className="create-estimate-address-grid">
+                <div className="create-estimate-field">
+                  <label htmlFor="estimate-city">City</label>
+                  <input id="estimate-city" className="create-estimate-control" type="text" name="city" placeholder="City" value={formData.city} onChange={handleInputChange} />
+                </div>
+                <div className="create-estimate-field">
+                  <label htmlFor="estimate-state">State</label>
+                  <input id="estimate-state" className="create-estimate-control" type="text" name="state" placeholder="State" value={formData.state} onChange={handleInputChange} />
+                </div>
+                <div className="create-estimate-field">
+                  <label htmlFor="estimate-zip">ZIP</label>
+                  <input id="estimate-zip" className="create-estimate-control" type="text" name="zip" placeholder="ZIP" value={formData.zip} onChange={handleInputChange} />
+                </div>
+              </div>
             </div>
-            <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Preferred Time
-              </label>
-              <select
-                name="preferredTime"
-                value={formData.preferredTime}
-                onChange={handleInputChange}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-              >
-                <option value="">Select a time</option>
-                <option value="morning">Morning (8AM - 12PM)</option>
-                <option value="afternoon">Afternoon (12PM - 5PM)</option>
-                <option value="evening">Evening (5PM - 8PM)</option>
-              </select>
-            </div>
-          </div>
-          <p style={{ fontSize: 12, color: "#6b7280", marginTop: 8 }}>
-            We'll confirm the exact time with you after reviewing your request.
-          </p>
-        </div>
+          </section>
 
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-            Room Details
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginBottom: 16 }}>
+          <section className="v1-card create-estimate-section" aria-labelledby="create-estimate-appointment-title">
+            <h2 className="create-estimate-section-title" id="create-estimate-appointment-title">Appointment Preference</h2>
+            <div className="create-estimate-schedule-grid">
+              <div className="create-estimate-field">
+                <label htmlFor="create-estimate-preferred-date">Preferred Date</label>
+                <input id="create-estimate-preferred-date" className="create-estimate-control create-estimate-date-field" type="date" name="preferredDate" value={formData.preferredDate} onChange={handleInputChange} min={formatLocalDateInputValue()} />
+              </div>
+              <div className="create-estimate-field">
+                <label htmlFor="create-estimate-preferred-time">Preferred Time</label>
+                <select id="create-estimate-preferred-time" className="create-estimate-control" name="preferredTime" value={formData.preferredTime} onChange={handleInputChange}>
+                  <option value="">Select a time</option>
+                  <option value="morning">Morning (8AM - 12PM)</option>
+                  <option value="afternoon">Afternoon (12PM - 5PM)</option>
+                  <option value="evening">Evening (5PM - 8PM)</option>
+                </select>
+              </div>
+            </div>
+            <p className="create-estimate-help-text">We&apos;ll confirm the exact time after reviewing the request.</p>
+          </section>
+
+          <section className="v1-card create-estimate-section" aria-labelledby="create-estimate-service-title">
+            <h2 className="create-estimate-section-title" id="create-estimate-service-title">Service Details</h2>
+            <div className="create-estimate-field-grid create-estimate-field-grid-two">
+              <div className="create-estimate-field">
+                <label htmlFor="estimate-cleaning-type">Service Type</label>
+                <select id="estimate-cleaning-type" className="create-estimate-control" name="cleaningType" value={formData.cleaningType} onChange={handleInputChange}>
+                  <option value="standard">Standard Clean</option>
+                  <option value="deep">Deep Clean</option>
+                  <option value="moveout">Move-In / Move-Out</option>
+                  <option value="construction">Post-Construction</option>
+                </select>
+              </div>
+              <div className="create-estimate-field">
+                <label htmlFor="estimate-frequency">Frequency</label>
+                <select id="estimate-frequency" className="create-estimate-control" name="frequency" value={formData.frequency} onChange={handleInputChange}>
+                  <option value="one-time">One-Time</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="bi-weekly">Every 2 Weeks</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div className="create-estimate-field create-estimate-field-span-two">
+                <label htmlFor="estimate-market-type">Market Type</label>
+                <select id="estimate-market-type" className="create-estimate-control" name="marketType" value={formData.marketType} onChange={handleInputChange}>
+                  <option value="rural">Rural (Bolivar Area)</option>
+                  <option value="suburban">Suburban</option>
+                  <option value="metro">Metro</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section className="v1-card create-estimate-section create-estimate-section-wide" aria-labelledby="create-estimate-rooms-title">
+            <h2 className="create-estimate-section-title" id="create-estimate-rooms-title">Room Details</h2>
+            <div className="create-estimate-room-grid">
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Bedrooms
-              </label>
+              <label htmlFor="estimate-bedroom-count">Bedrooms</label>
               <input
+                id="estimate-bedroom-count"
+                className="create-estimate-control"
                 type="number"
                 name="bedroomCount"
                 value={formData.bedroomCount}
                 onChange={handleInputChange}
                 min="0"
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Bathrooms
-              </label>
+              <label htmlFor="estimate-bathroom-count">Bathrooms</label>
               <input
+                id="estimate-bathroom-count"
+                className="create-estimate-control"
                 type="number"
                 name="bathroomCount"
                 value={formData.bathroomCount}
                 onChange={handleInputChange}
                 min="0"
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Kitchens
-              </label>
+              <label htmlFor="estimate-kitchen-count">Kitchens</label>
               <input
+                id="estimate-kitchen-count"
+                className="create-estimate-control"
                 type="number"
                 name="kitchenCount"
                 value={formData.kitchenCount}
                 onChange={handleInputChange}
                 min="0"
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Living Rooms
-              </label>
+              <label htmlFor="estimate-living-room-count">Living Rooms</label>
               <input
+                id="estimate-living-room-count"
+                className="create-estimate-control"
                 type="number"
                 name="livingRoomCount"
                 value={formData.livingRoomCount}
                 onChange={handleInputChange}
                 min="0"
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Dining Rooms
-              </label>
+              <label htmlFor="estimate-dining-room-count">Dining Rooms</label>
               <input
+                id="estimate-dining-room-count"
+                className="create-estimate-control"
                 type="number"
                 name="diningRoomCount"
                 value={formData.diningRoomCount}
                 onChange={handleInputChange}
                 min="0"
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Offices
-              </label>
+              <label htmlFor="estimate-office-count">Offices</label>
               <input
+                id="estimate-office-count"
+                className="create-estimate-control"
                 type="number"
                 name="officeCount"
                 value={formData.officeCount}
                 onChange={handleInputChange}
                 min="0"
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Basements
-              </label>
+              <label htmlFor="estimate-basement-count">Basements</label>
               <input
+                id="estimate-basement-count"
+                className="create-estimate-control"
                 type="number"
                 name="basementCount"
                 value={formData.basementCount}
                 onChange={handleInputChange}
                 min="0"
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
             <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Stairs Count
-              </label>
+              <label htmlFor="estimate-stairs-count">Stairs Count</label>
               <input
+                id="estimate-stairs-count"
+                className="create-estimate-control"
                 type="number"
                 name="stairsCount"
                 value={formData.stairsCount}
                 onChange={handleInputChange}
                 min="0"
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               />
             </div>
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            </div>
+            <label className="create-estimate-checkbox-row create-estimate-stairs-toggle">
               <input
+                className="create-estimate-checkbox"
                 type="checkbox"
                 name="stairs"
                 checked={formData.stairs}
                 onChange={(e) => setFormData(prev => ({ ...prev, stairs: e.target.checked }))}
-                style={{ width: 18, height: 18 }}
               />
-              <span style={{ fontWeight: 500 }}>Has stairs</span>
+              <span>Has stairs</span>
             </label>
-          </div>
-        </div>
+          </section>
 
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-            Property Condition
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginBottom: 16 }}>
-            <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Pet Hair Level
-              </label>
+          <section className="v1-card create-estimate-section create-estimate-section-wide" aria-labelledby="create-estimate-condition-title">
+            <h2 className="create-estimate-section-title" id="create-estimate-condition-title">Property Condition</h2>
+            <div className="create-estimate-field-grid create-estimate-field-grid-three">
+              <div className="create-estimate-field">
+                <label htmlFor="estimate-pet-hair-level">Pet Hair Level</label>
               <select
+                id="estimate-pet-hair-level"
+                className="create-estimate-control"
                 name="petHairLevel"
                 value={formData.petHairLevel}
                 onChange={handleInputChange}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               >
                 <option value="none">None</option>
                 <option value="light">Light</option>
@@ -515,15 +454,14 @@ export default function AIPhotoEstimateSystem({
                 <option value="heavy">Heavy</option>
               </select>
             </div>
-            <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Clutter Level
-              </label>
+              <div className="create-estimate-field">
+                <label htmlFor="estimate-clutter-level">Clutter Level</label>
               <select
+                id="estimate-clutter-level"
+                className="create-estimate-control"
                 name="clutterLevel"
                 value={formData.clutterLevel}
                 onChange={handleInputChange}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               >
                 <option value="none">None</option>
                 <option value="light">Light</option>
@@ -532,15 +470,14 @@ export default function AIPhotoEstimateSystem({
                 <option value="heavy">Heavy</option>
               </select>
             </div>
-            <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Last Cleaned
-              </label>
+              <div className="create-estimate-field">
+                <label htmlFor="estimate-last-cleaned">Last Cleaned</label>
               <select
+                id="estimate-last-cleaned"
+                className="create-estimate-control"
                 name="lastCleaned"
                 value={formData.lastCleaned}
                 onChange={handleInputChange}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
               >
                 <option value="weekly">Weekly</option>
                 <option value="biweekly">Every 2 Weeks</option>
@@ -549,131 +486,84 @@ export default function AIPhotoEstimateSystem({
                 <option value="6months+">6+ Months</option>
               </select>
             </div>
-            <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Service Type
-              </label>
-              <select
-                name="cleaningType"
-                value={formData.cleaningType}
-                onChange={handleInputChange}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-              >
-                <option value="standard">Standard Clean</option>
-                <option value="deep">Deep Clean</option>
-                <option value="moveout">Move-In / Move-Out</option>
-                <option value="construction">Post-Construction</option>
-              </select>
             </div>
-            <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Frequency
-              </label>
-              <select
-                name="frequency"
-                value={formData.frequency}
-                onChange={handleInputChange}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-              >
-                <option value="one-time">One-Time</option>
-                <option value="weekly">Weekly</option>
-                <option value="bi-weekly">Every 2 Weeks</option>
-                <option value="monthly">Monthly</option>
-              </select>
-            </div>
-            <div>
-              <label style={{ display: "block", marginBottom: 4, fontWeight: 500 }}>
-                Market Type
-              </label>
-              <select
-                name="marketType"
-                value={formData.marketType}
-                onChange={handleInputChange}
-                style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
-              >
-                <option value="rural">Rural (Bolivar Area)</option>
-                <option value="suburban">Suburban</option>
-                <option value="metro">Metro</option>
-              </select>
-            </div>
-          </div>
-        </div>
+          </section>
 
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-            Additional Services
-          </h3>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 4, fontWeight: 600 }}>
+          <section className="v1-card create-estimate-section create-estimate-section-wide" aria-labelledby="create-estimate-extras-title">
+            <div className="create-estimate-section-heading-row">
+              <h2 className="create-estimate-section-title" id="create-estimate-extras-title">Additional Services</h2>
+              <label className="create-estimate-checkbox-row create-estimate-select-all">
             <input
+              className="create-estimate-checkbox"
               type="checkbox"
               aria-label="Select all additional services"
               checked={allExtrasSelected}
               onChange={(event) => handleSelectAllExtras(event.target.checked)}
-              style={{ width: 18, height: 18 }}
             />
             <span>Select All</span>
           </label>
+            </div>
           
-          <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, marginTop: 16 }}>Kitchen & Appliances</h4>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 16 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" name="extras.oven" checked={formData.extras.oven} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+          <h3 className="create-estimate-extra-group-title">Kitchen & Appliances</h3>
+          <div className="create-estimate-checklist-grid">
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.oven" checked={formData.extras.oven} onChange={handleInputChange} />
               <span>Inside Oven (+1h)</span>
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" name="extras.fridge" checked={formData.extras.fridge} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.fridge" checked={formData.extras.fridge} onChange={handleInputChange} />
               <span>Inside Fridge (+0.75h)</span>
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" name="extras.cabinetsInside" checked={formData.extras.cabinetsInside} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.cabinetsInside" checked={formData.extras.cabinetsInside} onChange={handleInputChange} />
               <span>Cabinet Interiors (+1.5h)</span>
             </label>
           </div>
 
-          <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, marginTop: 16 }}>Detailing</h4>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 16 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" name="extras.windows" checked={formData.extras.windows} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+          <h3 className="create-estimate-extra-group-title">Detailing</h3>
+          <div className="create-estimate-checklist-grid">
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.windows" checked={formData.extras.windows} onChange={handleInputChange} />
               <span>Windows (+1.5h)</span>
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" name="extras.baseboards" checked={formData.extras.baseboards} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.baseboards" checked={formData.extras.baseboards} onChange={handleInputChange} />
               <span>Baseboards (+1h)</span>
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" name="extras.blindCleaning" checked={formData.extras.blindCleaning} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.blindCleaning" checked={formData.extras.blindCleaning} onChange={handleInputChange} />
               <span>Blind Cleaning (+1h)</span>
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" name="extras.ceilingFanCleaning" checked={formData.extras.ceilingFanCleaning} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.ceilingFanCleaning" checked={formData.extras.ceilingFanCleaning} onChange={handleInputChange} />
               <span>Ceiling Fans (+0.5h)</span>
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" name="extras.wallSpotCleaning" checked={formData.extras.wallSpotCleaning} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.wallSpotCleaning" checked={formData.extras.wallSpotCleaning} onChange={handleInputChange} />
               <span>Wall Spot Cleaning (+1h)</span>
             </label>
           </div>
 
-          <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, marginTop: 16 }}>Special Areas</h4>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 16 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" name="extras.laundryRoomCleaning" checked={formData.extras.laundryRoomCleaning} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+          <h3 className="create-estimate-extra-group-title">Special Areas</h3>
+          <div className="create-estimate-checklist-grid">
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.laundryRoomCleaning" checked={formData.extras.laundryRoomCleaning} onChange={handleInputChange} />
               <span>Laundry Room (+0.5h)</span>
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" name="extras.basementCleaning" checked={formData.extras.basementCleaning} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.basementCleaning" checked={formData.extras.basementCleaning} onChange={handleInputChange} />
               <span>Basement (+1.5h)</span>
             </label>
           </div>
 
-          <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, marginTop: 16 }}>Organization Services</h4>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <input type="checkbox" name="extras.garageCleaning" checked={formData.extras.garageCleaning} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+          <h3 className="create-estimate-extra-group-title">Organization Services</h3>
+          <div className="create-estimate-conditional-extra">
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.garageCleaning" checked={formData.extras.garageCleaning} onChange={handleInputChange} />
               <span>Garage Cleaning</span>
             </label>
             {formData.extras.garageCleaning && (
-              <select name="levels.garageLevel" value={formData.levels.garageLevel} onChange={handleInputChange} style={{ marginLeft: 26, padding: 8, border: "1px solid #d1d5db", borderRadius: 6 }}>
+              <select className="create-estimate-control create-estimate-extra-level" name="levels.garageLevel" value={formData.levels.garageLevel} onChange={handleInputChange}>
                 <option value="none">Select clutter level</option>
                 <option value="light">Light (+1h)</option>
                 <option value="moderate">Moderate (+2h)</option>
@@ -682,13 +572,13 @@ export default function AIPhotoEstimateSystem({
             )}
           </div>
 
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <input type="checkbox" name="extras.closetOrganization" checked={formData.extras.closetOrganization} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+          <div className="create-estimate-conditional-extra">
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.closetOrganization" checked={formData.extras.closetOrganization} onChange={handleInputChange} />
               <span>Closet Organization</span>
             </label>
             {formData.extras.closetOrganization && (
-              <select name="levels.closetLevel" value={formData.levels.closetLevel} onChange={handleInputChange} style={{ marginLeft: 26, padding: 8, border: "1px solid #d1d5db", borderRadius: 6 }}>
+              <select className="create-estimate-control create-estimate-extra-level" name="levels.closetLevel" value={formData.levels.closetLevel} onChange={handleInputChange}>
                 <option value="none">Select clutter level</option>
                 <option value="light">Light (+0.5h)</option>
                 <option value="moderate">Moderate (+1.5h)</option>
@@ -697,72 +587,63 @@ export default function AIPhotoEstimateSystem({
             )}
           </div>
 
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <input type="checkbox" name="extras.pantryOrganization" checked={formData.extras.pantryOrganization} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+          <div className="create-estimate-conditional-extra">
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.pantryOrganization" checked={formData.extras.pantryOrganization} onChange={handleInputChange} />
               <span>Pantry Organization (+1h)</span>
             </label>
           </div>
 
-          <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, marginTop: 16 }}>Pet Services</h4>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="checkbox" name="extras.petWasteRemoval" checked={formData.extras.petWasteRemoval} onChange={handleInputChange} style={{ width: 18, height: 18 }} />
+          <h3 className="create-estimate-extra-group-title">Pet Services</h3>
+          <div className="create-estimate-checklist-grid">
+            <label className="create-estimate-checkbox-row">
+              <input className="create-estimate-checkbox" type="checkbox" name="extras.petWasteRemoval" checked={formData.extras.petWasteRemoval} onChange={handleInputChange} />
               <span>Pet Waste Removal (+1h)</span>
             </label>
           </div>
-        </div>
+          </section>
 
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-            Photos (Preview only)
-          </h3>
-          <p style={{ fontSize: 14, color: "#64748b", marginBottom: 12 }}>
+          <section className="v1-card create-estimate-section" aria-labelledby="create-estimate-photos-title">
+            <h2 className="create-estimate-section-title" id="create-estimate-photos-title">Photos <span className="create-estimate-title-note">Preview only</span></h2>
+          <p className="create-estimate-help-text">
             Photos can be previewed here but are not saved with this estimate. AI photo analysis is unavailable in this release. {compressing && "Compressing images..."}
           </p>
           <input
+            className="create-estimate-file-input"
             type="file"
             aria-label="Upload estimate photos"
             multiple
             accept="image/*"
             onChange={handleUpload}
             disabled={compressing}
-            style={{ marginBottom: 12 }}
           />
           {photoPreviews.length > 0 && <PhotoGrid photos={photoPreviews} />}
-        </div>
+          </section>
 
-        <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
-            Special Requests
-          </h3>
+          <section className="v1-card create-estimate-section" aria-labelledby="create-estimate-requests-title">
+            <h2 className="create-estimate-section-title" id="create-estimate-requests-title">Special Requests</h2>
           <textarea
+            id="estimate-special-requests"
+            className="create-estimate-control create-estimate-textarea"
+            aria-label="Special Requests"
             name="specialRequests"
             value={formData.specialRequests}
             onChange={handleInputChange}
             rows={4}
-            style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 6 }}
           />
+          </section>
         </div>
 
-        <button
-          onClick={() => setStep("review")}
-          disabled={!formData.firstName || !formData.lastName || !formData.email || !formData.phone}
-          style={{
-            padding: "12px 24px",
-            background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
-            color: "white",
-            border: "none",
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) ? "not-allowed" : "pointer",
-            opacity: (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) ? 0.5 : 1
-          }}
-        >
-          Review & Generate Estimate
-        </button>
-      </div>
+        <div className="create-estimate-action-area">
+          <button
+            className="v1-button v1-button-primary create-estimate-submit"
+            onClick={() => setStep("review")}
+            disabled={!formData.firstName || !formData.lastName || !formData.email || !formData.phone}
+          >
+            Review & Generate Estimate
+          </button>
+        </div>
+      </section>
     );
   }
 
