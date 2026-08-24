@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   drafts: [],
   audit: {},
   profile: null,
+  opportunityWorkspace: { opportunities: [], leads: [], bookings: [], rebookingImplemented: false },
   version: 0,
 }));
 
@@ -27,12 +28,20 @@ const service = vi.hoisted(() => ({
   returnGrowthAIDraftToDraft: vi.fn(),
 }));
 
+const opportunityService = vi.hoisted(() => ({
+  refreshGrowthAIOpportunityFeed: vi.fn(),
+  markGrowthAIOpportunityActed: vi.fn(),
+  dismissGrowthAIOpportunity: vi.fn(),
+}));
+
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => state.auth }));
 
 vi.mock('../modules/growthAI/growthAIFoundationService', () => ({
   GROWTH_AI_PILLARS: ['find', 'attract', 'convert', 'retain', 'reputation'],
   ...service,
 }));
+
+vi.mock('../modules/growthAI/growthAIOpportunityService', () => opportunityService);
 
 function timestamp() {
   return { toDate: () => new Date('2026-08-24T12:00:00.000Z') };
@@ -83,6 +92,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     state.drafts = [];
     state.audit = {};
     state.profile = null;
+    state.opportunityWorkspace = { opportunities: [], leads: [], bookings: [], rebookingImplemented: false };
     state.version = 0;
 
     service.loadGrowthAIBrandProfile.mockImplementation(async tenantId => {
@@ -135,6 +145,95 @@ describe('GrowthAI V1 tenant draft foundation', () => {
       appendAudit(next, 'approved', 'needs_review', 'approved');
       return next;
     });
+    opportunityService.refreshGrowthAIOpportunityFeed.mockImplementation(async tenantId => {
+      expect(tenantId).toBe(state.auth.tenantId);
+      return {
+        ...state.opportunityWorkspace,
+        opportunities: [...state.opportunityWorkspace.opportunities],
+        leads: [...state.opportunityWorkspace.leads],
+        bookings: [...state.opportunityWorkspace.bookings],
+      };
+    });
+    opportunityService.markGrowthAIOpportunityActed.mockImplementation(async (_tenantId, id) => {
+      state.opportunityWorkspace.opportunities = state.opportunityWorkspace.opportunities.map(item =>
+        item.id === id ? { ...item, status: 'acted' } : item
+      );
+    });
+    opportunityService.dismissGrowthAIOpportunity.mockImplementation(async (_tenantId, id) => {
+      state.opportunityWorkspace.opportunities = state.opportunityWorkspace.opportunities.map(item =>
+        item.id === id ? { ...item, status: 'dismissed' } : item
+      );
+    });
+  });
+
+  it('renders deterministic opportunities and creates a tenant follow-up draft without sending', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [{
+        id: 'estimate_followup__lead-a', type: 'estimate_followup', pillar: 'convert', status: 'open',
+        sourceRefs: { leadId: 'lead-a', customerId: 'customer-a' },
+        detectionReason: 'Estimate has been marked quoted for 4 days and no booking is linked.',
+      }],
+      leads: [{ id: 'lead-a', customerId: 'customer-a', customerSnapshot: { fullName: 'Jamie Test' } }],
+      bookings: [],
+      rebookingImplemented: false,
+    };
+
+    render(<GrowthAIPage />);
+    expect(await screen.findByText('Estimate Follow-Up')).toBeInTheDocument();
+    expect(screen.getByText('Jamie Test')).toBeInTheDocument();
+    expect(screen.getByText(/Estimate has been marked quoted for 4 days/)).toHaveTextContent('no booking is linked');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Draft Follow-Up' }));
+    await waitFor(() => expect(service.createGrowthAIDraft).toHaveBeenCalledWith('tenant-a', expect.objectContaining({
+      pillar: 'convert',
+      actionType: 'estimate_followup',
+      sourceRefs: { leadId: 'lead-a', customerId: 'customer-a' },
+      content: expect.objectContaining({ callToAction: 'Review and send manually' }),
+    })));
+    expect(opportunityService.markGrowthAIOpportunityActed).toHaveBeenCalledWith('tenant-a', 'estimate_followup__lead-a');
+    expect(await screen.findByText(/Nothing was sent/)).toBeInTheDocument();
+  });
+
+  it('dismisses a stable opportunity and does not render it after refresh', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [{
+        id: 'estimate_followup__lead-a', type: 'estimate_followup', pillar: 'convert', status: 'open',
+        sourceRefs: { leadId: 'lead-a' }, detectionReason: 'No booking is linked.',
+      }],
+      leads: [{ id: 'lead-a', formData: { fullName: 'Dismiss Test' } }],
+      bookings: [],
+      rebookingImplemented: false,
+    };
+
+    render(<GrowthAIPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
+    await waitFor(() => expect(opportunityService.dismissGrowthAIOpportunity).toHaveBeenCalledWith(
+      'tenant-a', 'estimate_followup__lead-a'
+    ));
+    expect(await screen.findByText(/Opportunity dismissed/)).toBeInTheDocument();
+    expect(screen.queryByText('Dismiss Test')).not.toBeInTheDocument();
+  });
+
+  it('uses honest marketing-review wording and routes the canonical booking for review', async () => {
+    const onReviewJob = vi.fn();
+    state.opportunityWorkspace = {
+      opportunities: [{
+        id: 'marketing_photo_review__booking-a', type: 'marketing_photo_review', pillar: 'attract', status: 'open',
+        sourceRefs: { bookingId: 'booking-a', photoIds: ['before-a', 'after-a'] },
+        detectionReason: 'Completed job has labeled Before and After field photos. Review the job photos to decide whether they are appropriate for marketing.',
+      }],
+      leads: [],
+      bookings: [{ id: 'booking-a', customerName: 'Safe Test Residence' }],
+      rebookingImplemented: false,
+    };
+
+    render(<GrowthAIPage onReviewJob={onReviewJob} />);
+    expect(await screen.findByText('Marketing Opportunity')).toBeInTheDocument();
+    expect(screen.getByText(/decide whether they are appropriate for marketing/)).toBeInTheDocument();
+    expect(screen.queryByText(/approved for marketing/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Review Job' }));
+    await waitFor(() => expect(onReviewJob).toHaveBeenCalledWith('booking-a'));
+    expect(opportunityService.markGrowthAIOpportunityActed).toHaveBeenCalledWith('tenant-a', 'marketing_photo_review__booking-a');
   });
 
   it('uses canonical tenant identity and stores only GrowthAI brand preferences', async () => {
@@ -277,6 +376,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     render(<GrowthAIPage />);
     expect(screen.getByText(/available only to tenant owners and administrators/)).toBeInTheDocument();
     expect(service.listGrowthAIDrafts).not.toHaveBeenCalled();
+    expect(opportunityService.refreshGrowthAIOpportunityFeed).not.toHaveBeenCalled();
   });
 
   it('clears Tenant A content when the workspace remounts for Tenant B', async () => {

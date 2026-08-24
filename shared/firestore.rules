@@ -737,7 +737,95 @@ service cloud.firestore {
              data.schemaVersion == 1 && data.tenantId == tenantId &&
              isGrowthAIString(data.brandVoice, 500) &&
              isGrowthAIString(data.contentTone, 300) &&
-             isGrowthAIString(data.defaultCTA, 500);
+              isGrowthAIString(data.defaultCTA, 500);
+    }
+
+    function isValidGrowthAIOpportunitySource(type, sourceRefs) {
+      return sourceRefs is map &&
+             ((type == 'estimate_followup' &&
+                sourceRefs.keys().hasAll(['leadId']) &&
+                sourceRefs.keys().hasOnly(['leadId', 'customerId']) &&
+                isGrowthAIRefId(sourceRefs.leadId) &&
+                (!('customerId' in sourceRefs) || isGrowthAIRefId(sourceRefs.customerId))) ||
+              (type == 'rebooking_gap' &&
+                sourceRefs.keys().hasAll(['customerId']) &&
+                sourceRefs.keys().hasOnly(['customerId']) &&
+                isGrowthAIRefId(sourceRefs.customerId)) ||
+              (type == 'marketing_photo_review' &&
+                sourceRefs.keys().hasAll(['bookingId', 'photoIds']) &&
+                sourceRefs.keys().hasOnly(['bookingId', 'photoIds', 'customerId']) &&
+                isGrowthAIRefId(sourceRefs.bookingId) &&
+                isValidGrowthAIPhotoIds(sourceRefs.photoIds) &&
+                sourceRefs.photoIds.size() >= 2 &&
+                (!('customerId' in sourceRefs) || isGrowthAIRefId(sourceRefs.customerId))));
+    }
+
+    function hasValidGrowthAIOpportunityShape(data, tenantId, opportunityId) {
+      return data.keys().hasAll([
+               'schemaVersion', 'id', 'tenantId', 'type', 'pillar', 'status',
+               'sourceRefs', 'detectionReason', 'detectionVersion',
+               'firstDetectedAt', 'lastDetectedAt', 'createdByUid', 'createdAt',
+               'updatedByUid', 'updatedAt', 'actedAt', 'actedByUid',
+               'dismissedAt', 'dismissedByUid', 'resolvedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'schemaVersion', 'id', 'tenantId', 'type', 'pillar', 'status',
+               'sourceRefs', 'detectionReason', 'detectionVersion',
+               'firstDetectedAt', 'lastDetectedAt', 'createdByUid', 'createdAt',
+               'updatedByUid', 'updatedAt', 'actedAt', 'actedByUid',
+               'dismissedAt', 'dismissedByUid', 'resolvedAt'
+             ]) &&
+             data.schemaVersion == 1 && data.id == opportunityId && data.tenantId == tenantId &&
+             data.type in ['estimate_followup', 'rebooking_gap', 'marketing_photo_review'] &&
+             ((data.type == 'estimate_followup' && data.pillar == 'convert') ||
+              (data.type == 'rebooking_gap' && data.pillar == 'retain') ||
+              (data.type == 'marketing_photo_review' && data.pillar == 'attract')) &&
+             data.status in ['open', 'acted', 'dismissed', 'resolved'] &&
+             isValidGrowthAIOpportunitySource(data.type, data.sourceRefs) &&
+             isGrowthAIString(data.detectionReason, 500) && data.detectionReason.size() > 0 &&
+             isGrowthAIString(data.detectionVersion, 64) && data.detectionVersion.size() > 0;
+    }
+
+    function growthAIOpportunityIdentityIsImmutable() {
+      return request.resource.data.schemaVersion == resource.data.schemaVersion &&
+             request.resource.data.id == resource.data.id &&
+             request.resource.data.tenantId == resource.data.tenantId &&
+             request.resource.data.type == resource.data.type &&
+             request.resource.data.pillar == resource.data.pillar &&
+             request.resource.data.sourceRefs == resource.data.sourceRefs &&
+             request.resource.data.detectionVersion == resource.data.detectionVersion &&
+             request.resource.data.firstDetectedAt == resource.data.firstDetectedAt &&
+             request.resource.data.createdByUid == resource.data.createdByUid &&
+             request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function isValidGrowthAIOpportunityUpdate() {
+      return growthAIOpportunityIdentityIsImmutable() &&
+             request.resource.data.updatedByUid == request.auth.uid &&
+             request.resource.data.updatedAt == request.time &&
+             ((request.resource.data.status == resource.data.status &&
+                resource.data.status in ['open', 'acted'] &&
+                request.resource.data.lastDetectedAt == request.time &&
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'detectionReason', 'lastDetectedAt', 'updatedByUid', 'updatedAt'
+                ])) ||
+              (resource.data.status == 'open' && request.resource.data.status == 'acted' &&
+                request.resource.data.actedByUid == request.auth.uid &&
+                request.resource.data.actedAt == request.time &&
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'status', 'actedAt', 'actedByUid', 'updatedByUid', 'updatedAt'
+                ])) ||
+              (resource.data.status in ['open', 'acted'] && request.resource.data.status == 'dismissed' &&
+                request.resource.data.dismissedByUid == request.auth.uid &&
+                request.resource.data.dismissedAt == request.time &&
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'status', 'dismissedAt', 'dismissedByUid', 'updatedByUid', 'updatedAt'
+                ])) ||
+              (resource.data.status in ['open', 'acted'] && request.resource.data.status == 'resolved' &&
+                request.resource.data.resolvedAt == request.time &&
+                request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'status', 'resolvedAt', 'updatedByUid', 'updatedAt'
+                ])));
     }
 
     match /tenants/{tenantId} {
@@ -870,6 +958,28 @@ service cloud.firestore {
                            request.resource.data.toStatus == getAfter(/databases/$(database)/documents/tenants/$(tenantId)/growthAIDrafts/$(draftId)).data.status;
           allow update, delete: if false;
         }
+      }
+
+      match /growthAIOpportunities/{opportunityId} {
+        allow read: if isGrowthAIAdmin(tenantId);
+        allow create: if isGrowthAIAdmin(tenantId) &&
+                         hasValidGrowthAIOpportunityShape(request.resource.data, tenantId, opportunityId) &&
+                         request.resource.data.status == 'open' &&
+                         request.resource.data.firstDetectedAt == request.time &&
+                         request.resource.data.lastDetectedAt == request.time &&
+                         request.resource.data.createdByUid == request.auth.uid &&
+                         request.resource.data.createdAt == request.time &&
+                         request.resource.data.updatedByUid == request.auth.uid &&
+                         request.resource.data.updatedAt == request.time &&
+                         request.resource.data.actedAt == null &&
+                         request.resource.data.actedByUid == null &&
+                         request.resource.data.dismissedAt == null &&
+                         request.resource.data.dismissedByUid == null &&
+                         request.resource.data.resolvedAt == null;
+        allow update: if isGrowthAIAdmin(tenantId) &&
+                         hasValidGrowthAIOpportunityShape(request.resource.data, tenantId, opportunityId) &&
+                         isValidGrowthAIOpportunityUpdate();
+        allow delete: if false;
       }
 
       match /payments/{paymentId} {

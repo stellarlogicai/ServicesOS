@@ -434,6 +434,38 @@ const growthAIAudit = ({
   ...extra,
 });
 
+const growthAIOpportunity = ({
+  tenantId = TENANT_A,
+  opportunityId = 'estimate_followup__lead-a',
+  actorUid = 'admin-a',
+  type = 'estimate_followup',
+  pillar = 'convert',
+  sourceRefs = { leadId: 'lead-a' },
+  extra = {},
+} = {}) => ({
+  schemaVersion: 1,
+  id: opportunityId,
+  tenantId,
+  type,
+  pillar,
+  status: 'open',
+  sourceRefs,
+  detectionReason: 'Estimate has been marked quoted for 4 days and no booking is linked.',
+  detectionVersion: type === 'marketing_photo_review' ? 'marketing-photo-review-v1' : 'estimate-followup-v1',
+  firstDetectedAt: serverTimestamp(),
+  lastDetectedAt: serverTimestamp(),
+  createdByUid: actorUid,
+  createdAt: serverTimestamp(),
+  updatedByUid: actorUid,
+  updatedAt: serverTimestamp(),
+  actedAt: null,
+  actedByUid: null,
+  dismissedAt: null,
+  dismissedByUid: null,
+  resolvedAt: null,
+  ...extra,
+});
+
 async function createGrowthAIDraftWithAudit(database, options = {}) {
   const tenantId = options.tenantId || TENANT_A;
   const draftId = options.draftId || 'growth-draft-a';
@@ -1628,6 +1660,119 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       await assertFails(getDoc(doc(database, 'tenants', TENANT_A, 'growthAI', 'config')));
     }
     assert.equal((await assertSucceeds(getDoc(draftReference))).data().tenantId, TENANT_A);
+  });
+
+  test('tenant admins create and manage narrow GrowthAI opportunity lifecycles with bound actors', async () => {
+    const database = authenticatedDatabase('admin-a');
+    const reference = doc(database, 'tenants', TENANT_A, 'growthAIOpportunities', 'estimate_followup__lead-a');
+    await assertSucceeds(setDoc(reference, growthAIOpportunity()));
+    const created = (await assertSucceeds(getDoc(reference))).data();
+    assert.equal(created.status, 'open');
+    assert.equal(created.createdByUid, 'admin-a');
+
+    await assertSucceeds(updateDoc(reference, {
+      detectionReason: 'Estimate has been marked quoted for 5 days and no booking is linked.',
+      lastDetectedAt: serverTimestamp(),
+      updatedByUid: 'admin-a',
+      updatedAt: serverTimestamp(),
+    }));
+    await assertSucceeds(updateDoc(reference, {
+      status: 'acted',
+      actedAt: serverTimestamp(),
+      actedByUid: 'admin-a',
+      updatedByUid: 'admin-a',
+      updatedAt: serverTimestamp(),
+    }));
+    await assertSucceeds(updateDoc(reference, {
+      status: 'dismissed',
+      dismissedAt: serverTimestamp(),
+      dismissedByUid: 'admin-a',
+      updatedByUid: 'admin-a',
+      updatedAt: serverTimestamp(),
+    }));
+    await assertFails(updateDoc(reference, {
+      status: 'open',
+      updatedByUid: 'admin-a',
+      updatedAt: serverTimestamp(),
+    }));
+    await assertFails(deleteDoc(reference));
+
+    const resolvable = doc(database, 'tenants', TENANT_A, 'growthAIOpportunities', 'estimate_followup__lead-resolved');
+    await assertSucceeds(setDoc(resolvable, growthAIOpportunity({
+      opportunityId: 'estimate_followup__lead-resolved',
+      sourceRefs: { leadId: 'lead-resolved' },
+    })));
+    await assertSucceeds(updateDoc(resolvable, {
+      status: 'resolved',
+      resolvedAt: serverTimestamp(),
+      updatedByUid: 'admin-a',
+      updatedAt: serverTimestamp(),
+    }));
+  });
+
+  test('GrowthAI opportunities reject spoofed identity, timestamps, unknown keys, and invalid source shapes', async () => {
+    const database = authenticatedDatabase('admin-a');
+    const basePath = ['tenants', TENANT_A, 'growthAIOpportunities'];
+    await assertFails(setDoc(doc(database, ...basePath, 'spoofed-actor'), growthAIOpportunity({
+      opportunityId: 'spoofed-actor', actorUid: 'admin-b',
+    })));
+    await assertFails(setDoc(doc(database, ...basePath, 'unsafe-key'), growthAIOpportunity({
+      opportunityId: 'unsafe-key', extra: { projectedRevenue: 500 },
+    })));
+    await assertFails(setDoc(doc(database, ...basePath, 'bad-pillar'), growthAIOpportunity({
+      opportunityId: 'bad-pillar', pillar: 'retain',
+    })));
+    await assertFails(setDoc(doc(database, ...basePath, 'bad-marketing-refs'), growthAIOpportunity({
+      opportunityId: 'bad-marketing-refs',
+      type: 'marketing_photo_review',
+      pillar: 'attract',
+      sourceRefs: { bookingId: 'field-booking', photoIds: ['before-only'] },
+    })));
+
+    const valid = doc(database, ...basePath, 'estimate_followup__lead-a');
+    await assertSucceeds(setDoc(valid, growthAIOpportunity()));
+    await assertFails(updateDoc(valid, {
+      status: 'acted',
+      actedAt: serverTimestamp(),
+      actedByUid: 'admin-b',
+      updatedByUid: 'admin-b',
+      updatedAt: serverTimestamp(),
+    }));
+    await assertFails(updateDoc(valid, {
+      sourceRefs: { leadId: 'other-lead' },
+      lastDetectedAt: serverTimestamp(),
+      updatedByUid: 'admin-a',
+      updatedAt: serverTimestamp(),
+    }));
+  });
+
+  test('GrowthAI opportunities remain tenant-admin scoped and unavailable to employees, customers, and anonymous users', async () => {
+    const adminA = authenticatedDatabase('admin-a');
+    const reference = doc(adminA, 'tenants', TENANT_A, 'growthAIOpportunities', 'marketing_photo_review__field-booking');
+    await assertSucceeds(setDoc(reference, growthAIOpportunity({
+      opportunityId: 'marketing_photo_review__field-booking',
+      type: 'marketing_photo_review',
+      pillar: 'attract',
+      sourceRefs: { bookingId: 'field-booking', photoIds: ['photo-before', 'photo-after'] },
+    })));
+
+    for (const database of [
+      authenticatedDatabase('admin-b'),
+      authenticatedDatabase('employee-a'),
+      authenticatedDatabase('customer-a-auth'),
+      testEnvironment.unauthenticatedContext().firestore(),
+    ]) {
+      const denied = doc(database, 'tenants', TENANT_A, 'growthAIOpportunities', 'marketing_photo_review__field-booking');
+      await assertFails(getDoc(denied));
+      await assertFails(updateDoc(denied, {
+        status: 'dismissed',
+        dismissedAt: serverTimestamp(),
+        dismissedByUid: 'admin-b',
+        updatedByUid: 'admin-b',
+        updatedAt: serverTimestamp(),
+      }));
+    }
+    await assertSucceeds(getDoc(reference));
   });
 
   test('only super-admin can use mounted compatibility and global administration paths', async () => {

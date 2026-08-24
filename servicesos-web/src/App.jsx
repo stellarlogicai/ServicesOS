@@ -471,7 +471,7 @@ function AuthenticatedApp() {
       case "customer-portal":   return <CustomerPortal />;
       case "tenant-management": return <TenantManagement />;
       case "ai-training":       return <AIModelTraining key={tenantId} />;
-      case "growth-ai":         return <GrowthAIPage key={tenantId} />;
+      case "growth-ai":         return <GrowthAIPage key={tenantId} onReviewJob={() => navigate('bookings')} />;
       case "backup":            return <BackupPanel />;
       case "settings":          return <CompanySettings key={tenantId} />;
       default:                  return null;

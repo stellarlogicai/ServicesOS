@@ -15,6 +15,11 @@ import {
   submitGrowthAIDraftForReview,
   updateGrowthAIDraftContent,
 } from './growthAIFoundationService';
+import {
+  dismissGrowthAIOpportunity,
+  markGrowthAIOpportunityActed,
+  refreshGrowthAIOpportunityFeed,
+} from './growthAIOpportunityService';
 
 const colors = {
   background: '#f8fafc', panel: '#fff', border: '#dbe3ec', primary: '#1d4ed8',
@@ -152,7 +157,50 @@ function draftToEditor(draft) {
   };
 }
 
-export default function GrowthAIPage() {
+function opportunityTypeLabel(type) {
+  if (type === 'estimate_followup') return 'Estimate Follow-Up';
+  if (type === 'marketing_photo_review') return 'Marketing Opportunity';
+  if (type === 'rebooking_gap') return 'Rebooking Opportunity';
+  return 'Growth Opportunity';
+}
+
+function canonicalDisplayName(record, fallback) {
+  const formData = record?.formData || {};
+  const customer = record?.customerSnapshot || {};
+  return customer.fullName || customer.displayName || customer.name || record?.customerName || formData.fullName ||
+    [formData.firstName, formData.lastName].filter(Boolean).join(' ').trim() || fallback;
+}
+
+function OpportunityCard({ opportunity, subject, onDraftFollowUp, onReviewJob, onDismiss, saving }) {
+  const acted = opportunity.status === 'acted';
+  return (
+    <article style={{ border: `1px solid ${colors.border}`, borderRadius: 7, padding: 14, background: '#fff' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+        <div>
+          <strong style={{ display: 'block', fontSize: 14 }}>{opportunityTypeLabel(opportunity.type)}</strong>
+          <span style={{ display: 'block', marginTop: 3, color: colors.text, fontSize: 13 }}>{subject}</span>
+        </div>
+        {acted && <span style={{ color: colors.success, fontSize: 12, fontWeight: 700 }}>Action started</span>}
+      </div>
+      <p style={{ margin: '10px 0 0', color: colors.muted, fontSize: 12, lineHeight: 1.5 }}>
+        <strong style={{ color: '#475569' }}>Why GrowthAI surfaced this:</strong> {opportunity.detectionReason}
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+        {opportunity.type === 'estimate_followup' && (
+          <Button disabled={saving || acted} onClick={() => onDraftFollowUp(opportunity)}>
+            {acted ? 'Follow-up drafted' : 'Draft Follow-Up'}
+          </Button>
+        )}
+        {opportunity.type === 'marketing_photo_review' && (
+          <Button disabled={saving} onClick={() => onReviewJob(opportunity)}>Review Job</Button>
+        )}
+        <Button tone="secondary" disabled={saving} onClick={() => onDismiss(opportunity)}>Dismiss</Button>
+      </div>
+    </article>
+  );
+}
+
+export default function GrowthAIPage({ onReviewJob }) {
   const { currentTenant, role, tenantId } = useAuth();
   const [profile, setProfile] = useState({ brandVoice: '', contentTone: '', defaultCTA: '' });
   const [drafts, setDrafts] = useState([]);
@@ -167,6 +215,9 @@ export default function GrowthAIPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [opportunityWorkspace, setOpportunityWorkspace] = useState({ opportunities: [], leads: [], bookings: [] });
+  const [opportunitiesLoading, setOpportunitiesLoading] = useState(true);
+  const [opportunityFilter, setOpportunityFilter] = useState('all');
   const auditRequestSequence = useRef(0);
 
   const businessSettings = currentTenant?.businessSettings || {};
@@ -179,6 +230,18 @@ export default function GrowthAIPage() {
   }), [businessName, profile]);
   const postType = brand.postTypes.find(item => item.id === postTypeId) || brand.postTypes[0];
   const authorized = role === 'admin' || role === 'super-admin';
+
+  const reloadOpportunities = useCallback(async () => {
+    if (!tenantId) return null;
+    setOpportunitiesLoading(true);
+    try {
+      const workspace = await refreshGrowthAIOpportunityFeed(tenantId);
+      setOpportunityWorkspace(workspace);
+      return workspace;
+    } finally {
+      setOpportunitiesLoading(false);
+    }
+  }, [tenantId]);
 
   const reloadWorkspace = useCallback(async selectedDraftId => {
     if (!tenantId) return;
@@ -212,6 +275,15 @@ export default function GrowthAIPage() {
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [authorized, tenantId]);
+
+  useEffect(() => {
+    let active = true;
+    if (!authorized || !tenantId) return () => { active = false; };
+    Promise.resolve()
+      .then(() => active && reloadOpportunities())
+      .catch(err => active && setError(err.message));
+    return () => { active = false; };
+  }, [authorized, reloadOpportunities, tenantId]);
 
   const loadAudit = useCallback(async draftId => {
     const requestSequence = ++auditRequestSequence.current;
@@ -307,6 +379,77 @@ export default function GrowthAIPage() {
     return { id: editor.id };
   }, 'GrowthAI brand preferences saved.');
 
+  const activeOpportunities = opportunityWorkspace.opportunities.filter(item =>
+    item.status === 'open' || item.status === 'acted'
+  );
+  const visibleOpportunities = activeOpportunities.filter(item =>
+    opportunityFilter === 'all' || item.pillar === opportunityFilter
+  );
+  const leadsById = new Map(opportunityWorkspace.leads.map(item => [item.id, item]));
+  const bookingsById = new Map(opportunityWorkspace.bookings.map(item => [item.id, item]));
+
+  const opportunitySubject = opportunity => {
+    if (opportunity.type === 'estimate_followup') {
+      return canonicalDisplayName(leadsById.get(opportunity.sourceRefs?.leadId), 'Estimate customer');
+    }
+    return canonicalDisplayName(bookingsById.get(opportunity.sourceRefs?.bookingId), 'Completed job');
+  };
+
+  const draftEstimateFollowUp = opportunity => {
+    const lead = leadsById.get(opportunity.sourceRefs?.leadId);
+    const customerName = canonicalDisplayName(lead, 'Customer');
+    return runAction(async () => {
+      const draft = await createGrowthAIDraft(tenantId, {
+        pillar: 'convert',
+        actionType: 'estimate_followup',
+        title: `[Estimate follow-up] ${customerName}`,
+        content: {
+          ...emptyContent,
+          fullCaption: `Hi ${customerName}, I wanted to follow up on your cleaning estimate. Please let us know if you have any questions or would like to schedule.`,
+          shortCaption: `Following up on your cleaning estimate. Let us know if you would like to schedule.`,
+          callToAction: 'Review and send manually',
+        },
+        sourceRefs: opportunity.sourceRefs,
+      });
+      await markGrowthAIOpportunityActed(tenantId, opportunity.id);
+      await reloadOpportunities();
+      return draft;
+    }, 'Follow-up draft saved for human review. Nothing was sent.');
+  };
+
+  const reviewOpportunityJob = async opportunity => {
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      if (opportunity.status === 'open') {
+        await markGrowthAIOpportunityActed(tenantId, opportunity.id);
+      }
+      await reloadOpportunities();
+      if (onReviewJob) onReviewJob(opportunity.sourceRefs?.bookingId);
+      else setMessage('Open Bookings to review this completed job and its photos.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const dismissOpportunity = async opportunity => {
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      await dismissGrowthAIOpportunity(tenantId, opportunity.id);
+      await reloadOpportunities();
+      setMessage('Opportunity dismissed. It will not reappear for the same detection identity.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!authorized) return <div style={{ padding: 24 }}>GrowthAI is available only to tenant owners and administrators.</div>;
   if (!tenantId) return <div style={{ padding: 24 }}>Select a tenant to use GrowthAI.</div>;
 
@@ -323,6 +466,50 @@ export default function GrowthAIPage() {
         {loading && <div>Loading tenant GrowthAI workspace...</div>}
         {error && <div role="alert" style={{ color: colors.danger, background: '#fef2f2', padding: 10, borderRadius: 6 }}>{error}</div>}
         {message && <div role="status" style={{ color: colors.success, background: '#ecfdf5', padding: 10, borderRadius: 6 }}>{message}</div>}
+
+        <Card>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap' }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 17, color: colors.text }}>Growth Opportunities</h2>
+              <p style={{ margin: '5px 0 0', color: colors.muted, fontSize: 12 }}>
+                Deterministic ServicesOS signals only. GrowthAI does not contact customers or publish content.
+              </p>
+            </div>
+            <strong style={{ fontSize: 13 }}>{activeOpportunities.length} {activeOpportunities.length === 1 ? 'opportunity' : 'opportunities'}</strong>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 13 }}>
+            {[
+              ['all', 'All'], ['attract', 'Attract'], ['convert', 'Convert'], ['retain', 'Retain'],
+            ].map(([value, label]) => (
+              <Button key={value} tone={opportunityFilter === value ? 'primary' : 'secondary'} onClick={() => setOpportunityFilter(value)}>{label}</Button>
+            ))}
+            <Button tone="secondary" disabled={opportunitiesLoading || saving} onClick={() => reloadOpportunities().catch(err => setError(err.message))}>
+              {opportunitiesLoading ? 'Checking...' : 'Refresh'}
+            </Button>
+          </div>
+          {opportunitiesLoading && activeOpportunities.length === 0 && <p style={{ color: colors.muted, fontSize: 13 }}>Checking tenant records for deterministic opportunities...</p>}
+          {!opportunitiesLoading && activeOpportunities.length === 0 && (
+            <p style={{ color: colors.muted, fontSize: 13, lineHeight: 1.5 }}>
+              No growth opportunities need attention right now. GrowthAI will surface estimate follow-ups and completed-job marketing review candidates here. Rebooking detection remains unavailable until ServicesOS has a canonical approved cadence source.
+            </p>
+          )}
+          {!opportunitiesLoading && activeOpportunities.length > 0 && visibleOpportunities.length === 0 && (
+            <p style={{ color: colors.muted, fontSize: 13 }}>No {opportunityFilter} opportunities need attention.</p>
+          )}
+          <div style={{ display: 'grid', gap: 10, marginTop: visibleOpportunities.length ? 13 : 0 }}>
+            {visibleOpportunities.map(opportunity => (
+              <OpportunityCard
+                key={opportunity.id}
+                opportunity={opportunity}
+                subject={opportunitySubject(opportunity)}
+                onDraftFollowUp={draftEstimateFollowUp}
+                onReviewJob={reviewOpportunityJob}
+                onDismiss={dismissOpportunity}
+                saving={saving}
+              />
+            ))}
+          </div>
+        </Card>
 
         <Card>
           <h2 style={{ margin: '0 0 5px', fontSize: 17, color: colors.text }}>Tenant brand profile</h2>
