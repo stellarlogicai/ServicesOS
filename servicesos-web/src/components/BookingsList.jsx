@@ -44,16 +44,24 @@ const customerMessageButtonStyle = {
   cursor: 'pointer',
 };
 
+const BOOKING_DETAIL_TABS = Object.freeze([
+  { id: 'details', label: 'Details' },
+  { id: 'assignment', label: 'Assignment' },
+  { id: 'job-prep', label: 'Job Prep' },
+]);
+
 export default function BookingsList() {
   const { tenantId, isAdmin, user } = useAuth();
   const loadRequestRef = useRef(0);
   const employeeLoadRequestRef = useRef(0);
+  const bookingDetailContentRef = useRef(null);
   const canManageAssignment = isAdmin?.() === true;
   const [bookings, setBookings] = useState([]);
   const [bookingsTenantId, setBookingsTenantId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [activeBookingDetailTab, setActiveBookingDetailTab] = useState('details');
   const [isEditingBooking, setIsEditingBooking] = useState(false);
   const [editForm, setEditForm] = useState({ date: '', startTime: '', notes: '' });
   const [editError, setEditError] = useState('');
@@ -184,6 +192,7 @@ export default function BookingsList() {
 
   const openBookingDetails = (booking) => {
     setSelectedBooking(booking);
+    setActiveBookingDetailTab('details');
     setIsEditingBooking(false);
     setIsEditingPaymentStatus(false);
     setCancellingBooking(false);
@@ -200,6 +209,7 @@ export default function BookingsList() {
 
   const closeBookingDetails = () => {
     setSelectedBooking(null);
+    setActiveBookingDetailTab('details');
     setIsEditingBooking(false);
     setIsEditingPaymentStatus(false);
     setCancellingBooking(false);
@@ -212,6 +222,25 @@ export default function BookingsList() {
     setAssignmentValue('');
     setAssignmentError('');
     setAssignmentStatus('');
+  };
+
+  const selectBookingDetailTab = tabId => {
+    setActiveBookingDetailTab(tabId);
+    if (bookingDetailContentRef.current) bookingDetailContentRef.current.scrollTop = 0;
+  };
+
+  const handleBookingDetailTabKeyDown = (event, currentIndex) => {
+    let nextIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % BOOKING_DETAIL_TABS.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + BOOKING_DETAIL_TABS.length) % BOOKING_DETAIL_TABS.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = BOOKING_DETAIL_TABS.length - 1;
+    else return;
+
+    event.preventDefault();
+    const nextTab = BOOKING_DETAIL_TABS[nextIndex];
+    selectBookingDetailTab(nextTab.id);
+    document.getElementById(`booking-detail-tab-${nextTab.id}`)?.focus();
   };
 
   const startBookingEdit = () => {
@@ -588,33 +617,54 @@ export default function BookingsList() {
             zIndex: 50
           }}
         >
-          <div className="v1-modal" style={{ width: 'min(680px, 100%)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', marginBottom: 20 }}>
-              <div>
-                <p style={{ margin: '0 0 6px', color: '#64748b', fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Booking details</p>
-                <h2 id="booking-detail-title" style={{ margin: 0, color: '#0f172a', fontSize: 24, fontWeight: 700 }}>{bookingCustomerName(selectedBooking)}</h2>
-                <p style={{ margin: '8px 0 0', color: '#64748b', fontSize: 14, lineHeight: 1.5 }}>
-                  Use this detail view for job notes, schedule changes, and payment follow-up.
-                </p>
+          <div className="v1-modal booking-detail-modal">
+            <header className="booking-detail-modal-header">
+              <div className="booking-detail-title-row">
+                <div>
+                  <p className="booking-detail-eyebrow">Booking details</p>
+                  <h2 id="booking-detail-title">{bookingCustomerName(selectedBooking)}</h2>
+                  <p className="booking-detail-description">
+                    Use this detail view for job notes, schedule changes, and payment follow-up.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="booking-detail-close"
+                  onClick={closeBookingDetails}
+                  aria-label="Close booking details"
+                >
+                  Close
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={closeBookingDetails}
-                aria-label="Close booking details"
-                style={{
-                  border: '1px solid #cbd5e1',
-                  background: '#fff',
-                  borderRadius: 8,
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  color: '#0f172a',
-                  fontWeight: 600,
-                  fontSize: 14
-                }}
+
+              <div className="booking-detail-tabs" role="tablist" aria-label="Booking detail sections">
+                {BOOKING_DETAIL_TABS.map((tab, index) => (
+                  <button
+                    className="booking-detail-tab"
+                    id={`booking-detail-tab-${tab.id}`}
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-controls={`booking-detail-panel-${tab.id}`}
+                    aria-selected={activeBookingDetailTab === tab.id}
+                    tabIndex={activeBookingDetailTab === tab.id ? 0 : -1}
+                    onClick={() => selectBookingDetailTab(tab.id)}
+                    onKeyDown={event => handleBookingDetailTabKeyDown(event, index)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </header>
+
+            <div className="booking-detail-modal-content" ref={bookingDetailContentRef}>
+              <section
+                className="booking-detail-tab-panel"
+                id="booking-detail-panel-details"
+                role="tabpanel"
+                aria-labelledby="booking-detail-tab-details"
+                hidden={activeBookingDetailTab !== 'details'}
               >
-                Close
-              </button>
-            </div>
 
             {selectedBooking?.status === 'cancelled' && (
               <div role="status" style={{ marginTop: 14, padding: '10px 14px', border: '1px solid #fca5a5', background: '#fff5f5', borderRadius: 8, color: '#991b1b', fontSize: 13, fontWeight: 600 }}>
@@ -622,7 +672,7 @@ export default function BookingsList() {
               </div>
             )}
 
-            <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, margin: '24px 0 0', padding: '20px', background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+            <dl className="booking-detail-summary-grid">
               <DetailItem label="Customer email" value={bookingCustomerEmail(selectedBooking)} />
               <DetailItem label="Customer phone" value={bookingCustomerPhone(selectedBooking)} />
               <DetailItem label="Service" value={bookingServiceType(selectedBooking)} />
@@ -632,59 +682,6 @@ export default function BookingsList() {
               <DetailItem label="Job price" value={bookingPrice(selectedBooking)} />
               <DetailItem label="Reference" value={bookingReference(selectedBooking) || 'Reference not provided'} />
             </dl>
-
-            {canManageAssignment && (
-              <section style={{ marginTop: 24, padding: 20, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 12 }} aria-labelledby="booking-assignment-title">
-                <h3 id="booking-assignment-title" style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 18, fontWeight: 600 }}>Field employee assignment</h3>
-                <p style={{ margin: '0 0 14px', color: '#475569', fontSize: 14, lineHeight: 1.5 }}>
-                  Assigned jobs appear in that employee's Field Mode. Unassigned and cancelled jobs remain hidden from employees.
-                </p>
-                <label style={{ display: 'block', color: '#0f172a', fontWeight: 600 }}>
-                  Assigned employee
-                  <select
-                    value={assignmentValue}
-                    onChange={event => {
-                      setAssignmentValue(event.target.value);
-                      setAssignmentError('');
-                      setAssignmentStatus('');
-                    }}
-                    disabled={employeesLoading || assignmentSaving}
-                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 10, border: '1px solid #cbd5e1', borderRadius: 8, background: '#fff' }}
-                  >
-                    <option value="">Unassigned</option>
-                    {employeesTenantId === tenantId && employeeProfiles.map(employee => (
-                      <option value={employee.uid} key={employee.uid}>{employeeAssignmentLabel(employee)}</option>
-                    ))}
-                    {assignmentValue && !employeeProfiles.some(employee => employee.uid === assignmentValue) && (
-                      <option value={assignmentValue} disabled>Current assignee unavailable</option>
-                    )}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="v1-button v1-button-secondary"
-                  onClick={saveBookingAssignment}
-                  disabled={employeesLoading || assignmentSaving}
-                  style={{ marginTop: 12 }}
-                >
-                  {assignmentSaving ? 'Saving assignment...' : 'Save assignment'}
-                </button>
-                {employeesLoading && <p role="status" style={{ margin: '10px 0 0', color: '#64748b' }}>Loading active employees...</p>}
-                {assignmentError && <p role="alert" style={{ margin: '10px 0 0', color: '#991b1b' }}>{assignmentError}</p>}
-                {assignmentStatus && <p role="status" style={{ margin: '10px 0 0', color: '#166534' }}>{assignmentStatus}</p>}
-              </section>
-            )}
-
-            {canManageAssignment && (
-              <BookingChecklistPrep
-                key={selectedBooking.id}
-                booking={selectedBooking}
-                allBookings={visibleBookings}
-                tenantId={tenantId}
-                reviewedBy={user?.uid}
-                onSaved={applyChecklistPatch}
-              />
-            )}
 
             <section style={{ marginTop: 24, padding: 20, border: '1px solid #dbeafe', background: '#eff6ff', borderRadius: 12 }}>
               <h3 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 18, fontWeight: 600 }}>Field completion</h3>
@@ -1233,6 +1230,79 @@ export default function BookingsList() {
                 </div>
               </form>
             )}
+              </section>
+
+              <section
+                className="booking-detail-tab-panel"
+                id="booking-detail-panel-assignment"
+                role="tabpanel"
+                aria-labelledby="booking-detail-tab-assignment"
+                hidden={activeBookingDetailTab !== 'assignment'}
+              >
+                {canManageAssignment ? (
+                  <section className="booking-detail-section" aria-labelledby="booking-assignment-title">
+                    <h3 id="booking-assignment-title">Field employee assignment</h3>
+                    <p>
+                      Assigned jobs appear in that employee's Field Mode. Unassigned and cancelled jobs remain hidden from employees.
+                    </p>
+                    <label>
+                      Assigned employee
+                      <select
+                        value={assignmentValue}
+                        onChange={event => {
+                          setAssignmentValue(event.target.value);
+                          setAssignmentError('');
+                          setAssignmentStatus('');
+                        }}
+                        disabled={employeesLoading || assignmentSaving}
+                      >
+                        <option value="">Unassigned</option>
+                        {employeesTenantId === tenantId && employeeProfiles.map(employee => (
+                          <option value={employee.uid} key={employee.uid}>{employeeAssignmentLabel(employee)}</option>
+                        ))}
+                        {assignmentValue && !employeeProfiles.some(employee => employee.uid === assignmentValue) && (
+                          <option value={assignmentValue} disabled>Current assignee unavailable</option>
+                        )}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="v1-button v1-button-secondary"
+                      onClick={saveBookingAssignment}
+                      disabled={employeesLoading || assignmentSaving}
+                    >
+                      {assignmentSaving ? 'Saving assignment...' : 'Save assignment'}
+                    </button>
+                    {employeesLoading && <p role="status" className="booking-detail-status">Loading active employees...</p>}
+                    {assignmentError && <p role="alert" className="booking-detail-error">{assignmentError}</p>}
+                    {assignmentStatus && <p role="status" className="booking-detail-success">{assignmentStatus}</p>}
+                  </section>
+                ) : (
+                  <p className="booking-detail-tab-empty">Assignment management is unavailable for this account.</p>
+                )}
+              </section>
+
+              <section
+                className="booking-detail-tab-panel"
+                id="booking-detail-panel-job-prep"
+                role="tabpanel"
+                aria-labelledby="booking-detail-tab-job-prep"
+                hidden={activeBookingDetailTab !== 'job-prep'}
+              >
+                {canManageAssignment ? (
+                  <BookingChecklistPrep
+                    key={selectedBooking.id}
+                    booking={selectedBooking}
+                    allBookings={visibleBookings}
+                    tenantId={tenantId}
+                    reviewedBy={user?.uid}
+                    onSaved={applyChecklistPatch}
+                  />
+                ) : (
+                  <p className="booking-detail-tab-empty">Job Prep management is unavailable for this account.</p>
+                )}
+              </section>
+            </div>
           </div>
         </div>
       )}

@@ -241,6 +241,10 @@ describe('read-only Bookings admin list', () => {
     await user.click(screen.getByRole('button', { name: 'View Details' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Customer Name Display Smoke 0630' });
+    expect(within(dialog).getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(dialog).getByRole('tab', { name: 'Assignment' })).toHaveAttribute('aria-selected', 'false');
+    expect(within(dialog).getByRole('tab', { name: 'Job Prep' })).toHaveAttribute('aria-selected', 'false');
+    expect(within(dialog).getByRole('tabpanel', { name: 'Details' })).toBeInTheDocument();
     expect(dialog).toHaveTextContent('display-smoke@example.com');
     expect(dialog).toHaveTextContent('555-0630');
     expect(dialog).toHaveTextContent('standard');
@@ -267,6 +271,52 @@ describe('read-only Bookings admin list', () => {
     await user.click(screen.getByRole('button', { name: 'Close booking details' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   }, 10_000);
+
+  it('navigates booking detail tabs by keyboard and preserves unsaved assignment state', async () => {
+    const user = userEvent.setup();
+    mocks.getActiveTenantEmployeeProfiles.mockResolvedValue({
+      success: true,
+      data: [{ uid: 'employee-a', displayName: 'Employee A', role: 'employee', status: 'active', tenantId: 'tenant-a' }],
+    });
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'booking-tab-navigation',
+      customerName: 'Tab Navigation Customer',
+      date: '2026-07-20',
+      status: 'scheduled',
+    }] });
+
+    render(<BookingsList />);
+    await user.click(await screen.findByRole('button', { name: 'View Details' }));
+
+    const detailsTab = screen.getByRole('tab', { name: 'Details' });
+    const detailContent = document.querySelector('.booking-detail-modal-content');
+    detailContent.scrollTop = 300;
+    detailsTab.focus();
+    fireEvent.keyDown(detailsTab, { key: 'ArrowRight' });
+
+    const assignmentTab = screen.getByRole('tab', { name: 'Assignment' });
+    expect(assignmentTab).toHaveAttribute('aria-selected', 'true');
+    expect(assignmentTab).toHaveFocus();
+    expect(detailContent).toHaveProperty('scrollTop', 0);
+    await user.selectOptions(screen.getByLabelText('Assigned employee'), 'employee-a');
+
+    await user.click(detailsTab);
+    await user.click(assignmentTab);
+    expect(screen.getByLabelText('Assigned employee')).toHaveValue('employee-a');
+    expect(mocks.updateBookingAdminFields).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(assignmentTab, { key: 'End' });
+    const jobPrepTab = screen.getByRole('tab', { name: 'Job Prep' });
+    expect(jobPrepTab).toHaveAttribute('aria-selected', 'true');
+    expect(jobPrepTab).toHaveFocus();
+    expect(screen.getByRole('heading', { name: 'Checklist review' })).toBeInTheDocument();
+
+    fireEvent.keyDown(jobPrepTab, { key: 'Home' });
+    expect(detailsTab).toHaveAttribute('aria-selected', 'true');
+    expect(detailsTab).toHaveFocus();
+    fireEvent.keyDown(detailsTab, { key: 'ArrowLeft' });
+    expect(jobPrepTab).toHaveAttribute('aria-selected', 'true');
+  });
 
   it('shows safe fallbacks in the read-only detail view for incomplete bookings', async () => {
     const user = userEvent.setup();
@@ -315,6 +365,7 @@ describe('read-only Bookings admin list', () => {
     render(<BookingsList />);
     await user.click(await screen.findByRole('button', { name: 'View Details' }));
     await waitFor(() => expect(mocks.getActiveTenantEmployeeProfiles).toHaveBeenCalledWith('tenant-a'));
+    await user.click(screen.getByRole('tab', { name: 'Assignment' }));
     const assignmentSelect = screen.getByLabelText('Assigned employee');
     expect(within(assignmentSelect).getByRole('option', { name: 'Employee A' })).toHaveValue('employee-a');
     expect(within(assignmentSelect).queryByRole('option', { name: /admin|customer/i })).not.toBeInTheDocument();
@@ -344,6 +395,7 @@ describe('read-only Bookings admin list', () => {
 
     const view = render(<BookingsList />);
     await user.click(await screen.findByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('tab', { name: 'Assignment' }));
     await user.selectOptions(screen.getByLabelText('Assigned employee'), '');
     await user.click(screen.getByRole('button', { name: 'Save assignment' }));
     expect(mocks.updateBookingAdminFields).toHaveBeenCalledWith('tenant-a', 'booking-unassign', { assignedEmployeeAuthUid: null });
@@ -352,7 +404,9 @@ describe('read-only Bookings admin list', () => {
     mocks.adminAccess = false;
     render(<BookingsList />);
     await user.click(await screen.findByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('tab', { name: 'Assignment' }));
     expect(screen.queryByLabelText('Assigned employee')).not.toBeInTheDocument();
+    expect(screen.getByText('Assignment management is unavailable for this account.')).toBeInTheDocument();
   });
 
   it('does not show false assignment success when the save fails', async () => {
@@ -363,6 +417,7 @@ describe('read-only Bookings admin list', () => {
 
     render(<BookingsList />);
     await user.click(await screen.findByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('tab', { name: 'Assignment' }));
     await user.selectOptions(screen.getByLabelText('Assigned employee'), 'employee-a');
     await user.click(screen.getByRole('button', { name: 'Save assignment' }));
 
