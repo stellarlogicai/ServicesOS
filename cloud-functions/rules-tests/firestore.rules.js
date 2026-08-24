@@ -370,6 +370,122 @@ const adoptedCompanyMethod = ({
   adoptedBy: actorUid,
 });
 
+const growthAIContent = (overrides = {}) => ({
+  fullCaption: 'A tenant-safe deterministic caption.',
+  shortCaption: 'A short caption.',
+  callToAction: 'Contact us to learn more.',
+  hashtags: '#TenantCleaning',
+  imagePrompt: 'A clean local business image without text.',
+  ...overrides,
+});
+
+const growthAIDraft = ({
+  tenantId = TENANT_A,
+  draftId = 'growth-draft-a',
+  auditId = 'growth-audit-1',
+  actorUid = 'admin-a',
+  status = 'draft',
+  version = 1,
+  content = growthAIContent(),
+  sourceRefs = {},
+  extra = {},
+} = {}) => ({
+  schemaVersion: 1,
+  id: draftId,
+  tenantId,
+  pillar: 'attract',
+  actionType: 'marketing_post',
+  status,
+  title: 'Tenant marketing draft',
+  content,
+  sourceRefs,
+  createdByUid: actorUid,
+  createdAt: serverTimestamp(),
+  updatedByUid: actorUid,
+  updatedAt: serverTimestamp(),
+  approvedByUid: status === 'approved' ? actorUid : null,
+  approvedAt: status === 'approved' ? serverTimestamp() : null,
+  version,
+  lastAuditId: auditId,
+  ...extra,
+});
+
+const growthAIAudit = ({
+  tenantId = TENANT_A,
+  draftId = 'growth-draft-a',
+  auditId = 'growth-audit-1',
+  actorUid = 'admin-a',
+  version = 1,
+  action = 'draft_created',
+  fromStatus = null,
+  toStatus = 'draft',
+  extra = {},
+} = {}) => ({
+  schemaVersion: 1,
+  id: auditId,
+  tenantId,
+  draftId,
+  draftVersion: version,
+  action,
+  actorUid,
+  timestamp: serverTimestamp(),
+  fromStatus,
+  toStatus,
+  ...extra,
+});
+
+async function createGrowthAIDraftWithAudit(database, options = {}) {
+  const tenantId = options.tenantId || TENANT_A;
+  const draftId = options.draftId || 'growth-draft-a';
+  const auditId = options.auditId || 'growth-audit-1';
+  const draftReference = doc(database, 'tenants', tenantId, 'growthAIDrafts', draftId);
+  const auditReference = doc(draftReference, 'audit', auditId);
+  await runTransaction(database, async transaction => {
+    transaction.set(draftReference, growthAIDraft({ ...options, tenantId, draftId, auditId }));
+    transaction.set(auditReference, growthAIAudit({ ...options, tenantId, draftId, auditId }));
+  });
+  return { draftReference, auditReference };
+}
+
+async function transitionGrowthAIDraft(database, {
+  tenantId = TENANT_A,
+  draftId = 'growth-draft-a',
+  auditId,
+  actorUid = 'admin-a',
+  status,
+  action,
+  materialChanges = {},
+  approval = false,
+}) {
+  const draftReference = doc(database, 'tenants', tenantId, 'growthAIDrafts', draftId);
+  const auditReference = doc(draftReference, 'audit', auditId);
+  return runTransaction(database, async transaction => {
+    const current = (await transaction.get(draftReference)).data();
+    const version = current.version + 1;
+    transaction.set(draftReference, {
+      ...current,
+      ...materialChanges,
+      status,
+      updatedByUid: actorUid,
+      updatedAt: serverTimestamp(),
+      approvedByUid: approval ? actorUid : null,
+      approvedAt: approval ? serverTimestamp() : null,
+      version,
+      lastAuditId: auditId,
+    });
+    transaction.set(auditReference, growthAIAudit({
+      tenantId,
+      draftId,
+      auditId,
+      actorUid,
+      version,
+      action,
+      fromStatus: current.status,
+      toStatus: status,
+    }));
+  });
+}
+
 describe('tenant-scoped customer intake Firestore rules', () => {
   before(async () => {
     const rules = await readFile(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
@@ -1397,6 +1513,121 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     await assertFails(updateDoc(booking, { stripePaymentIntentId: 'pi_test_spoofed' }));
     await assertFails(updateDoc(booking, { platformFee: 20 }));
     await assertFails(updateDoc(booking, { refundStatus: 'succeeded' }));
+  });
+
+  test('tenant admins persist GrowthAI profiles and transaction-linked drafts with immutable audit', async () => {
+    const database = authenticatedDatabase('admin-a');
+    const profileReference = doc(database, 'tenants', TENANT_A, 'growthAI', 'config');
+    await assertSucceeds(setDoc(profileReference, {
+      schemaVersion: 1,
+      tenantId: TENANT_A,
+      brandVoice: 'Friendly and practical',
+      contentTone: 'Clear and local',
+      defaultCTA: 'Request a quote.',
+      createdByUid: 'admin-a',
+      createdAt: serverTimestamp(),
+      updatedByUid: 'admin-a',
+      updatedAt: serverTimestamp(),
+    }));
+
+    const { draftReference, auditReference } = await assertSucceeds(
+      createGrowthAIDraftWithAudit(database, {
+        sourceRefs: { bookingId: 'field-booking', photoIds: ['photo-a', 'photo-b'] },
+      })
+    );
+    assert.equal((await assertSucceeds(getDoc(profileReference))).data().tenantId, TENANT_A);
+    assert.equal((await assertSucceeds(getDoc(draftReference))).data().status, 'draft');
+    assert.equal((await assertSucceeds(getDoc(auditReference))).data().action, 'draft_created');
+    await assertFails(updateDoc(auditReference, { action: 'approved' }));
+    await assertFails(deleteDoc(auditReference));
+    await assertFails(deleteDoc(draftReference));
+  });
+
+  test('GrowthAI approval lifecycle records the actor and invalidates approval after a material edit', async () => {
+    const database = authenticatedDatabase('admin-a');
+    await assertSucceeds(createGrowthAIDraftWithAudit(database));
+    await assertSucceeds(transitionGrowthAIDraft(database, {
+      auditId: 'growth-audit-2',
+      status: 'needs_review',
+      action: 'submitted_for_review',
+    }));
+    await assertSucceeds(transitionGrowthAIDraft(database, {
+      auditId: 'growth-audit-3',
+      status: 'approved',
+      action: 'approved',
+      approval: true,
+    }));
+
+    const draftReference = doc(database, 'tenants', TENANT_A, 'growthAIDrafts', 'growth-draft-a');
+    const approved = (await assertSucceeds(getDoc(draftReference))).data();
+    assert.equal(approved.status, 'approved');
+    assert.equal(approved.approvedByUid, 'admin-a');
+    assert.ok(approved.approvedAt);
+
+    await assertSucceeds(transitionGrowthAIDraft(database, {
+      auditId: 'growth-audit-4',
+      status: 'needs_review',
+      action: 'approval_invalidated',
+      materialChanges: { content: growthAIContent({ fullCaption: 'Materially edited caption.' }) },
+    }));
+    const invalidated = (await assertSucceeds(getDoc(draftReference))).data();
+    assert.equal(invalidated.status, 'needs_review');
+    assert.equal(invalidated.approvedByUid, null);
+    assert.equal(invalidated.approvedAt, null);
+    const invalidationAudit = await assertSucceeds(getDoc(
+      doc(draftReference, 'audit', 'growth-audit-4')
+    ));
+    assert.equal(invalidationAudit.data().action, 'approval_invalidated');
+  });
+
+  test('GrowthAI rejects invalid transitions, spoofed actors, malformed refs, and unknown keys', async () => {
+    const database = authenticatedDatabase('admin-a');
+    await assertSucceeds(createGrowthAIDraftWithAudit(database));
+
+    await assertFails(transitionGrowthAIDraft(database, {
+      auditId: 'invalid-direct-approval',
+      status: 'approved',
+      action: 'approved',
+      approval: true,
+    }));
+    await assertFails(createGrowthAIDraftWithAudit(database, {
+      draftId: 'spoofed-actor',
+      auditId: 'spoofed-actor-audit',
+      actorUid: 'admin-b',
+    }));
+    await assertFails(createGrowthAIDraftWithAudit(database, {
+      draftId: 'unknown-key',
+      auditId: 'unknown-key-audit',
+      extra: { unsafePayload: true },
+    }));
+    await assertFails(createGrowthAIDraftWithAudit(database, {
+      draftId: 'bad-pillar',
+      auditId: 'bad-pillar-audit',
+      extra: { pillar: 'unknown' },
+    }));
+    await assertFails(createGrowthAIDraftWithAudit(database, {
+      draftId: 'bad-refs',
+      auditId: 'bad-refs-audit',
+      sourceRefs: { photoIds: Array.from({ length: 9 }, (_, index) => `photo-${index}`) },
+    }));
+  });
+
+  test('GrowthAI denies employees, customers, anonymous users, and cross-tenant admins', async () => {
+    const adminA = authenticatedDatabase('admin-a');
+    const { draftReference } = await assertSucceeds(createGrowthAIDraftWithAudit(adminA));
+    const deniedUsers = [
+      authenticatedDatabase('admin-b'),
+      authenticatedDatabase('employee-a'),
+      authenticatedDatabase('customer-a-auth'),
+      testEnvironment.unauthenticatedContext().firestore(),
+    ];
+
+    for (const database of deniedUsers) {
+      await assertFails(getDoc(doc(database, 'tenants', TENANT_A, 'growthAIDrafts', 'growth-draft-a')));
+      await assertFails(getDocs(collection(database, 'tenants', TENANT_A, 'growthAIDrafts')));
+      await assertFails(getDoc(doc(database, 'tenants', TENANT_A, 'growthAI', 'config')));
+    }
+    assert.equal((await assertSucceeds(getDoc(draftReference))).data().tenantId, TENANT_A);
   });
 
   test('only super-admin can use mounted compatibility and global administration paths', async () => {

@@ -88,8 +88,8 @@ vi.mock('../components/BusinessSettings', () => ({
 vi.mock('../modules/growthAI/GrowthAIPage', () => ({
   default: () => (
     <main>
-      <h1>GrowthAI — Marketing Helper</h1>
-      <p>Placeholder/local generation only · Credits estimated, never deducted · No auto-posting · No real AI or image API call · super-admin only</p>
+      <h1>GrowthAI Draft Workspace</h1>
+      <p>Deterministic content only. Human review is required. Approval does not send or publish anything.</p>
     </main>
   )
 }));
@@ -174,7 +174,7 @@ describe('App onboarding router context', () => {
     render(<App />);
 
     expect(screen.queryByRole('heading', { name: 'Welcome to CleanOps' })).not.toBeInTheDocument();
-    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export'].forEach(label => {
+    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export', 'GrowthAI'].forEach(label => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
     [
@@ -186,8 +186,7 @@ describe('App onboarding router context', () => {
       'Backup',
       'Settings',
       'Tenant management',
-      'AI training',
-      'GrowthAI'
+      'AI training'
     ].forEach(label => {
       expect(screen.queryByText(label)).not.toBeInTheDocument();
     });
@@ -252,7 +251,7 @@ describe('App onboarding router context', () => {
 
     expect(screen.getByRole('button', { name: 'Close navigation menu' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('navigation')).toHaveStyle({ zIndex: '130' });
-    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export'].forEach(label => {
+    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export', 'GrowthAI'].forEach(label => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
     expect(screen.queryByText('Settings')).not.toBeInTheDocument();
@@ -279,14 +278,12 @@ describe('App onboarding router context', () => {
       '/route-optimization',
       '/payroll',
       '/training',
-      '/tap-to-pay',
-      '/growth-ai',
-      '/growthai'
+      '/tap-to-pay'
     ].forEach(path => {
       window.history.pushState({}, '', path);
       const { unmount } = render(<App />);
 
-      ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export'].forEach(label => {
+      ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export', 'GrowthAI'].forEach(label => {
         expect(screen.getByText(label)).toBeInTheDocument();
       });
 
@@ -299,8 +296,7 @@ describe('App onboarding router context', () => {
         'Backup',
         'Settings',
         'Tenant management',
-        'AI training',
-        'GrowthAI'
+        'AI training'
       ].forEach(label => {
         expect(screen.queryByText(label)).not.toBeInTheDocument();
       });
@@ -312,8 +308,7 @@ describe('App onboarding router context', () => {
         'Deferred Insurance Screen',
         'Deferred Backup Screen',
         'Deferred Settings Screen',
-        'Deferred AI Training Screen',
-        'GrowthAI — Marketing Helper'
+        'Deferred AI Training Screen'
       ].forEach(heading => {
         expect(screen.queryByRole('heading', { name: heading })).not.toBeInTheDocument();
       });
@@ -324,11 +319,22 @@ describe('App onboarding router context', () => {
     });
   });
 
+  it('allows a tenant admin to open the tenant-scoped GrowthAI workspace', () => {
+    authState.userProfile = { uid: 'admin-test', onboardingCompleted: true };
+    render(<App />);
+
+    fireEvent.click(screen.getByText('GrowthAI'));
+
+    expect(screen.getByRole('heading', { name: 'GrowthAI Draft Workspace' })).toBeInTheDocument();
+    expect(screen.getByText(/Approval does not send or publish anything/)).toBeInTheDocument();
+  });
+
   it('keeps old payment links hidden from super-admin navigation while preserving other deferred routes', () => {
     authState.role = 'super-admin';
     authState.isSuperAdmin = () => true;
     authState.userProfile = { uid: 'super-admin-test', onboardingCompleted: true };
     authState.currentTenant = null;
+    authState.tenantId = null;
 
     render(<App />);
 
@@ -357,18 +363,19 @@ describe('App onboarding router context', () => {
     expect(screen.getByRole('heading', { name: 'Super Admin Tenant Management Screen' })).toBeInTheDocument();
   });
 
-  it('allows super-admin to open GrowthAI while keeping the Phase 0 honesty banner visible', () => {
+  it('requires a super-admin to select a tenant before opening GrowthAI', () => {
     authState.role = 'super-admin';
     authState.isSuperAdmin = () => true;
     authState.userProfile = { uid: 'super-admin-test', onboardingCompleted: true };
     authState.currentTenant = null;
+    authState.tenantId = null;
 
     render(<App />);
 
     fireEvent.click(screen.getByText('GrowthAI'));
 
-    expect(screen.getByRole('heading', { name: 'GrowthAI — Marketing Helper' })).toBeInTheDocument();
-    expect(screen.getByText(/Placeholder\/local generation only/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Select a tenant to view this area.' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'GrowthAI Draft Workspace' })).not.toBeInTheDocument();
     expect(screen.queryByText('Payment links')).not.toBeInTheDocument();
   });
 
@@ -487,7 +494,7 @@ describe('App onboarding router context', () => {
     expect(screen.queryByText('Data export')).not.toBeInTheDocument();
     expect(screen.queryByText('Business Settings')).not.toBeInTheDocument();
     expect(screen.queryByText('Field Mode')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'GrowthAI — Marketing Helper' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'GrowthAI Draft Workspace' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Customer Portal Screen' })).toBeInTheDocument();
   });
 

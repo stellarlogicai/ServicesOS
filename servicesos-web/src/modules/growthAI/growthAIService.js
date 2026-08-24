@@ -59,6 +59,7 @@ function placeholderDraft(brand, postType, inputs) {
     const season  = safeTrim(inputs.dateRange)     || 'this season';
     const topic   = safeTrim(inputs.cleaningTopic) || 'spotless results';
     const tag     = areaTag(area) || 'CleaningServices';
+    const brandTag = areaTag(brand.name) || 'LocalCleaning';
 
     const fullCaption =
       `✨ ${postType.label} ✨\n\n` +
@@ -67,14 +68,14 @@ function placeholderDraft(brand, postType, inputs) {
       `${season} slots are filling fast — don't wait!\n\n` +
       `🎯 ${offer}\n\n` +
       `${cta}\n\n` +
-      `#CleanHome #${tag} #AuntBsCleaning #ProfessionalCleaning #LocalBusiness`;
+      `#CleanHome #${tag} #${brandTag} #ProfessionalCleaning #LocalBusiness`;
 
     return {
       title:        `${postType.label} — ${area}`,
       fullCaption,
       shortCaption: `✨ Need a ${service} in ${area}? ${cta}`,
       callToAction: cta,
-      hashtags:     `#CleanHome #${tag} #AuntBsCleaning #ProfessionalCleaning #LocalBusiness`,
+      hashtags:     `#CleanHome #${tag} #${brandTag} #ProfessionalCleaning #LocalBusiness`,
       imagePrompt:
         `${brand.imageStyle}: visual for a "${postType.label.toLowerCase()}" post. ` +
         `Bright, welcoming ${area} home. Real, not stock-photo. No text overlay.`,

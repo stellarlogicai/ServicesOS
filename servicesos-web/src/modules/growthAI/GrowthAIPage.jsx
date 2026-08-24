@@ -1,865 +1,307 @@
-// src/modules/growthAI/GrowthAIPage.jsx
-/**
- * GrowthAI Phase 0 — Marketing Helper
- *
- * Internal tool for Aunt B's Cleaning Services and Stellar Logic AI.
- *
- * Phase 0 guarantees:
- *  ✅ No browser-side AI API calls (Anthropic, OpenAI, Gemini, Firebase AI)
- *  ✅ No browser-exposed AI provider secret usage
- *  ✅ No real credit deduction — estimated only
- *  ✅ No auto-posting
- *  ✅ No image generation API
- *  ✅ localStorage draft persistence (Phase 1 → Firestore)
- *  ✅ super-admin access only (enforced by App.jsx NAV_ITEMS roles gate)
- */
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import { BRANDS, CONTENT_IDEAS, PLATFORMS } from './brandProfiles';
+import { generateDraft } from './growthAIService';
 import {
-  BRANDS, PLATFORMS, CREDIT_COSTS, DRAFT_STATUS, CONTENT_IDEAS,
-} from './brandProfiles';
-import {
-  generateDraft, regenerateCaption, generateImagePromptOnly,
-} from './growthAIService';
-import {
-  RESPONSE_CHANNELS, RESPONSE_SCENARIOS, buildResponseTemplate,
-} from './responseTemplates';
-import {
-  loadDrafts, createDraftRecord, updateDraftRecord, addGenerationEvent,
-  insertDraft, upsertDraft, removeDraft, duplicateDraft, patchDraftStatus,
-} from './draftStorage';
+  approveGrowthAIDraft,
+  createGrowthAIDraft,
+  GROWTH_AI_PILLARS,
+  listGrowthAIDraftAudit,
+  listGrowthAIDrafts,
+  loadGrowthAIBrandProfile,
+  returnGrowthAIDraftToDraft,
+  saveGrowthAIBrandProfile,
+  submitGrowthAIDraftForReview,
+  updateGrowthAIDraftContent,
+} from './growthAIFoundationService';
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
-const C = {
-  bg:       '#f8fafc',
-  panel:    '#ffffff',
-  border:   '#e2e8f0',
-  accent:   '#3b82f6',
-  accentDk: '#1d4ed8',
-  text:     '#111827',
-  muted:    '#6b7280',
-  success:  '#10b981',
-  warn:     '#f59e0b',
-  error:    '#ef4444',
-  purple:   '#7c3aed',
+const colors = {
+  background: '#f8fafc', panel: '#fff', border: '#dbe3ec', primary: '#1d4ed8',
+  text: '#172033', muted: '#64748b', success: '#047857', warning: '#a16207', danger: '#b91c1c',
 };
 
-// ─── Primitive UI helpers ─────────────────────────────────────────────────────
-function Label({ children, required }) {
+const emptyContent = { fullCaption: '', shortCaption: '', callToAction: '', hashtags: '', imagePrompt: '' };
+const emptyInputs = {
+  platform: 'facebook', tone: '', cta: '', extraNotes: '', serviceType: '', serviceArea: '',
+  offer: '', dateRange: '', cleaningTopic: '',
+};
+const controlStyle = {
+  width: '100%', boxSizing: 'border-box', padding: '9px 10px', border: `1px solid ${colors.border}`,
+  borderRadius: 6, background: '#fff', color: colors.text, font: 'inherit',
+};
+
+function Card({ children }) {
+  return <section style={{ background: colors.panel, border: `1px solid ${colors.border}`, borderRadius: 8, padding: 18 }}>{children}</section>;
+}
+
+function Field({ label, children }) {
+  return <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700, color: '#334155' }}>{label}{children}</label>;
+}
+
+function Button({ children, onClick, disabled, tone = 'primary' }) {
+  const palette = {
+    primary: { background: colors.primary, color: '#fff', border: colors.primary },
+    secondary: { background: '#fff', color: colors.text, border: '#94a3b8' },
+    success: { background: colors.success, color: '#fff', border: colors.success },
+  }[tone];
   return (
-    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 }}>
-      {children}{required && <span style={{ color: C.error, marginLeft: 2 }}>*</span>}
-    </label>
+    <button type="button" onClick={onClick} disabled={disabled} style={{
+      padding: '9px 13px', borderRadius: 6, border: `1px solid ${palette.border}`, background: palette.background,
+      color: palette.color, fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1,
+    }}>{children}</button>
   );
 }
 
-function FieldInput({ value, onChange, placeholder, multiline, rows = 3, disabled }) {
-  const base = {
-    width: '100%', padding: '8px 10px',
-    border: `1px solid ${C.border}`, borderRadius: 6,
-    fontSize: 13, color: C.text,
-    background: disabled ? '#f9fafb' : '#fff',
-    boxSizing: 'border-box', fontFamily: 'inherit',
-    resize: multiline ? 'vertical' : undefined,
-  };
-  return multiline
-    ? <textarea rows={rows} value={value} onChange={onChange} placeholder={placeholder} disabled={disabled} style={base} />
-    : <input type="text" value={value} onChange={onChange} placeholder={placeholder} disabled={disabled} style={base} />;
+function statusLabel(status) {
+  if (status === 'needs_review') return 'Needs review';
+  if (status === 'approved') return 'Approved';
+  return 'Draft';
 }
 
-function FieldSelect({ value, onChange, options, disabled, ariaLabel }) {
-  return (
-    <select
-      aria-label={ariaLabel}
-      value={value} onChange={onChange} disabled={disabled}
-      style={{ width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, color: C.text, background: disabled ? '#f9fafb' : '#fff', boxSizing: 'border-box' }}
-    >
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
+function formatTimestamp(value) {
+  const date = value?.toDate?.() || (value ? new Date(value) : null);
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : 'Pending server timestamp';
 }
 
-function Btn({ onClick, disabled, loading, children, variant = 'primary', small, fullWidth }) {
-  const variants = {
-    primary:  { background: `linear-gradient(135deg,${C.accent},${C.accentDk})`, color: '#fff', border: 'none' },
-    secondary:{ background: 'transparent', color: C.accent, border: `1px solid ${C.accent}` },
-    ghost:    { background: 'transparent', color: C.muted, border: `1px solid ${C.border}` },
-    success:  { background: `linear-gradient(135deg,${C.success},#059669)`, color: '#fff', border: 'none' },
-    warn:     { background: 'transparent', color: C.warn, border: `1px solid ${C.warn}` },
-    danger:   { background: 'transparent', color: C.error, border: `1px solid ${C.error}` },
-  };
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled || loading}
-      style={{
-        ...variants[variant],
-        padding: small ? '5px 10px' : '9px 16px',
-        borderRadius: 7, fontSize: small ? 11 : 13, fontWeight: 600,
-        cursor: (disabled || loading) ? 'not-allowed' : 'pointer',
-        opacity: (disabled || loading) ? 0.55 : 1,
-        whiteSpace: 'nowrap', fontFamily: 'inherit',
-        width: fullWidth ? '100%' : undefined,
-      }}
-    >
-      {loading ? '⏳ …' : children}
-    </button>
-  );
-}
-
-function CopyBtn({ text, label = 'Copy' }) {
-  const [copied, setCopied] = useState(false);
-  const doCopy = useCallback(() => {
-    const fallback = () => {
-      try {
-        const el = document.createElement('textarea');
-        el.value = text;
-        el.style.position = 'fixed';
-        el.style.opacity = '0';
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand('copy');
-        document.body.removeChild(el);
-      } catch { /* silent */ }
-    };
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(fallback);
-    } else {
-      fallback();
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
-  }, [text]);
-  return <Btn onClick={doCopy} variant="ghost" small>{copied ? '✅ Copied' : `📋 ${label}`}</Btn>;
-}
-
-function CreditBadge({ cost, label }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: '#92400e', background: '#fef3c7', padding: '2px 8px', borderRadius: 10 }}>
-      ⚡ {cost} cr{label ? ` · ${label}` : ''}
-    </span>
-  );
-}
-
-function SectionHead({ children }) {
-  return (
-    <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 12 }}>
-      {children}
-    </div>
-  );
-}
-
-function Card({ children, style = {} }) {
-  return (
-    <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', ...style }}>
-      {children}
-    </div>
-  );
-}
-
-// ─── Status helpers ───────────────────────────────────────────────────────────
-function statusColor(s) {
-  if (s === DRAFT_STATUS.POSTED) return C.success;
-  if (s === DRAFT_STATUS.READY)  return C.warn;
-  return C.muted;
-}
-function statusEmoji(s) {
-  if (s === DRAFT_STATUS.POSTED) return '✅';
-  if (s === DRAFT_STATUS.READY)  return '🟡';
-  return '📝';
-}
-
-// ─── Default form inputs ──────────────────────────────────────────────────────
-function defaultInputs() {
+function draftToEditor(draft) {
   return {
-    platform: 'facebook',
-    tone: '', cta: '', extraNotes: '',
-    // Aunt B's
-    serviceType: '', serviceArea: '', offer: '', dateRange: '', cleaningTopic: '',
-    // SLAI
-    productArea: '', updateType: '', currentStatus: '',
-    whatChanged: '', notLiveYet: '', targetAudience: '', ctaQuestion: '',
+    id: draft.id, pillar: draft.pillar, actionType: draft.actionType, title: draft.title,
+    content: { ...emptyContent, ...draft.content }, sourceRefs: draft.sourceRefs || {}, status: draft.status,
+    approvedByUid: draft.approvedByUid, approvedAt: draft.approvedAt,
   };
 }
 
-// ─── Brand-specific form sections ─────────────────────────────────────────────
-function AuntBsFields({ inputs, set }) {
-  return (
-    <>
-      <div style={{ marginBottom: 10 }}><Label>Service type</Label>
-        <FieldInput value={inputs.serviceType} onChange={e => set('serviceType', e.target.value)} placeholder="e.g. deep clean, move-out clean" />
-      </div>
-      <div style={{ marginBottom: 10 }}><Label>Service area</Label>
-        <FieldInput value={inputs.serviceArea} onChange={e => set('serviceArea', e.target.value)} placeholder="e.g. Bolivar, MO" />
-      </div>
-      <div style={{ marginBottom: 10 }}><Label>Offer or details</Label>
-        <FieldInput value={inputs.offer} onChange={e => set('offer', e.target.value)} placeholder="e.g. 15% off first clean" />
-      </div>
-      <div style={{ marginBottom: 10 }}><Label>Date range or season</Label>
-        <FieldInput value={inputs.dateRange} onChange={e => set('dateRange', e.target.value)} placeholder="e.g. July, back-to-school" />
-      </div>
-      <div style={{ marginBottom: 10 }}><Label>Cleaning topic / result highlight</Label>
-        <FieldInput value={inputs.cleaningTopic} onChange={e => set('cleaningTopic', e.target.value)} placeholder="e.g. spotless kitchen, fresh carpets" />
-      </div>
-    </>
-  );
-}
-
-function SlaiFields({ inputs, set }) {
-  return (
-    <>
-      <div style={{ marginBottom: 10 }}><Label>Product area</Label>
-        <FieldInput value={inputs.productArea} onChange={e => set('productArea', e.target.value)} placeholder="e.g. ServicesOS, Field Mode" />
-      </div>
-      <div style={{ marginBottom: 10 }}><Label>Update type</Label>
-        <FieldInput value={inputs.updateType} onChange={e => set('updateType', e.target.value)} placeholder="e.g. milestone, feature live, in progress" />
-      </div>
-      <div style={{ marginBottom: 10 }}><Label>Current status</Label>
-        <FieldInput value={inputs.currentStatus} onChange={e => set('currentStatus', e.target.value)} placeholder="e.g. wife-beta testing underway" />
-      </div>
-      <div style={{ marginBottom: 10 }}><Label>What changed / what was built</Label>
-        <FieldInput value={inputs.whatChanged} onChange={e => set('whatChanged', e.target.value)} placeholder="e.g. Customers CRUD, Field Mode read-only" multiline rows={2} />
-      </div>
-      <div style={{ marginBottom: 10 }}><Label>What is NOT live yet</Label>
-        <FieldInput value={inputs.notLiveYet} onChange={e => set('notLiveYet', e.target.value)} placeholder="e.g. Bookings, multi-tenant billing" />
-      </div>
-      <div style={{ marginBottom: 10 }}><Label>Target audience</Label>
-        <FieldInput value={inputs.targetAudience} onChange={e => set('targetAudience', e.target.value)} placeholder="e.g. small biz owners, founders" />
-      </div>
-      <div style={{ marginBottom: 10 }}><Label>CTA or discussion question</Label>
-        <FieldInput value={inputs.ctaQuestion} onChange={e => set('ctaQuestion', e.target.value)} placeholder="e.g. What does your scheduling workflow look like?" />
-      </div>
-    </>
-  );
-}
-
-// ─── Draft preview panel ──────────────────────────────────────────────────────
-function DraftPreview({ draft, onRegenCaption, onRegenImagePrompt, onSaveNew, onUpdateCurrent, onMarkReady, onMarkPosted, loading, activeDraftId }) {
-  if (!draft.fullCaption) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 260, textAlign: 'center', color: C.muted, padding: 24 }}>
-        <div style={{ fontSize: 44, marginBottom: 12 }}>✍️</div>
-        <div style={{ fontWeight: 600, color: '#374151', marginBottom: 6 }}>No draft yet</div>
-        <div style={{ fontSize: 13 }}>Fill in the form and click <strong>Generate Draft</strong>.</div>
-      </div>
-    );
-  }
-
-  const isPosted = draft.status === DRAFT_STATUS.POSTED;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: 15, color: C.text }}>{draft.title}</div>
-          <div style={{ fontSize: 12, color: statusColor(draft.status), fontWeight: 600, marginTop: 3 }}>
-            {statusEmoji(draft.status)} {draft.status.toUpperCase()}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {!isPosted && draft.status !== DRAFT_STATUS.READY &&
-            <Btn onClick={onMarkReady} variant="warn" small>🟡 Mark ready</Btn>}
-          {draft.status === DRAFT_STATUS.READY &&
-            <Btn onClick={onMarkPosted} variant="success" small>✅ Mark posted</Btn>}
-          {activeDraftId
-            ? <Btn onClick={onUpdateCurrent} variant="secondary" small>💾 Update draft</Btn>
-            : <Btn onClick={onSaveNew} variant="secondary" small>💾 Save as new</Btn>
-          }
-        </div>
-      </div>
-
-      {/* Badges */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: 11, background: '#f3f4f6', color: C.muted, padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>
-          📝 Placeholder (Phase 0)
-        </span>
-        {draft.creditsEstimated > 0 &&
-          <span style={{ fontSize: 11, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>
-            ⚡ ~{draft.creditsEstimated} cr estimated (not deducted)
-          </span>
-        }
-      </div>
-
-      {/* Full caption */}
-      <div style={{ background: '#f8fafc', border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Full caption</span>
-          <CopyBtn text={draft.fullCaption} />
-        </div>
-        <pre style={{ margin: 0, fontSize: 13, color: C.text, whiteSpace: 'pre-wrap', lineHeight: 1.65, fontFamily: 'inherit' }}>
-          {draft.fullCaption}
-        </pre>
-      </div>
-
-      {/* Short caption */}
-      <div style={{ background: '#f8fafc', border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Short caption</span>
-          <CopyBtn text={draft.shortCaption} />
-        </div>
-        <div style={{ fontSize: 13, color: C.text }}>{draft.shortCaption}</div>
-      </div>
-
-      {/* CTA + Hashtags */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <div style={{ background: '#f8fafc', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginBottom: 6 }}>CTA</div>
-          <div style={{ fontSize: 13, color: C.text, marginBottom: 8, lineHeight: 1.5 }}>{draft.callToAction}</div>
-          <CopyBtn text={draft.callToAction} label="Copy CTA" />
-        </div>
-        <div style={{ background: '#f8fafc', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Hashtags</div>
-          <div style={{ fontSize: 12, color: '#6366f1', lineHeight: 1.6, marginBottom: 8 }}>{draft.hashtags}</div>
-          <CopyBtn text={draft.hashtags} label="Copy tags" />
-        </div>
-      </div>
-
-      {/* Image prompt */}
-      <div style={{ background: '#fdf4ff', border: '1px solid #e9d5ff', borderRadius: 10, padding: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#6b21a8' }}>🎨 Image prompt</span>
-          <CopyBtn text={draft.imagePrompt} label="Copy prompt" />
-        </div>
-        <div style={{ fontSize: 12, color: C.purple, fontStyle: 'italic', lineHeight: 1.6, marginBottom: 10 }}>{draft.imagePrompt}</div>
-        <div style={{ padding: '7px 10px', background: '#f3e8ff', borderRadius: 6, fontSize: 11, color: '#6b21a8' }}>
-          ⚡ Generating an image costs ~{CREDIT_COSTS.generate_image} credits. Use this prompt in Midjourney, DALL·E, Firefly, etc. — no image API is called here.
-        </div>
-      </div>
-
-      {/* Action row */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', paddingTop: 2 }}>
-        <Btn onClick={onRegenCaption} variant="secondary" disabled={loading || isPosted}>
-          🔄 Regen caption <CreditBadge cost={CREDIT_COSTS.regenerate_caption} />
-        </Btn>
-        <Btn onClick={onRegenImagePrompt} variant="ghost" disabled={loading || isPosted}>
-          🎨 New image prompt <CreditBadge cost={CREDIT_COSTS.generate_image_prompt} />
-        </Btn>
-      </div>
-
-      <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>
-        Phase 0: drafts saved to localStorage. TODO Phase 1 → tenants/&#x7B;tenantId&#x7D;/growthAIDrafts/&#x7B;draftId&#x7D;
-      </div>
-    </div>
-  );
-}
-
-// ─── Draft library ────────────────────────────────────────────────────────────
-function DraftLibrary({ drafts, activeDraftId, onLoad, onDuplicate, onDelete, onMarkReady, onMarkPosted }) {
-  const [filter, setFilter] = useState('all');
-
-  const visible = filter === 'all' ? drafts : drafts.filter(d => d.status === filter);
-
-  const brandName = key => BRANDS[key]?.name || key;
-
-  const rel = iso => {
-    if (!iso) return '';
-    try {
-      const now = new Date();
-      const diff = now - new Date(iso);
-      const mins = Math.floor(diff / 60000);
-      if (mins < 1) return 'just now';
-      if (mins < 60) return `${mins}m ago`;
-      const hrs = Math.floor(mins / 60);
-      if (hrs < 24) return `${hrs}h ago`;
-      return `${Math.floor(hrs / 24)}d ago`;
-    } catch { return ''; }
-  };
-
-  return (
-    <Card style={{ marginTop: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
-        <SectionHead>💾 Draft Library ({drafts.length})</SectionHead>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {['all', 'draft', 'ready', 'posted'].map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1px solid ${filter === f ? C.accent : C.border}`, background: filter === f ? '#eff6ff' : 'transparent', color: filter === f ? C.accent : C.muted }}>
-              {f}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {visible.length === 0 && (
-        <div style={{ textAlign: 'center', color: C.muted, fontSize: 13, padding: '18px 0' }}>
-          {drafts.length === 0 ? 'No saved drafts yet. Generate and save one above.' : `No ${filter} drafts.`}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {visible.map(d => (
-          <div key={d.id}
-            style={{ padding: '11px 14px', border: `1px solid ${d.id === activeDraftId ? C.accent : C.border}`, borderRadius: 9, background: d.id === activeDraftId ? '#eff6ff' : '#fafafa', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 13, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {statusEmoji(d.status)} {d.title}
-                </div>
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                  {brandName(d.brandKey)} · {d.postTypeId} · {d.platform} · ⚡~{d.creditsEstimated}cr
-                  {d.imagePrompt ? ' · 🎨' : ''}
-                  {' · '}{rel(d.updatedAt)}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                <Btn onClick={() => onLoad(d)} variant={d.id === activeDraftId ? 'secondary' : 'ghost'} small>
-                  {d.id === activeDraftId ? '✓ Active' : 'Load'}
-                </Btn>
-                <CopyBtn text={d.fullCaption} label="Caption" />
-                <Btn onClick={() => onDuplicate(d.id)} variant="ghost" small>📋 Dup</Btn>
-                {d.status !== DRAFT_STATUS.POSTED && d.status !== DRAFT_STATUS.READY &&
-                  <Btn onClick={() => onMarkReady(d.id)} variant="ghost" small>🟡 Ready</Btn>}
-                {d.status === DRAFT_STATUS.READY &&
-                  <Btn onClick={() => onMarkPosted(d.id)} variant="ghost" small>✅ Posted</Btn>}
-                <Btn onClick={() => onDelete(d.id)} variant="danger" small>🗑</Btn>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-// ─── Content ideas panel ──────────────────────────────────────────────────────
-function ContentIdeas({ brandKey, onApplyIdea }) {
-  const ideas = CONTENT_IDEAS[brandKey] || [];
-  return (
-    <Card>
-      <SectionHead>💡 Content ideas (static — no AI call)</SectionHead>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {ideas.map((idea, i) => (
-          <button key={i}
-            onClick={() => onApplyIdea(idea)}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: '#fafafa', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
-            <span style={{ fontSize: 18 }}>{idea.emoji}</span>
-            <span style={{ fontSize: 13, color: C.text }}>{idea.label}</span>
-            <span style={{ marginLeft: 'auto', fontSize: 11, color: C.muted }}>prefill →</span>
-          </button>
-        ))}
-      </div>
-      <div style={{ fontSize: 11, color: C.muted, marginTop: 10, fontStyle: 'italic' }}>
-        Clicking an idea prefills fields only — it does not auto-generate or call any API.
-      </div>
-    </Card>
-  );
-}
-
-function CustomerResponseHelper({ brandKey, onSaveResponseDraft }) {
-  const scenarios = RESPONSE_SCENARIOS[brandKey] || RESPONSE_SCENARIOS.auntbs;
-  const [scenarioId, setScenarioId] = useState(scenarios[0]?.id || '');
-  const [channelId, setChannelId] = useState('sms');
-
-  const activeScenario = scenarios.find(item => item.id === scenarioId) || scenarios[0];
-  const responseTemplate = buildResponseTemplate({
-    brandKey,
-    scenarioId: activeScenario?.id,
-    channelId,
-  });
-
-  return (
-    <Card>
-      <SectionHead>Customer response draft helper</SectionHead>
-      <div style={{ padding: '10px 12px', background: '#eff6ff', border: `1px solid ${C.border}`, borderRadius: 8, color: '#1e40af', fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
-        Response drafts are local templates only. Nothing is sent automatically. Review and edit before sending.
-      </div>
-      <div style={{ marginBottom: 10 }}>
-        <Label>Response scenario</Label>
-        <FieldSelect
-          ariaLabel="Response scenario"
-          value={scenarioId}
-          onChange={e => setScenarioId(e.target.value)}
-          options={scenarios.map(item => ({ value: item.id, label: item.scenario }))}
-        />
-      </div>
-      <div style={{ marginBottom: 12 }}>
-        <Label>Channel</Label>
-        <FieldSelect
-          ariaLabel="Response channel"
-          value={channelId}
-          onChange={e => setChannelId(e.target.value)}
-          options={RESPONSE_CHANNELS.map(channel => ({ value: channel.id, label: channel.label }))}
-        />
-      </div>
-      <div style={{ background: '#f8fafc', border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', marginBottom: 8 }}>
-          <div>
-            <div style={{ fontWeight: 700, color: C.text, fontSize: 14 }}>{responseTemplate.title}</div>
-            <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
-              {responseTemplate.scenario} · {responseTemplate.channel} · {responseTemplate.tone}
-            </div>
-          </div>
-          <CreditBadge cost={responseTemplate.estimatedCredits} label="estimated" />
-        </div>
-        {responseTemplate.subjectLine && (
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', marginBottom: 4 }}>Subject</div>
-            <div style={{ fontSize: 13, color: C.text }}>{responseTemplate.subjectLine}</div>
-          </div>
-        )}
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', marginBottom: 4 }}>Message</div>
-        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, color: C.text, lineHeight: 1.6 }}>
-          {responseTemplate.messageTemplate}
-        </pre>
-      </div>
-      <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.5, marginBottom: 12 }}>{responseTemplate.notes}</div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <CopyBtn text={responseTemplate.messageTemplate} label="Copy response" />
-        <Btn onClick={() => onSaveResponseDraft(responseTemplate)} variant="secondary" small>
-          💾 Save response draft
-        </Btn>
-      </div>
-    </Card>
-  );
-}
-
-// ─── Main page ────────────────────────────────────────────────────────────────
 export default function GrowthAIPage() {
-  // Brand + post type selection
-  const [brandKey, setBrandKey]         = useState('auntbs');
-  const [postTypeId, setPostTypeId]     = useState('');
-
-  // Form inputs
-  const [inputs, setInputs]             = useState(defaultInputs);
-
-  // Active draft (what's shown in the preview panel)
-  const [activeDraft, setActiveDraft]   = useState({
-    title: '', fullCaption: '', shortCaption: '', callToAction: '',
-    hashtags: '', imagePrompt: '', status: 'draft', creditsEstimated: 0,
+  const { currentTenant, role, tenantId } = useAuth();
+  const [profile, setProfile] = useState({ brandVoice: '', contentTone: '', defaultCTA: '' });
+  const [drafts, setDrafts] = useState([]);
+  const [audit, setAudit] = useState([]);
+  const [postTypeId, setPostTypeId] = useState('availability');
+  const [inputs, setInputs] = useState(emptyInputs);
+  const [editor, setEditor] = useState({
+    id: null, pillar: 'attract', actionType: 'marketing_post', title: '', content: emptyContent,
+    sourceRefs: {}, status: 'draft', approvedByUid: null, approvedAt: null,
   });
-  const [activeDraftId, setActiveDraftId] = useState(null); // id of loaded saved draft, if any
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
 
-  // Saved draft library — initialised from localStorage once on mount.
-  // Using the useState initializer form avoids calling setState inside an effect.
-  const [drafts, setDrafts] = useState(() => loadDrafts());
+  const businessSettings = currentTenant?.businessSettings || {};
+  const businessName = businessSettings.businessName || currentTenant?.businessName || 'Your business';
+  const brand = useMemo(() => ({
+    ...BRANDS.auntbs,
+    name: businessName,
+    tone: profile.contentTone || profile.brandVoice || 'friendly, trustworthy, and clear',
+    defaultCTA: profile.defaultCTA || 'Contact us to learn more.',
+  }), [businessName, profile]);
+  const postType = brand.postTypes.find(item => item.id === postTypeId) || brand.postTypes[0];
+  const authorized = role === 'admin' || role === 'super-admin';
 
-  // UI state
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
+  const reloadWorkspace = useCallback(async selectedDraftId => {
+    if (!tenantId) return;
+    const [savedProfile, savedDrafts] = await Promise.all([
+      loadGrowthAIBrandProfile(tenantId), listGrowthAIDrafts(tenantId),
+    ]);
+    setProfile({
+      brandVoice: savedProfile?.brandVoice || '', contentTone: savedProfile?.contentTone || '',
+      defaultCTA: savedProfile?.defaultCTA || '',
+    });
+    setDrafts(savedDrafts);
+    const selected = savedDrafts.find(item => item.id === selectedDraftId);
+    if (selected) setEditor(draftToEditor(selected));
+  }, [tenantId]);
 
-  const brand    = BRANDS[brandKey];
-  const postType = brand.postTypes.find(p => p.id === postTypeId) || null;
-
-  // Reset post type and inputs when brand changes
-  const handleBrandChange = useCallback((key) => {
-    setBrandKey(key);
-    setPostTypeId('');
-    setInputs(defaultInputs());
-    setActiveDraftId(null);
-    setError('');
-  }, []);
-
-  const setInput = useCallback((field, value) => {
-    setInputs(prev => ({ ...prev, [field]: value }));
-  }, []);
-
-  // ── Generate draft ──
-  const handleGenerate = useCallback(() => {
-    if (!postType) { setError('Select a post type first.'); return; }
-    setLoading(true);
-    setError('');
-    try {
-      const { generated, creditsEstimated } = generateDraft(brand, postType, inputs);
-      setActiveDraft({
-        title:            generated.title,
-        fullCaption:      generated.fullCaption,
-        shortCaption:     generated.shortCaption,
-        callToAction:     generated.callToAction,
-        hashtags:         generated.hashtags,
-        imagePrompt:      generated.imagePrompt,
-        status:           'draft',
-        creditsEstimated,
-      });
-      setActiveDraftId(null); // new generation = not yet linked to a saved draft
-    } catch (err) {
-      setError(`Generation failed: ${err.message}`);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    let active = true;
+    if (!authorized || !tenantId) {
+      return () => { active = false; };
     }
-  }, [brand, postType, inputs]);
+    Promise.all([loadGrowthAIBrandProfile(tenantId), listGrowthAIDrafts(tenantId)])
+      .then(([savedProfile, savedDrafts]) => {
+        if (!active) return;
+        setProfile({
+          brandVoice: savedProfile?.brandVoice || '', contentTone: savedProfile?.contentTone || '',
+          defaultCTA: savedProfile?.defaultCTA || '',
+        });
+        setDrafts(savedDrafts);
+      })
+      .catch(err => active && setError(err.message))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [authorized, tenantId]);
 
-  // ── Regenerate caption ──
-  const handleRegenCaption = useCallback(() => {
-    if (!postType || !activeDraft.fullCaption) return;
-    setLoading(true);
+  const loadAudit = useCallback(async draftId => {
+    if (!draftId) return setAudit([]);
+    setAudit(await listGrowthAIDraftAudit(tenantId, draftId));
+  }, [tenantId]);
+
+  const runAction = useCallback(async (action, successMessage) => {
+    setSaving(true);
     setError('');
+    setMessage('');
     try {
-      const { generated, creditsEstimated } = regenerateCaption(brand, postType, inputs);
-      setActiveDraft(prev => {
-        const updated = { ...prev, fullCaption: generated.fullCaption, shortCaption: generated.shortCaption, callToAction: generated.callToAction, hashtags: generated.hashtags, creditsEstimated: prev.creditsEstimated + creditsEstimated };
-        // If this was linked to a saved draft, update the generation events but not auto-save
-        if (activeDraftId) {
-          setDrafts(current => {
-            const patched = current.map(d => d.id === activeDraftId ? addGenerationEvent(d, 'regenerate_caption') : d);
-            return patched;
-          });
-        }
-        return updated;
-      });
+      const result = await action();
+      const selectedId = result?.id || editor.id;
+      await reloadWorkspace(selectedId);
+      await loadAudit(selectedId);
+      setMessage(successMessage);
+      return result;
     } catch (err) {
       setError(err.message);
+      return null;
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
-  }, [brand, postType, inputs, activeDraft.fullCaption, activeDraftId]);
+  }, [editor.id, loadAudit, reloadWorkspace]);
 
-  // ── Regenerate image prompt ──
-  const handleRegenImagePrompt = useCallback(() => {
-    if (!postType) return;
-    setLoading(true);
+  const generate = () => {
+    const { generated } = generateDraft(brand, postType, inputs);
+    setEditor(previous => ({
+      ...previous, id: null, pillar: 'attract', actionType: 'marketing_post', title: generated.title,
+      content: { ...emptyContent, ...generated }, sourceRefs: {}, status: 'draft', approvedByUid: null, approvedAt: null,
+    }));
+    setAudit([]);
+    setMessage('Deterministic draft created locally. Save it to persist it for this tenant.');
     setError('');
-    try {
-      const { imagePrompt } = generateImagePromptOnly(brand, postType, inputs);
-      setActiveDraft(prev => ({ ...prev, imagePrompt }));
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+  };
+
+  const draftInput = () => ({
+    pillar: editor.pillar, actionType: editor.actionType, title: editor.title,
+    content: editor.content, sourceRefs: editor.sourceRefs,
+  });
+
+  const saveDraft = async () => {
+    if (!editor.content.fullCaption.trim()) return setError('Add draft content before saving.');
+    if (!editor.id) {
+      await runAction(() => createGrowthAIDraft(tenantId, draftInput()), 'Draft saved for this tenant.');
+      return;
     }
-  }, [brand, postType, inputs]);
+    const wasApproved = editor.status === 'approved';
+    await runAction(
+      () => updateGrowthAIDraftContent(tenantId, editor.id, draftInput()),
+      wasApproved ? 'Material content changed. Prior approval was cleared and review is required again.' : 'Draft changes saved.',
+    );
+  };
 
-  // ── Save as new draft ──
-  const handleSaveNew = useCallback(() => {
-    if (!activeDraft.fullCaption) return;
-    const record = createDraftRecord({
-      brandKey, postTypeId: postTypeId || '', platform: inputs.platform,
-      title: activeDraft.title, inputSnapshot: { ...inputs },
-      generated: activeDraft, creditsEstimated: activeDraft.creditsEstimated,
-    });
-    const updated = insertDraft(drafts, record);
-    setDrafts(updated);
-    setActiveDraftId(record.id);
-  }, [activeDraft, brandKey, postTypeId, inputs, drafts]);
-
-  const handleSaveResponseDraft = useCallback((responseTemplate) => {
-    const generated = {
-      fullCaption: responseTemplate.messageTemplate,
-      shortCaption: responseTemplate.subjectLine || responseTemplate.messageTemplate.slice(0, 140),
-      callToAction: 'Review and send manually',
-      hashtags: '',
-      imagePrompt: '',
-    };
-    const record = createDraftRecord({
-      brandKey: responseTemplate.brand,
-      postTypeId: 'customer-response',
-      platform: responseTemplate.channel,
-      title: `[Customer response] ${responseTemplate.title}`,
-      inputSnapshot: {
-        draftKind: 'customer_response',
-        responseTemplateId: responseTemplate.id,
-        responseScenario: responseTemplate.scenario,
-        responseChannel: responseTemplate.channel,
-        responseTone: responseTemplate.tone,
-        responseNotes: responseTemplate.notes,
-        responseSubjectLine: responseTemplate.subjectLine,
-      },
-      generated,
-      creditsEstimated: responseTemplate.estimatedCredits,
-    });
-    const updated = insertDraft(drafts, record);
-    setDrafts(updated);
-    setActiveDraft({
-      title: record.title,
-      fullCaption: record.fullCaption,
-      shortCaption: record.shortCaption,
-      callToAction: record.callToAction,
-      hashtags: record.hashtags,
-      imagePrompt: record.imagePrompt,
-      status: record.status,
-      creditsEstimated: record.creditsEstimated,
-    });
-    setActiveDraftId(record.id);
-  }, [drafts]);
-
-  // ── Update current draft ──
-  const handleUpdateCurrent = useCallback(() => {
-    if (!activeDraftId || !activeDraft.fullCaption) return;
-    setDrafts(current => {
-      const existing = current.find(d => d.id === activeDraftId);
-      if (!existing) return current;
-      const patched = updateDraftRecord(existing, {
-        fullCaption: activeDraft.fullCaption, shortCaption: activeDraft.shortCaption,
-        callToAction: activeDraft.callToAction, hashtags: activeDraft.hashtags,
-        imagePrompt: activeDraft.imagePrompt, title: activeDraft.title,
-        status: activeDraft.status, creditsEstimated: activeDraft.creditsEstimated,
-      });
-      return upsertDraft(current, patched);
-    });
-  }, [activeDraftId, activeDraft]);
-
-  // ── In-preview status changes ──
-  const handleMarkReady  = useCallback(() => setActiveDraft(prev => ({ ...prev, status: DRAFT_STATUS.READY  })), []);
-  const handleMarkPosted = useCallback(() => setActiveDraft(prev => ({ ...prev, status: DRAFT_STATUS.POSTED })), []);
-
-  // ── Library actions ──
-  const handleLoadDraft = useCallback((d) => {
-    setActiveDraft({
-      title: d.title, fullCaption: d.fullCaption, shortCaption: d.shortCaption,
-      callToAction: d.callToAction, hashtags: d.hashtags, imagePrompt: d.imagePrompt,
-      status: d.status, creditsEstimated: d.creditsEstimated,
-    });
-    setActiveDraftId(d.id);
-    setBrandKey(d.brandKey || 'auntbs');
-    setPostTypeId(d.postTypeId || '');
-    if (d.inputSnapshot) setInputs({ ...defaultInputs(), ...d.inputSnapshot });
+  const selectDraft = async draft => {
+    setEditor(draftToEditor(draft));
+    setMessage('');
     setError('');
-  }, []);
+    try { await loadAudit(draft.id); } catch (err) { setError(err.message); }
+  };
 
-  const handleDuplicate = useCallback((id) => {
-    setDrafts(current => duplicateDraft(current, id));
-  }, []);
+  const transition = async (operation, successMessage) => {
+    await runAction(() => operation(tenantId, editor.id), successMessage);
+  };
 
-  const handleDelete = useCallback((id) => {
-    setDrafts(current => removeDraft(current, id));
-    if (activeDraftId === id) setActiveDraftId(null);
-  }, [activeDraftId]);
+  const saveProfile = () => runAction(async () => {
+    await saveGrowthAIBrandProfile(tenantId, profile);
+    return { id: editor.id };
+  }, 'GrowthAI brand preferences saved.');
 
-  const handleLibraryMarkReady  = useCallback((id) => setDrafts(current => patchDraftStatus(current, id, DRAFT_STATUS.READY )), []);
-  const handleLibraryMarkPosted = useCallback((id) => setDrafts(current => patchDraftStatus(current, id, DRAFT_STATUS.POSTED)), []);
-
-  // ── Content idea prefill ──
-  const handleApplyIdea = useCallback((idea) => {
-    const { postTypeId: pt, inputs: prefill } = idea.prefill;
-    if (pt) setPostTypeId(pt);
-    if (prefill) setInputs(prev => ({ ...prev, ...prefill }));
-    setError('');
-    // Does NOT auto-generate. User must click Generate.
-  }, []);
+  if (!authorized) return <div style={{ padding: 24 }}>GrowthAI is available only to tenant owners and administrators.</div>;
+  if (!tenantId) return <div style={{ padding: 24 }}>Select a tenant to use GrowthAI.</div>;
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" }}>
+    <main style={{ minHeight: '100vh', background: colors.background, color: colors.text }}>
+      <header style={{ padding: '18px 24px', background: '#172033', color: '#fff' }}>
+        <h1 style={{ margin: 0, fontSize: 22 }}>GrowthAI Draft Workspace</h1>
+        <p style={{ margin: '5px 0 0', color: '#cbd5e1', fontSize: 13 }}>
+          Deterministic content only. Human review is required. Approval does not send or publish anything.
+        </p>
+      </header>
 
-      {/* ── Phase 0 honesty banner ─────────────────────────────────── */}
-      <div style={{ background: '#fefce8', borderBottom: '1px solid #fde047', padding: '10px 24px' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: '#713f12' }}>⚠️ Internal Phase 0 shell</span>
-          <span style={{ fontSize: 12, color: '#854d0e' }}>Phase 0 local helper. Drafts, templates, and content packs are saved or generated locally in this browser. No real AI calls, posting, or credit deduction yet. Super-admin only.</span>
-        </div>
-      </div>
+      <div style={{ maxWidth: 1180, margin: '0 auto', padding: 20, display: 'grid', gap: 16 }}>
+        {loading && <div>Loading tenant GrowthAI workspace...</div>}
+        {error && <div role="alert" style={{ color: colors.danger, background: '#fef2f2', padding: 10, borderRadius: 6 }}>{error}</div>}
+        {message && <div role="status" style={{ color: colors.success, background: '#ecfdf5', padding: 10, borderRadius: 6 }}>{message}</div>}
 
-      {/* ── Page header ───────────────────────────────────────────── */}
-      <div style={{ background: 'linear-gradient(135deg,#1e1b4b 0%,#312e81 100%)', padding: '20px 24px' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#fff' }}>🚀 GrowthAI — Marketing Helper</h1>
-          <p style={{ margin: '3px 0 0', fontSize: 13, color: '#a5b4fc' }}>Phase 0 · AI drafts (placeholder) · Human approves · Human posts</p>
-        </div>
-      </div>
+        <Card>
+          <h2 style={{ margin: '0 0 5px', fontSize: 17, color: colors.text }}>Tenant brand profile</h2>
+          <p style={{ margin: '0 0 14px', color: colors.muted, fontSize: 12 }}>
+            Business identity comes from Business Settings. Only GrowthAI-specific preferences are stored here.
+          </p>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+            <Field label="Business name"><input aria-label="Business name" value={businessName} readOnly style={{ ...controlStyle, background: '#f1f5f9' }} /></Field>
+            <Field label="Brand voice"><input aria-label="Brand voice" value={profile.brandVoice} onChange={event => setProfile(value => ({ ...value, brandVoice: event.target.value }))} style={controlStyle} /></Field>
+            <Field label="Content tone"><input aria-label="Content tone" value={profile.contentTone} onChange={event => setProfile(value => ({ ...value, contentTone: event.target.value }))} style={controlStyle} /></Field>
+            <Field label="Default call to action"><input aria-label="Default call to action" value={profile.defaultCTA} onChange={event => setProfile(value => ({ ...value, defaultCTA: event.target.value }))} style={controlStyle} /></Field>
+          </div>
+          <div style={{ marginTop: 12 }}><Button onClick={saveProfile} disabled={saving}>Save brand preferences</Button></div>
+        </Card>
 
-      {/* ── Main grid ─────────────────────────────────────────────── */}
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 16px', display: 'grid', gridTemplateColumns: 'minmax(0,400px) 1fr', gap: 20, alignItems: 'start' }}>
-
-        {/* LEFT column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-          {/* 1. Brand selector */}
-          <Card>
-            <SectionHead>1. Choose brand</SectionHead>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {Object.values(BRANDS).map(b => (
-                <button key={b.key} onClick={() => handleBrandChange(b.key)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', borderRadius: 9, cursor: 'pointer', border: brandKey === b.key ? `2px solid ${C.accent}` : `1px solid ${C.border}`, background: brandKey === b.key ? '#eff6ff' : '#f9fafb', textAlign: 'left', fontFamily: 'inherit' }}>
-                  <span style={{ fontSize: 22 }}>{b.emoji}</span>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{b.name}</div>
-                    <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{b.tone}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </Card>
-
-          {/* 2. Post type */}
-          <Card>
-            <SectionHead>2. Choose post type</SectionHead>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {brand.postTypes.map(pt => (
-                <button key={pt.id} onClick={() => setPostTypeId(pt.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 7, cursor: 'pointer', border: postTypeId === pt.id ? `2px solid ${C.accent}` : `1px solid ${C.border}`, background: postTypeId === pt.id ? '#eff6ff' : 'transparent', textAlign: 'left', fontFamily: 'inherit' }}>
-                  <span>{pt.emoji}</span>
-                  <span style={{ fontSize: 13, color: C.text, fontWeight: postTypeId === pt.id ? 600 : 400 }}>{pt.label}</span>
-                </button>
-              ))}
-            </div>
-          </Card>
-
-          {/* 3. Form inputs */}
-          <Card>
-            <SectionHead>3. Fill in details</SectionHead>
-            <div style={{ marginBottom: 10 }}>
-              <Label required>Platform</Label>
-              <FieldSelect value={inputs.platform} onChange={e => setInput('platform', e.target.value)}
-                options={PLATFORMS.map(p => ({ value: p.id, label: `${p.label} (≤${p.maxChars} chars)` }))} />
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <Label>Tone override</Label>
-              <FieldInput value={inputs.tone} onChange={e => setInput('tone', e.target.value)} placeholder={`Default: ${brand.tone}`} />
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <Label>CTA override</Label>
-              <FieldInput value={inputs.cta} onChange={e => setInput('cta', e.target.value)} placeholder={brand.defaultCTA} />
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <Label>Extra notes</Label>
-              <FieldInput value={inputs.extraNotes} onChange={e => setInput('extraNotes', e.target.value)} placeholder="Any angle, event, or detail to include" multiline rows={2} />
-            </div>
-            {brandKey === 'auntbs'
-              ? <AuntBsFields inputs={inputs} set={setInput} />
-              : <SlaiFields inputs={inputs} set={setInput} />
-            }
-          </Card>
-
-          {/* 4. Generate button */}
-          <Card>
-            {!postType && <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>Select a post type above to enable generation.</div>}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-              <Btn onClick={handleGenerate} disabled={!postType} loading={loading} fullWidth={false}>
-                ✨ Generate Draft
-              </Btn>
-              <CreditBadge cost={CREDIT_COSTS.generate_caption} label="estimated" />
-            </div>
-            <div style={{ fontSize: 11, color: C.muted, fontStyle: 'italic' }}>
-              Phase 0: estimated credits only — no deduction. TODO: server-side atomic deduction in Phase 1.
-            </div>
-            {error && (
-              <div style={{ marginTop: 10, padding: '9px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 7, fontSize: 13, color: C.error }}>
-                ⚠️ {error}
+        <div className="growth-ai-workspace-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 360px) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gap: 16 }}>
+            <Card>
+              <h2 style={{ margin: '0 0 12px', fontSize: 17, color: colors.text }}>Deterministic draft builder</h2>
+              <div style={{ display: 'grid', gap: 11 }}>
+                <Field label="Post type"><select aria-label="Post type" value={postTypeId} onChange={event => setPostTypeId(event.target.value)} style={controlStyle}>{brand.postTypes.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
+                <Field label="Platform"><select aria-label="Platform" value={inputs.platform} onChange={event => setInputs(value => ({ ...value, platform: event.target.value }))} style={controlStyle}>{PLATFORMS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
+                <Field label="Service type"><input aria-label="Service type" value={inputs.serviceType} onChange={event => setInputs(value => ({ ...value, serviceType: event.target.value }))} style={controlStyle} /></Field>
+                <Field label="Service area"><input aria-label="Service area" value={inputs.serviceArea} onChange={event => setInputs(value => ({ ...value, serviceArea: event.target.value }))} style={controlStyle} /></Field>
+                <Field label="Offer"><input aria-label="Offer" value={inputs.offer} onChange={event => setInputs(value => ({ ...value, offer: event.target.value }))} style={controlStyle} /></Field>
+                <Field label="Cleaning topic"><input aria-label="Cleaning topic" value={inputs.cleaningTopic} onChange={event => setInputs(value => ({ ...value, cleaningTopic: event.target.value }))} style={controlStyle} /></Field>
+                <Field label="Extra notes"><textarea aria-label="Extra notes" rows="2" value={inputs.extraNotes} onChange={event => setInputs(value => ({ ...value, extraNotes: event.target.value }))} style={controlStyle} /></Field>
+                <Button onClick={generate}>Create deterministic draft</Button>
               </div>
-            )}
-          </Card>
+              <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                {CONTENT_IDEAS.auntbs.slice(0, 4).map(idea => <Button key={idea.label} tone="secondary" onClick={() => {
+                  setPostTypeId(idea.prefill.postTypeId);
+                  setInputs(value => ({ ...value, ...idea.prefill.inputs }));
+                }}>{idea.label}</Button>)}
+              </div>
+            </Card>
 
-          {/* 5. Content ideas */}
-          <ContentIdeas brandKey={brandKey} onApplyIdea={handleApplyIdea} />
+            <Card>
+              <h2 style={{ margin: '0 0 12px', fontSize: 17, color: colors.text }}>Tenant drafts ({drafts.length})</h2>
+              {drafts.length === 0 && <p style={{ color: colors.muted, fontSize: 13 }}>No tenant drafts saved yet.</p>}
+              <div style={{ display: 'grid', gap: 8 }}>
+                {drafts.map(draft => <button type="button" key={draft.id} onClick={() => selectDraft(draft)} style={{
+                  padding: 10, textAlign: 'left', borderRadius: 6,
+                  border: `1px solid ${editor.id === draft.id ? colors.primary : colors.border}`, background: '#fff', color: colors.text, cursor: 'pointer',
+                }}><strong>{draft.title}</strong><span style={{ display: 'block', marginTop: 4, color: colors.muted, fontSize: 12 }}>{statusLabel(draft.status)} | {draft.pillar} | v{draft.version}</span></button>)}
+              </div>
+            </Card>
+          </div>
 
-          <CustomerResponseHelper key={brandKey} brandKey={brandKey} onSaveResponseDraft={handleSaveResponseDraft} />
-        </div>
+          <div style={{ display: 'grid', gap: 16 }}>
+            <Card>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', marginBottom: 12 }}>
+                <div><h2 style={{ margin: 0, fontSize: 17, color: colors.text }}>Draft editor</h2><p style={{ margin: '4px 0 0', color: colors.muted, fontSize: 12 }}>Material edits to approved content automatically clear approval and require review again.</p></div>
+                <strong style={{ color: editor.status === 'approved' ? colors.success : editor.status === 'needs_review' ? colors.warning : colors.muted }}>{statusLabel(editor.status)}</strong>
+              </div>
+              <div style={{ display: 'grid', gap: 11 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <Field label="Pillar"><select aria-label="Pillar" value={editor.pillar} onChange={event => setEditor(value => ({ ...value, pillar: event.target.value }))} style={controlStyle}>{GROWTH_AI_PILLARS.map(item => <option key={item} value={item}>{item}</option>)}</select></Field>
+                  <Field label="Action type"><input aria-label="Action type" value={editor.actionType} readOnly style={{ ...controlStyle, background: '#f1f5f9' }} /></Field>
+                </div>
+                <Field label="Title"><input aria-label="Draft title" value={editor.title} onChange={event => setEditor(value => ({ ...value, title: event.target.value }))} style={controlStyle} /></Field>
+                <Field label="Full caption"><textarea aria-label="Full caption" rows="9" value={editor.content.fullCaption} onChange={event => setEditor(value => ({ ...value, content: { ...value.content, fullCaption: event.target.value } }))} style={controlStyle} /></Field>
+                <Field label="Short caption"><textarea aria-label="Short caption" rows="3" value={editor.content.shortCaption} onChange={event => setEditor(value => ({ ...value, content: { ...value.content, shortCaption: event.target.value } }))} style={controlStyle} /></Field>
+                <Field label="Call to action"><input aria-label="Call to action" value={editor.content.callToAction} onChange={event => setEditor(value => ({ ...value, content: { ...value.content, callToAction: event.target.value } }))} style={controlStyle} /></Field>
+                <Field label="Hashtags"><input aria-label="Hashtags" value={editor.content.hashtags} onChange={event => setEditor(value => ({ ...value, content: { ...value.content, hashtags: event.target.value } }))} style={controlStyle} /></Field>
+                <Field label="Image prompt"><textarea aria-label="Image prompt" rows="3" value={editor.content.imagePrompt} onChange={event => setEditor(value => ({ ...value, content: { ...value.content, imagePrompt: event.target.value } }))} style={controlStyle} /></Field>
+              </div>
+              <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Button onClick={saveDraft} disabled={saving || !editor.content.fullCaption}>Save {editor.id ? 'changes' : 'as new draft'}</Button>
+                {editor.id && editor.status === 'draft' && <Button tone="secondary" disabled={saving} onClick={() => transition(submitGrowthAIDraftForReview, 'Draft submitted for review.')}>Submit for review</Button>}
+                {editor.id && editor.status === 'needs_review' && <Button tone="success" disabled={saving} onClick={() => transition(approveGrowthAIDraft, 'Approved inside ServicesOS. Nothing was sent or published.')}>Approve</Button>}
+                {editor.id && ['needs_review', 'approved'].includes(editor.status) && <Button tone="secondary" disabled={saving} onClick={() => transition(returnGrowthAIDraftToDraft, 'Content returned to draft status.')}>Return to draft</Button>}
+              </div>
+              {editor.status === 'approved' && <p style={{ margin: '12px 0 0', fontSize: 12, color: colors.success }}>Approved by {editor.approvedByUid} at {formatTimestamp(editor.approvedAt)}. This approval is internal only.</p>}
+            </Card>
 
-        {/* RIGHT column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          <Card>
-            <SectionHead>Draft Preview</SectionHead>
-            <DraftPreview
-              draft={activeDraft}
-              onRegenCaption={handleRegenCaption}
-              onRegenImagePrompt={handleRegenImagePrompt}
-              onSaveNew={handleSaveNew}
-              onUpdateCurrent={handleUpdateCurrent}
-              onMarkReady={handleMarkReady}
-              onMarkPosted={handleMarkPosted}
-              loading={loading}
-              activeDraftId={activeDraftId}
-            />
-          </Card>
-
-          <DraftLibrary
-            drafts={drafts}
-            activeDraftId={activeDraftId}
-            onLoad={handleLoadDraft}
-            onDuplicate={handleDuplicate}
-            onDelete={handleDelete}
-            onMarkReady={handleLibraryMarkReady}
-            onMarkPosted={handleLibraryMarkPosted}
-          />
+            <Card>
+              <h2 style={{ margin: '0 0 10px', fontSize: 17, color: colors.text }}>Immutable audit history</h2>
+              {!editor.id && <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>Save or select a draft to view its audit history.</p>}
+              {editor.id && audit.length === 0 && <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>No audit entries loaded.</p>}
+              <div style={{ display: 'grid', gap: 7 }}>{audit.map(entry => <div key={entry.id} style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 7, fontSize: 12 }}><strong>{entry.action.replaceAll('_', ' ')}</strong><span style={{ color: colors.muted }}> | {entry.fromStatus || 'none'} to {entry.toStatus} | {formatTimestamp(entry.timestamp)}</span></div>)}</div>
+            </Card>
+          </div>
         </div>
       </div>
-    </div>
+      <style>{'@media (max-width: 780px) { .growth-ai-workspace-grid { grid-template-columns: 1fr !important; } }'}</style>
+    </main>
   );
 }

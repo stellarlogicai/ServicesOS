@@ -581,6 +581,165 @@ service cloud.firestore {
                resource.data.status in ['approved', 'restricted']));
     }
 
+    function isGrowthAIAdmin(tenantId) {
+      return tenantExists(tenantId) && (isSuperAdmin() || isTenantAdmin(tenantId));
+    }
+
+    function isGrowthAIString(value, maxLength) {
+      return value is string && value.size() <= maxLength;
+    }
+
+    function isGrowthAIRefId(value) {
+      return value is string && value.size() > 0 && value.size() <= 128;
+    }
+
+    function isValidGrowthAIPhotoIds(values) {
+      return values is list && values.size() <= 8 &&
+             (values.size() < 1 || isGrowthAIRefId(values[0])) &&
+             (values.size() < 2 || isGrowthAIRefId(values[1])) &&
+             (values.size() < 3 || isGrowthAIRefId(values[2])) &&
+             (values.size() < 4 || isGrowthAIRefId(values[3])) &&
+             (values.size() < 5 || isGrowthAIRefId(values[4])) &&
+             (values.size() < 6 || isGrowthAIRefId(values[5])) &&
+             (values.size() < 7 || isGrowthAIRefId(values[6])) &&
+             (values.size() < 8 || isGrowthAIRefId(values[7]));
+    }
+
+    function isValidGrowthAISourceRefs(sourceRefs) {
+      return sourceRefs is map &&
+             sourceRefs.keys().hasOnly([
+               'leadId', 'customerId', 'estimateId', 'bookingId',
+               'photoId', 'photoIds', 'reviewId'
+             ]) &&
+             (!('leadId' in sourceRefs) || isGrowthAIRefId(sourceRefs.leadId)) &&
+             (!('customerId' in sourceRefs) || isGrowthAIRefId(sourceRefs.customerId)) &&
+             (!('estimateId' in sourceRefs) || isGrowthAIRefId(sourceRefs.estimateId)) &&
+             (!('bookingId' in sourceRefs) || isGrowthAIRefId(sourceRefs.bookingId)) &&
+             (!('photoId' in sourceRefs) || isGrowthAIRefId(sourceRefs.photoId)) &&
+             (!('photoIds' in sourceRefs) || isValidGrowthAIPhotoIds(sourceRefs.photoIds)) &&
+             (!('reviewId' in sourceRefs) || isGrowthAIRefId(sourceRefs.reviewId));
+    }
+
+    function isValidGrowthAIContent(content) {
+      return content is map &&
+             content.keys().hasAll([
+               'fullCaption', 'shortCaption', 'callToAction', 'hashtags', 'imagePrompt'
+             ]) &&
+             content.keys().hasOnly([
+               'fullCaption', 'shortCaption', 'callToAction', 'hashtags', 'imagePrompt'
+             ]) &&
+             isGrowthAIString(content.fullCaption, 5000) &&
+             isGrowthAIString(content.shortCaption, 1200) &&
+             isGrowthAIString(content.callToAction, 1200) &&
+             isGrowthAIString(content.hashtags, 1200) &&
+             isGrowthAIString(content.imagePrompt, 1200);
+    }
+
+    function hasValidGrowthAIDraftShape(data, tenantId, draftId) {
+      return data.keys().hasAll([
+               'schemaVersion', 'id', 'tenantId', 'pillar', 'actionType', 'status',
+               'title', 'content', 'sourceRefs', 'createdByUid', 'createdAt',
+               'updatedByUid', 'updatedAt', 'approvedByUid', 'approvedAt',
+               'version', 'lastAuditId'
+             ]) &&
+             data.keys().hasOnly([
+               'schemaVersion', 'id', 'tenantId', 'pillar', 'actionType', 'status',
+               'title', 'content', 'sourceRefs', 'createdByUid', 'createdAt',
+               'updatedByUid', 'updatedAt', 'approvedByUid', 'approvedAt',
+               'version', 'lastAuditId'
+             ]) &&
+             data.schemaVersion == 1 &&
+             data.id == draftId &&
+             data.tenantId == tenantId &&
+             data.pillar in ['find', 'attract', 'convert', 'retain', 'reputation'] &&
+             data.actionType is string &&
+             data.actionType.matches('^[a-z][a-z0-9_]{1,63}$') &&
+             data.status in ['draft', 'needs_review', 'approved'] &&
+             isGrowthAIString(data.title, 180) && data.title.size() > 0 &&
+             isValidGrowthAIContent(data.content) &&
+             isValidGrowthAISourceRefs(data.sourceRefs) &&
+             isGrowthAIRefId(data.lastAuditId);
+    }
+
+    function hasValidGrowthAIApproval(data) {
+      return (data.status == 'approved' &&
+                data.approvedByUid == request.auth.uid &&
+                data.approvedAt == request.time) ||
+             (data.status != 'approved' &&
+                data.approvedByUid == null &&
+                data.approvedAt == null);
+    }
+
+    function growthAIMaterialChanged() {
+      return request.resource.data.pillar != resource.data.pillar ||
+             request.resource.data.actionType != resource.data.actionType ||
+             request.resource.data.title != resource.data.title ||
+             request.resource.data.content != resource.data.content ||
+             request.resource.data.sourceRefs != resource.data.sourceRefs;
+    }
+
+    function isValidGrowthAITransition() {
+      return (resource.data.status == 'draft' &&
+                ((request.resource.data.status == 'draft' && growthAIMaterialChanged()) ||
+                 (request.resource.data.status == 'needs_review' && !growthAIMaterialChanged()))) ||
+             (resource.data.status == 'needs_review' &&
+                ((request.resource.data.status == 'needs_review' && growthAIMaterialChanged()) ||
+                 (request.resource.data.status == 'approved' && !growthAIMaterialChanged()) ||
+                 (request.resource.data.status == 'draft' && !growthAIMaterialChanged()))) ||
+             (resource.data.status == 'approved' &&
+                ((request.resource.data.status == 'needs_review' && growthAIMaterialChanged()) ||
+                 (request.resource.data.status == 'draft' && !growthAIMaterialChanged())));
+    }
+
+    function hasExpectedGrowthAIAuditAction(audit) {
+      return (resource.data.status == 'draft' && request.resource.data.status == 'draft' &&
+                audit.action == 'draft_edited') ||
+             (resource.data.status == 'draft' && request.resource.data.status == 'needs_review' &&
+                audit.action == 'submitted_for_review') ||
+             (resource.data.status == 'needs_review' && request.resource.data.status == 'needs_review' &&
+                audit.action == 'draft_edited') ||
+             (resource.data.status == 'needs_review' && request.resource.data.status == 'approved' &&
+                audit.action == 'approved') ||
+             (resource.data.status == 'needs_review' && request.resource.data.status == 'draft' &&
+                audit.action == 'returned_to_draft') ||
+             (resource.data.status == 'approved' && request.resource.data.status == 'needs_review' &&
+                audit.action == 'approval_invalidated') ||
+             (resource.data.status == 'approved' && request.resource.data.status == 'draft' &&
+                audit.action == 'returned_to_draft');
+    }
+
+    function isValidGrowthAIAuditAfter(tenantId, draftId, auditId, fromStatus, toStatus, version) {
+      let audit = getAfter(/databases/$(database)/documents/tenants/$(tenantId)/growthAIDrafts/$(draftId)/audit/$(auditId)).data;
+      return audit.keys().hasAll([
+               'schemaVersion', 'id', 'tenantId', 'draftId', 'draftVersion',
+               'action', 'actorUid', 'timestamp', 'fromStatus', 'toStatus'
+             ]) &&
+             audit.keys().hasOnly([
+               'schemaVersion', 'id', 'tenantId', 'draftId', 'draftVersion',
+               'action', 'actorUid', 'timestamp', 'fromStatus', 'toStatus'
+             ]) &&
+             audit.schemaVersion == 1 && audit.id == auditId &&
+             audit.tenantId == tenantId && audit.draftId == draftId &&
+             audit.draftVersion == version && audit.actorUid == request.auth.uid &&
+             audit.timestamp == request.time && audit.fromStatus == fromStatus &&
+             audit.toStatus == toStatus;
+    }
+
+    function isValidGrowthAIBrandProfile(data, tenantId) {
+      return data.keys().hasAll([
+               'schemaVersion', 'tenantId', 'brandVoice', 'contentTone', 'defaultCTA',
+               'createdByUid', 'createdAt', 'updatedByUid', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'schemaVersion', 'tenantId', 'brandVoice', 'contentTone', 'defaultCTA',
+               'createdByUid', 'createdAt', 'updatedByUid', 'updatedAt'
+             ]) &&
+             data.schemaVersion == 1 && data.tenantId == tenantId &&
+             isGrowthAIString(data.brandVoice, 500) &&
+             isGrowthAIString(data.contentTone, 300) &&
+             isGrowthAIString(data.defaultCTA, 500);
+    }
+
     match /tenants/{tenantId} {
       allow read: if isSuperAdmin() || isTenantAdmin(tenantId);
       allow create: if isSuperAdmin() && tenantId != 'DEFAULT';
@@ -623,6 +782,94 @@ service cloud.firestore {
         allow create: if isValidCleaningProductCreate(tenantId, recordId);
         allow update: if isValidCleaningProductUpdate(tenantId, recordId);
         allow delete: if false;
+      }
+
+      match /growthAI/{profileId} {
+        allow read: if profileId == 'config' && isGrowthAIAdmin(tenantId);
+        allow create: if profileId == 'config' && isGrowthAIAdmin(tenantId) &&
+                         isValidGrowthAIBrandProfile(request.resource.data, tenantId) &&
+                         request.resource.data.createdByUid == request.auth.uid &&
+                         request.resource.data.createdAt == request.time &&
+                         request.resource.data.updatedByUid == request.auth.uid &&
+                         request.resource.data.updatedAt == request.time;
+        allow update: if profileId == 'config' && isGrowthAIAdmin(tenantId) &&
+                         isValidGrowthAIBrandProfile(request.resource.data, tenantId) &&
+                         request.resource.data.createdByUid == resource.data.createdByUid &&
+                         request.resource.data.createdAt == resource.data.createdAt &&
+                         request.resource.data.updatedByUid == request.auth.uid &&
+                         request.resource.data.updatedAt == request.time;
+        allow delete: if false;
+      }
+
+      match /growthAIDrafts/{draftId} {
+        allow read: if isGrowthAIAdmin(tenantId);
+        allow create: if isGrowthAIAdmin(tenantId) &&
+                         hasValidGrowthAIDraftShape(request.resource.data, tenantId, draftId) &&
+                         request.resource.data.status == 'draft' &&
+                         request.resource.data.createdByUid == request.auth.uid &&
+                         request.resource.data.createdAt == request.time &&
+                         request.resource.data.updatedByUid == request.auth.uid &&
+                         request.resource.data.updatedAt == request.time &&
+                         request.resource.data.approvedByUid == null &&
+                         request.resource.data.approvedAt == null &&
+                         request.resource.data.version == 1 &&
+                         isValidGrowthAIAuditAfter(
+                           tenantId, draftId, request.resource.data.lastAuditId,
+                           null, 'draft', 1
+                         ) &&
+                         getAfter(/databases/$(database)/documents/tenants/$(tenantId)/growthAIDrafts/$(draftId)/audit/$(request.resource.data.lastAuditId)).data.action == 'draft_created';
+        allow update: if isGrowthAIAdmin(tenantId) &&
+                         hasValidGrowthAIDraftShape(request.resource.data, tenantId, draftId) &&
+                         request.resource.data.id == resource.data.id &&
+                         request.resource.data.tenantId == resource.data.tenantId &&
+                         request.resource.data.createdByUid == resource.data.createdByUid &&
+                         request.resource.data.createdAt == resource.data.createdAt &&
+                         request.resource.data.updatedByUid == request.auth.uid &&
+                         request.resource.data.updatedAt == request.time &&
+                         request.resource.data.version == resource.data.version + 1 &&
+                         request.resource.data.lastAuditId != resource.data.lastAuditId &&
+                         hasValidGrowthAIApproval(request.resource.data) &&
+                         isValidGrowthAITransition() &&
+                         isValidGrowthAIAuditAfter(
+                           tenantId, draftId, request.resource.data.lastAuditId,
+                           resource.data.status, request.resource.data.status,
+                           request.resource.data.version
+                         ) &&
+                         hasExpectedGrowthAIAuditAction(
+                           getAfter(/databases/$(database)/documents/tenants/$(tenantId)/growthAIDrafts/$(draftId)/audit/$(request.resource.data.lastAuditId)).data
+                         );
+        allow delete: if false;
+
+        match /audit/{auditId} {
+          allow read: if isGrowthAIAdmin(tenantId);
+          allow create: if isGrowthAIAdmin(tenantId) &&
+                           request.resource.data.keys().hasAll([
+                             'schemaVersion', 'id', 'tenantId', 'draftId', 'draftVersion',
+                             'action', 'actorUid', 'timestamp', 'fromStatus', 'toStatus'
+                           ]) &&
+                           request.resource.data.keys().hasOnly([
+                             'schemaVersion', 'id', 'tenantId', 'draftId', 'draftVersion',
+                             'action', 'actorUid', 'timestamp', 'fromStatus', 'toStatus'
+                           ]) &&
+                           request.resource.data.schemaVersion == 1 &&
+                           request.resource.data.id == auditId &&
+                           request.resource.data.tenantId == tenantId &&
+                           request.resource.data.draftId == draftId &&
+                           request.resource.data.actorUid == request.auth.uid &&
+                           request.resource.data.timestamp == request.time &&
+                           request.resource.data.action in [
+                             'draft_created', 'draft_edited', 'submitted_for_review',
+                             'approved', 'approval_invalidated', 'returned_to_draft'
+                           ] &&
+                           getAfter(/databases/$(database)/documents/tenants/$(tenantId)/growthAIDrafts/$(draftId)).data.lastAuditId == auditId &&
+                           getAfter(/databases/$(database)/documents/tenants/$(tenantId)/growthAIDrafts/$(draftId)).data.version == request.resource.data.draftVersion &&
+                           ((!exists(/databases/$(database)/documents/tenants/$(tenantId)/growthAIDrafts/$(draftId)) &&
+                              request.resource.data.fromStatus == null) ||
+                            (exists(/databases/$(database)/documents/tenants/$(tenantId)/growthAIDrafts/$(draftId)) &&
+                              request.resource.data.fromStatus == get(/databases/$(database)/documents/tenants/$(tenantId)/growthAIDrafts/$(draftId)).data.status)) &&
+                           request.resource.data.toStatus == getAfter(/databases/$(database)/documents/tenants/$(tenantId)/growthAIDrafts/$(draftId)).data.status;
+          allow update, delete: if false;
+        }
       }
 
       match /payments/{paymentId} {

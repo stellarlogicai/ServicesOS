@@ -137,7 +137,7 @@ const NAV_ITEMS = [
     id: "growth-ai",
     icon: "🚀",
     label: "GrowthAI",
-    roles: ["super-admin"],
+    roles: ["admin", "super-admin"],
   },
   {
     id: "backup",
@@ -166,6 +166,7 @@ const TENANT_SCOPED_PAGES = new Set([
   'business-settings',
   'insurance',
   'data-export',
+  'growth-ai',
   'ai-training',
   'settings',
 ]);
@@ -470,7 +471,7 @@ function AuthenticatedApp() {
       case "customer-portal":   return <CustomerPortal />;
       case "tenant-management": return <TenantManagement />;
       case "ai-training":       return <AIModelTraining key={tenantId} />;
-      case "growth-ai":         return <GrowthAIPage />;
+      case "growth-ai":         return <GrowthAIPage key={tenantId} />;
       case "backup":            return <BackupPanel />;
       case "settings":          return <CompanySettings key={tenantId} />;
       default:                  return null;
