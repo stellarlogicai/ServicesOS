@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GrowthAIPage from '../modules/growthAI/GrowthAIPage';
 
@@ -193,6 +193,83 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     }));
     expect(screen.queryByText(/Approved by admin-a/)).not.toBeInTheDocument();
     expect(screen.getAllByText(/approval invalidated/).length).toBeGreaterThan(0);
+  });
+
+  it('keeps the current draft audit when an older audit request resolves last', async () => {
+    const draftA = savedDraft({ id: 'draft-a', title: 'Draft A' });
+    const draftB = savedDraft({ id: 'draft-b', title: 'Draft B' });
+    state.drafts = [draftA, draftB];
+    let resolveDraftA;
+    let resolveDraftB;
+    service.listGrowthAIDraftAudit.mockImplementation((tenantId, draftId) => {
+      expect(tenantId).toBe('tenant-a');
+      return new Promise(resolve => {
+        if (draftId === 'draft-a') resolveDraftA = resolve;
+        if (draftId === 'draft-b') resolveDraftB = resolve;
+      });
+    });
+
+    render(<GrowthAIPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /Draft A/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Draft B/ }));
+
+    await act(async () => resolveDraftB([{
+      id: 'audit-b', action: 'draft_b_selected', fromStatus: 'draft', toStatus: 'draft', timestamp: timestamp(),
+    }]));
+    expect(await screen.findByText('draft b selected')).toBeInTheDocument();
+
+    await act(async () => resolveDraftA([{
+      id: 'audit-a', action: 'draft_a_selected', fromStatus: 'draft', toStatus: 'draft', timestamp: timestamp(),
+    }]));
+    expect(screen.getByText('draft b selected')).toBeInTheDocument();
+    expect(screen.queryByText('draft a selected')).not.toBeInTheDocument();
+  });
+
+  it('restores deterministic marketing outputs and copy controls', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    render(<GrowthAIPage />);
+    await screen.findByText('No tenant drafts saved yet.');
+
+    fireEvent.change(screen.getByLabelText('Service area'), { target: { value: 'Test City' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
+
+    const fullCaption = screen.getByLabelText('Full caption').value;
+    expect(fullCaption).toContain('#TenantACleaning');
+    expect(screen.getByLabelText('Short caption').value).not.toBe('');
+    expect(screen.getByLabelText('Call to action')).not.toHaveValue('');
+    expect(screen.getByLabelText('Hashtags')).not.toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy full caption' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(fullCaption));
+    expect(screen.getByRole('button', { name: 'Copied' })).toBeInTheDocument();
+  });
+
+  it('restores deterministic customer response scenarios and persists them as tenant drafts', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    render(<GrowthAIPage />);
+    await screen.findByText('No tenant drafts saved yet.');
+
+    fireEvent.change(screen.getByLabelText('Response scenario'), { target: { value: 'review-request' } });
+    fireEvent.change(screen.getByLabelText('Response channel'), { target: { value: 'email' } });
+    expect(screen.getAllByText(/Thank you for choosing Tenant A Cleaning/)).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy response' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Tenant A Cleaning')));
+    fireEvent.click(screen.getByRole('button', { name: 'Save response draft' }));
+
+    await waitFor(() => expect(service.createGrowthAIDraft).toHaveBeenCalledWith('tenant-a', expect.objectContaining({
+      pillar: 'convert',
+      actionType: 'customer_response',
+      title: expect.stringContaining('[Customer response]'),
+      content: expect.objectContaining({
+        fullCaption: expect.stringContaining('Tenant A Cleaning'),
+        callToAction: 'Review and send manually',
+      }),
+      sourceRefs: {},
+    })));
+    expect(await screen.findByText(/Customer response draft saved for this tenant/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Action type')).toHaveValue('customer_response');
   });
 
   it('blocks ordinary employees before loading tenant GrowthAI records', () => {

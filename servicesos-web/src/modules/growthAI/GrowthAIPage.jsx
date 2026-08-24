@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { BRANDS, CONTENT_IDEAS, PLATFORMS } from './brandProfiles';
 import { generateDraft } from './growthAIService';
+import { RESPONSE_CHANNELS, RESPONSE_SCENARIOS, buildResponseTemplate } from './responseTemplates';
 import {
   approveGrowthAIDraft,
   createGrowthAIDraft,
@@ -52,6 +53,86 @@ function Button({ children, onClick, disabled, tone = 'primary' }) {
   );
 }
 
+function CopyButton({ label, text }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = useCallback(async () => {
+    const fallback = () => {
+      const textarea = document.createElement('textarea');
+      try {
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand?.('copy');
+      } finally {
+        textarea.remove();
+      }
+    };
+
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else fallback();
+      setCopied(true);
+    } catch {
+      fallback();
+      setCopied(true);
+    }
+  }, [text]);
+
+  return <Button tone="secondary" disabled={!text} onClick={copy}>{copied ? 'Copied' : label}</Button>;
+}
+
+function CustomerResponseHelper({ businessName, onSave, saving }) {
+  const scenarios = RESPONSE_SCENARIOS.auntbs;
+  const [scenarioId, setScenarioId] = useState(scenarios[0].id);
+  const [channelId, setChannelId] = useState('sms');
+  const responseTemplate = useMemo(() => {
+    const template = buildResponseTemplate({ brandKey: 'auntbs', scenarioId, channelId });
+    const replaceBusinessName = value => value
+      .replaceAll("Aunt B's Cleaning Services", businessName)
+      .replace(/^Aunt B response/, `${businessName} response`);
+    return {
+      ...template,
+      title: replaceBusinessName(template.title),
+      subjectLine: replaceBusinessName(template.subjectLine),
+      messageTemplate: replaceBusinessName(template.messageTemplate),
+    };
+  }, [businessName, channelId, scenarioId]);
+
+  return (
+    <Card>
+      <h2 style={{ margin: '0 0 5px', fontSize: 17, color: colors.text }}>Customer response draft helper</h2>
+      <p style={{ margin: '0 0 14px', color: colors.muted, fontSize: 12 }}>
+        Deterministic private templates only. Nothing is sent automatically. Review and edit before sending manually.
+      </p>
+      <div style={{ display: 'grid', gap: 11 }}>
+        <Field label="Response scenario">
+          <select aria-label="Response scenario" value={scenarioId} onChange={event => setScenarioId(event.target.value)} style={controlStyle}>
+            {scenarios.map(item => <option key={item.id} value={item.id}>{item.scenario}</option>)}
+          </select>
+        </Field>
+        <Field label="Response channel">
+          <select aria-label="Response channel" value={channelId} onChange={event => setChannelId(event.target.value)} style={controlStyle}>
+            {RESPONSE_CHANNELS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </Field>
+        <div style={{ padding: 12, background: '#f8fafc', border: `1px solid ${colors.border}`, borderRadius: 6 }}>
+          <strong style={{ display: 'block', fontSize: 14 }}>{responseTemplate.title}</strong>
+          {responseTemplate.subjectLine && <p style={{ margin: '8px 0 0', fontSize: 12 }}><strong>Subject:</strong> {responseTemplate.subjectLine}</p>}
+          <p style={{ margin: '9px 0 0', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6 }}>{responseTemplate.messageTemplate}</p>
+        </div>
+        <p style={{ margin: 0, color: colors.muted, fontSize: 12 }}>{responseTemplate.notes}</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <CopyButton label="Copy response" text={responseTemplate.messageTemplate} />
+          <Button tone="secondary" disabled={saving} onClick={() => onSave(responseTemplate)}>Save response draft</Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function statusLabel(status) {
   if (status === 'needs_review') return 'Needs review';
   if (status === 'approved') return 'Approved';
@@ -86,6 +167,7 @@ export default function GrowthAIPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const auditRequestSequence = useRef(0);
 
   const businessSettings = currentTenant?.businessSettings || {};
   const businessName = businessSettings.businessName || currentTenant?.businessName || 'Your business';
@@ -132,8 +214,17 @@ export default function GrowthAIPage() {
   }, [authorized, tenantId]);
 
   const loadAudit = useCallback(async draftId => {
-    if (!draftId) return setAudit([]);
-    setAudit(await listGrowthAIDraftAudit(tenantId, draftId));
+    const requestSequence = ++auditRequestSequence.current;
+    if (!draftId) {
+      setAudit([]);
+      return;
+    }
+    try {
+      const nextAudit = await listGrowthAIDraftAudit(tenantId, draftId);
+      if (requestSequence === auditRequestSequence.current) setAudit(nextAudit);
+    } catch (err) {
+      if (requestSequence === auditRequestSequence.current) throw err;
+    }
   }, [tenantId]);
 
   const runAction = useCallback(async (action, successMessage) => {
@@ -161,10 +252,26 @@ export default function GrowthAIPage() {
       ...previous, id: null, pillar: 'attract', actionType: 'marketing_post', title: generated.title,
       content: { ...emptyContent, ...generated }, sourceRefs: {}, status: 'draft', approvedByUid: null, approvedAt: null,
     }));
-    setAudit([]);
+    void loadAudit(null);
     setMessage('Deterministic draft created locally. Save it to persist it for this tenant.');
     setError('');
   };
+
+  const saveResponseDraft = responseTemplate => runAction(
+    () => createGrowthAIDraft(tenantId, {
+      pillar: 'convert',
+      actionType: 'customer_response',
+      title: `[Customer response] ${responseTemplate.title}`,
+      content: {
+        ...emptyContent,
+        fullCaption: responseTemplate.messageTemplate,
+        shortCaption: responseTemplate.subjectLine || responseTemplate.messageTemplate.slice(0, 140),
+        callToAction: 'Review and send manually',
+      },
+      sourceRefs: {},
+    }),
+    'Customer response draft saved for this tenant. Nothing was sent.',
+  );
 
   const draftInput = () => ({
     pillar: editor.pillar, actionType: editor.actionType, title: editor.title,
@@ -253,6 +360,8 @@ export default function GrowthAIPage() {
               </div>
             </Card>
 
+            <CustomerResponseHelper businessName={businessName} onSave={saveResponseDraft} saving={saving} />
+
             <Card>
               <h2 style={{ margin: '0 0 12px', fontSize: 17, color: colors.text }}>Tenant drafts ({drafts.length})</h2>
               {drafts.length === 0 && <p style={{ color: colors.muted, fontSize: 13 }}>No tenant drafts saved yet.</p>}
@@ -282,6 +391,13 @@ export default function GrowthAIPage() {
                 <Field label="Call to action"><input aria-label="Call to action" value={editor.content.callToAction} onChange={event => setEditor(value => ({ ...value, content: { ...value.content, callToAction: event.target.value } }))} style={controlStyle} /></Field>
                 <Field label="Hashtags"><input aria-label="Hashtags" value={editor.content.hashtags} onChange={event => setEditor(value => ({ ...value, content: { ...value.content, hashtags: event.target.value } }))} style={controlStyle} /></Field>
                 <Field label="Image prompt"><textarea aria-label="Image prompt" rows="3" value={editor.content.imagePrompt} onChange={event => setEditor(value => ({ ...value, content: { ...value.content, imagePrompt: event.target.value } }))} style={controlStyle} /></Field>
+              </div>
+              <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <CopyButton label="Copy full caption" text={editor.content.fullCaption} />
+                <CopyButton label="Copy short caption" text={editor.content.shortCaption} />
+                <CopyButton label="Copy call to action" text={editor.content.callToAction} />
+                <CopyButton label="Copy hashtags" text={editor.content.hashtags} />
+                <CopyButton label="Copy image prompt" text={editor.content.imagePrompt} />
               </div>
               <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Button onClick={saveDraft} disabled={saving || !editor.content.fullCaption}>Save {editor.id ? 'changes' : 'as new draft'}</Button>
