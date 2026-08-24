@@ -136,22 +136,35 @@ const JOB_PACKET_TABS = Object.freeze([
   { id: 'photos', label: 'Photos' },
 ]);
 
+const FIELD_MODE_DISPLAY_LABELS = Object.freeze({
+  standard: 'Standard',
+  deep: 'Deep',
+  maintenance: 'Maintenance',
+  'bathroom focus': 'Bathroom Focus',
+  'kitchen focus': 'Kitchen Focus',
+  scheduled: 'Scheduled',
+  'scheduled / not started': 'Scheduled / Not Started',
+});
+
+function fieldModeDisplayLabel(value) {
+  if (typeof value !== 'string') return value;
+  return FIELD_MODE_DISPLAY_LABELS[value.trim().toLowerCase()] || value;
+}
+
 function JobCard({ booking, employeeView, onOpen }) {
   return (
     <article className="v1-card field-job-card">
-      <div className="field-job-card-header">
-        <div>
-          <div className="field-job-time">{bookingSchedule(booking)}</div>
-          <h2>{bookingCustomerName(booking)}</h2>
-          <p>{bookingServiceType(booking)}</p>
-        </div>
-        <div className="field-job-badges">
-          <span className="v1-pill">{bookingStatus(booking)}</span>
-          <span className="v1-pill">{fieldStatusLabel(booking)}</span>
-          {!employeeView && <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>}
-        </div>
+      <div className="field-job-time">{bookingSchedule(booking)}</div>
+      <div className="field-job-summary">
+        <h2>{bookingCustomerName(booking)}</h2>
+        <p>{fieldModeDisplayLabel(bookingServiceType(booking))}</p>
       </div>
       <div className="field-job-address">{bookingAddress(booking)}</div>
+      <div className="field-job-badges">
+        <span className="v1-pill">{fieldModeDisplayLabel(bookingStatus(booking))}</span>
+        <span className="v1-pill">{fieldModeDisplayLabel(fieldStatusLabel(booking))}</span>
+        {!employeeView && <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>}
+      </div>
       <button className="v1-button v1-button-secondary" type="button" onClick={() => onOpen(booking)}>Open job packet</button>
     </article>
   );
@@ -382,13 +395,13 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
           hidden={activeTab !== 'info'}
         >
           <div className="field-job-badges">
-            <span className="v1-pill">{bookingStatus(booking)}</span>
-            <span className="v1-pill">{BOOKING_FIELD_STATUS_LABELS[fieldStatus] || BOOKING_FIELD_STATUS_LABELS.not_started}</span>
+            <span className="v1-pill">{fieldModeDisplayLabel(bookingStatus(booking))}</span>
+            <span className="v1-pill">{fieldModeDisplayLabel(BOOKING_FIELD_STATUS_LABELS[fieldStatus] || BOOKING_FIELD_STATUS_LABELS.not_started)}</span>
             {!employeeView && <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>}
           </div>
           <dl className="field-job-details">
             <dt>Schedule</dt><dd>{bookingSchedule(booking)}</dd>
-            <dt>Service</dt><dd>{bookingServiceType(booking)}</dd>
+            <dt>Service</dt><dd>{fieldModeDisplayLabel(bookingServiceType(booking))}</dd>
             <dt>Address</dt><dd>{address}</dd>
             <dt>Notes</dt><dd>{employeeView ? fieldSafeInstructions(booking) : bookingNotes(booking)}</dd>
             <dt>Phone</dt><dd>{phone}</dd>
@@ -448,7 +461,7 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
               <h3 id="field-job-execution-title">Job execution</h3>
               <p>Job completion is separate from payment status.</p>
             </div>
-            <span className="v1-pill">{BOOKING_FIELD_STATUS_LABELS[fieldStatus] || BOOKING_FIELD_STATUS_LABELS.not_started}</span>
+            <span className="v1-pill">{fieldModeDisplayLabel(BOOKING_FIELD_STATUS_LABELS[fieldStatus] || BOOKING_FIELD_STATUS_LABELS.not_started)}</span>
           </div>
           <div className="field-job-execution-controls">
             <button

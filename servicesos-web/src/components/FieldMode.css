@@ -1,15 +1,27 @@
-.field-mode-page { max-width: 920px; }
+.field-mode-page { max-width: 1160px; }
 .field-mode-sections { display: grid; gap: 28px; }
 .field-mode-sections > section { display: grid; gap: 12px; }
 .field-mode-sections h2 { margin: 0; font-size: 18px; color: var(--v1-text); }
-.field-job-card { padding: 18px 20px; }
-.field-job-card-header { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
-.field-job-card h2 { margin: 5px 0 3px; font-size: 19px; }
+.field-job-card {
+  display: grid;
+  grid-template-areas:
+    "time summary action"
+    "address address action"
+    "badges badges badges";
+  grid-template-columns: 120px minmax(0, 1fr) auto;
+  gap: 8px 18px;
+  align-items: center;
+  padding: 10px 14px;
+  text-align: left;
+}
+.field-job-card h2 { margin: 0 0 3px; overflow-wrap: anywhere; font-size: 18px; line-height: 1.25; }
 .field-job-card p { margin: 0; color: var(--v1-muted); }
-.field-job-time { color: var(--v1-accent-hover); font-size: 14px; font-weight: 800; }
+.field-job-time { grid-area: time; color: var(--v1-accent-hover); font-size: 14px; font-weight: 800; line-height: 1.4; text-align: center; }
+.field-job-summary { grid-area: summary; min-width: 0; }
 .field-job-badges { display: flex; flex-wrap: wrap; gap: 7px; }
-.field-job-card .field-job-badges { justify-content: flex-end; }
-.field-job-address { margin: 16px 0; color: #526278; }
+.field-job-card .field-job-badges { grid-area: badges; justify-content: flex-start; }
+.field-job-address { grid-area: address; min-width: 0; margin: 0; overflow-wrap: anywhere; color: #526278; }
+.field-job-card > .v1-button { grid-area: action; min-height: 44px; align-self: center; white-space: nowrap; }
 html:has(.field-job-packet),
 body:has(.field-job-packet) { overflow: hidden; }
 .field-job-packet { width: min(92vw, 960px); overscroll-behavior: contain; }
@@ -140,8 +152,22 @@ body:has(.field-job-packet) { overflow: hidden; }
   .field-job-info-panel .field-job-details { grid-template-columns: 90px minmax(0, 1fr) 90px minmax(0, 1fr); }
   .field-job-checklist { width: 100%; max-width: 780px; margin-inline: auto; }
 }
+@media (min-width: 1000px) {
+  .field-job-card {
+    grid-template-areas:
+      "time summary address action"
+      "time badges badges action";
+    grid-template-columns: 140px minmax(170px, .9fr) minmax(220px, 1.35fr) auto;
+  }
+}
 @media (max-width: 640px) {
-  .field-job-card-header { flex-direction: column; }
+  .field-job-card {
+    grid-template-areas: "time" "summary" "address" "badges" "action";
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px 16px;
+  }
+  .field-job-card > .v1-button { width: 100%; }
   .field-job-packet-header {
     top: -20px;
     align-items: center;
@@ -149,7 +175,6 @@ body:has(.field-job-packet) { overflow: hidden; }
     padding: max(16px, env(safe-area-inset-top)) 16px 12px;
   }
   .field-job-packet-header h2 { font-size: 20px; }
-  .field-job-card .field-job-badges { justify-content: flex-start; }
   .field-job-details { grid-template-columns: 1fr; gap: 3px; }
   .field-job-details dd { margin-bottom: 9px; }
   .field-job-action-buttons { flex-direction: column; align-items: center; }

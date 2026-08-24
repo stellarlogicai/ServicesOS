@@ -196,6 +196,7 @@ describe('FieldMode read-only field surface', () => {
   it('loads tenant jobs and groups only today and upcoming bookings', async () => {
     mocks.getJobs.mockResolvedValue({ success: true, data: [
       { id: 'past', customerName: 'Past Customer', date: dateKey(yesterday), startTime: '09:00' },
+      { id: 'today-early', customerName: 'Early Today Customer', date: dateKey(today), startTime: '08:00', serviceType: 'Standard clean' },
       { id: 'today', customerName: 'Today Customer', date: dateKey(today), startTime: '10:00', serviceType: 'Deep clean' },
       { id: 'future', customerName: 'Upcoming Customer', date: dateKey(tomorrow), startTime: '11:00' },
     ] });
@@ -206,7 +207,39 @@ describe('FieldMode read-only field surface', () => {
     expect(screen.getByText('Upcoming Customer')).toBeInTheDocument();
     expect(screen.queryByText('Past Customer')).not.toBeInTheDocument();
     expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a');
-    expect(within(screen.getByRole('region', { name: 'Today' })).getByText('Deep clean')).toBeInTheDocument();
+    const todayRegion = screen.getByRole('region', { name: 'Today' });
+    const todayCards = within(todayRegion).getAllByRole('article');
+    expect(todayCards).toHaveLength(2);
+    expect(todayCards[0]).toHaveTextContent('Early Today Customer');
+    expect(todayCards[1]).toHaveTextContent('Today Customer');
+    expect(within(todayRegion).getByText('Deep clean')).toBeInTheDocument();
+
+    fireEvent.click(within(todayCards[1]).getByRole('button', { name: 'Open job packet' }));
+    expect(screen.getByRole('dialog', { name: 'Today Customer' })).toBeInTheDocument();
+  });
+
+  it('formats known Field Mode labels without changing stored booking values', async () => {
+    const jobs = [
+      { id: 'standard', customerName: 'Standard Customer', date: dateKey(today), startTime: '08:00', serviceType: 'standard', status: 'scheduled' },
+      { id: 'deep', customerName: 'Deep Customer', date: dateKey(today), startTime: '09:00', serviceType: 'deep' },
+      { id: 'maintenance', customerName: 'Maintenance Customer', date: dateKey(today), startTime: '10:00', serviceType: 'maintenance' },
+      { id: 'bathroom', customerName: 'Bathroom Customer', date: dateKey(today), startTime: '11:00', serviceType: 'bathroom focus' },
+      { id: 'kitchen', customerName: 'Kitchen Customer', date: dateKey(today), startTime: '12:00', serviceType: 'kitchen focus' },
+    ];
+    const originalJobs = structuredClone(jobs);
+    mocks.getJobs.mockResolvedValue({ success: true, data: jobs });
+
+    render(<FieldMode />);
+
+    const todayRegion = await screen.findByRole('region', { name: 'Today' });
+    expect(within(todayRegion).getByText('Standard')).toBeInTheDocument();
+    expect(within(todayRegion).getByText('Deep')).toBeInTheDocument();
+    expect(within(todayRegion).getByText('Maintenance')).toBeInTheDocument();
+    expect(within(todayRegion).getByText('Bathroom Focus')).toBeInTheDocument();
+    expect(within(todayRegion).getByText('Kitchen Focus')).toBeInTheDocument();
+    expect(within(todayRegion).getByText('Scheduled')).toBeInTheDocument();
+    expect(within(todayRegion).getAllByText('Scheduled / Not Started')).toHaveLength(5);
+    expect(jobs).toEqual(originalJobs);
   });
 
   it('opens a read-only job packet with call and maps links when data exists', async () => {
