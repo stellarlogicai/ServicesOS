@@ -29,6 +29,36 @@
 .field-job-packet-header .v1-button { min-width: 64px; min-height: 44px; flex: 0 0 auto; }
 .field-job-packet-header p { margin: 0 0 5px; color: var(--v1-muted); font-size: 13px; }
 .field-job-packet-header h2 { margin: 0; overflow-wrap: anywhere; color: var(--v1-text); font-size: 24px; }
+.field-job-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 0 18px;
+  padding: 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f1f5f9;
+}
+.field-job-tab {
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.field-job-tab[aria-selected="true"] { background: #fff; color: #1d4ed8; box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
+.field-job-tab:focus-visible, .field-job-checklist-area-heading:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.field-job-tab-panel { min-width: 0; }
+.field-job-tab-panel[hidden] { display: none; }
+.field-job-info-panel { display: grid; gap: 20px; }
+.field-job-info-panel .field-job-details { margin: 0; }
+.field-job-info-panel .field-job-actions { margin-top: 0; }
+.field-job-tab-empty { margin: 0; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 14px; color: var(--v1-muted); }
 .field-job-details { display: grid; grid-template-columns: 110px 1fr; gap: 10px 16px; margin: 22px 0; }
 .field-job-details dt { color: var(--v1-muted); font-size: 13px; font-weight: 700; }
 .field-job-details dd { margin: 0; color: var(--v1-text); white-space: pre-wrap; }
@@ -40,6 +70,7 @@
 .field-job-unavailable { display: inline-flex; min-height: 40px; align-items: center; color: var(--v1-muted); font-size: 13px; }
 .field-job-action-status { min-height: 38px; max-width: 520px; color: var(--v1-muted); font-size: 13px; line-height: 1.45; }
 .field-job-execution { display: grid; gap: 16px; margin-top: 24px; padding: 18px; border: 1px solid #dbeafe; border-radius: 12px; background: #eff6ff; }
+.field-job-tab-panel.field-job-execution { margin-top: 0; }
 .field-job-execution-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .field-job-execution h3, .field-job-execution h4 { margin: 0; color: var(--v1-text); }
 .field-job-execution-header p, .field-job-checklist p { margin: 5px 0 0; color: var(--v1-muted); font-size: 13px; line-height: 1.45; }
@@ -53,25 +84,45 @@
 .field-job-prep-context p, .field-job-prep-context ul { margin: 0; font-size: 13px; line-height: 1.5; }
 .field-job-prep-context ul { padding-left: 20px; }
 .field-job-checklist-groups { display: grid; gap: 16px; }
-.field-job-checklist-area { display: grid; gap: 8px; }
-.field-job-checklist-area-heading { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 7px 9px; border-radius: 6px; background: #dbeafe; }
-.field-job-checklist-area-heading h5 { margin: 0; color: #1e3a8a; font-size: 14px; }
-.field-job-checklist-area-heading span { color: #1e40af; font-size: 12px; font-weight: 700; }
+.field-job-checklist-area { display: grid; gap: 8px; min-width: 0; }
+.field-job-checklist-area-heading {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #dbeafe;
+  color: #1e40af;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.field-job-checklist-area-title { display: flex; min-width: 0; gap: 10px; align-items: center; color: #1e3a8a; font-size: 14px; font-weight: 800; }
+.field-job-checklist-area-heading > span:last-child { flex: 0 0 auto; color: #1e40af; font-size: 12px; font-weight: 700; }
+.field-job-checklist-chevron { width: 8px; height: 8px; flex: 0 0 auto; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform 160ms ease; }
+.field-job-checklist-area-heading[aria-expanded="true"] .field-job-checklist-chevron { transform: rotate(45deg) translate(-2px, -2px); }
 .field-job-checklist-items { display: grid; gap: 8px; }
+.field-job-checklist-items[hidden] { display: none; }
 .field-job-checklist-item { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid #bfdbfe; border-radius: 8px; background: #fff; color: var(--v1-text); font-size: 14px; line-height: 1.4; }
-.field-job-checklist-item-main { display: flex; gap: 10px; align-items: flex-start; }
-.field-job-checklist-item input { margin-top: 2px; }
-.field-job-checklist-item span { min-width: 0; }
-.field-job-checklist-item span strong, .field-job-checklist-item span small, .field-job-checklist-job-aid small { display: block; margin-bottom: 2px; color: var(--v1-muted); font-size: 12px; }
-.field-job-checklist-item span .field-job-checklist-requirement { color: #1d4ed8; font-weight: 700; }
-.field-job-checklist-job-aid { margin-left: 28px; color: #334155; font-size: 13px; }
+.field-job-checklist-item-main { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; align-items: start; cursor: pointer; }
+.field-job-checklist-control { display: flex; width: 44px; height: 44px; align-items: flex-start; justify-content: center; }
+.field-job-checklist-control input { width: 20px; height: 20px; margin: 10px 0 0; }
+.field-job-checklist-content { display: grid; min-width: 0; gap: 2px; padding: 8px 0; text-align: left; overflow-wrap: anywhere; }
+.field-job-checklist-content strong, .field-job-checklist-content small, .field-job-checklist-job-aid small { display: block; margin-bottom: 2px; color: var(--v1-muted); font-size: 12px; text-align: left; }
+.field-job-checklist-content .field-job-checklist-requirement { color: #1d4ed8; font-weight: 700; }
+.field-job-checklist-job-aid { margin-left: 54px; color: #334155; font-size: 13px; }
 .field-job-checklist-job-aid summary { width: fit-content; cursor: pointer; color: #1d4ed8; font-weight: 700; }
 .field-job-checklist-job-aid p, .field-job-checklist-job-aid ol { margin: 8px 0 0; line-height: 1.5; }
 .field-job-checklist-job-aid ol { padding-left: 20px; }
 .field-job-checklist-job-aid li + li { margin-top: 4px; }
 .field-job-checklist-warnings { margin-top: 12px; padding: 10px 12px; border: 1px solid #fbbf24; border-radius: 6px; background: #fffbeb; color: #92400e; }
 .field-job-checklist-warnings ul { margin: 4px 0 0; padding-left: 20px; }
-.field-job-checklist-method { margin-left: 28px; border-top: 1px solid #dbeafe; padding-top: 8px; color: #334155; font-size: 13px; }
+.field-job-checklist-method { margin-left: 54px; border-top: 1px solid #dbeafe; padding-top: 8px; color: #334155; font-size: 13px; }
 .field-job-checklist-method summary { width: fit-content; cursor: pointer; color: #0f766e; font-weight: 700; }
 .field-job-checklist-method h6 { margin: 10px 0 4px; color: #134e4a; font-size: 14px; }
 .field-job-checklist-method p, .field-job-checklist-method ol, .field-job-checklist-method ul { margin: 5px 0 0; }

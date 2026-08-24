@@ -128,6 +128,16 @@ function approvedChecklistWithRequiredOutcomes(requiredCount, completedCount = 0
   };
 }
 
+function selectJobPacketTab(name, container = screen) {
+  fireEvent.click(container.getByRole('tab', { name }));
+}
+
+function expandChecklistRoom(name, container = screen) {
+  const heading = container.getByRole('button', { name: new RegExp(`^${name}\\b`) });
+  if (heading.getAttribute('aria-expanded') !== 'true') fireEvent.click(heading);
+  return heading;
+}
+
 const approvedShowerMethod = {
   id: 'adopted-ab-dawn-vinegar-shower-cleaner',
   recordType: 'company_mix',
@@ -210,6 +220,8 @@ describe('FieldMode read-only field surface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
 
     const dialog = screen.getByRole('dialog', { name: 'Field Customer' });
+    expect(within(dialog).getByRole('tab', { name: 'Checklist' })).toHaveAttribute('aria-selected', 'true');
+    selectJobPacketTab('Info', within(dialog));
     expect(dialog).toHaveTextContent('Use side entrance.');
     expect(dialog).toHaveTextContent('Not paid');
     expect(within(dialog).getByRole('link', { name: 'Call customer' })).toHaveAttribute('href', 'tel:555-0100');
@@ -217,6 +229,43 @@ describe('FieldMode read-only field surface', () => {
     expect(within(dialog).getByRole('button', { name: 'Copy address' })).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: 'Field actions' })).toBeInTheDocument();
     expect(dialog).toHaveTextContent('Maps opens in a new tab/window where supported. Calls require a phone-capable device.');
+  });
+
+  it('preserves checklist state while switching packet tabs and exposes accessible room controls', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+      id: 'tab-state-job', customerName: 'Tab State Customer', date: dateKey(today), ...approvedChecklist,
+    }] });
+
+    render(<FieldMode />);
+    await screen.findByText('Tab State Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Tab State Customer' });
+    const tabs = within(dialog).getAllByRole('tab');
+    expect(tabs.map(tab => tab.textContent)).toEqual(['Info', 'Checklist', 'Photos']);
+    expect(within(dialog).getByRole('tab', { name: 'Checklist' })).toHaveAttribute('aria-selected', 'true');
+
+    const firstRoom = within(dialog).getByRole('button', { name: /^Property Arrival\b/ });
+    const secondRoom = within(dialog).getByRole('button', { name: /^Service Areas\b/ });
+    expect(firstRoom).toHaveAttribute('aria-expanded', 'true');
+    expect(secondRoom).toHaveAttribute('aria-expanded', 'false');
+
+    const firstOutcome = within(dialog).getByRole('checkbox', { name: /Review job scope before starting/ });
+    fireEvent.click(firstOutcome);
+    expect(firstOutcome).toBeChecked();
+    expect(firstRoom).toHaveTextContent('1 of 1 complete');
+
+    selectJobPacketTab('Info', within(dialog));
+    expect(within(dialog).getByRole('tabpanel', { name: 'Info' })).toBeVisible();
+    selectJobPacketTab('Photos', within(dialog));
+    expect(within(dialog).getByRole('tabpanel', { name: 'Photos' })).toBeVisible();
+    selectJobPacketTab('Checklist', within(dialog));
+    expect(within(dialog).getByRole('checkbox', { name: /Review job scope before starting/ })).toBeChecked();
+
+    fireEvent.click(firstRoom);
+    expect(firstRoom).toHaveAttribute('aria-expanded', 'false');
+    expect(within(dialog).queryByRole('checkbox', { name: /Review job scope before starting/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByText('1 of 4 complete')).toBeInTheDocument();
   });
 
   it('keeps the existing close action in the long packet scroll container and preserves persisted state on reopen', async () => {
@@ -249,11 +298,12 @@ describe('FieldMode read-only field surface', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Long Packet Customer' });
     expect(dialog).toHaveClass('v1-modal', 'field-job-packet');
-    expect(within(dialog).getAllByRole('checkbox')).toHaveLength(41);
+    expect(within(dialog).getAllByRole('checkbox')).toHaveLength(20);
     const packetHeader = dialog.querySelector('.field-job-packet-header');
     expect(packetHeader).not.toBeNull();
     const closeButton = within(packetHeader).getByRole('button', { name: 'Close' });
     expect(closeButton).toHaveClass('v1-button');
+    selectJobPacketTab('Photos', within(dialog));
     expect(await within(dialog).findByRole('img', { name: 'before job evidence' })).toBeInTheDocument();
 
     fireEvent.click(closeButton);
@@ -265,9 +315,12 @@ describe('FieldMode read-only field surface', () => {
     });
     const reopenedDialog = screen.getByRole('dialog', { name: 'Long Packet Customer' });
     expect(within(reopenedDialog).getByRole('checkbox', { name: /Required outcome 1\b/ })).toBeChecked();
+    expandChecklistRoom('Bathroom', within(reopenedDialog));
     expect(within(reopenedDialog).getByRole('checkbox', { name: /Required outcome 2\b/ })).toBeChecked();
+    selectJobPacketTab('Info', within(reopenedDialog));
     expect(within(reopenedDialog).getByLabelText('Employee notes')).toHaveValue('Persisted field note.');
     expect(within(reopenedDialog).getByLabelText('Issue/problem to flag')).toHaveValue('Persisted field issue.');
+    selectJobPacketTab('Photos', within(reopenedDialog));
     expect(await within(reopenedDialog).findByRole('img', { name: 'before job evidence' })).toBeInTheDocument();
     expect(mocks.listFieldPhotos).toHaveBeenCalledTimes(2);
   });
@@ -298,6 +351,7 @@ describe('FieldMode read-only field surface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
 
     const dialog = screen.getByRole('dialog', { name: 'Employee Field Customer' });
+    selectJobPacketTab('Info', within(dialog));
     expect(dialog).toHaveTextContent('Use the side gate and lock it when leaving.');
     expect(dialog).not.toHaveTextContent('Private owner safety review.');
     expect(dialog).not.toHaveTextContent('Owner administration note.');
@@ -336,6 +390,7 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Owner Operator Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    selectJobPacketTab('Photos');
 
     expect(await screen.findByLabelText('Add before photo')).toBeInTheDocument();
     expect(screen.getByLabelText('Add after photo')).toBeInTheDocument();
@@ -352,6 +407,7 @@ describe('FieldMode read-only field surface', () => {
     const { unmount } = render(<FieldMode />);
     await screen.findByText('Assigned Photo Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    selectJobPacketTab('Photos');
     expect(await screen.findByLabelText('Add before photo')).toBeInTheDocument();
     unmount();
 
@@ -362,6 +418,7 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Denied Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    selectJobPacketTab('Photos');
     expect(screen.queryByLabelText('Add before photo')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Add after photo')).not.toBeInTheDocument();
   });
@@ -374,6 +431,7 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Selected Tenant Job');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    selectJobPacketTab('Photos');
     expect(await screen.findByLabelText('Add before photo')).toBeInTheDocument();
   });
 
@@ -385,7 +443,7 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Field Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
-    await screen.findByText('No before photos added yet.');
+    selectJobPacketTab('Info');
 
     fireEvent.click(screen.getByRole('link', { name: 'Call customer' }));
 
@@ -404,6 +462,7 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Field Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    selectJobPacketTab('Info');
 
     const mapsButton = screen.getByRole('button', { name: 'Open in maps' });
     const click = createEvent.click(mapsButton, { bubbles: true, cancelable: true });
@@ -432,7 +491,7 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Field Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
-    await screen.findByText('No before photos added yet.');
+    selectJobPacketTab('Info');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open in maps' }));
     expect(screen.getByRole('status')).toHaveTextContent('Maps could not open automatically. Copy the address and open it in your maps app.');
@@ -449,6 +508,7 @@ describe('FieldMode read-only field surface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
 
     const dialog = screen.getByRole('dialog');
+    selectJobPacketTab('Info', within(dialog));
     expect(dialog).toHaveTextContent('Phone not provided');
     expect(dialog).toHaveTextContent('Address not provided');
     expect(dialog).toHaveTextContent('Call unavailable');
@@ -485,6 +545,9 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Checklist Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    expandChecklistRoom('Service Areas');
+    expandChecklistRoom('Final Walkthrough');
+    expandChecklistRoom('Kitchen');
 
     expect(screen.getByText('Pack clean microfiber cloths.')).toBeInTheDocument();
     expect(screen.getByText('Surface/material note: sealed wood island.')).toBeInTheDocument();
@@ -580,6 +643,7 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Notes Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    selectJobPacketTab('Info');
 
     fireEvent.change(screen.getByLabelText('Employee notes'), { target: { value: 'Finished upstairs first.' } });
     fireEvent.change(screen.getByLabelText('Issue/problem to flag'), { target: { value: 'Back door lock sticks.' } });
@@ -603,9 +667,13 @@ describe('FieldMode read-only field surface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
 
     fireEvent.click(screen.getByRole('checkbox', { name: /Review job scope before starting/ }));
+    expandChecklistRoom('Service Areas');
     fireEvent.click(screen.getByRole('checkbox', { name: /Complete the requested cleaning areas/ }));
+    expandChecklistRoom('Final Walkthrough');
     fireEvent.click(screen.getByRole('checkbox', { name: /Do a final quality check before leaving/ }));
+    selectJobPacketTab('Info');
     fireEvent.change(screen.getByLabelText('Employee notes'), { target: { value: 'Ready for owner review.' } });
+    selectJobPacketTab('Checklist');
     fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
     fireEvent.click(screen.getByRole('button', { name: 'Complete anyway' }));
 
@@ -676,6 +744,8 @@ describe('FieldMode read-only field surface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
 
     expect(screen.queryByText(/required outcomes? remain/)).not.toBeInTheDocument();
+    expandChecklistRoom('Bathroom');
+    expandChecklistRoom('General');
     expect(screen.getByRole('checkbox', { name: /Optional finishing touch/ })).not.toBeChecked();
     expect(screen.getAllByText('View steps')).toHaveLength(41);
     fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
@@ -760,7 +830,9 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Warning Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    selectJobPacketTab('Photos');
     await screen.findByText('No after photos added yet.');
+    selectJobPacketTab('Checklist');
 
     fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
 
@@ -785,7 +857,9 @@ describe('FieldMode read-only field surface', () => {
     render(<FieldMode />);
     await screen.findByText('Evidence Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    selectJobPacketTab('Photos');
     await screen.findByAltText('after job evidence');
+    selectJobPacketTab('Checklist');
 
     fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
 

@@ -130,6 +130,12 @@ function fieldSafeInstructions(booking = {}) {
   return candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'No field instructions provided';
 }
 
+const JOB_PACKET_TABS = Object.freeze([
+  { id: 'info', label: 'Info' },
+  { id: 'checklist', label: 'Checklist' },
+  { id: 'photos', label: 'Photos' },
+]);
+
 function JobCard({ booking, employeeView, onOpen }) {
   return (
     <article className="v1-card field-job-card">
@@ -152,6 +158,7 @@ function JobCard({ booking, employeeView, onOpen }) {
 }
 
 function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, onClose, onBookingPatch, onAccessLost }) {
+  const [activeTab, setActiveTab] = useState('checklist');
   const [actionMessage, setActionMessage] = useState('');
   const [executionMessage, setExecutionMessage] = useState('');
   const [executionError, setExecutionError] = useState('');
@@ -162,6 +169,10 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
     approvedChecklistCurrent ? booking.fieldChecklist : [],
     approvedChecklistCurrent ? booking.jobChecklistSnapshot : null
   ));
+  const [expandedChecklistRooms, setExpandedChecklistRooms] = useState(() => {
+    const firstRoom = checklist.length > 0 ? checklistRoom(checklist[0].area) : '';
+    return new Set(firstRoom ? [firstRoom] : []);
+  });
   const [fieldNotes, setFieldNotes] = useState(typeof booking.fieldNotes === 'string' ? booking.fieldNotes : '');
   const [fieldIssue, setFieldIssue] = useState(typeof booking.fieldIssue === 'string' ? booking.fieldIssue : '');
   const [photoEvidence, setPhotoEvidence] = useState({ loading: true, photos: [] });
@@ -208,6 +219,29 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
     ? booking.jobChecklistSnapshot.warnings.filter(warning => typeof warning === 'string' && warning.trim())
     : [];
   const saving = Boolean(savingAction);
+
+  const selectTab = tabId => setActiveTab(tabId);
+  const handleTabKeyDown = (event, currentIndex) => {
+    let nextIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % JOB_PACKET_TABS.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + JOB_PACKET_TABS.length) % JOB_PACKET_TABS.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = JOB_PACKET_TABS.length - 1;
+    else return;
+
+    event.preventDefault();
+    const nextTab = JOB_PACKET_TABS[nextIndex];
+    selectTab(nextTab.id);
+    document.getElementById(`field-job-tab-${nextTab.id}`)?.focus();
+  };
+  const toggleChecklistRoom = room => {
+    setExpandedChecklistRooms(current => {
+      const next = new Set(current);
+      if (next.has(room)) next.delete(room);
+      else next.add(room);
+      return next;
+    });
+  };
 
   useEffect(() => {
     let active = true;
@@ -321,32 +355,94 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
           </div>
           <button className="v1-button v1-button-secondary" type="button" onClick={onClose}>Close</button>
         </header>
-        <div className="field-job-badges">
-          <span className="v1-pill">{bookingStatus(booking)}</span>
-          <span className="v1-pill">{BOOKING_FIELD_STATUS_LABELS[fieldStatus] || BOOKING_FIELD_STATUS_LABELS.not_started}</span>
-          {!employeeView && <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>}
+        <div className="field-job-tabs" role="tablist" aria-label="Field job packet sections">
+          {JOB_PACKET_TABS.map((tab, index) => (
+            <button
+              className="field-job-tab"
+              id={`field-job-tab-${tab.id}`}
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-controls={`field-job-panel-${tab.id}`}
+              aria-selected={activeTab === tab.id}
+              tabIndex={activeTab === tab.id ? 0 : -1}
+              onClick={() => selectTab(tab.id)}
+              onKeyDown={event => handleTabKeyDown(event, index)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-        <dl className="field-job-details">
-          <dt>Schedule</dt><dd>{bookingSchedule(booking)}</dd>
-          <dt>Service</dt><dd>{bookingServiceType(booking)}</dd>
-          <dt>Address</dt><dd>{address}</dd>
-          <dt>Notes</dt><dd>{employeeView ? fieldSafeInstructions(booking) : bookingNotes(booking)}</dd>
-          <dt>Phone</dt><dd>{phone}</dd>
-        </dl>
-        <section className="field-job-actions" aria-labelledby="field-job-actions-title">
-          <h3 id="field-job-actions-title">Field actions</h3>
-          <div className="field-job-action-buttons">
-            {hasPhone ? <a className="v1-button v1-button-primary" href={`tel:${phone}`} onClick={handleCallCustomer}>Call customer</a> : <span className="field-job-unavailable">Call unavailable</span>}
-            {hasAddress ? (
-              <>
-                <button className="v1-button v1-button-secondary" type="button" onClick={openMapsInNewTab}>Open in maps</button>
-                <button className="v1-button v1-button-secondary" type="button" onClick={copyAddress}>Copy address</button>
-              </>
-            ) : <span className="field-job-unavailable">Maps unavailable</span>}
+
+        <section
+          className="field-job-tab-panel field-job-info-panel"
+          id="field-job-panel-info"
+          role="tabpanel"
+          aria-labelledby="field-job-tab-info"
+          hidden={activeTab !== 'info'}
+        >
+          <div className="field-job-badges">
+            <span className="v1-pill">{bookingStatus(booking)}</span>
+            <span className="v1-pill">{BOOKING_FIELD_STATUS_LABELS[fieldStatus] || BOOKING_FIELD_STATUS_LABELS.not_started}</span>
+            {!employeeView && <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>}
           </div>
-          <div className="field-job-action-status" role="status">{displayedActionMessage}</div>
+          <dl className="field-job-details">
+            <dt>Schedule</dt><dd>{bookingSchedule(booking)}</dd>
+            <dt>Service</dt><dd>{bookingServiceType(booking)}</dd>
+            <dt>Address</dt><dd>{address}</dd>
+            <dt>Notes</dt><dd>{employeeView ? fieldSafeInstructions(booking) : bookingNotes(booking)}</dd>
+            <dt>Phone</dt><dd>{phone}</dd>
+          </dl>
+          <section className="field-job-actions" aria-labelledby="field-job-actions-title">
+            <h3 id="field-job-actions-title">Field actions</h3>
+            <div className="field-job-action-buttons">
+              {hasPhone ? <a className="v1-button v1-button-primary" href={`tel:${phone}`} onClick={handleCallCustomer}>Call customer</a> : <span className="field-job-unavailable">Call unavailable</span>}
+              {hasAddress ? (
+                <>
+                  <button className="v1-button v1-button-secondary" type="button" onClick={openMapsInNewTab}>Open in maps</button>
+                  <button className="v1-button v1-button-secondary" type="button" onClick={copyAddress}>Copy address</button>
+                </>
+              ) : <span className="field-job-unavailable">Maps unavailable</span>}
+            </div>
+            <div className="field-job-action-status" role="status">{displayedActionMessage}</div>
+          </section>
+          <div className="field-job-notes">
+            <label>
+              Employee notes
+              <textarea
+                value={fieldNotes}
+                onChange={event => setFieldNotes(event.target.value)}
+                rows={3}
+                placeholder="Add job notes for owner review."
+              />
+            </label>
+            <label>
+              Issue/problem to flag
+              <textarea
+                value={fieldIssue}
+                onChange={event => setFieldIssue(event.target.value)}
+                rows={2}
+                placeholder="Optional issue to review later."
+              />
+            </label>
+            <button
+              className="v1-button v1-button-secondary"
+              type="button"
+              onClick={saveNotes}
+              disabled={saving}
+            >
+              {savingAction === 'notes' ? 'Saving...' : 'Save notes'}
+            </button>
+          </div>
         </section>
-        <section className="field-job-execution" aria-labelledby="field-job-execution-title">
+
+        <section
+          className="field-job-tab-panel field-job-execution"
+          id="field-job-panel-checklist"
+          role="tabpanel"
+          aria-labelledby="field-job-tab-checklist"
+          hidden={activeTab !== 'checklist'}
+        >
           <div className="field-job-execution-header">
             <div>
               <h3 id="field-job-execution-title">Job execution</h3>
@@ -422,32 +518,45 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
                 )}
                 <p>{completedCount} of {checklist.length} complete</p>
                 <div className="field-job-checklist-groups">
-                  {checklistGroups.map(group => {
+                  {checklistGroups.map((group, groupIndex) => {
                     const groupCompleted = group.items.filter(item => item.completed).length;
+                    const expanded = expandedChecklistRooms.has(group.room);
+                    const groupPanelId = `field-job-checklist-group-${groupIndex}`;
                     return (
                       <section className="field-job-checklist-area" key={group.room}>
-                        <div className="field-job-checklist-area-heading">
-                          <h5>{group.room}</h5>
+                        <button
+                          className="field-job-checklist-area-heading"
+                          type="button"
+                          aria-expanded={expanded}
+                          aria-controls={groupPanelId}
+                          onClick={() => toggleChecklistRoom(group.room)}
+                        >
+                          <span className="field-job-checklist-area-title">
+                            <span className="field-job-checklist-chevron" aria-hidden="true" />
+                            <span>{group.room}</span>
+                          </span>
                           <span>{groupCompleted} of {group.items.length} complete</span>
-                        </div>
-                        <div className="field-job-checklist-items">
+                        </button>
+                        <div className="field-job-checklist-items" id={groupPanelId} hidden={!expanded}>
                           {group.items.map(item => (
                             <div key={item.id} className="field-job-checklist-item">
                               <label className="field-job-checklist-item-main">
-                                <input
-                                  type="checkbox"
-                                  checked={item.completed}
-                                  onChange={event => {
-                                    const checked = event.target.checked;
-                                    setChecklist(current => current.map(existing => (
-                                      existing.id === item.id ? { ...existing, completed: checked } : existing
-                                    )));
-                                  }}
-                                />
-                                <span>
+                                <span className="field-job-checklist-control">
+                                  <input
+                                    type="checkbox"
+                                    checked={item.completed}
+                                    onChange={event => {
+                                      const checked = event.target.checked;
+                                      setChecklist(current => current.map(existing => (
+                                        existing.id === item.id ? { ...existing, completed: checked } : existing
+                                      )));
+                                    }}
+                                  />
+                                </span>
+                                <span className="field-job-checklist-content">
                                   <strong>{item.fixtureOrSurface || item.area}</strong>
                                   <small className="field-job-checklist-requirement">{item.required ? 'Required' : 'Optional'}</small>
-                                  {item.label}
+                                  <span>{item.label}</span>
                                   {item.condition && <small>Condition: {item.condition}</small>}
                                   {item.note && <small>{item.note}</small>}
                                 </span>
@@ -499,44 +608,28 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
               </>
             )}
           </div>
-          <div className="field-job-notes">
-            <label>
-              Employee notes
-              <textarea
-                value={fieldNotes}
-                onChange={event => setFieldNotes(event.target.value)}
-                rows={3}
-                placeholder="Add job notes for owner review."
-              />
-            </label>
-            <label>
-              Issue/problem to flag
-              <textarea
-                value={fieldIssue}
-                onChange={event => setFieldIssue(event.target.value)}
-                rows={2}
-                placeholder="Optional issue to review later."
-              />
-            </label>
-            <button
-              className="v1-button v1-button-secondary"
-              type="button"
-              onClick={saveNotes}
-              disabled={saving}
-            >
-              {savingAction === 'notes' ? 'Saving...' : 'Save notes'}
-            </button>
-          </div>
-          {fieldPhotoAccess && (
+        </section>
+
+        <section
+          className="field-job-tab-panel field-job-photos-panel"
+          id="field-job-panel-photos"
+          role="tabpanel"
+          aria-labelledby="field-job-tab-photos"
+          hidden={activeTab !== 'photos'}
+        >
+          {fieldPhotoAccess ? (
             <FieldPhotoUploadPanel
               tenantId={tenantId}
               bookingId={booking.id}
               onEvidenceChange={updatePhotoEvidence}
             />
+          ) : (
+            <p className="field-job-tab-empty">Photo access is unavailable for this account.</p>
           )}
-          {executionMessage && <div className="field-job-execution-status" role="status">{executionMessage}</div>}
-          {executionError && <div className="field-job-execution-error" role="alert">{executionError}</div>}
         </section>
+
+        {executionMessage && <div className="field-job-execution-status" role="status">{executionMessage}</div>}
+        {executionError && <div className="field-job-execution-error" role="alert">{executionError}</div>}
       </section>
     </div>
   );
