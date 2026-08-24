@@ -224,6 +224,20 @@ async function seedFirestore() {
     await setDoc(doc(database, 'tenant_usage', TENANT_A), { bookings: 1 });
     await setDoc(doc(database, 'ai_usage', TENANT_A), { estimatedCredits: 0 });
     await setDoc(doc(database, 'ai_credit_history', 'history-a'), { tenantId: TENANT_A });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'growthAICreditBalances', 'current'), {
+      schemaVersion: 1,
+      tenantId: TENANT_A,
+      buckets: { monthly: 5, promotional: 0, purchased: 0 },
+      reservedCredits: 0,
+    });
+    await setDoc(doc(database, 'tenants', TENANT_A, 'growthAICreditLedger', 'ledger-a'), {
+      schemaVersion: 1,
+      tenantId: TENANT_A,
+      actorUid: 'admin-a',
+      actionType: 'marketing_post',
+      credits: 1,
+      status: 'finalized',
+    });
     await setDoc(doc(database, 'unsafe_global', 'record-a'), { tenantId: TENANT_A });
   });
 }
@@ -1564,7 +1578,11 @@ describe('tenant-scoped customer intake Firestore rules', () => {
 
     const { draftReference, auditReference } = await assertSucceeds(
       createGrowthAIDraftWithAudit(database, {
-        sourceRefs: { bookingId: 'field-booking', photoIds: ['photo-a', 'photo-b'] },
+        sourceRefs: {
+          bookingId: 'field-booking',
+          photoIds: ['photo-a', 'photo-b'],
+          opportunityId: 'marketing_photo_review__field-booking',
+        },
       })
     );
     assert.equal((await assertSucceeds(getDoc(profileReference))).data().tenantId, TENANT_A);
@@ -1773,6 +1791,40 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       }));
     }
     await assertSucceeds(getDoc(reference));
+  });
+
+  test('GrowthAI credit balances and ledger are admin-readable but server-write-only', async () => {
+    const adminA = authenticatedDatabase('admin-a');
+    const superAdmin = authenticatedDatabase('super-admin');
+    const balancePath = ['tenants', TENANT_A, 'growthAICreditBalances', 'current'];
+    const ledgerPath = ['tenants', TENANT_A, 'growthAICreditLedger', 'ledger-a'];
+
+    await assertSucceeds(getDoc(doc(adminA, ...balancePath)));
+    await assertSucceeds(getDoc(doc(adminA, ...ledgerPath)));
+    await assertSucceeds(getDoc(doc(superAdmin, ...balancePath)));
+    await assertSucceeds(getDoc(doc(superAdmin, ...ledgerPath)));
+
+    for (const database of [
+      authenticatedDatabase('admin-b'),
+      authenticatedDatabase('employee-a'),
+      authenticatedDatabase('customer-a-auth'),
+      testEnvironment.unauthenticatedContext().firestore(),
+    ]) {
+      await assertFails(getDoc(doc(database, ...balancePath)));
+      await assertFails(getDoc(doc(database, ...ledgerPath)));
+    }
+
+    for (const database of [adminA, superAdmin]) {
+      await assertFails(updateDoc(doc(database, ...balancePath), {
+        buckets: { monthly: 100, promotional: 100, purchased: 100 },
+      }));
+      await assertFails(updateDoc(doc(database, ...ledgerPath), { status: 'restored' }));
+      await assertFails(setDoc(
+        doc(database, 'tenants', TENANT_A, 'growthAICreditLedger', 'client-created'),
+        { tenantId: TENANT_A, credits: 100, status: 'finalized' },
+      ));
+      await assertFails(deleteDoc(doc(database, ...ledgerPath)));
+    }
   });
 
   test('only super-admin can use mounted compatibility and global administration paths', async () => {

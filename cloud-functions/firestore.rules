@@ -609,7 +609,7 @@ service cloud.firestore {
       return sourceRefs is map &&
              sourceRefs.keys().hasOnly([
                'leadId', 'customerId', 'estimateId', 'bookingId',
-               'photoId', 'photoIds', 'reviewId'
+               'photoId', 'photoIds', 'reviewId', 'opportunityId'
              ]) &&
              (!('leadId' in sourceRefs) || isGrowthAIRefId(sourceRefs.leadId)) &&
              (!('customerId' in sourceRefs) || isGrowthAIRefId(sourceRefs.customerId)) &&
@@ -617,7 +617,8 @@ service cloud.firestore {
              (!('bookingId' in sourceRefs) || isGrowthAIRefId(sourceRefs.bookingId)) &&
              (!('photoId' in sourceRefs) || isGrowthAIRefId(sourceRefs.photoId)) &&
              (!('photoIds' in sourceRefs) || isValidGrowthAIPhotoIds(sourceRefs.photoIds)) &&
-             (!('reviewId' in sourceRefs) || isGrowthAIRefId(sourceRefs.reviewId));
+             (!('reviewId' in sourceRefs) || isGrowthAIRefId(sourceRefs.reviewId)) &&
+             (!('opportunityId' in sourceRefs) || isGrowthAIRefId(sourceRefs.opportunityId));
     }
 
     function isValidGrowthAIContent(content) {
@@ -980,6 +981,16 @@ service cloud.firestore {
                          hasValidGrowthAIOpportunityShape(request.resource.data, tenantId, opportunityId) &&
                          isValidGrowthAIOpportunityUpdate();
         allow delete: if false;
+      }
+
+      match /growthAICreditBalances/{balanceId} {
+        allow read: if balanceId == 'current' && isGrowthAIAdmin(tenantId);
+        allow create, update, delete: if false;
+      }
+
+      match /growthAICreditLedger/{ledgerId} {
+        allow read: if isGrowthAIAdmin(tenantId);
+        allow create, update, delete: if false;
       }
 
       match /payments/{paymentId} {

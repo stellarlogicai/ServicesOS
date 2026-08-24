@@ -15,8 +15,15 @@ const {
 const {
   createSendCustomerEmailHandler,
 } = require('./sendCustomerEmail');
+const { createGrowthAIGenerationHandler } = require('./growthAIGateway');
+const { createGrowthAIProviderFromEnvironment } = require('./growthAIProvider');
 
 admin.initializeApp();
+
+exports.generateGrowthAIContent = functions.https.onRequest(createGrowthAIGenerationHandler({
+  admin,
+  provider: createGrowthAIProviderFromEnvironment(),
+}));
 
 // Platform fee percentage by subscription tier
 const PLATFORM_FEE_PERCENTAGE = {

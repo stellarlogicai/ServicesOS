@@ -34,6 +34,13 @@ const opportunityService = vi.hoisted(() => ({
   dismissGrowthAIOpportunity: vi.fn(),
 }));
 
+const gatewayService = vi.hoisted(() => ({
+  credits: 5,
+  createGrowthAIIdempotencyKey: vi.fn(),
+  generateGrowthAIContent: vi.fn(),
+  loadGrowthAICreditBalance: vi.fn(),
+}));
+
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => state.auth }));
 
 vi.mock('../modules/growthAI/growthAIFoundationService', () => ({
@@ -42,6 +49,7 @@ vi.mock('../modules/growthAI/growthAIFoundationService', () => ({
 }));
 
 vi.mock('../modules/growthAI/growthAIOpportunityService', () => opportunityService);
+vi.mock('../modules/growthAI/growthAIGatewayService', () => gatewayService);
 
 function timestamp() {
   return { toDate: () => new Date('2026-08-24T12:00:00.000Z') };
@@ -94,6 +102,27 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     state.profile = null;
     state.opportunityWorkspace = { opportunities: [], leads: [], bookings: [], rebookingImplemented: false };
     state.version = 0;
+    gatewayService.credits = 5;
+    gatewayService.createGrowthAIIdempotencyKey.mockReturnValue('idempotency-a');
+    gatewayService.loadGrowthAICreditBalance.mockImplementation(async () => ({
+      available: gatewayService.credits,
+      reserved: 0,
+      buckets: { monthly: gatewayService.credits, promotional: 0, purchased: 0 },
+    }));
+    gatewayService.generateGrowthAIContent.mockImplementation(async ({ actionType, sourceRefs }) => {
+      gatewayService.credits -= 1;
+      const draft = savedDraft({
+        id: `ai-draft-${++state.version}`,
+        actionType,
+        pillar: actionType === 'marketing_post' ? 'attract' : 'convert',
+        title: `AI ${actionType}`,
+        sourceRefs,
+        content: { ...savedDraft().content, fullCaption: 'AI-assisted draft for human review.' },
+      });
+      state.drafts = [draft, ...state.drafts];
+      appendAudit(draft, 'draft_created', null, 'draft');
+      return { success: true, draftId: draft.id, creditsCharged: 1 };
+    });
 
     service.loadGrowthAIBrandProfile.mockImplementation(async tenantId => {
       expect(tenantId).toBe(state.auth.tenantId);
@@ -192,6 +221,79 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     })));
     expect(opportunityService.markGrowthAIOpportunityActed).toHaveBeenCalledWith('tenant-a', 'estimate_followup__lead-a');
     expect(await screen.findByText(/Nothing was sent/)).toBeInTheDocument();
+  });
+
+  it('shows credits and saves one AI marketing draft for a rapid duplicate click', async () => {
+    render(<GrowthAIPage />);
+    expect(await screen.findByText('AI Credits: 5')).toBeInTheDocument();
+    const aiButton = screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' });
+    fireEvent.click(aiButton);
+    fireEvent.click(aiButton);
+    await waitFor(() => expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledTimes(1));
+    expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: 'tenant-a',
+      actionType: 'marketing_post',
+      idempotencyKey: 'idempotency-a',
+      sourceRefs: {},
+      input: expect.objectContaining({ postTypeId: 'availability' }),
+    }));
+    expect(await screen.findByText(/AI-assisted draft saved for human review/)).toBeInTheDocument();
+    expect(screen.getByText('AI Credits: 4')).toBeInTheDocument();
+    expect(screen.getByLabelText('Full caption')).toHaveValue('AI-assisted draft for human review.');
+  });
+
+  it('keeps deterministic tools available with zero AI credits', async () => {
+    gatewayService.credits = 0;
+    render(<GrowthAIPage />);
+    expect(await screen.findByText('AI Credits: 0')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Generate response with AI · 1 credit' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
+    expect(screen.getByLabelText('Full caption')).not.toHaveValue('');
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+  });
+
+  it('shows provider failure honestly and reloads the restored balance', async () => {
+    gatewayService.generateGrowthAIContent.mockRejectedValueOnce(new Error('AI-assisted generation failed. Your credit was restored.'));
+    render(<GrowthAIPage />);
+    await screen.findByText('AI Credits: 5');
+    fireEvent.click(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('credit was restored');
+    expect(screen.getByText('AI Credits: 5')).toBeInTheDocument();
+    expect(state.drafts).toHaveLength(0);
+  });
+
+  it('uses canonical estimate opportunity references for optional AI follow-up', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [{
+        id: 'estimate_followup__lead-a', type: 'estimate_followup', pillar: 'convert', status: 'open',
+        sourceRefs: { leadId: 'lead-a' }, detectionReason: 'Estimate requires follow-up.',
+      }],
+      leads: [{ id: 'lead-a', formData: { fullName: 'AI Follow-Up Test' } }],
+      bookings: [],
+      rebookingImplemented: false,
+    };
+    render(<GrowthAIPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Generate follow-up with AI · 1 credit' }));
+    await waitFor(() => expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'estimate_followup',
+      sourceRefs: { opportunityId: 'estimate_followup__lead-a', leadId: 'lead-a' },
+      input: { channelId: 'general' },
+    })));
+  });
+
+  it('keeps deterministic customer responses free and makes AI assistance explicit', async () => {
+    render(<GrowthAIPage />);
+    await screen.findByText('AI Credits: 5');
+    expect(screen.getByRole('button', { name: 'Save response draft' })).toBeEnabled();
+    const responseAIButton = screen.getByRole('button', { name: 'Generate response with AI · 1 credit' });
+    expect(responseAIButton).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Customer message for AI'), { target: { value: 'Can you clean next week?' } });
+    fireEvent.click(responseAIButton);
+    await waitFor(() => expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'customer_response',
+      input: expect.objectContaining({ customerMessage: 'Can you clean next week?', channelId: 'sms' }),
+    })));
   });
 
   it('dismisses a stable opportunity and does not render it after refresh', async () => {

@@ -56,6 +56,8 @@ describe('V1 smoke emulator seed safety', () => {
     const otherEmployeeBooking = documents.get(`tenants/${TENANT_A}/bookings/booking-smoke-a-other-employee`);
     const cancelledBooking = documents.get(`tenants/${TENANT_A}/bookings/booking-smoke-a-cancelled`);
     const customer = documents.get(`tenants/${TENANT_A}/customers/customer-smoke-a`);
+    const tenantACredits = documents.get(`tenants/${TENANT_A}/growthAICreditBalances/current`);
+    const tenantBCredits = documents.get(`tenants/${TENANT_B}/growthAICreditBalances/current`);
 
     assert.equal(tenantA.businessSettings.businessName, 'Aunt B Smoke Cleaning A');
     assert.equal(tenantB.businessSettings.businessName, 'ServicesOS Smoke Cleaning B');
@@ -77,5 +79,8 @@ describe('V1 smoke emulator seed safety', () => {
     assert.notEqual(manualBooking.paymentStatusUpdatedBy, 'stripe_webhook');
     assert.equal(manualBooking.stripeCheckoutSessionId, undefined);
     assert.equal(manualBooking.stripePaymentIntentId, undefined);
+    assert.deepEqual(tenantACredits.buckets, { monthly: 5, promotional: 0, purchased: 0 });
+    assert.equal(tenantACredits.reservedCredits, 0);
+    assert.deepEqual(tenantBCredits.buckets, { monthly: 0, promotional: 0, purchased: 0 });
   });
 });

@@ -1,0 +1,145 @@
+const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_MAX_OUTPUT_LENGTH = 5_000;
+
+class GrowthAIProviderError extends Error {
+  constructor(message, code = 'provider_error') {
+    super(message);
+    this.name = 'GrowthAIProviderError';
+    this.code = code;
+  }
+}
+
+function cleanProviderString(value, maxLength = 256) {
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+function validateProviderOutput(result, maxLength = DEFAULT_MAX_OUTPUT_LENGTH) {
+  const text = cleanProviderString(result?.text, maxLength + 1);
+  if (!text) throw new GrowthAIProviderError('The AI provider returned no usable text.', 'invalid_output');
+  if (text.length > maxLength) {
+    throw new GrowthAIProviderError('The AI provider response exceeded the allowed length.', 'oversized_output');
+  }
+  return {
+    text,
+    providerRequestId: cleanProviderString(result?.providerRequestId, 256) || null,
+    modelId: cleanProviderString(result?.modelId, 128) || null,
+  };
+}
+
+function createUnavailableGrowthAIProvider() {
+  return {
+    configured: false,
+    async generateText() {
+      throw new GrowthAIProviderError(
+        'AI-assisted generation is not configured. Deterministic GrowthAI tools remain available.',
+        'provider_unavailable'
+      );
+    },
+  };
+}
+
+function createLocalMockGrowthAIProvider() {
+  return {
+    configured: true,
+    async generateText({ actionType, userPrompt }) {
+      if (userPrompt.includes('[simulate-provider-failure]')) {
+        throw new GrowthAIProviderError('The local mock provider failed. Your credit was restored.', 'provider_error');
+      }
+      return validateProviderOutput({
+        text: `Local mock ${actionType} draft for human review. Nothing was sent or published.`,
+        providerRequestId: 'local-mock-request',
+        modelId: 'local-growthai-mock-v1',
+      });
+    },
+  };
+}
+
+function createOpenAICompatibleGrowthAIProvider({
+  apiKey,
+  baseUrl,
+  fetchImpl = global.fetch,
+  model,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+} = {}) {
+  const resolvedApiKey = cleanProviderString(apiKey, 2_048);
+  const resolvedBaseUrl = cleanProviderString(baseUrl, 1_024).replace(/\/+$/, '');
+  const resolvedModel = cleanProviderString(model, 128);
+  if (!resolvedApiKey || !resolvedBaseUrl || !resolvedModel || typeof fetchImpl !== 'function') {
+    return createUnavailableGrowthAIProvider();
+  }
+
+  return {
+    configured: true,
+    async generateText({ systemInstruction, userPrompt }) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      let response;
+      try {
+        response = await fetchImpl(`${resolvedBaseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resolvedApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: resolvedModel,
+            messages: [
+              { role: 'system', content: systemInstruction },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.4,
+          }),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw new GrowthAIProviderError('AI-assisted generation timed out. Your credit was restored.', 'provider_timeout');
+        }
+        throw new GrowthAIProviderError('AI-assisted generation is temporarily unavailable. Your credit was restored.');
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      if (!response.ok) {
+        throw new GrowthAIProviderError('AI-assisted generation is temporarily unavailable. Your credit was restored.');
+      }
+
+      const payload = await response.json();
+      return validateProviderOutput({
+        text: payload?.choices?.[0]?.message?.content,
+        providerRequestId: response.headers?.get?.('x-request-id') || payload?.id,
+        modelId: payload?.model || resolvedModel,
+      });
+    },
+  };
+}
+
+function createGrowthAIProviderFromEnvironment(env = process.env) {
+  let firebaseProjectId = '';
+  try {
+    firebaseProjectId = JSON.parse(env.FIREBASE_CONFIG || '{}').projectId || '';
+  } catch {
+    firebaseProjectId = '';
+  }
+  const projectId = firebaseProjectId || env.GCLOUD_PROJECT;
+  const isLocalSmokeEmulator = env.FUNCTIONS_EMULATOR === 'true' &&
+    projectId === 'demo-servicesos-v1-smoke-local';
+  if (env.GROWTHAI_PROVIDER_MODE === 'mock' && isLocalSmokeEmulator) {
+    return createLocalMockGrowthAIProvider();
+  }
+  return createOpenAICompatibleGrowthAIProvider({
+    apiKey: env.GROWTHAI_PROVIDER_API_KEY,
+    baseUrl: env.GROWTHAI_PROVIDER_BASE_URL,
+    model: env.GROWTHAI_PROVIDER_MODEL,
+  });
+}
+
+module.exports = {
+  DEFAULT_MAX_OUTPUT_LENGTH,
+  GrowthAIProviderError,
+  createGrowthAIProviderFromEnvironment,
+  createLocalMockGrowthAIProvider,
+  createOpenAICompatibleGrowthAIProvider,
+  createUnavailableGrowthAIProvider,
+  validateProviderOutput,
+};

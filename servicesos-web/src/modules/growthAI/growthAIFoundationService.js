@@ -31,6 +31,7 @@ const SOURCE_REF_KEYS = [
   'photoId',
   'photoIds',
   'reviewId',
+  'opportunityId',
 ];
 
 const CONTENT_KEYS = ['fullCaption', 'shortCaption', 'callToAction', 'hashtags', 'imagePrompt'];

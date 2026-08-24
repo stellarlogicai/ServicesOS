@@ -4,6 +4,11 @@ import { BRANDS, CONTENT_IDEAS, PLATFORMS } from './brandProfiles';
 import { generateDraft } from './growthAIService';
 import { RESPONSE_CHANNELS, RESPONSE_SCENARIOS, buildResponseTemplate } from './responseTemplates';
 import {
+  createGrowthAIIdempotencyKey,
+  generateGrowthAIContent as requestGrowthAIGeneration,
+  loadGrowthAICreditBalance,
+} from './growthAIGatewayService';
+import {
   approveGrowthAIDraft,
   createGrowthAIDraft,
   GROWTH_AI_PILLARS,
@@ -89,10 +94,11 @@ function CopyButton({ label, text }) {
   return <Button tone="secondary" disabled={!text} onClick={copy}>{copied ? 'Copied' : label}</Button>;
 }
 
-function CustomerResponseHelper({ businessName, onSave, saving }) {
+function CustomerResponseHelper({ aiCredits, aiGenerating, businessName, onGenerateAI, onSave, saving }) {
   const scenarios = RESPONSE_SCENARIOS.auntbs;
   const [scenarioId, setScenarioId] = useState(scenarios[0].id);
   const [channelId, setChannelId] = useState('sms');
+  const [customerMessage, setCustomerMessage] = useState('');
   const responseTemplate = useMemo(() => {
     const template = buildResponseTemplate({ brandKey: 'auntbs', scenarioId, channelId });
     const replaceBusinessName = value => value
@@ -123,6 +129,9 @@ function CustomerResponseHelper({ businessName, onSave, saving }) {
             {RESPONSE_CHANNELS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
         </Field>
+        <Field label="Customer message for optional AI assistance">
+          <textarea aria-label="Customer message for AI" rows="3" value={customerMessage} onChange={event => setCustomerMessage(event.target.value)} style={controlStyle} />
+        </Field>
         <div style={{ padding: 12, background: '#f8fafc', border: `1px solid ${colors.border}`, borderRadius: 6 }}>
           <strong style={{ display: 'block', fontSize: 14 }}>{responseTemplate.title}</strong>
           {responseTemplate.subjectLine && <p style={{ margin: '8px 0 0', fontSize: 12 }}><strong>Subject:</strong> {responseTemplate.subjectLine}</p>}
@@ -132,7 +141,13 @@ function CustomerResponseHelper({ businessName, onSave, saving }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <CopyButton label="Copy response" text={responseTemplate.messageTemplate} />
           <Button tone="secondary" disabled={saving} onClick={() => onSave(responseTemplate)}>Save response draft</Button>
+          <Button disabled={saving || aiGenerating || aiCredits < 1 || !customerMessage.trim()} onClick={() => onGenerateAI({
+            customerMessage,
+            scenarioId,
+            channelId,
+          })}>Generate response with AI · 1 credit</Button>
         </div>
+        {aiCredits < 1 && <p style={{ margin: 0, color: colors.warning, fontSize: 12 }}>Not enough AI credits. Deterministic response templates remain available.</p>}
       </div>
     </Card>
   );
@@ -171,7 +186,7 @@ function canonicalDisplayName(record, fallback) {
     [formData.firstName, formData.lastName].filter(Boolean).join(' ').trim() || fallback;
 }
 
-function OpportunityCard({ opportunity, subject, onDraftFollowUp, onReviewJob, onDismiss, saving }) {
+function OpportunityCard({ aiCredits, aiGenerating, opportunity, subject, onAIFollowUp, onDraftFollowUp, onReviewJob, onDismiss, saving }) {
   const acted = opportunity.status === 'acted';
   return (
     <article style={{ border: `1px solid ${colors.border}`, borderRadius: 7, padding: 14, background: '#fff' }}>
@@ -187,9 +202,14 @@ function OpportunityCard({ opportunity, subject, onDraftFollowUp, onReviewJob, o
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
         {opportunity.type === 'estimate_followup' && (
-          <Button disabled={saving || acted} onClick={() => onDraftFollowUp(opportunity)}>
-            {acted ? 'Follow-up drafted' : 'Draft Follow-Up'}
-          </Button>
+          <>
+            <Button disabled={saving || acted} onClick={() => onDraftFollowUp(opportunity)}>
+              {acted ? 'Follow-up drafted' : 'Draft Follow-Up'}
+            </Button>
+            <Button disabled={saving || aiGenerating || acted || aiCredits < 1} onClick={() => onAIFollowUp(opportunity)}>
+              Generate follow-up with AI · 1 credit
+            </Button>
+          </>
         )}
         {opportunity.type === 'marketing_photo_review' && (
           <Button disabled={saving} onClick={() => onReviewJob(opportunity)}>Review Job</Button>
@@ -218,7 +238,11 @@ export default function GrowthAIPage({ onReviewJob }) {
   const [opportunityWorkspace, setOpportunityWorkspace] = useState({ opportunities: [], leads: [], bookings: [] });
   const [opportunitiesLoading, setOpportunitiesLoading] = useState(true);
   const [opportunityFilter, setOpportunityFilter] = useState('all');
+  const [creditBalance, setCreditBalance] = useState({ available: 0, reserved: 0 });
+  const [creditsLoading, setCreditsLoading] = useState(true);
+  const [aiGenerating, setAiGenerating] = useState(false);
   const auditRequestSequence = useRef(0);
+  const aiRequestInFlight = useRef(false);
 
   const businessSettings = currentTenant?.businessSettings || {};
   const businessName = businessSettings.businessName || currentTenant?.businessName || 'Your business';
@@ -257,6 +281,16 @@ export default function GrowthAIPage({ onReviewJob }) {
     if (selected) setEditor(draftToEditor(selected));
   }, [tenantId]);
 
+  const reloadCredits = useCallback(async () => {
+    if (!tenantId) return;
+    setCreditsLoading(true);
+    try {
+      setCreditBalance(await loadGrowthAICreditBalance(tenantId));
+    } finally {
+      setCreditsLoading(false);
+    }
+  }, [tenantId]);
+
   useEffect(() => {
     let active = true;
     if (!authorized || !tenantId) {
@@ -284,6 +318,16 @@ export default function GrowthAIPage({ onReviewJob }) {
       .catch(err => active && setError(err.message));
     return () => { active = false; };
   }, [authorized, reloadOpportunities, tenantId]);
+
+  useEffect(() => {
+    let active = true;
+    if (!authorized || !tenantId) return () => { active = false; };
+    loadGrowthAICreditBalance(tenantId)
+      .then(balance => active && setCreditBalance(balance))
+      .catch(err => active && setError(err.message))
+      .finally(() => active && setCreditsLoading(false));
+    return () => { active = false; };
+  }, [authorized, tenantId]);
 
   const loadAudit = useCallback(async draftId => {
     const requestSequence = ++auditRequestSequence.current;
@@ -328,6 +372,36 @@ export default function GrowthAIPage({ onReviewJob }) {
     setMessage('Deterministic draft created locally. Save it to persist it for this tenant.');
     setError('');
   };
+
+  const generateWithAI = useCallback(async ({ actionType, input, sourceRefs = {} }) => {
+    if (aiRequestInFlight.current) return null;
+    aiRequestInFlight.current = true;
+    setAiGenerating(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await requestGrowthAIGeneration({
+        tenantId,
+        actionType,
+        input,
+        sourceRefs,
+        idempotencyKey: createGrowthAIIdempotencyKey(),
+      });
+      await reloadWorkspace(result.draftId);
+      await loadAudit(result.draftId);
+      await reloadCredits();
+      if (actionType === 'estimate_followup') await reloadOpportunities();
+      setMessage(`AI-assisted draft saved for human review. ${result.creditsCharged} AI credit used. Nothing was sent or published.`);
+      return result;
+    } catch (err) {
+      await reloadCredits().catch(() => {});
+      setError(err.message);
+      return null;
+    } finally {
+      aiRequestInFlight.current = false;
+      setAiGenerating(false);
+    }
+  }, [loadAudit, reloadCredits, reloadOpportunities, reloadWorkspace, tenantId]);
 
   const saveResponseDraft = responseTemplate => runAction(
     () => createGrowthAIDraft(tenantId, {
@@ -417,6 +491,12 @@ export default function GrowthAIPage({ onReviewJob }) {
     }, 'Follow-up draft saved for human review. Nothing was sent.');
   };
 
+  const aiEstimateFollowUp = opportunity => generateWithAI({
+    actionType: 'estimate_followup',
+    sourceRefs: { opportunityId: opportunity.id, leadId: opportunity.sourceRefs?.leadId },
+    input: { channelId: 'general' },
+  });
+
   const reviewOpportunityJob = async opportunity => {
     setSaving(true);
     setError('');
@@ -458,7 +538,7 @@ export default function GrowthAIPage({ onReviewJob }) {
       <header style={{ padding: '18px 24px', background: '#172033', color: '#fff' }}>
         <h1 style={{ margin: 0, fontSize: 22 }}>GrowthAI Draft Workspace</h1>
         <p style={{ margin: '5px 0 0', color: '#cbd5e1', fontSize: 13 }}>
-          Deterministic content only. Human review is required. Approval does not send or publish anything.
+          Deterministic tools remain free. AI-assisted drafts use credits. Human review is always required.
         </p>
       </header>
 
@@ -466,6 +546,12 @@ export default function GrowthAIPage({ onReviewJob }) {
         {loading && <div>Loading tenant GrowthAI workspace...</div>}
         {error && <div role="alert" style={{ color: colors.danger, background: '#fef2f2', padding: 10, borderRadius: 6 }}>{error}</div>}
         {message && <div role="status" style={{ color: colors.success, background: '#ecfdf5', padding: 10, borderRadius: 6 }}>{message}</div>}
+
+        <Card>
+          <strong style={{ fontSize: 16 }}>AI Credits: {creditsLoading ? 'Loading...' : creditBalance.available}</strong>
+          {creditBalance.reserved > 0 && <span style={{ marginLeft: 10, color: colors.muted, fontSize: 12 }}>{creditBalance.reserved} currently reserved</span>}
+          <p style={{ margin: '6px 0 0', color: colors.muted, fontSize: 12 }}>Only explicit AI-assisted generation uses credits. Deterministic opportunities and templates remain free.</p>
+        </Card>
 
         <Card>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap' }}>
@@ -503,9 +589,12 @@ export default function GrowthAIPage({ onReviewJob }) {
                 opportunity={opportunity}
                 subject={opportunitySubject(opportunity)}
                 onDraftFollowUp={draftEstimateFollowUp}
+                onAIFollowUp={aiEstimateFollowUp}
                 onReviewJob={reviewOpportunityJob}
                 onDismiss={dismissOpportunity}
                 saving={saving}
+                aiGenerating={aiGenerating}
+                aiCredits={creditBalance.available}
               />
             ))}
           </div>
@@ -538,6 +627,19 @@ export default function GrowthAIPage({ onReviewJob }) {
                 <Field label="Cleaning topic"><input aria-label="Cleaning topic" value={inputs.cleaningTopic} onChange={event => setInputs(value => ({ ...value, cleaningTopic: event.target.value }))} style={controlStyle} /></Field>
                 <Field label="Extra notes"><textarea aria-label="Extra notes" rows="2" value={inputs.extraNotes} onChange={event => setInputs(value => ({ ...value, extraNotes: event.target.value }))} style={controlStyle} /></Field>
                 <Button onClick={generate}>Create deterministic draft</Button>
+                <Button disabled={saving || aiGenerating || creditBalance.available < 1} onClick={() => generateWithAI({
+                  actionType: 'marketing_post',
+                  input: {
+                    postTypeId,
+                    platform: inputs.platform,
+                    serviceType: inputs.serviceType,
+                    serviceArea: inputs.serviceArea,
+                    offer: inputs.offer,
+                    cleaningTopic: inputs.cleaningTopic,
+                    extraNotes: inputs.extraNotes,
+                  },
+                })}>Generate marketing with AI · 1 credit</Button>
+                {creditBalance.available < 1 && <p style={{ margin: 0, color: colors.warning, fontSize: 12 }}>Not enough AI credits. The deterministic draft builder remains available.</p>}
               </div>
               <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                 {CONTENT_IDEAS.auntbs.slice(0, 4).map(idea => <Button key={idea.label} tone="secondary" onClick={() => {
@@ -547,7 +649,14 @@ export default function GrowthAIPage({ onReviewJob }) {
               </div>
             </Card>
 
-            <CustomerResponseHelper businessName={businessName} onSave={saveResponseDraft} saving={saving} />
+            <CustomerResponseHelper
+              aiCredits={creditBalance.available}
+              aiGenerating={aiGenerating}
+              businessName={businessName}
+              onGenerateAI={input => generateWithAI({ actionType: 'customer_response', input })}
+              onSave={saveResponseDraft}
+              saving={saving}
+            />
 
             <Card>
               <h2 style={{ margin: '0 0 12px', fontSize: 17, color: colors.text }}>Tenant drafts ({drafts.length})</h2>

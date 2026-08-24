@@ -163,6 +163,22 @@ function buildSeedDocuments(now = new Date()) {
       availability: { availableDays: ['tuesday', 'thursday'] },
     },
   });
+  add(`tenants/${TENANT_A}/growthAICreditBalances/current`, {
+    schemaVersion: 1,
+    tenantId: TENANT_A,
+    buckets: { monthly: 5, promotional: 0, purchased: 0 },
+    reservedCredits: 0,
+    updatedAt: dates.todayIso,
+    updatedByUid: adminA,
+  });
+  add(`tenants/${TENANT_B}/growthAICreditBalances/current`, {
+    schemaVersion: 1,
+    tenantId: TENANT_B,
+    buckets: { monthly: 0, promotional: 0, purchased: 0 },
+    reservedCredits: 0,
+    updatedAt: dates.todayIso,
+    updatedByUid: adminB,
+  });
 
   for (const persona of PERSONAS) {
     add(`users/${persona.uid}`, {
