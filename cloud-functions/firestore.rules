@@ -251,10 +251,18 @@ service cloud.firestore {
              (!('tenantId' in request.resource.data) || request.resource.data.tenantId == tenantId);
     }
 
+    function isTrimmedString(value, minimumLength, maximumLength) {
+      return value is string &&
+             value.size() >= minimumLength &&
+             value.size() <= maximumLength &&
+             value.matches('^\\S(?:[\\s\\S]*\\S)?$');
+    }
+
     function fieldPhotoMetadataKeysOnly() {
       return request.resource.data.keys().hasAll([
                'id',
                'phase',
+               'roomLabel',
                'storagePath',
                'uploadedAt',
                'uploadedByUid',
@@ -265,6 +273,8 @@ service cloud.firestore {
              request.resource.data.keys().hasOnly([
                'id',
                'phase',
+               'roomLabel',
+               'note',
                'storagePath',
                'uploadedAt',
                'uploadedByUid',
@@ -290,6 +300,8 @@ service cloud.firestore {
              fieldPhotoMetadataKeysOnly() &&
              data.id == photoId &&
              data.phase in ['before', 'after'] &&
+             isTrimmedString(data.roomLabel, 1, 80) &&
+             (!('note' in data) || isTrimmedString(data.note, 1, 500)) &&
              data.uploadedByUid == request.auth.uid &&
              data.uploadedAt == request.time &&
              data.sizeBytes is int &&

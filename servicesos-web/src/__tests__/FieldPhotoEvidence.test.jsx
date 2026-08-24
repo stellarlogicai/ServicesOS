@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   loadFieldPhotoBlob: vi.fn(),
   uploadFieldPhoto: vi.fn(),
   validateFieldPhoto: vi.fn(),
+  validateFieldPhotoDetails: vi.fn(),
 }));
 
 vi.mock('../services/fieldPhotoService', () => ({
@@ -15,6 +16,7 @@ vi.mock('../services/fieldPhotoService', () => ({
   loadFieldPhotoBlob: mocks.loadFieldPhotoBlob,
   uploadFieldPhoto: mocks.uploadFieldPhoto,
   validateFieldPhoto: mocks.validateFieldPhoto,
+  validateFieldPhotoDetails: mocks.validateFieldPhotoDetails,
 }));
 
 import { BookingFieldPhotoReview, FieldPhotoUploadPanel } from '../components/FieldPhotoEvidence';
@@ -28,6 +30,13 @@ describe('FieldPhotoEvidence', () => {
     vi.clearAllMocks();
     mocks.listFieldPhotos.mockResolvedValue([]);
     mocks.validateFieldPhoto.mockReturnValue({ success: true });
+    mocks.validateFieldPhotoDetails.mockImplementation(({ roomLabel, note }) => {
+      const safeRoomLabel = roomLabel.trim();
+      if (!safeRoomLabel) {
+        return { success: false, message: 'Add a room or area before uploading this photo.' };
+      }
+      return { success: true, roomLabel: safeRoomLabel, note: note.trim() };
+    });
     mocks.loadFieldPhotoBlob.mockResolvedValue(new Blob(['persisted'], { type: 'image/jpeg' }));
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:field-photo') });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
@@ -59,28 +68,77 @@ describe('FieldPhotoEvidence', () => {
     expect(mocks.uploadFieldPhoto).not.toHaveBeenCalled();
   });
 
+  it('requires a room label and persists trimmed metadata with a successful photo', async () => {
+    mocks.uploadFieldPhoto.mockResolvedValueOnce({
+      success: true,
+      data: {
+        id: 'photo-1',
+        phase: 'before',
+        roomLabel: 'Kitchen',
+        note: 'Grease behind stove',
+        storagePath: 'safe/before/photo-1.jpg',
+        uploadedAt: new Date('2026-08-24T08:14:00Z'),
+      },
+    });
+    render(<FieldPhotoUploadPanel tenantId="tenant-a" bookingId="booking-a" />);
+    await screen.findByText('No before photos added yet.');
+    fireEvent.change(screen.getByLabelText('Add before photo'), { target: { files: [jpegFile()] } });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upload photo' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Add a room or area before uploading this photo.');
+    expect(mocks.uploadFieldPhoto).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('before photo room or area'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Upload photo' }));
+    expect(mocks.uploadFieldPhoto).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('before photo room or area'), { target: { value: '  Kitchen  ' } });
+    fireEvent.change(screen.getByLabelText('before photo note'), { target: { value: '  Grease behind stove  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Upload photo' }));
+
+    await screen.findByText('Photo uploaded.');
+    expect(mocks.uploadFieldPhoto).toHaveBeenCalledWith({
+      tenantId: 'tenant-a',
+      bookingId: 'booking-a',
+      phase: 'before',
+      roomLabel: 'Kitchen',
+      note: 'Grease behind stove',
+      file: expect.any(File),
+    });
+    expect(screen.getByText('Kitchen')).toBeInTheDocument();
+    expect(screen.getByText('Grease behind stove')).toBeInTheDocument();
+    expect(screen.getByText(/Uploaded Aug 24, 2026/)).toBeInTheDocument();
+    expect(await screen.findByAltText('before job evidence')).toBeInTheDocument();
+    expect(screen.getByLabelText('before photo room or area')).toHaveValue('');
+    expect(screen.getByLabelText('before photo note')).toHaveValue('');
+  });
+
   it('keeps a failed file retryable and reports uploaded only after service success', async () => {
     mocks.uploadFieldPhoto
       .mockResolvedValueOnce({ success: false, message: 'Upload failed. Try again.' })
       .mockResolvedValueOnce({
         success: true,
         data: {
-          id: 'photo-1', phase: 'after', storagePath: 'safe/after/photo-1.jpg', uploadedAt: new Date(),
+          id: 'photo-1', phase: 'after', roomLabel: 'Bathroom', note: 'Mirror finished', storagePath: 'safe/after/photo-1.jpg', uploadedAt: new Date(),
         },
       });
     render(<FieldPhotoUploadPanel tenantId="tenant-a" bookingId="booking-a" />);
     await screen.findByText('No after photos added yet.');
     fireEvent.change(screen.getByLabelText('Add after photo'), { target: { files: [jpegFile('after.jpg')] } });
+    fireEvent.change(screen.getByLabelText('after photo room or area'), { target: { value: 'Bathroom' } });
+    fireEvent.change(screen.getByLabelText('after photo note'), { target: { value: 'Mirror finished' } });
     fireEvent.click(await screen.findByRole('button', { name: 'Upload photo' }));
 
     expect(await screen.findByText('Upload failed. Try again.')).toBeInTheDocument();
     expect(screen.getByAltText('Selected after photo preview')).toBeInTheDocument();
+    expect(screen.getByLabelText('after photo room or area')).toHaveValue('Bathroom');
+    expect(screen.getByLabelText('after photo note')).toHaveValue('Mirror finished');
     fireEvent.click(screen.getByRole('button', { name: 'Retry upload' }));
 
     expect(await screen.findByText('Photo uploaded.')).toBeInTheDocument();
     expect(mocks.uploadFieldPhoto).toHaveBeenCalledTimes(2);
     expect(mocks.uploadFieldPhoto).toHaveBeenLastCalledWith({
-      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', file: expect.any(File),
+      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', roomLabel: 'Bathroom', note: 'Mirror finished', file: expect.any(File),
     });
     expect(screen.queryByAltText('Selected after photo preview')).not.toBeInTheDocument();
   });
@@ -102,9 +160,25 @@ describe('FieldPhotoEvidence', () => {
     render(<BookingFieldPhotoReview tenantId="tenant-a" bookingId="booking-a" />);
 
     expect(await screen.findByText('Photo unavailable.')).toBeInTheDocument();
+    expect(screen.getByText('Unlabeled')).toBeInTheDocument();
     expect(screen.getByText(/Uploaded Jul 13, 2026/)).toBeInTheDocument();
     expect(screen.getByText('No after photos added yet.')).toBeInTheDocument();
     expect(screen.queryByLabelText(/Add .* photo/)).not.toBeInTheDocument();
     await waitFor(() => expect(mocks.loadFieldPhotoBlob).toHaveBeenCalledWith('safe/before-1.jpg'));
+  });
+
+  it('renders independent room labels and optional notes for multiple persisted photos', async () => {
+    mocks.listFieldPhotos.mockResolvedValue([
+      { id: 'before-kitchen', phase: 'before', roomLabel: 'Kitchen', note: 'Grease buildup', storagePath: 'safe/before-kitchen.jpg', uploadedAt: new Date() },
+      { id: 'before-bathroom', phase: 'before', roomLabel: 'Bathroom', storagePath: 'safe/before-bathroom.jpg', uploadedAt: new Date() },
+      { id: 'after-kitchen', phase: 'after', roomLabel: 'Kitchen', storagePath: 'safe/after-kitchen.jpg', uploadedAt: new Date() },
+    ]);
+
+    render(<BookingFieldPhotoReview tenantId="tenant-a" bookingId="booking-a" />);
+
+    expect((await screen.findAllByText('Kitchen')).length).toBe(2);
+    expect(screen.getByText('Bathroom')).toBeInTheDocument();
+    expect(screen.getByText('Grease buildup')).toBeInTheDocument();
+    expect(await screen.findAllByRole('img')).toHaveLength(3);
   });
 });

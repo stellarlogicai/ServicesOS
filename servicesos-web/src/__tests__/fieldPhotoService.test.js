@@ -38,6 +38,7 @@ import {
   buildFieldPhotoStoragePath,
   uploadFieldPhoto,
   validateFieldPhoto,
+  validateFieldPhotoDetails,
 } from '../services/fieldPhotoService';
 import { auth } from '../firebase';
 
@@ -70,6 +71,26 @@ describe('fieldPhotoService', () => {
     });
   });
 
+  it('requires and trims a room label while keeping the note optional', () => {
+    expect(validateFieldPhotoDetails()).toEqual({
+      success: false,
+      message: 'Add a room or area before uploading this photo.',
+    });
+    expect(validateFieldPhotoDetails({ roomLabel: '   ', note: '' })).toMatchObject({ success: false });
+    expect(validateFieldPhotoDetails({ roomLabel: '  Kitchen  ', note: '  Grease behind stove  ' })).toEqual({
+      success: true,
+      roomLabel: 'Kitchen',
+      note: 'Grease behind stove',
+    });
+    expect(validateFieldPhotoDetails({ roomLabel: 'Kitchen' })).toEqual({
+      success: true,
+      roomLabel: 'Kitchen',
+      note: '',
+    });
+    expect(validateFieldPhotoDetails({ roomLabel: 'K'.repeat(81) })).toMatchObject({ success: false });
+    expect(validateFieldPhotoDetails({ roomLabel: 'Kitchen', note: 'N'.repeat(501) })).toMatchObject({ success: false });
+  });
+
   it('builds a generated tenant, booking, and phase-scoped path without the original file name', () => {
     const path = buildFieldPhotoStoragePath('tenant-a', 'booking-a', 'before', 'photo-generated-1', 'image/jpeg');
     expect(path).toBe('tenants/tenant-a/bookings/booking-a/field-photos/before/photo-generated-1.jpg');
@@ -80,6 +101,8 @@ describe('fieldPhotoService', () => {
     const metadata = buildFieldPhotoMetadata({
       photoId: 'photo-generated-1',
       phase: 'after',
+      roomLabel: '  Kitchen  ',
+      note: '  Grease removed  ',
       storagePath: 'tenants/tenant-a/bookings/booking-a/field-photos/after/photo-generated-1.png',
       uploadedByUid: 'employee-a',
       contentType: 'image/png',
@@ -90,6 +113,8 @@ describe('fieldPhotoService', () => {
     expect(metadata).toEqual({
       id: 'photo-generated-1',
       phase: 'after',
+      roomLabel: 'Kitchen',
+      note: 'Grease removed',
       storagePath: 'tenants/tenant-a/bookings/booking-a/field-photos/after/photo-generated-1.png',
       uploadedAt: { __serverTimestamp: true },
       uploadedByUid: 'employee-a',
@@ -107,6 +132,8 @@ describe('fieldPhotoService', () => {
       tenantId: 'tenant-a',
       bookingId: 'booking-a',
       phase: 'before',
+      roomLabel: 'Kitchen',
+      note: '',
       file: imageFile(),
     });
 
@@ -122,11 +149,23 @@ describe('fieldPhotoService', () => {
       'fileName',
       'id',
       'phase',
+      'roomLabel',
       'sizeBytes',
       'storagePath',
       'uploadedAt',
       'uploadedByUid',
     ]);
+  });
+
+  it('rejects missing room metadata before authorization or Storage writes', async () => {
+    const result = await uploadFieldPhoto({
+      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'before', roomLabel: '   ', file: imageFile(),
+    });
+
+    expect(result).toEqual({ success: false, message: 'Add a room or area before uploading this photo.' });
+    expect(mocks.getDoc).not.toHaveBeenCalled();
+    expect(mocks.uploadBytes).not.toHaveBeenCalled();
+    expect(mocks.setDoc).not.toHaveBeenCalled();
   });
 
   it('derives a tenant admin uploader from Firebase Auth without changing booking data', async () => {
@@ -137,13 +176,14 @@ describe('fieldPhotoService', () => {
     });
 
     const result = await uploadFieldPhoto({
-      tenantId: 'tenant-a', bookingId: 'unassigned-booking', phase: 'after', file: imageFile({ type: 'image/png' }),
+      tenantId: 'tenant-a', bookingId: 'unassigned-booking', phase: 'after', roomLabel: 'Bathroom', file: imageFile({ type: 'image/png' }),
     });
 
     expect(result.success).toBe(true);
     expect(mocks.setDoc.mock.calls[0][1]).toMatchObject({
       uploadedByUid: 'admin-a',
       phase: 'after',
+      roomLabel: 'Bathroom',
       contentType: 'image/png',
     });
     expect(JSON.stringify(mocks.setDoc.mock.calls[0][1])).not.toMatch(/assignedEmployee|payment|stripe|price|customer|lead|date/i);
@@ -156,7 +196,7 @@ describe('fieldPhotoService', () => {
     });
 
     const result = await uploadFieldPhoto({
-      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'before', file: imageFile(),
+      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'before', roomLabel: 'Kitchen', file: imageFile(),
     });
 
     expect(result).toEqual({ success: false, message: 'Photo upload is unavailable for this account.' });
@@ -167,7 +207,7 @@ describe('fieldPhotoService', () => {
   it('does not create metadata when Storage upload fails', async () => {
     mocks.uploadBytes.mockRejectedValueOnce(new Error('storage unavailable'));
     const result = await uploadFieldPhoto({
-      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'before', file: imageFile(),
+      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'before', roomLabel: 'Kitchen', file: imageFile(),
     });
     expect(result).toMatchObject({ success: false, stage: 'storage' });
     expect(mocks.setDoc).not.toHaveBeenCalled();
@@ -176,7 +216,7 @@ describe('fieldPhotoService', () => {
   it('attempts Storage cleanup when metadata creation fails and never reports fake success', async () => {
     mocks.setDoc.mockRejectedValueOnce(new Error('metadata denied'));
     const result = await uploadFieldPhoto({
-      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', file: imageFile(),
+      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', roomLabel: 'Kitchen', file: imageFile(),
     });
     expect(result).toMatchObject({ success: false, stage: 'metadata', cleanupFailed: false });
     expect(mocks.deleteObject).toHaveBeenCalledTimes(1);
@@ -186,7 +226,7 @@ describe('fieldPhotoService', () => {
     mocks.setDoc.mockRejectedValueOnce(new Error('metadata denied'));
     mocks.deleteObject.mockRejectedValueOnce(new Error('cleanup denied'));
     const result = await uploadFieldPhoto({
-      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', file: imageFile(),
+      tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', roomLabel: 'Kitchen', file: imageFile(),
     });
     expect(result).toMatchObject({ success: false, stage: 'metadata', cleanupFailed: true });
     expect(result.message).toBe('Upload failed. Try again.');

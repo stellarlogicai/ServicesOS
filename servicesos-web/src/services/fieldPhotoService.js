@@ -22,6 +22,8 @@ export const FIELD_PHOTO_ALLOWED_TYPES = Object.freeze([
   'image/webp',
 ]);
 export const FIELD_PHOTO_MAX_SIZE_BYTES = 10 * 1024 * 1024;
+export const FIELD_PHOTO_ROOM_LABEL_MAX_LENGTH = 80;
+export const FIELD_PHOTO_NOTE_MAX_LENGTH = 500;
 
 const EXTENSION_BY_TYPE = Object.freeze({
   'image/jpeg': 'jpg',
@@ -48,6 +50,24 @@ function normalizedPhase(phase) {
     throw new Error('Photo phase is invalid.');
   }
   return phase;
+}
+
+export function validateFieldPhotoDetails({ roomLabel, note } = {}) {
+  const safeRoomLabel = typeof roomLabel === 'string' ? roomLabel.trim() : '';
+  if (!safeRoomLabel) {
+    return { success: false, message: 'Add a room or area before uploading this photo.' };
+  }
+  if (safeRoomLabel.length > FIELD_PHOTO_ROOM_LABEL_MAX_LENGTH) {
+    return { success: false, message: 'Room or area must be 80 characters or fewer.' };
+  }
+  if (note !== undefined && note !== null && typeof note !== 'string') {
+    return { success: false, message: 'Photo note is invalid.' };
+  }
+  const safeNote = typeof note === 'string' ? note.trim() : '';
+  if (safeNote.length > FIELD_PHOTO_NOTE_MAX_LENGTH) {
+    return { success: false, message: 'Photo note must be 500 characters or fewer.' };
+  }
+  return { success: true, roomLabel: safeRoomLabel, note: safeNote };
 }
 
 export function validateFieldPhoto(file) {
@@ -87,6 +107,8 @@ export function buildFieldPhotoStoragePath(tenantId, bookingId, phase, photoId, 
 export function buildFieldPhotoMetadata({
   photoId,
   phase,
+  roomLabel,
+  note,
   storagePath,
   uploadedByUid,
   contentType,
@@ -94,11 +116,14 @@ export function buildFieldPhotoMetadata({
   clientFileLastModifiedAt,
 }) {
   const safePhase = normalizedPhase(phase);
+  const details = validateFieldPhotoDetails({ roomLabel, note });
+  if (!details.success) throw new Error(details.message);
   const extension = EXTENSION_BY_TYPE[contentType];
   if (!extension) throw new Error('Photo type is invalid.');
   const metadata = {
     id: requiredSegment(photoId, 'Photo'),
     phase: safePhase,
+    roomLabel: details.roomLabel,
     storagePath: requiredText(storagePath, 'Storage path'),
     uploadedAt: serverTimestamp(),
     uploadedByUid: requiredSegment(uploadedByUid, 'Employee'),
@@ -106,6 +131,7 @@ export function buildFieldPhotoMetadata({
     contentType,
     sizeBytes,
   };
+  if (details.note) metadata.note = details.note;
   if (Number.isFinite(clientFileLastModifiedAt) && clientFileLastModifiedAt > 0) {
     metadata.clientFileLastModifiedAt = new Date(clientFileLastModifiedAt);
   }
@@ -164,7 +190,9 @@ async function resolveFieldPhotoUploader(tenantId) {
   }
 }
 
-export async function uploadFieldPhoto({ tenantId, bookingId, phase, file }) {
+export async function uploadFieldPhoto({ tenantId, bookingId, phase, roomLabel, note, file }) {
+  const details = validateFieldPhotoDetails({ roomLabel, note });
+  if (!details.success) return details;
   const validation = validateFieldPhoto(file);
   if (!validation.success) return validation;
 
@@ -183,6 +211,8 @@ export async function uploadFieldPhoto({ tenantId, bookingId, phase, file }) {
   const metadata = buildFieldPhotoMetadata({
     photoId: metadataReference.id,
     phase,
+    roomLabel: details.roomLabel,
+    note: details.note,
     storagePath,
     uploadedByUid: uploader.uploadedByUid,
     contentType: file.type,

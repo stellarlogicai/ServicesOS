@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   loadFieldPhotoBlob: vi.fn(),
   uploadFieldPhoto: vi.fn(),
   validateFieldPhoto: vi.fn(),
+  validateFieldPhotoDetails: vi.fn(),
   getEmployeeUsableCleaningRecordsByIds: vi.fn(),
   tenantId: 'tenant-a',
   user: { uid: 'field-user-1' },
@@ -69,6 +70,7 @@ vi.mock('../services/fieldPhotoService', () => ({
   loadFieldPhotoBlob: mocks.loadFieldPhotoBlob,
   uploadFieldPhoto: mocks.uploadFieldPhoto,
   validateFieldPhoto: mocks.validateFieldPhoto,
+  validateFieldPhotoDetails: mocks.validateFieldPhotoDetails,
 }));
 
 vi.mock('../modules/cleaning/products/cleaningProductService', () => ({
@@ -178,10 +180,12 @@ describe('FieldMode read-only field surface', () => {
     mocks.loadFieldPhotoBlob.mockReset();
     mocks.uploadFieldPhoto.mockReset();
     mocks.validateFieldPhoto.mockReset();
+    mocks.validateFieldPhotoDetails.mockReset();
     mocks.getEmployeeUsableCleaningRecordsByIds.mockReset();
     mocks.getEmployeeUsableCleaningRecordsByIds.mockResolvedValue([]);
     mocks.listFieldPhotos.mockResolvedValue([]);
     mocks.validateFieldPhoto.mockReturnValue({ success: true });
+    mocks.validateFieldPhotoDetails.mockReturnValue({ success: true, roomLabel: 'Kitchen', note: '' });
     mocks.updateBookingFieldExecution.mockImplementation(async (_tenantId, bookingId, patch) => ({
       success: true,
       data: { id: bookingId, ...patch },

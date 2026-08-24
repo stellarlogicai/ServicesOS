@@ -236,21 +236,28 @@ const fieldPhotoMetadata = ({
   bookingId = 'field-booking',
   photoId = 'photo-valid',
   phase = 'before',
+  roomLabel = 'Kitchen',
+  note,
+  omitRoomLabel = false,
   uploadedByUid = 'employee-a',
   contentType = 'image/jpeg',
   extension = 'jpg',
   extra = {},
-} = {}) => ({
-  id: photoId,
-  phase,
-  storagePath: `tenants/${tenantId}/bookings/${bookingId}/field-photos/${phase}/${photoId}.${extension}`,
-  uploadedAt: serverTimestamp(),
-  uploadedByUid,
-  fileName: `${phase}-photo.${extension}`,
-  contentType,
-  sizeBytes: 256,
-  ...extra,
-});
+} = {}) => {
+  const metadata = {
+    id: photoId,
+    phase,
+    storagePath: `tenants/${tenantId}/bookings/${bookingId}/field-photos/${phase}/${photoId}.${extension}`,
+    uploadedAt: serverTimestamp(),
+    uploadedByUid,
+    fileName: `${phase}-photo.${extension}`,
+    contentType,
+    sizeBytes: 256,
+  };
+  if (!omitRoomLabel) metadata.roomLabel = roomLabel;
+  if (note !== undefined) metadata.note = note;
+  return { ...metadata, ...extra };
+};
 
 const commercialProduct = ({
   id = 'product-pending',
@@ -630,6 +637,56 @@ describe('tenant-scoped customer intake Firestore rules', () => {
 
     await assertSucceeds(setDoc(photo, fieldPhotoMetadata()));
     await assertSucceeds(getDoc(photo));
+  });
+
+  test('new field photo metadata requires a trimmed room label and validates an optional note', async () => {
+    const database = authenticatedDatabase('employee-a');
+    const collectionPath = ['tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos'];
+
+    await assertSucceeds(setDoc(
+      doc(database, ...collectionPath, 'photo-with-note'),
+      fieldPhotoMetadata({
+        photoId: 'photo-with-note',
+        roomLabel: 'Primary Bathroom',
+        note: 'Heavy buildup under sink',
+      })
+    ));
+
+    const invalidMetadata = [
+      fieldPhotoMetadata({ photoId: 'photo-no-room', omitRoomLabel: true }),
+      fieldPhotoMetadata({ photoId: 'photo-empty-room', roomLabel: '' }),
+      fieldPhotoMetadata({ photoId: 'photo-whitespace-room', roomLabel: '   ' }),
+      fieldPhotoMetadata({ photoId: 'photo-leading-room', roomLabel: ' Kitchen' }),
+      fieldPhotoMetadata({ photoId: 'photo-trailing-room', roomLabel: 'Kitchen ' }),
+      fieldPhotoMetadata({ photoId: 'photo-long-room', roomLabel: 'K'.repeat(81) }),
+      fieldPhotoMetadata({ photoId: 'photo-empty-note', note: '' }),
+      fieldPhotoMetadata({ photoId: 'photo-whitespace-note', note: '   ' }),
+      fieldPhotoMetadata({ photoId: 'photo-long-note', note: 'N'.repeat(501) }),
+    ];
+
+    for (const metadata of invalidMetadata) {
+      await assertFails(setDoc(doc(database, ...collectionPath, metadata.id), metadata));
+    }
+  });
+
+  test('legacy field photo metadata without a room label remains readable', async () => {
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'legacy-photo'), {
+        id: 'legacy-photo',
+        phase: 'before',
+        storagePath: `tenants/${TENANT_A}/bookings/field-booking/field-photos/before/legacy-photo.jpg`,
+        uploadedAt: new Date('2026-07-13T12:00:00.000Z'),
+        uploadedByUid: 'employee-a',
+        fileName: 'before-photo.jpg',
+        contentType: 'image/jpeg',
+        sizeBytes: 256,
+      });
+    });
+
+    await assertSucceeds(getDoc(doc(
+      authenticatedDatabase('employee-a'),
+      'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'legacy-photo'
+    )));
   });
 
   test('active matching employee can create and read valid field photo metadata for a completed booking', async () => {

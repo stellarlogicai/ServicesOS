@@ -5,6 +5,7 @@ import {
   loadFieldPhotoBlob,
   uploadFieldPhoto,
   validateFieldPhoto,
+  validateFieldPhotoDetails,
 } from '../services/fieldPhotoService';
 import './FieldPhotoEvidence.css';
 
@@ -63,7 +64,11 @@ function PersistedPhoto({ photo }) {
       {source && <img src={source} alt={`${photo.phase} job evidence`} />}
       {!source && !unavailable && <div className="field-photo-placeholder" role="status">Loading photo...</div>}
       {unavailable && <div className="field-photo-placeholder" role="status">Photo unavailable.</div>}
-      <p>Uploaded {photoTimestamp(photo.uploadedAt)}</p>
+      <div className="field-photo-card-details">
+        <strong>{photo.roomLabel || 'Unlabeled'}</strong>
+        {photo.note && <span>{photo.note}</span>}
+        <p>Uploaded {photoTimestamp(photo.uploadedAt)}</p>
+      </div>
     </article>
   );
 }
@@ -118,6 +123,10 @@ export function FieldPhotoUploadPanel({ tenantId, bookingId, onEvidenceChange })
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [pending, setPending] = useState({ before: null, after: null });
+  const [details, setDetails] = useState({
+    before: { roomLabel: '', note: '' },
+    after: { roomLabel: '', note: '' },
+  });
   const [phaseMessage, setPhaseMessage] = useState({ before: '', after: '' });
 
   const loadPhotos = useCallback(async () => {
@@ -154,15 +163,30 @@ export function FieldPhotoUploadPanel({ tenantId, bookingId, onEvidenceChange })
     setPending(current => ({ ...current, [phase]: { file, status: 'ready' } }));
   };
 
+  const updateDetails = (phase, patch) => {
+    setDetails(current => ({
+      ...current,
+      [phase]: { ...current[phase], ...patch },
+    }));
+    setPhaseMessage(current => ({ ...current, [phase]: '' }));
+  };
+
   const upload = async phase => {
     const selected = pending[phase];
     if (!selected?.file) return;
+    const detailValidation = validateFieldPhotoDetails(details[phase]);
+    if (!detailValidation.success) {
+      setPhaseMessage(current => ({ ...current, [phase]: detailValidation.message }));
+      return;
+    }
     setPending(current => ({ ...current, [phase]: { ...selected, status: 'uploading' } }));
     setPhaseMessage(current => ({ ...current, [phase]: '' }));
     const result = await uploadFieldPhoto({
       tenantId,
       bookingId,
       phase,
+      roomLabel: detailValidation.roomLabel,
+      note: detailValidation.note,
       file: selected.file,
     });
     if (!result.success) {
@@ -172,6 +196,7 @@ export function FieldPhotoUploadPanel({ tenantId, bookingId, onEvidenceChange })
     const updated = [...photos, result.data];
     setPhotos(updated);
     setPending(current => ({ ...current, [phase]: null }));
+    setDetails(current => ({ ...current, [phase]: { roomLabel: '', note: '' } }));
     setPhaseMessage(current => ({ ...current, [phase]: 'Photo uploaded.' }));
     onEvidenceChange?.({ loading: false, photos: updated });
   };
@@ -199,6 +224,30 @@ export function FieldPhotoUploadPanel({ tenantId, bookingId, onEvidenceChange })
                   if (file) selectFile(phase, file);
                   event.target.value = '';
                 }}
+              />
+            </label>
+          </div>
+          <div className="field-photo-metadata-fields">
+            <label>
+              Room / Area *
+              <input
+                type="text"
+                aria-label={`${phase} photo room or area`}
+                value={details[phase].roomLabel}
+                maxLength={80}
+                onChange={event => updateDetails(phase, { roomLabel: event.target.value })}
+                disabled={pending[phase]?.status === 'uploading'}
+              />
+            </label>
+            <label>
+              Note (optional)
+              <textarea
+                aria-label={`${phase} photo note`}
+                value={details[phase].note}
+                maxLength={500}
+                rows={2}
+                onChange={event => updateDetails(phase, { note: event.target.value })}
+                disabled={pending[phase]?.status === 'uploading'}
               />
             </label>
           </div>

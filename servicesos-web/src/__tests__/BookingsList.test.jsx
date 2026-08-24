@@ -69,6 +69,9 @@ vi.mock('../services/fieldPhotoService', () => ({
   FIELD_PHOTO_PHASES: ['before', 'after'],
   listFieldPhotos: mocks.listFieldPhotos,
   loadFieldPhotoBlob: mocks.loadFieldPhotoBlob,
+  uploadFieldPhoto: vi.fn(),
+  validateFieldPhoto: vi.fn(),
+  validateFieldPhotoDetails: vi.fn(),
 }));
 
 vi.mock('../services/employeeProfileService', () => ({
@@ -524,8 +527,8 @@ describe('read-only Bookings admin list', () => {
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(blob => `blob:${blob.type}`) });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
     mocks.listFieldPhotos.mockResolvedValue([
-      { id: 'before-1', phase: 'before', storagePath: 'safe/before-1.jpg', uploadedAt: new Date('2026-07-13T14:00:00Z') },
-      { id: 'after-1', phase: 'after', storagePath: 'safe/after-1.jpg', uploadedAt: new Date('2026-07-13T16:00:00Z') },
+      { id: 'before-1', phase: 'before', roomLabel: 'Kitchen', note: 'Grease behind stove', storagePath: 'safe/before-1.jpg', uploadedAt: new Date('2026-07-13T14:00:00Z') },
+      { id: 'after-1', phase: 'after', roomLabel: 'Primary Bathroom', storagePath: 'safe/after-1.jpg', uploadedAt: new Date('2026-07-13T16:00:00Z') },
     ]);
     mocks.loadFieldPhotoBlob.mockResolvedValue(new Blob(['photo'], { type: 'image/jpeg' }));
     mocks.getJobs.mockResolvedValue({ success: true, data: [{
@@ -542,6 +545,9 @@ describe('read-only Bookings admin list', () => {
     expect(await within(dialog).findByAltText('before job evidence')).toBeInTheDocument();
     expect(within(dialog).getByAltText('after job evidence')).toBeInTheDocument();
     expect(within(dialog).getByText('Field photos')).toBeInTheDocument();
+    expect(within(dialog).getByText('Kitchen')).toBeInTheDocument();
+    expect(within(dialog).getByText('Grease behind stove')).toBeInTheDocument();
+    expect(within(dialog).getByText('Primary Bathroom')).toBeInTheDocument();
     expect(within(dialog).getByText('Not paid')).toBeInTheDocument();
     expect(within(dialog).queryByLabelText(/Add .* photo/)).not.toBeInTheDocument();
     expect(mocks.listFieldPhotos).toHaveBeenCalledWith('tenant-a', 'booking-photo-review');

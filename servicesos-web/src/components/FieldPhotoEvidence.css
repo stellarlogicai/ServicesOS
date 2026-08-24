@@ -52,6 +52,38 @@
   white-space: nowrap;
 }
 
+.field-photo-metadata-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 12px;
+}
+
+.field-photo-metadata-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--v1-text, #0f172a);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.field-photo-metadata-fields input,
+.field-photo-metadata-fields textarea {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 10px 11px;
+  background: #fff;
+  color: var(--v1-text, #0f172a);
+  font: inherit;
+  font-weight: 400;
+}
+
+.field-photo-metadata-fields textarea {
+  resize: vertical;
+}
+
 .field-photo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -74,9 +106,26 @@
   background: #e2e8f0;
 }
 
-.field-photo-card p {
-  margin: 0;
+.field-photo-card-details {
+  display: grid;
+  gap: 4px;
   padding: 9px 10px;
+  overflow-wrap: anywhere;
+}
+
+.field-photo-card-details strong {
+  color: var(--v1-text, #0f172a);
+  font-size: 14px;
+}
+
+.field-photo-card-details span {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.field-photo-card-details p {
+  margin: 0;
   color: #64748b;
   font-size: 12px;
 }
@@ -172,6 +221,7 @@
 
 @media (max-width: 640px) {
   .field-photo-phase-header,
+  .field-photo-metadata-fields,
   .field-photo-pending {
     grid-template-columns: 1fr;
     flex-direction: column;
