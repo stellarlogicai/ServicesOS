@@ -33,8 +33,6 @@ const GUIDE_STEPS = Object.freeze([
   },
 ]);
 
-export const GROWTH_AI_GUIDE_STEP_COUNT = GUIDE_STEPS.length;
-
 export default function GrowthAIOnboardingGuide({
   businessName,
   mode,
