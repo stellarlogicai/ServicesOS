@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
     currentTenant: { id: 'tenant-a', businessName: 'Tenant A Cleaning', businessSettings: {} },
     role: 'admin',
     tenantId: 'tenant-a',
+    userProfile: { displayName: 'Jamie Brown' },
   },
   drafts: [],
   audit: {},
@@ -93,6 +94,15 @@ function openWorkspaceView(name) {
   fireEvent.click(screen.getByRole('tab', { name }));
 }
 
+function openHomeCapability(name) {
+  fireEvent.click(screen.getByRole('button', { name }));
+}
+
+function submitComposer(message) {
+  fireEvent.change(screen.getByLabelText('Ask GrowthAI anything'), { target: { value: message } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+}
+
 async function expectCreditBalance(value) {
   const creditSummary = await screen.findByLabelText('AI credit balance');
   await waitFor(() => expect(creditSummary).toHaveTextContent(String(value)));
@@ -105,6 +115,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
       currentTenant: { id: 'tenant-a', businessName: 'Tenant A Cleaning', businessSettings: {} },
       role: 'admin',
       tenantId: 'tenant-a',
+      userProfile: { displayName: 'Jamie Brown' },
     };
     state.drafts = [];
     state.audit = {};
@@ -217,6 +228,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     };
 
     render(<GrowthAIPage />);
+    openHomeCapability('Review opportunities');
     expect(await screen.findByText('Estimate Follow-Up')).toBeInTheDocument();
     expect(screen.getByText('Jamie Test')).toBeInTheDocument();
     expect(screen.getByText(/Estimate has been marked quoted for 4 days/)).toHaveTextContent('no booking is linked');
@@ -235,6 +247,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
   it('shows credits and saves one AI marketing draft for a rapid duplicate click', async () => {
     render(<GrowthAIPage />);
     await expectCreditBalance(5);
+    openHomeCapability('Create marketing');
     const aiButton = screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' });
     fireEvent.click(aiButton);
     fireEvent.click(aiButton);
@@ -255,8 +268,11 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     gatewayService.credits = 0;
     render(<GrowthAIPage />);
     await expectCreditBalance(0);
+    openHomeCapability('Create marketing');
     expect(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' })).toBeDisabled();
+    openHomeCapability('Follow up');
     expect(screen.getByRole('button', { name: 'Generate response with AI · 1 credit' })).toBeDisabled();
+    openHomeCapability('Create marketing');
     fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
     expect(screen.getByLabelText('Full caption')).not.toHaveValue('');
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
@@ -266,6 +282,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     gatewayService.generateGrowthAIContent.mockRejectedValueOnce(new Error('AI-assisted generation failed. Your credit was restored.'));
     render(<GrowthAIPage />);
     await expectCreditBalance(5);
+    openHomeCapability('Create marketing');
     fireEvent.click(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('credit was restored');
     await expectCreditBalance(5);
@@ -283,6 +300,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
       rebookingImplemented: false,
     };
     render(<GrowthAIPage />);
+    openHomeCapability('Review opportunities');
     fireEvent.click(await screen.findByRole('button', { name: 'Generate follow-up with AI · 1 credit' }));
     await waitFor(() => expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledWith(expect.objectContaining({
       actionType: 'estimate_followup',
@@ -294,6 +312,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
   it('keeps deterministic customer responses free and makes AI assistance explicit', async () => {
     render(<GrowthAIPage />);
     await expectCreditBalance(5);
+    openHomeCapability('Follow up');
     expect(screen.getByRole('button', { name: 'Save response draft' })).toBeEnabled();
     const responseAIButton = screen.getByRole('button', { name: 'Generate response with AI · 1 credit' });
     expect(responseAIButton).toBeDisabled();
@@ -317,6 +336,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     };
 
     render(<GrowthAIPage />);
+    openHomeCapability('Review opportunities');
     fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }));
     await waitFor(() => expect(opportunityService.dismissGrowthAIOpportunity).toHaveBeenCalledWith(
       'tenant-a', 'estimate_followup__lead-a'
@@ -339,6 +359,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     };
 
     render(<GrowthAIPage onReviewJob={onReviewJob} />);
+    openHomeCapability('Review opportunities');
     expect(await screen.findByText('Marketing Opportunity')).toBeInTheDocument();
     expect(screen.getByText(/decide whether they are appropriate for marketing/)).toBeInTheDocument();
     expect(screen.queryByText(/approved for marketing/i)).not.toBeInTheDocument();
@@ -349,6 +370,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
 
   it('uses canonical tenant identity and stores only GrowthAI brand preferences', async () => {
     render(<GrowthAIPage />);
+    fireEvent.click(screen.getByRole('button', { name: /Using Tenant A Cleaning brand profile/ }));
     expect(await screen.findByDisplayValue('Tenant A Cleaning')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Tenant A Cleaning')).toHaveAttribute('readonly');
 
@@ -370,6 +392,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     openWorkspaceView('Drafts');
     await screen.findByText('No tenant drafts saved yet.');
     openWorkspaceView('Home');
+    openHomeCapability('Create marketing');
     fireEvent.change(screen.getByLabelText('Service area'), { target: { value: 'Test City' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save as new draft' }));
@@ -449,6 +472,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     openWorkspaceView('Drafts');
     await screen.findByText('No tenant drafts saved yet.');
     openWorkspaceView('Home');
+    openHomeCapability('Create marketing');
 
     fireEvent.change(screen.getByLabelText('Service area'), { target: { value: 'Test City' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
@@ -470,6 +494,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     openWorkspaceView('Drafts');
     await screen.findByText('No tenant drafts saved yet.');
     openWorkspaceView('Home');
+    openHomeCapability('Follow up');
 
     fireEvent.change(screen.getByLabelText('Response scenario'), { target: { value: 'review-request' } });
     fireEvent.change(screen.getByLabelText('Response channel'), { target: { value: 'email' } });
@@ -500,7 +525,8 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     const homeTab = screen.getByRole('tab', { name: 'Home' });
     expect(homeTab).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Home');
-    expect(screen.getByText(/Here's what GrowthAI can help you review today/)).toBeInTheDocument();
+    expect(screen.getByText(/Good (morning|afternoon|evening), Jamie\./)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /How can I help grow Tenant A Cleaning today/ })).toBeInTheDocument();
 
     openWorkspaceView('Drafts');
     expect(screen.getByRole('tab', { name: 'Drafts' })).toHaveAttribute('aria-selected', 'true');
@@ -534,6 +560,62 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     fireEvent.keyDown(homeTab, { key: 'ArrowLeft' });
     expect(activityTab).toHaveFocus();
     expect(activityTab).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps workflows hidden until deterministic conversation routing invokes one', async () => {
+    render(<GrowthAIPage />);
+
+    expect(screen.queryByLabelText('Service area')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Customer message for AI')).not.toBeInTheDocument();
+
+    submitComposer('Please make me a Facebook post');
+    expect(await screen.findByRole('heading', { name: 'Marketing draft' })).toBeInTheDocument();
+    expect(screen.getByText('Please make me a Facebook post')).toBeInTheDocument();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+
+    submitComposer('Help me reply to a customer');
+    expect(await screen.findByRole('heading', { name: 'Customer response' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Marketing draft' })).not.toBeInTheDocument();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+
+    submitComposer('What should I work on?');
+    expect(await screen.findByRole('heading', { name: 'Growth opportunities' })).toBeInTheDocument();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+    await expectCreditBalance(5);
+  });
+
+  it('answers help and unknown requests without opening a workflow or spending credits', async () => {
+    render(<GrowthAIPage />);
+
+    submitComposer('What can you do?');
+    expect(await screen.findByText(/review growth opportunities, create marketing drafts/)).toBeInTheDocument();
+    expect(screen.queryByText('Marketing draft')).not.toBeInTheDocument();
+
+    submitComposer('Organize my filing cabinet');
+    expect(await screen.findByText(/currently help you review growth opportunities/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Create marketing' }).length).toBeGreaterThan(1);
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+    await expectCreditBalance(5);
+  });
+
+  it('clears session-only conversation state when the tenant workspace remounts', async () => {
+    const first = render(<GrowthAIPage />);
+    submitComposer('Create a social post');
+    expect(await screen.findByText('Create a social post')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Marketing draft' })).toBeInTheDocument();
+    first.unmount();
+
+    state.auth = {
+      currentTenant: { id: 'tenant-b', businessName: 'Tenant B Cleaning', businessSettings: {} },
+      role: 'admin',
+      tenantId: 'tenant-b',
+      userProfile: { displayName: 'Taylor Test' },
+    };
+    render(<GrowthAIPage />);
+
+    expect(screen.getByRole('heading', { name: /How can I help grow Tenant B Cleaning today/ })).toBeInTheDocument();
+    expect(screen.queryByText('Create a social post')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Marketing draft' })).not.toBeInTheDocument();
   });
 
   it('blocks ordinary employees before loading tenant GrowthAI records', () => {

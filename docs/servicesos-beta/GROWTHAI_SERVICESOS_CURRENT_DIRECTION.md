@@ -50,6 +50,22 @@ The permanent GrowthAI interface should stay simple as capabilities grow:
 - a future guided conversational workspace
 - a future universal composer with typed canonical context
 
+**GrowthAI Home is conversation-first. The conversation is the primary
+interface and replaces most permanent capability panels. GrowthAI capabilities
+should normally be invoked through conversational intent, quick actions, and
+typed rich results rather than permanently displayed as separate Home tools.**
+
+Home must remain simple as capabilities increase. Existing Marketing, customer
+response, opportunity, brand-preference, and future capabilities should migrate
+into the conversation workspace instead of accumulating as permanent panels.
+Drafts remains the reliable persisted review workspace, and Activity remains the
+truthful selected-draft audit view.
+
+The eventual owner/admin post-login experience combines this assistant with a
+deterministic business briefing. Today's Wins, Needs Attention, and
+Today/Week/Month business intelligence are later layers and are not prerequisites
+for the conversation-first shell.
+
 FIND, ATTRACT, CONVERT, RETAIN, and REPUTATION remain useful internal
 classification metadata. Owners should interact through goals such as helping
 with an estimate, following up, creating marketing, finding rebooking

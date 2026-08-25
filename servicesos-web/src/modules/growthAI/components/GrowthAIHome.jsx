@@ -1,11 +1,40 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import {
+  appendBoundedGrowthAIMessages,
+  routeGrowthAIIntent,
+} from '../growthAIConversation';
 import { RESPONSE_CHANNELS, RESPONSE_SCENARIOS, buildResponseTemplate } from '../responseTemplates';
 import {
   GrowthAIButton,
   GrowthAICopyButton,
   GrowthAIField,
-  GrowthAISurface,
 } from './GrowthAIPrimitives';
+
+const CAPABILITY_ACTIONS = Object.freeze([
+  { id: 'marketing', label: 'Create marketing' },
+  { id: 'customer_response', label: 'Follow up' },
+  { id: 'opportunities', label: 'Review opportunities' },
+  { id: 'help', label: 'What can you do?' },
+]);
+
+const CAPABILITY_RESPONSES = Object.freeze({
+  marketing: 'Let\'s create something useful. Choose a format and add any details you want included.',
+  customer_response: 'I can help prepare a private response. Nothing will be sent automatically.',
+  opportunities: 'Here are the current deterministic GrowthAI opportunities for this tenant.',
+  brand: 'These preferences shape GrowthAI drafts. Your canonical business identity still comes from Business Settings.',
+});
+
+function greetingForHour(hour) {
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function safeFirstName(displayName) {
+  const value = typeof displayName === 'string' ? displayName.trim() : '';
+  if (!value || value.includes('@')) return '';
+  return value.split(/\s+/)[0];
+}
 
 function opportunityTypeLabel(type) {
   if (type === 'estimate_followup') return 'Estimate Follow-Up';
@@ -36,7 +65,7 @@ function OpportunityCard({
         </div>
         {acted ? <span className="growth-ai-state growth-ai-state-success">Action started</span> : null}
       </div>
-      <p><strong>Why GrowthAI surfaced this:</strong> {opportunity.detectionReason}</p>
+      <p><strong>Why this appeared:</strong> {opportunity.detectionReason}</p>
       <div className="growth-ai-actions">
         {opportunity.type === 'estimate_followup' ? (
           <>
@@ -57,7 +86,67 @@ function OpportunityCard({
   );
 }
 
-function CustomerResponseHelper({ aiCredits, aiGenerating, businessName, onGenerateAI, onSave, saving }) {
+function MarketingWorkflow({
+  aiCredits,
+  aiGenerating,
+  brand,
+  contentIdeas,
+  inputs,
+  onGenerateDeterministic,
+  onGenerateMarketingAI,
+  onInputChange,
+  onPostTypeChange,
+  onPrefillIdea,
+  platforms,
+  postTypeId,
+  saving,
+}) {
+  return (
+    <section className="growth-ai-workflow" aria-labelledby="growth-ai-marketing-title">
+      <div className="growth-ai-workflow-heading">
+        <div>
+          <h3 id="growth-ai-marketing-title">Marketing draft</h3>
+          <p>Configure a free deterministic draft or explicitly choose AI assistance.</p>
+        </div>
+        <span className="growth-ai-free-label">Free to configure</span>
+      </div>
+      <div className="growth-ai-form-stack">
+        <div className="growth-ai-form-grid">
+          <GrowthAIField label="Post type">
+            <select aria-label="Post type" value={postTypeId} onChange={event => onPostTypeChange(event.target.value)}>
+              {brand.postTypes.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </GrowthAIField>
+          <GrowthAIField label="Platform">
+            <select aria-label="Platform" value={inputs.platform} onChange={event => onInputChange({ platform: event.target.value })}>
+              {platforms.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </GrowthAIField>
+        </div>
+        <div className="growth-ai-form-grid">
+          <GrowthAIField label="Service type"><input aria-label="Service type" value={inputs.serviceType} onChange={event => onInputChange({ serviceType: event.target.value })} /></GrowthAIField>
+          <GrowthAIField label="Service area"><input aria-label="Service area" value={inputs.serviceArea} onChange={event => onInputChange({ serviceArea: event.target.value })} /></GrowthAIField>
+        </div>
+        <GrowthAIField label="Offer"><input aria-label="Offer" value={inputs.offer} onChange={event => onInputChange({ offer: event.target.value })} /></GrowthAIField>
+        <GrowthAIField label="Cleaning topic"><input aria-label="Cleaning topic" value={inputs.cleaningTopic} onChange={event => onInputChange({ cleaningTopic: event.target.value })} /></GrowthAIField>
+        <GrowthAIField label="Extra notes"><textarea aria-label="Extra notes" rows="2" value={inputs.extraNotes} onChange={event => onInputChange({ extraNotes: event.target.value })} /></GrowthAIField>
+        <div className="growth-ai-actions">
+          <GrowthAIButton onClick={onGenerateDeterministic}>Create deterministic draft</GrowthAIButton>
+          <GrowthAIButton disabled={saving || aiGenerating || aiCredits < 1} onClick={onGenerateMarketingAI}>
+            Generate marketing with AI · 1 credit
+          </GrowthAIButton>
+        </div>
+        <p className="growth-ai-cost-note">AI generation uses 1 AI credit. Opening and configuring this workflow is free.</p>
+        {aiCredits < 1 ? <p className="growth-ai-credit-warning">Not enough AI credits. The deterministic draft option remains available.</p> : null}
+      </div>
+      <div className="growth-ai-idea-list" aria-label="Marketing draft ideas">
+        {contentIdeas.slice(0, 4).map(idea => <GrowthAIButton key={idea.label} tone="secondary" onClick={() => onPrefillIdea(idea)}>{idea.label}</GrowthAIButton>)}
+      </div>
+    </section>
+  );
+}
+
+function CustomerResponseWorkflow({ aiCredits, aiGenerating, businessName, onGenerateAI, onSave, saving }) {
   const scenarios = RESPONSE_SCENARIOS.auntbs;
   const [scenarioId, setScenarioId] = useState(scenarios[0].id);
   const [channelId, setChannelId] = useState('sms');
@@ -76,28 +165,27 @@ function CustomerResponseHelper({ aiCredits, aiGenerating, businessName, onGener
   }, [businessName, channelId, scenarioId]);
 
   return (
-    <GrowthAISurface className="growth-ai-tool">
-      <div className="growth-ai-section-heading">
+    <section className="growth-ai-workflow" aria-labelledby="growth-ai-response-title">
+      <div className="growth-ai-workflow-heading">
         <div>
-          <span className="growth-ai-section-kicker">Follow up</span>
-          <h2>Customer response helper</h2>
+          <h3 id="growth-ai-response-title">Customer response</h3>
+          <p>Prepare a private template. Nothing is sent automatically.</p>
         </div>
         <span className="growth-ai-free-label">Free template</span>
       </div>
-      <p className="growth-ai-section-description">
-        Private deterministic templates. Nothing is sent automatically; review and edit before sending manually.
-      </p>
       <div className="growth-ai-form-stack">
-        <GrowthAIField label="Response scenario">
-          <select aria-label="Response scenario" value={scenarioId} onChange={event => setScenarioId(event.target.value)}>
-            {scenarios.map(item => <option key={item.id} value={item.id}>{item.scenario}</option>)}
-          </select>
-        </GrowthAIField>
-        <GrowthAIField label="Response channel">
-          <select aria-label="Response channel" value={channelId} onChange={event => setChannelId(event.target.value)}>
-            {RESPONSE_CHANNELS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-          </select>
-        </GrowthAIField>
+        <div className="growth-ai-form-grid">
+          <GrowthAIField label="Response scenario">
+            <select aria-label="Response scenario" value={scenarioId} onChange={event => setScenarioId(event.target.value)}>
+              {scenarios.map(item => <option key={item.id} value={item.id}>{item.scenario}</option>)}
+            </select>
+          </GrowthAIField>
+          <GrowthAIField label="Response channel">
+            <select aria-label="Response channel" value={channelId} onChange={event => setChannelId(event.target.value)}>
+              {RESPONSE_CHANNELS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </GrowthAIField>
+        </div>
         <GrowthAIField label="Customer message for optional AI assistance">
           <textarea aria-label="Customer message for AI" rows="3" value={customerMessage} onChange={event => setCustomerMessage(event.target.value)} />
         </GrowthAIField>
@@ -116,9 +204,100 @@ function CustomerResponseHelper({ aiCredits, aiGenerating, businessName, onGener
             channelId,
           })}>Generate response with AI · 1 credit</GrowthAIButton>
         </div>
+        <p className="growth-ai-cost-note">AI generation uses 1 AI credit. Templates, editing, and copying are free.</p>
         {aiCredits < 1 ? <p className="growth-ai-credit-warning">Not enough AI credits. Deterministic response templates remain available.</p> : null}
       </div>
-    </GrowthAISurface>
+    </section>
+  );
+}
+
+function OpportunitiesWorkflow({
+  activeOpportunities,
+  aiCredits,
+  aiGenerating,
+  onAIEstimateFollowUp,
+  onDismissOpportunity,
+  onDraftEstimateFollowUp,
+  onOpportunityFilterChange,
+  onRefreshOpportunities,
+  onReviewOpportunityJob,
+  opportunitiesLoading,
+  opportunityFilter,
+  opportunitySubject,
+  saving,
+  visibleOpportunities,
+}) {
+  return (
+    <section className="growth-ai-workflow" aria-labelledby="growth-ai-opportunities-title">
+      <div className="growth-ai-workflow-heading">
+        <div>
+          <h3 id="growth-ai-opportunities-title">Growth opportunities</h3>
+          <p>Deterministic ServicesOS signals only. Reviewing them uses no AI credits.</p>
+        </div>
+        <span className="growth-ai-count">{activeOpportunities.length}</span>
+      </div>
+      <div className="growth-ai-filter-row" aria-label="Filter growth opportunities">
+        {[
+          ['all', 'All'], ['attract', 'Marketing'], ['convert', 'Estimates'], ['retain', 'Rebooking'],
+        ].map(([value, label]) => (
+          <GrowthAIButton key={value} tone={opportunityFilter === value ? 'primary' : 'secondary'} onClick={() => onOpportunityFilterChange(value)}>{label}</GrowthAIButton>
+        ))}
+        <GrowthAIButton tone="secondary" disabled={opportunitiesLoading || saving} onClick={onRefreshOpportunities}>
+          {opportunitiesLoading ? 'Checking...' : 'Refresh'}
+        </GrowthAIButton>
+      </div>
+      {opportunitiesLoading && activeOpportunities.length === 0 ? <p className="growth-ai-empty">Checking tenant records for opportunities...</p> : null}
+      {!opportunitiesLoading && activeOpportunities.length === 0 ? <p className="growth-ai-empty">You\'re caught up. No GrowthAI opportunities need attention right now.</p> : null}
+      {!opportunitiesLoading && activeOpportunities.length > 0 && visibleOpportunities.length === 0 ? <p className="growth-ai-empty">No opportunities match this filter.</p> : null}
+      <div className="growth-ai-opportunity-list">
+        {visibleOpportunities.map(opportunity => (
+          <OpportunityCard
+            key={opportunity.id}
+            opportunity={opportunity}
+            subject={opportunitySubject(opportunity)}
+            onDraftFollowUp={onDraftEstimateFollowUp}
+            onAIFollowUp={onAIEstimateFollowUp}
+            onReviewJob={onReviewOpportunityJob}
+            onDismiss={onDismissOpportunity}
+            saving={saving}
+            aiGenerating={aiGenerating}
+            aiCredits={aiCredits}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function BrandPreferencesWorkflow({ businessName, onProfileChange, onSaveProfile, profile, saving }) {
+  return (
+    <section className="growth-ai-workflow" aria-labelledby="growth-ai-brand-title">
+      <div className="growth-ai-workflow-heading">
+        <div>
+          <h3 id="growth-ai-brand-title">Brand settings</h3>
+          <p>Business identity comes from Business Settings. These are GrowthAI-specific preferences.</p>
+        </div>
+      </div>
+      <div className="growth-ai-brand-grid">
+        <GrowthAIField label="Business name"><input aria-label="Business name" value={businessName} readOnly /></GrowthAIField>
+        <GrowthAIField label="Brand voice"><input aria-label="Brand voice" value={profile.brandVoice} onChange={event => onProfileChange({ brandVoice: event.target.value })} /></GrowthAIField>
+        <GrowthAIField label="Content tone"><input aria-label="Content tone" value={profile.contentTone} onChange={event => onProfileChange({ contentTone: event.target.value })} /></GrowthAIField>
+        <GrowthAIField label="Default call to action"><input aria-label="Default call to action" value={profile.defaultCTA} onChange={event => onProfileChange({ defaultCTA: event.target.value })} /></GrowthAIField>
+      </div>
+      <div className="growth-ai-actions"><GrowthAIButton onClick={onSaveProfile} disabled={saving}>Save brand preferences</GrowthAIButton></div>
+    </section>
+  );
+}
+
+function ConversationMessage({ children, message }) {
+  return (
+    <article className={`growth-ai-message growth-ai-message-${message.role}`} data-message-type={message.type}>
+      <div className="growth-ai-message-identity">{message.role === 'user' ? 'You' : message.role === 'system' ? 'ServicesOS' : 'GrowthAI'}</div>
+      <div className="growth-ai-message-content">
+        <p>{message.content}</p>
+        {children}
+      </div>
+    </article>
   );
 }
 
@@ -152,135 +331,158 @@ export default function GrowthAIHome({
   postTypeId,
   profile,
   saving,
+  userDisplayName,
   visibleOpportunities,
 }) {
+  const [composerValue, setComposerValue] = useState('');
+  const [conversation, setConversation] = useState([]);
+  const [activeWorkflow, setActiveWorkflow] = useState(null);
+  const messageSequence = useRef(0);
+  const firstName = safeFirstName(userDisplayName);
+  const greeting = `${greetingForHour(new Date().getHours())}${firstName ? `, ${firstName}` : ''}.`;
+
+  const nextMessageId = prefix => `${prefix}-${++messageSequence.current}`;
+  const appendMessages = additions => {
+    setConversation(current => appendBoundedGrowthAIMessages(current, additions));
+  };
+
+  const openCapability = (capabilityType, userText) => {
+    if (capabilityType === 'help' || capabilityType === 'unknown') {
+      appendMessages([
+        { id: nextMessageId('user'), role: 'user', type: 'text', content: userText },
+        {
+          id: nextMessageId('assistant'),
+          role: 'assistant',
+          type: 'result',
+          content: capabilityType === 'help'
+            ? 'I can review growth opportunities, create marketing drafts, prepare customer responses, or update GrowthAI brand preferences.'
+            : 'I can currently help you review growth opportunities, create marketing, or prepare customer responses. Choose an option below or tell me which one you\'d like to work on.',
+          actions: ['marketing', 'customer_response', 'opportunities'],
+        },
+      ]);
+      setActiveWorkflow(null);
+      return;
+    }
+
+    const capabilityMessage = {
+      id: nextMessageId('assistant'),
+      role: 'assistant',
+      type: 'capability',
+      content: CAPABILITY_RESPONSES[capabilityType],
+      capabilityType,
+      resultRef: { type: 'growthai_capability', id: capabilityType },
+    };
+    appendMessages([
+      { id: nextMessageId('user'), role: 'user', type: 'text', content: userText },
+      capabilityMessage,
+    ]);
+    setActiveWorkflow({ messageId: capabilityMessage.id, capabilityType });
+  };
+
+  const submitComposer = event => {
+    event.preventDefault();
+    const input = composerValue.trim();
+    if (!input) return;
+    openCapability(routeGrowthAIIntent(input), input);
+    setComposerValue('');
+  };
+
+  const renderWorkflow = capabilityType => {
+    if (capabilityType === 'marketing') {
+      return <MarketingWorkflow {...{
+        aiCredits, aiGenerating, brand, contentIdeas, inputs, onGenerateDeterministic, onGenerateMarketingAI,
+        onInputChange, onPostTypeChange, onPrefillIdea, platforms, postTypeId, saving,
+      }} />;
+    }
+    if (capabilityType === 'customer_response') {
+      return <CustomerResponseWorkflow aiCredits={aiCredits} aiGenerating={aiGenerating} businessName={businessName} onGenerateAI={onGenerateResponseAI} onSave={onSaveResponseDraft} saving={saving} />;
+    }
+    if (capabilityType === 'opportunities') {
+      return <OpportunitiesWorkflow {...{
+        activeOpportunities, aiCredits, aiGenerating, onAIEstimateFollowUp, onDismissOpportunity,
+        onDraftEstimateFollowUp, onOpportunityFilterChange, onRefreshOpportunities, onReviewOpportunityJob,
+        opportunitiesLoading, opportunityFilter, opportunitySubject, saving, visibleOpportunities,
+      }} />;
+    }
+    if (capabilityType === 'brand') {
+      return <BrandPreferencesWorkflow businessName={businessName} onProfileChange={onProfileChange} onSaveProfile={onSaveProfile} profile={profile} saving={saving} />;
+    }
+    return null;
+  };
+
+  const opportunityMessage = opportunitiesLoading
+    ? 'I\'m checking ServicesOS for current growth opportunities.'
+    : activeOpportunities.length > 0
+      ? `I found ${activeOpportunities.length} ${activeOpportunities.length === 1 ? 'thing' : 'things'} worth reviewing.`
+      : 'You\'re caught up right now. I don\'t see any GrowthAI opportunities that need attention.';
+
   return (
     <div className="growth-ai-home">
       <section className="growth-ai-welcome" aria-labelledby="growth-ai-home-title">
-        <span className="growth-ai-eyebrow">Your business growth workspace</span>
-        <h2 id="growth-ai-home-title">Here's what GrowthAI can help you review today.</h2>
-        <p>Review deterministic opportunities, prepare private drafts, and keep every consequential action under human control.</p>
-        <div className="growth-ai-quick-actions" aria-label="Available GrowthAI tools">
-          <a href="#growth-ai-opportunities">Review opportunities</a>
-          <a href="#growth-ai-marketing">Create marketing</a>
-          <a href="#growth-ai-responses">Follow up</a>
-          <a href="#growth-ai-brand">Brand preferences</a>
+        <p className="growth-ai-greeting">{greeting}</p>
+        <h2 id="growth-ai-home-title">How can I help grow {businessName} today?</h2>
+        <div className="growth-ai-suggested-actions" aria-label="Suggested GrowthAI actions">
+          {CAPABILITY_ACTIONS.map(action => (
+            <button
+              key={action.id}
+              type="button"
+              aria-pressed={activeWorkflow?.capabilityType === action.id}
+              onClick={() => openCapability(action.id, action.label)}
+            >
+              {action.label}
+            </button>
+          ))}
         </div>
+        <button type="button" className="growth-ai-brand-link" onClick={() => openCapability('brand', 'Edit brand settings')}>
+          Using {businessName} brand profile · Edit
+        </button>
       </section>
 
-      <GrowthAISurface className="growth-ai-opportunities" as="section">
-        <div className="growth-ai-section-heading" id="growth-ai-opportunities">
-          <div>
-            <span className="growth-ai-section-kicker">GrowthAI noticed</span>
-            <h2>Opportunities worth reviewing</h2>
-            <p>Deterministic ServicesOS signals only. GrowthAI does not contact customers or publish content.</p>
-          </div>
-          <strong className="growth-ai-count">{activeOpportunities.length} {activeOpportunities.length === 1 ? 'opportunity' : 'opportunities'}</strong>
-        </div>
-        <div className="growth-ai-filter-row" aria-label="Filter growth opportunities">
-          {[
-            ['all', 'All'], ['attract', 'Marketing'], ['convert', 'Estimates'], ['retain', 'Rebooking'],
-          ].map(([value, label]) => (
-            <GrowthAIButton key={value} tone={opportunityFilter === value ? 'primary' : 'secondary'} onClick={() => onOpportunityFilterChange(value)}>{label}</GrowthAIButton>
-          ))}
-          <GrowthAIButton tone="secondary" disabled={opportunitiesLoading || saving} onClick={onRefreshOpportunities}>
-            {opportunitiesLoading ? 'Checking...' : 'Refresh'}
-          </GrowthAIButton>
-        </div>
-        {opportunitiesLoading && activeOpportunities.length === 0 ? <p className="growth-ai-empty">Checking tenant records for deterministic opportunities...</p> : null}
-        {!opportunitiesLoading && activeOpportunities.length === 0 ? (
-          <p className="growth-ai-empty">
-            No growth opportunities need attention right now. Estimate follow-ups and completed-job marketing review candidates will appear here. Rebooking detection remains unavailable until ServicesOS has a canonical approved cadence source.
-          </p>
-        ) : null}
-        {!opportunitiesLoading && activeOpportunities.length > 0 && visibleOpportunities.length === 0 ? (
-          <p className="growth-ai-empty">No opportunities match this filter.</p>
-        ) : null}
-        <div className="growth-ai-opportunity-list">
-          {visibleOpportunities.map(opportunity => (
-            <OpportunityCard
-              key={opportunity.id}
-              opportunity={opportunity}
-              subject={opportunitySubject(opportunity)}
-              onDraftFollowUp={onDraftEstimateFollowUp}
-              onAIFollowUp={onAIEstimateFollowUp}
-              onReviewJob={onReviewOpportunityJob}
-              onDismiss={onDismissOpportunity}
-              saving={saving}
-              aiGenerating={aiGenerating}
-              aiCredits={aiCredits}
-            />
+      <section className="growth-ai-conversation" aria-labelledby="growth-ai-conversation-title">
+        <h2 id="growth-ai-conversation-title" className="growth-ai-visually-hidden">GrowthAI conversation</h2>
+        <div className="growth-ai-conversation-stream" role="log" aria-live="polite" aria-relevant="additions">
+          <ConversationMessage message={{ id: 'welcome', role: 'assistant', type: 'text', content: `I'm ready to help you work on growth for ${businessName}. I can review opportunities, create marketing, or prepare customer responses.` }} />
+          <ConversationMessage message={{ id: 'opportunity-status', role: 'system', type: 'result', content: opportunityMessage }}>
+            {!opportunitiesLoading && activeOpportunities.length > 0 ? (
+              <button type="button" className="growth-ai-inline-action" onClick={() => openCapability('opportunities', 'Show opportunities')}>Show opportunities</button>
+            ) : null}
+          </ConversationMessage>
+
+          {conversation.map(message => (
+            <ConversationMessage key={message.id} message={message}>
+              {message.actions?.length ? (
+                <div className="growth-ai-inline-actions">
+                  {message.actions.map(actionId => {
+                    const action = CAPABILITY_ACTIONS.find(item => item.id === actionId);
+                    return <button key={actionId} type="button" onClick={() => openCapability(actionId, action.label)}>{action.label}</button>;
+                  })}
+                </div>
+              ) : null}
+              {activeWorkflow?.messageId === message.id ? renderWorkflow(activeWorkflow.capabilityType) : null}
+            </ConversationMessage>
           ))}
         </div>
-      </GrowthAISurface>
 
-      <div className="growth-ai-tools-grid">
-        <GrowthAISurface className="growth-ai-tool" as="section">
-          <div className="growth-ai-section-heading" id="growth-ai-marketing">
-            <div>
-              <span className="growth-ai-section-kicker">Create marketing</span>
-              <h2>Marketing draft helper</h2>
-            </div>
-            <span className="growth-ai-free-label">Free draft option</span>
-          </div>
-          <p className="growth-ai-section-description">Start with a deterministic draft or explicitly use one AI credit for AI-assisted generation.</p>
-          <div className="growth-ai-form-stack">
-            <GrowthAIField label="Post type">
-              <select aria-label="Post type" value={postTypeId} onChange={event => onPostTypeChange(event.target.value)}>
-                {brand.postTypes.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
-            </GrowthAIField>
-            <GrowthAIField label="Platform">
-              <select aria-label="Platform" value={inputs.platform} onChange={event => onInputChange({ platform: event.target.value })}>
-                {platforms.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
-            </GrowthAIField>
-            <div className="growth-ai-form-grid">
-              <GrowthAIField label="Service type"><input aria-label="Service type" value={inputs.serviceType} onChange={event => onInputChange({ serviceType: event.target.value })} /></GrowthAIField>
-              <GrowthAIField label="Service area"><input aria-label="Service area" value={inputs.serviceArea} onChange={event => onInputChange({ serviceArea: event.target.value })} /></GrowthAIField>
-            </div>
-            <GrowthAIField label="Offer"><input aria-label="Offer" value={inputs.offer} onChange={event => onInputChange({ offer: event.target.value })} /></GrowthAIField>
-            <GrowthAIField label="Cleaning topic"><input aria-label="Cleaning topic" value={inputs.cleaningTopic} onChange={event => onInputChange({ cleaningTopic: event.target.value })} /></GrowthAIField>
-            <GrowthAIField label="Extra notes"><textarea aria-label="Extra notes" rows="2" value={inputs.extraNotes} onChange={event => onInputChange({ extraNotes: event.target.value })} /></GrowthAIField>
-            <div className="growth-ai-actions">
-              <GrowthAIButton onClick={onGenerateDeterministic}>Create deterministic draft</GrowthAIButton>
-              <GrowthAIButton disabled={saving || aiGenerating || aiCredits < 1} onClick={onGenerateMarketingAI}>Generate marketing with AI · 1 credit</GrowthAIButton>
-            </div>
-            {aiCredits < 1 ? <p className="growth-ai-credit-warning">Not enough AI credits. The deterministic draft builder remains available.</p> : null}
-          </div>
-          <div className="growth-ai-idea-list" aria-label="Marketing draft ideas">
-            {contentIdeas.slice(0, 4).map(idea => <GrowthAIButton key={idea.label} tone="secondary" onClick={() => onPrefillIdea(idea)}>{idea.label}</GrowthAIButton>)}
-          </div>
-        </GrowthAISurface>
-
-        <div id="growth-ai-responses">
-          <CustomerResponseHelper
-            aiCredits={aiCredits}
-            aiGenerating={aiGenerating}
-            businessName={businessName}
-            onGenerateAI={onGenerateResponseAI}
-            onSave={onSaveResponseDraft}
-            saving={saving}
+        <form className="growth-ai-composer" aria-label="Ask GrowthAI" onSubmit={submitComposer}>
+          <label htmlFor="growth-ai-composer-input" className="growth-ai-visually-hidden">Ask GrowthAI anything</label>
+          <textarea
+            id="growth-ai-composer-input"
+            aria-label="Ask GrowthAI anything"
+            rows="1"
+            value={composerValue}
+            onChange={event => setComposerValue(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder="Ask GrowthAI anything..."
           />
-        </div>
-      </div>
-
-      <GrowthAISurface className="growth-ai-brand" as="section">
-        <div className="growth-ai-section-heading" id="growth-ai-brand">
-          <div>
-            <span className="growth-ai-section-kicker">Business context</span>
-            <h2>Tenant brand preferences</h2>
-            <p>Business identity comes from Business Settings. Only GrowthAI-specific preferences are stored here.</p>
-          </div>
-        </div>
-        <div className="growth-ai-brand-grid">
-          <GrowthAIField label="Business name"><input aria-label="Business name" value={businessName} readOnly /></GrowthAIField>
-          <GrowthAIField label="Brand voice"><input aria-label="Brand voice" value={profile.brandVoice} onChange={event => onProfileChange({ brandVoice: event.target.value })} /></GrowthAIField>
-          <GrowthAIField label="Content tone"><input aria-label="Content tone" value={profile.contentTone} onChange={event => onProfileChange({ contentTone: event.target.value })} /></GrowthAIField>
-          <GrowthAIField label="Default call to action"><input aria-label="Default call to action" value={profile.defaultCTA} onChange={event => onProfileChange({ defaultCTA: event.target.value })} /></GrowthAIField>
-        </div>
-        <div className="growth-ai-actions"><GrowthAIButton onClick={onSaveProfile} disabled={saving}>Save brand preferences</GrowthAIButton></div>
-      </GrowthAISurface>
+          <button type="submit" disabled={!composerValue.trim()}>Send</button>
+          <p>Deterministic routing is free. AI credits are used only when you explicitly choose an AI generation action.</p>
+        </form>
+      </section>
     </div>
   );
 }

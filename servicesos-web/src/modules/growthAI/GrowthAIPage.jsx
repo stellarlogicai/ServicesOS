@@ -58,7 +58,7 @@ function canonicalDisplayName(record, fallback) {
 }
 
 export default function GrowthAIPage({ onReviewJob }) {
-  const { currentTenant, role, tenantId } = useAuth();
+  const { currentTenant, role, tenantId, user, userProfile } = useAuth();
   const [activeView, setActiveView] = useState('home');
   const [profile, setProfile] = useState({ brandVoice: '', contentTone: '', defaultCTA: '' });
   const [drafts, setDrafts] = useState([]);
@@ -408,6 +408,7 @@ export default function GrowthAIPage({ onReviewJob }) {
       activeView={activeView}
       creditBalance={creditBalance}
       creditsLoading={creditsLoading}
+      draftCount={drafts.length}
       error={error}
       message={message}
       onViewChange={setActiveView}
@@ -415,6 +416,7 @@ export default function GrowthAIPage({ onReviewJob }) {
       {loading ? <p className="growth-ai-empty" role="status">Loading tenant GrowthAI workspace...</p> : null}
       {activeView === 'home' ? (
         <GrowthAIHome
+          key={tenantId}
           activeOpportunities={activeOpportunities}
           aiCredits={creditBalance.available}
           aiGenerating={aiGenerating}
@@ -458,6 +460,7 @@ export default function GrowthAIPage({ onReviewJob }) {
           postTypeId={postTypeId}
           profile={profile}
           saving={saving}
+          userDisplayName={userProfile?.displayName || user?.displayName || ''}
           visibleOpportunities={visibleOpportunities}
         />
       ) : null}

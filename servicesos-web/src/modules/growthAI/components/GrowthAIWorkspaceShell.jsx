@@ -9,6 +9,7 @@ export default function GrowthAIWorkspaceShell({
   children,
   creditBalance,
   creditsLoading,
+  draftCount,
   error,
   message,
   onViewChange,
@@ -35,14 +36,16 @@ export default function GrowthAIWorkspaceShell({
     <main className="growth-ai-page">
       <header className="growth-ai-header">
         <div className="growth-ai-header-copy">
-          <span className="growth-ai-eyebrow">Business growth assistant</span>
-          <h1>GrowthAI</h1>
-          <p>Free ServicesOS intelligence stays free. AI-assisted work uses credits and always requires human review.</p>
+          <span className="growth-ai-header-mark" aria-hidden="true">✦</span>
+          <div>
+            <h1>GrowthAI</h1>
+            <p>Business growth assistant</p>
+          </div>
         </div>
         <div className="growth-ai-credit-summary" aria-label="AI credit balance">
-          <span>AI credits</span>
+          <span aria-hidden="true">✦</span>
           <strong>{creditsLoading ? 'Loading...' : creditBalance.available}</strong>
-          {creditBalance.reserved > 0 ? <small>{creditBalance.reserved} reserved</small> : <small>Available</small>}
+          <small>AI credits{creditBalance.reserved > 0 ? ` · ${creditBalance.reserved} reserved` : ''}</small>
         </div>
       </header>
 
@@ -63,6 +66,7 @@ export default function GrowthAIWorkspaceShell({
                 onKeyDown={event => selectAdjacentTab(event, view.id)}
               >
                 {view.label}
+                {view.id === 'drafts' && draftCount > 0 ? <span className="growth-ai-tab-count" aria-hidden="true">{draftCount}</span> : null}
               </button>
             ))}
           </div>
