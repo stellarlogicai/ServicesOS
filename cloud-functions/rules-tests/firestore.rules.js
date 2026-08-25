@@ -393,6 +393,27 @@ const growthAIContent = (overrides = {}) => ({
   ...overrides,
 });
 
+const growthAIEstimateAssistance = (overrides = {}) => ({
+  schemaVersion: 1,
+  authoritative: false,
+  humanApprovalRequired: true,
+  baselinePrice: {
+    low: 190,
+    suggested: 205,
+    high: 220,
+    currency: 'USD',
+    pricingProfileId: 'tenant-a-pricing',
+    requiresManualReview: false,
+  },
+  recommendedPrice: 215,
+  reasoning: 'The deterministic range supports a modest complexity adjustment.',
+  assumptions: ['Normal access and condition'],
+  scopeSuggestions: ['Confirm the requested deep-clean scope'],
+  possibleAddOns: ['Inside oven'],
+  complexityFlags: ['Deep-clean detail level'],
+  ...overrides,
+});
+
 const growthAIDraft = ({
   tenantId = TENANT_A,
   draftId = 'growth-draft-a',
@@ -1628,6 +1649,38 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       doc(draftReference, 'audit', 'growth-audit-4')
     ));
     assert.equal(invalidationAudit.data().action, 'approval_invalidated');
+  });
+
+  test('estimate recommendations are tenant-admin readable and server-write-only', async () => {
+    const adminA = authenticatedDatabase('admin-a');
+    const pathParts = ['tenants', TENANT_A, 'growthAIEstimateRecommendations', 'estimate-recommendation-a'];
+    const recommendation = {
+      id: 'estimate-recommendation-a',
+      tenantId: TENANT_A,
+      draftId: 'estimate-draft-a',
+      leadId: 'lead-a',
+      actionType: 'estimate_assistance',
+      status: 'unapproved',
+      ...growthAIEstimateAssistance(),
+      createdByUid: 'admin-a',
+      createdAt: '2026-08-25T00:00:00.000Z',
+    };
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), ...pathParts), recommendation);
+    });
+
+    assert.deepEqual((await assertSucceeds(getDoc(doc(adminA, ...pathParts)))).data(), recommendation);
+    for (const database of [
+      authenticatedDatabase('admin-b'),
+      authenticatedDatabase('employee-a'),
+      authenticatedDatabase('customer-a-auth'),
+      testEnvironment.unauthenticatedContext().firestore(),
+    ]) {
+      await assertFails(getDoc(doc(database, ...pathParts)));
+    }
+    await assertFails(setDoc(doc(adminA, 'tenants', TENANT_A, 'growthAIEstimateRecommendations', 'client-created'), recommendation));
+    await assertFails(updateDoc(doc(adminA, ...pathParts), { recommendedPrice: 999 }));
+    await assertFails(deleteDoc(doc(adminA, ...pathParts)));
   });
 
   test('GrowthAI rejects invalid transitions, spoofed actors, malformed refs, and unknown keys', async () => {

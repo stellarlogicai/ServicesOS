@@ -36,6 +36,7 @@ vi.mock('firebase/firestore', () => {
 });
 
 import {
+  GROWTH_AI_ACTION_TYPES,
   approveGrowthAIDraft,
   createGrowthAIDraft,
   normalizeGrowthAIContent,
@@ -88,6 +89,7 @@ describe('GrowthAI foundation service', () => {
   });
 
   it('normalizes the controlled content and source-reference shapes', () => {
+    expect(GROWTH_AI_ACTION_TYPES).toContain('estimate_assistance');
     expect(normalizeGrowthAIContent({ fullCaption: '  Caption  ', unsafe: 'ignored' })).toEqual({
       fullCaption: 'Caption', shortCaption: '', callToAction: '', hashtags: '', imagePrompt: '',
     });

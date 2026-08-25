@@ -4,6 +4,7 @@ const { GrowthAIProviderError, validateProviderOutput } = require('./growthAIPro
 
 const ACTION_COSTS = Object.freeze({
   customer_response: 1,
+  estimate_assistance: 1,
   estimate_followup: 1,
   marketing_post: 1,
 });
@@ -38,7 +39,7 @@ function normalizeSourceRefs(actionType, sourceRefs = {}) {
   if (!exactKeys(sourceRefs, ['opportunityId', 'leadId'])) {
     throw new GrowthAIGatewayError('The GrowthAI source references are invalid.', { code: 'invalid_request' });
   }
-  if (actionType !== 'estimate_followup' && Object.keys(sourceRefs).length > 0) {
+  if (!['estimate_assistance', 'estimate_followup'].includes(actionType) && Object.keys(sourceRefs).length > 0) {
     throw new GrowthAIGatewayError('This GrowthAI action does not accept source references.', { code: 'invalid_request' });
   }
   const normalized = {};
@@ -49,6 +50,10 @@ function normalizeSourceRefs(actionType, sourceRefs = {}) {
   if (actionType === 'estimate_followup' && (!normalized.opportunityId || !normalized.leadId)) {
     throw new GrowthAIGatewayError('Estimate follow-up requires a canonical opportunity and lead.', { code: 'invalid_request' });
   }
+  if (actionType === 'estimate_assistance' &&
+      (!normalized.leadId || normalized.opportunityId || Object.keys(normalized).length !== 1)) {
+    throw new GrowthAIGatewayError('Estimate assistance requires exactly one canonical lead.', { code: 'invalid_request' });
+  }
   return normalized;
 }
 
@@ -58,6 +63,11 @@ function normalizeInput(actionType, input = {}) {
       allowed: ['customerMessage', 'scenarioId', 'channelId'],
       required: ['customerMessage', 'scenarioId', 'channelId'],
       limits: { customerMessage: 2_000, scenarioId: 64, channelId: 32 },
+    },
+    estimate_assistance: {
+      allowed: [],
+      required: [],
+      limits: {},
     },
     estimate_followup: {
       allowed: ['channelId'],
@@ -134,6 +144,20 @@ async function verifyGrowthAIActor({ db, uid, tenantId }) {
 }
 
 async function verifySourceContext({ db, request }) {
+  if (request.actionType === 'estimate_assistance') {
+    const leadRef = db.collection('tenants').doc(request.tenantId)
+      .collection('leads').doc(request.sourceRefs.leadId);
+    const leadSnapshot = await leadRef.get();
+    if (!leadSnapshot.exists) {
+      throw new GrowthAIGatewayError('The estimate source could not be verified.', { code: 'invalid_source', status: 404 });
+    }
+    const lead = leadSnapshot.data() || {};
+    if (lead.tenantId !== request.tenantId || !['new', 'quoted'].includes(lead.status) ||
+        lead.booking != null || lead.estimate?.status === 'approved') {
+      throw new GrowthAIGatewayError('The estimate source does not belong to this tenant or is no longer reviewable.', { code: 'invalid_source', status: 403 });
+    }
+    return { lead, baselinePrice: deterministicEstimateBaseline(lead.estimate) };
+  }
   if (request.actionType !== 'estimate_followup') return {};
   const opportunityRef = db.collection('tenants').doc(request.tenantId)
     .collection('growthAIOpportunities').doc(request.sourceRefs.opportunityId);
@@ -151,6 +175,26 @@ async function verifySourceContext({ db, request }) {
     throw new GrowthAIGatewayError('The estimate follow-up source does not belong to this tenant or action.', { code: 'invalid_source', status: 403 });
   }
   return { opportunity, opportunityRef, lead };
+}
+
+function deterministicEstimateBaseline(estimate = {}) {
+  const low = Number(estimate.priceLow);
+  const suggestedValue = Number(estimate.priceSuggested);
+  const high = Number(estimate.priceHigh);
+  if (!Number.isFinite(low) || low <= 0 || !Number.isFinite(high) || high < low) {
+    throw new GrowthAIGatewayError('The saved estimate does not contain a valid deterministic price range.', { code: 'invalid_source', status: 422 });
+  }
+  const suggested = Number.isFinite(suggestedValue) && suggestedValue >= low && suggestedValue <= high
+    ? suggestedValue
+    : null;
+  return {
+    low,
+    suggested,
+    high,
+    currency: cleanString(estimate.currency, 8) || 'USD',
+    pricingProfileId: cleanString(estimate.tenantPricingProfileId, 128) || null,
+    requiresManualReview: estimate.requiresManualReview === true,
+  };
 }
 
 function businessContext(tenant = {}) {
@@ -171,6 +215,64 @@ function buildPrompt({ request, tenant, sourceContext }) {
     'Do not include payment details, Stripe data, hidden notes, or unrelated customer information.',
     `Write for ${business.businessName}${business.serviceArea ? ` serving ${business.serviceArea}` : ''}.`,
   ].join(' ');
+
+  if (request.actionType === 'estimate_assistance') {
+    const lead = sourceContext.lead || {};
+    const formData = lead.formData || {};
+    const requestSnapshot = lead.requestSnapshot || {};
+    const baseline = sourceContext.baselinePrice;
+    const serviceType = cleanString(requestSnapshot.cleaningType || formData.cleaningType || formData.serviceType, 160) || 'cleaning service';
+    const frequency = cleanString(requestSnapshot.frequency || formData.frequency, 80) || 'not specified';
+    const propertyFacts = [
+      ['Bedrooms', formData.bedrooms ?? formData.bedroomCount],
+      ['Bathrooms', formData.bathrooms ?? formData.bathroomCount],
+      ['Half bathrooms', formData.halfBaths],
+      ['Square footage', formData.squareFootage],
+      ['Levels', formData.levels],
+      ['Stairs', formData.stairs],
+      ['Condition', formData.condition || formData.clutterLevel],
+      ['Pet hair', formData.petHairLevel],
+      ['Last cleaned', formData.lastCleaned],
+    ].map(([label, value]) => {
+      const cleaned = cleanString(value == null ? '' : String(value), 120);
+      return cleaned ? `${label}: ${cleaned}.` : '';
+    }).filter(Boolean);
+    const manualReviewReasons = Array.isArray(lead.estimate?.manualReviewReasons)
+      ? lead.estimate.manualReviewReasons.slice(0, 8).map(value => cleanString(value, 300)).filter(Boolean)
+      : [];
+    const selectedAddOns = formData.extras && typeof formData.extras === 'object' && !Array.isArray(formData.extras)
+      ? Object.entries(formData.extras)
+          .filter(([, value]) => value === true || (Number.isFinite(Number(value)) && Number(value) > 0))
+          .slice(0, 12)
+          .map(([key, value]) => `${cleanString(key, 80)}${value === true ? '' : ` (${Number(value)})`}`)
+          .filter(Boolean)
+      : [];
+    const estimateSystemInstruction = [
+      'You assist a cleaning-business owner reviewing a deterministic ServicesOS estimate.',
+      'Return only one valid JSON object with exactly these keys: recommendedPrice, reasoning, assumptions, scopeSuggestions, possibleAddOns, complexityFlags.',
+      'recommendedPrice must be a number. reasoning must be a concise string. The other fields must be arrays of concise strings.',
+      'Do not claim the recommendation is approved, final, sent, booked, or paid.',
+      'Do not modify or invent business pricing rules. The deterministic baseline remains authoritative and requires human approval.',
+      'Do not include customer identity, address, payment information, Stripe data, medical details, hidden notes, or provider metadata.',
+      `Provide a private recommendation for ${business.businessName}.`,
+    ].join(' ');
+    return {
+      systemInstruction: estimateSystemInstruction,
+      userPrompt: [
+        `Service type: ${serviceType}.`,
+        `Frequency: ${frequency}.`,
+        `Deterministic baseline: ${baseline.currency} ${baseline.low}-${baseline.high}${baseline.suggested == null ? '' : `; suggested ${baseline.suggested}`}.`,
+        baseline.pricingProfileId ? `Pricing profile: ${baseline.pricingProfileId}.` : '',
+        baseline.requiresManualReview ? 'ServicesOS requires manual review.' : '',
+        selectedAddOns.length ? `Selected add-ons: ${selectedAddOns.join(', ')}.` : '',
+        ...propertyFacts,
+        ...manualReviewReasons.map(reason => `ServicesOS review reason: ${reason}`),
+        'Recommend a review value and explain assumptions, scope corrections, possible add-ons, and complexity flags without changing the deterministic estimate.',
+      ].filter(Boolean).join('\n'),
+      title: `[AI estimate assistance] ${serviceType}`,
+      pillar: 'convert',
+    };
+  }
 
   if (request.actionType === 'customer_response') {
     return {
@@ -342,12 +444,81 @@ function draftContent(actionType, text) {
   };
 }
 
+function normalizeRecommendationList(value, fieldName) {
+  if (!Array.isArray(value) || value.length > 8) {
+    throw new GrowthAIGatewayError(`The AI estimate ${fieldName} are invalid.`, { code: 'invalid_provider_output', status: 502 });
+  }
+  const normalized = value.map(item => cleanString(item, 500));
+  if (normalized.some(item => !item)) {
+    throw new GrowthAIGatewayError(`The AI estimate ${fieldName} are invalid.`, { code: 'invalid_provider_output', status: 502 });
+  }
+  return normalized;
+}
+
+function parseEstimateAssistance(providerText, baselinePrice) {
+  const trimmed = cleanString(providerText, 12_000);
+  const jsonText = trimmed.startsWith('```')
+    ? trimmed.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
+    : trimmed;
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    throw new GrowthAIGatewayError('The AI estimate recommendation was not valid structured output.', { code: 'invalid_provider_output', status: 502 });
+  }
+  const allowedKeys = ['recommendedPrice', 'reasoning', 'assumptions', 'scopeSuggestions', 'possibleAddOns', 'complexityFlags'];
+  if (!exactKeys(parsed, allowedKeys, allowedKeys)) {
+    throw new GrowthAIGatewayError('The AI estimate recommendation shape is invalid.', { code: 'invalid_provider_output', status: 502 });
+  }
+  const recommendedPrice = parsed.recommendedPrice;
+  const reasoning = cleanString(parsed.reasoning, 2_000);
+  if (typeof recommendedPrice !== 'number' || !Number.isFinite(recommendedPrice) ||
+      recommendedPrice <= 0 || recommendedPrice > 100_000 || !reasoning) {
+    throw new GrowthAIGatewayError('The AI estimate recommendation values are invalid.', { code: 'invalid_provider_output', status: 502 });
+  }
+  return {
+    schemaVersion: 1,
+    authoritative: false,
+    humanApprovalRequired: true,
+    baselinePrice,
+    recommendedPrice,
+    reasoning,
+    assumptions: normalizeRecommendationList(parsed.assumptions, 'assumptions'),
+    scopeSuggestions: normalizeRecommendationList(parsed.scopeSuggestions, 'scope suggestions'),
+    possibleAddOns: normalizeRecommendationList(parsed.possibleAddOns, 'possible add-ons'),
+    complexityFlags: normalizeRecommendationList(parsed.complexityFlags, 'complexity flags'),
+  };
+}
+
+function estimateAssistanceContent(assistance) {
+  const baseline = assistance.baselinePrice;
+  return {
+    fullCaption: [
+      `AI recommendation: ${baseline.currency} ${assistance.recommendedPrice}`,
+      `Deterministic ServicesOS baseline: ${baseline.currency} ${baseline.low}-${baseline.high}`,
+      `Reasoning: ${assistance.reasoning}`,
+    ].join('\n'),
+    shortCaption: 'AI recommendation only; deterministic pricing remains authoritative.',
+    callToAction: 'Human review and approval required.',
+    hashtags: '',
+    imagePrompt: '',
+  };
+}
+
 async function finalizeGeneration({ admin, db, ledgerId, prompt, providerResult, request, sourceContext, uid }) {
   const operationRef = ledgerRef(db, request.tenantId, ledgerId);
   const balanceRef = creditBalanceRef(db, request.tenantId);
   const draftRef = db.collection('tenants').doc(request.tenantId).collection('growthAIDrafts').doc(`ai-${ledgerId}`);
   const auditRef = draftRef.collection('audit').doc(`created-${ledgerId.slice(0, 32)}`);
-  const content = draftContent(request.actionType, providerResult.text);
+  const estimateAssistance = request.actionType === 'estimate_assistance'
+    ? parseEstimateAssistance(providerResult.text, sourceContext.baselinePrice)
+    : null;
+  const content = estimateAssistance
+    ? estimateAssistanceContent(estimateAssistance)
+    : draftContent(request.actionType, providerResult.text);
+  const recommendationRef = estimateAssistance
+    ? db.collection('tenants').doc(request.tenantId).collection('growthAIEstimateRecommendations').doc(draftRef.id)
+    : null;
   const sourceRefs = { ...request.sourceRefs };
   return db.runTransaction(async transaction => {
     const [operationSnapshot, balanceSnapshot] = await Promise.all([
@@ -395,6 +566,19 @@ async function finalizeGeneration({ admin, db, ledgerId, prompt, providerResult,
       fromStatus: null,
       toStatus: 'draft',
     });
+    if (recommendationRef) {
+      transaction.create(recommendationRef, {
+        id: recommendationRef.id,
+        tenantId: request.tenantId,
+        draftId: draftRef.id,
+        leadId: request.sourceRefs.leadId,
+        actionType: request.actionType,
+        status: 'unapproved',
+        ...estimateAssistance,
+        createdByUid: uid,
+        createdAt: serverTimestamp(admin),
+      });
+    }
     if (sourceContext.opportunityRef && sourceContext.opportunity?.status === 'open') {
       transaction.update(sourceContext.opportunityRef, {
         status: 'acted',
@@ -404,13 +588,20 @@ async function finalizeGeneration({ admin, db, ledgerId, prompt, providerResult,
         updatedByUid: uid,
       });
     }
-    const result = { draftId: draftRef.id, title: prompt.title.slice(0, 180), content, sourceRefs };
+    const result = {
+      draftId: draftRef.id,
+      title: prompt.title.slice(0, 180),
+      content,
+      sourceRefs,
+      ...(estimateAssistance ? { estimateAssistance } : {}),
+    };
     transaction.update(operationRef, {
       status: 'finalized',
       finalizedAt: serverTimestamp(admin),
       providerRequestId: providerResult.providerRequestId,
       modelId: providerResult.modelId,
       relatedDraftId: draftRef.id,
+      ...(recommendationRef ? { relatedEstimateRecommendationId: recommendationRef.id } : {}),
       result,
     });
     return result;

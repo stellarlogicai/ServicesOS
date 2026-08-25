@@ -126,8 +126,17 @@ function seed({ credits = 5 } = {}) {
       tenantId: 'tenant-a', type: 'estimate_followup', status: 'open', sourceRefs: { leadId: 'lead-a' },
     },
     'tenants/tenant-a/leads/lead-a': {
-      tenantId: 'tenant-a', status: 'quoted', estimate: { status: 'draft' },
-      requestSnapshot: { cleaningType: 'deep clean' },
+      tenantId: 'tenant-a', status: 'quoted', booking: null,
+      estimate: {
+        status: 'draft', priceLow: 190, priceSuggested: 205, priceHigh: 220,
+        currency: 'USD', tenantPricingProfileId: 'tenant-a-pricing', requiresManualReview: false,
+      },
+      requestSnapshot: { cleaningType: 'deep clean', frequency: 'one-time' },
+      formData: {
+        fullName: 'Must Not Reach Provider', email: 'private@example.test', address: 'Private Address',
+        bedrooms: 3, bathrooms: 2, condition: 'normal', extras: { oven: true, fridge: false },
+        specialRequests: 'Private customer note',
+      },
       paymentStatus: 'must-not-reach-provider', stripePaymentIntentId: 'must-not-reach-provider',
     },
   };
@@ -149,6 +158,38 @@ function successProvider(calls = []) {
     async generateText(payload) {
       calls.push(payload);
       return { text: 'AI draft for human review.', providerRequestId: 'provider-1', modelId: 'model-1' };
+    },
+  };
+}
+
+function estimateAssistanceRequest(overrides = {}) {
+  return request({
+    actionType: 'estimate_assistance',
+    idempotencyKey: 'estimate-assistance-1',
+    sourceRefs: { leadId: 'lead-a' },
+    input: {},
+    ...overrides,
+  });
+}
+
+function estimateAssistanceProvider(calls = [], overrides = {}) {
+  return {
+    async generateText(payload) {
+      calls.push(payload);
+      return {
+        text: JSON.stringify({
+          recommendedPrice: 215,
+          reasoning: 'The deterministic range supports a modest complexity adjustment.',
+          assumptions: ['Normal access and condition'],
+          scopeSuggestions: ['Confirm the requested deep-clean scope'],
+          possibleAddOns: ['Inside oven'],
+          complexityFlags: ['Deep-clean detail level'],
+          ...overrides,
+        }, null, 2),
+        providerRequestId: 'provider-estimate-1',
+        modelId: 'model-1',
+        rawResponse: 'must-not-persist',
+      };
     },
   };
 }
@@ -346,5 +387,166 @@ describe('GrowthAI server gateway', () => {
     const serialized = JSON.stringify(calls[0]);
     assert.match(serialized, /deep clean/);
     assert.doesNotMatch(serialized, /must-not-reach-provider/);
+  });
+
+  test('creates one tenant-scoped unapproved estimate recommendation and finalizes exactly one credit', async () => {
+    const documents = seed();
+    const originalLead = clone(documents['tenants/tenant-a/leads/lead-a']);
+    const { admin, db } = fakeAdmin(documents);
+    const calls = [];
+    const result = await generateGrowthAIContent({
+      admin,
+      provider: estimateAssistanceProvider(calls),
+      requestBody: estimateAssistanceRequest(),
+      uid: 'admin-a',
+    });
+    const draft = db.documents.get(`tenants/tenant-a/growthAIDrafts/${result.draftId}`);
+    const recommendation = db.documents.get(`tenants/tenant-a/growthAIEstimateRecommendations/${result.draftId}`);
+    const [[, ledger]] = ledgerEntries(db);
+    const audits = [...db.documents.entries()].filter(([path]) => path.includes(`/growthAIDrafts/${result.draftId}/audit/`));
+
+    assert.equal(result.creditsCharged, 1);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(db.documents.get('tenants/tenant-a/growthAICreditBalances/current').buckets, {
+      monthly: 4, promotional: 0, purchased: 0,
+    });
+    assert.equal(ledger.status, 'finalized');
+    assert.equal(draft.status, 'draft');
+    assert.equal(draft.approvedByUid, null);
+    assert.equal(recommendation.status, 'unapproved');
+    assert.equal(recommendation.authoritative, false);
+    assert.equal(recommendation.humanApprovalRequired, true);
+    assert.deepEqual(recommendation.baselinePrice, {
+      low: 190, suggested: 205, high: 220, currency: 'USD',
+      pricingProfileId: 'tenant-a-pricing', requiresManualReview: false,
+    });
+    assert.equal(recommendation.recommendedPrice, 215);
+    assert.equal(recommendation.draftId, result.draftId);
+    assert.equal(recommendation.leadId, 'lead-a');
+    assert.equal(draft.content.callToAction, 'Human review and approval required.');
+    assert.deepEqual(draft.sourceRefs, { leadId: 'lead-a' });
+    assert.equal(audits.length, 1);
+    assert.equal(audits[0][1].action, 'draft_created');
+    assert.deepEqual(db.documents.get('tenants/tenant-a/leads/lead-a'), originalLead);
+    assert.equal([...db.documents.keys()].some(path => path.includes('/bookings/')), false);
+    assert.equal([...db.documents.keys()].some(path => path.includes('/payments/')), false);
+    assert.doesNotMatch(JSON.stringify({ draft, recommendation, ledger }), /rawResponse|must-not-persist/);
+  });
+
+  test('builds estimate assistance only from minimized canonical estimate context', async () => {
+    const { admin } = fakeAdmin(seed());
+    const calls = [];
+    await generateGrowthAIContent({
+      admin,
+      provider: estimateAssistanceProvider(calls),
+      requestBody: estimateAssistanceRequest({ idempotencyKey: 'estimate-minimized-context' }),
+      uid: 'admin-a',
+    });
+    const serialized = JSON.stringify(calls[0]);
+    assert.match(serialized, /deep clean/);
+    assert.match(serialized, /USD 190-220; suggested 205/);
+    assert.match(serialized, /Selected add-ons: oven/);
+    assert.doesNotMatch(serialized, /fridge/);
+    assert.doesNotMatch(serialized, /Must Not Reach Provider|private@example|Private Address|Private customer note/);
+    assert.doesNotMatch(serialized, /must-not-reach-provider/);
+  });
+
+  test('denies cross-tenant and non-reviewable estimate sources before reserving credit', async () => {
+    for (const leadChanges of [
+      { tenantId: 'tenant-b' },
+      { status: 'booked', booking: { bookingId: 'booking-a' } },
+      { status: 'lost' },
+      { estimate: { status: 'approved', priceLow: 190, priceHigh: 220 } },
+    ]) {
+      const documents = seed();
+      documents['tenants/tenant-a/leads/lead-a'] = {
+        ...documents['tenants/tenant-a/leads/lead-a'],
+        ...leadChanges,
+      };
+      const { admin, db } = fakeAdmin(documents);
+      const calls = [];
+      await assert.rejects(
+        generateGrowthAIContent({
+          admin,
+          provider: estimateAssistanceProvider(calls),
+          requestBody: estimateAssistanceRequest({ idempotencyKey: `invalid-${leadChanges.status || leadChanges.tenantId || 'approved'}` }),
+          uid: 'admin-a',
+        }),
+        error => error.code === 'invalid_source',
+      );
+      assert.equal(calls.length, 0);
+      assert.equal(ledgerEntries(db).length, 0);
+    }
+  });
+
+  test('rejects client estimate context and requires one canonical lead reference', () => {
+    assert.throws(
+      () => normalizeGenerationRequest(estimateAssistanceRequest({ input: { recommendedPrice: '1' } })),
+      error => error.code === 'invalid_request',
+    );
+    assert.throws(
+      () => normalizeGenerationRequest(estimateAssistanceRequest({ sourceRefs: {} })),
+      error => error.code === 'invalid_request',
+    );
+    assert.throws(
+      () => normalizeGenerationRequest(estimateAssistanceRequest({ sourceRefs: { leadId: 'lead-a', opportunityId: 'other' } })),
+      error => error.code === 'invalid_request',
+    );
+  });
+
+  test('restores estimate-assistance credit when provider output is invalid and leaves the estimate unchanged', async () => {
+    const documents = seed();
+    const originalLead = clone(documents['tenants/tenant-a/leads/lead-a']);
+    const { admin, db } = fakeAdmin(documents);
+    await assert.rejects(
+      generateGrowthAIContent({
+        admin,
+        provider: { generateText: async () => ({ text: 'not-json' }) },
+        requestBody: estimateAssistanceRequest(),
+        uid: 'admin-a',
+      }),
+      error => error.code === 'invalid_provider_output',
+    );
+    const [[, ledger]] = ledgerEntries(db);
+    assert.deepEqual(db.documents.get('tenants/tenant-a/growthAICreditBalances/current').buckets, {
+      monthly: 5, promotional: 0, purchased: 0,
+    });
+    assert.equal(ledger.status, 'restored');
+    assert.deepEqual(db.documents.get('tenants/tenant-a/leads/lead-a'), originalLead);
+    assert.equal([...db.documents.keys()].some(path => path.includes('/growthAIDrafts/ai-')), false);
+  });
+
+  test('insufficient credits do not alter the ordinary saved estimate or call the provider', async () => {
+    const documents = seed({ credits: 0 });
+    const originalLead = clone(documents['tenants/tenant-a/leads/lead-a']);
+    const { admin, db } = fakeAdmin(documents);
+    const calls = [];
+    await assert.rejects(
+      generateGrowthAIContent({
+        admin,
+        provider: estimateAssistanceProvider(calls),
+        requestBody: estimateAssistanceRequest(),
+        uid: 'admin-a',
+      }),
+      error => error.code === 'insufficient_credits',
+    );
+    assert.equal(calls.length, 0);
+    assert.deepEqual(db.documents.get('tenants/tenant-a/leads/lead-a'), originalLead);
+    assert.equal(ledgerEntries(db).length, 0);
+  });
+
+  test('reuses the finalized estimate-assistance result without a second provider call or charge', async () => {
+    const { admin, db } = fakeAdmin(seed());
+    const calls = [];
+    const requestBody = estimateAssistanceRequest({ idempotencyKey: 'estimate-retry' });
+    const first = await generateGrowthAIContent({ admin, provider: estimateAssistanceProvider(calls), requestBody, uid: 'admin-a' });
+    const second = await generateGrowthAIContent({ admin, provider: estimateAssistanceProvider(calls), requestBody, uid: 'admin-a' });
+    assert.equal(second.reused, true);
+    assert.equal(second.draftId, first.draftId);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(db.documents.get('tenants/tenant-a/growthAICreditBalances/current').buckets, {
+      monthly: 4, promotional: 0, purchased: 0,
+    });
+    assert.equal(ledgerEntries(db).length, 1);
   });
 });

@@ -21,6 +21,17 @@ describe('GrowthAI provider adapter', () => {
     });
     assert.equal(mock.configured, true);
     assert.match((await mock.generateText({ actionType: 'marketing_post', userPrompt: '' })).text, /Local mock/);
+    assert.deepEqual(
+      JSON.parse((await mock.generateText({ actionType: 'estimate_assistance', userPrompt: '' })).text),
+      {
+        recommendedPrice: 205,
+        reasoning: 'Local deterministic mock recommendation for human review.',
+        assumptions: [],
+        scopeSuggestions: [],
+        possibleAddOns: [],
+        complexityFlags: [],
+      },
+    );
 
     const production = createGrowthAIProviderFromEnvironment({
       FUNCTIONS_EMULATOR: 'true',

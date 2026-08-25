@@ -45,8 +45,18 @@ function createLocalMockGrowthAIProvider() {
       if (userPrompt.includes('[simulate-provider-failure]')) {
         throw new GrowthAIProviderError('The local mock provider failed. Your credit was restored.', 'provider_error');
       }
+      const text = actionType === 'estimate_assistance'
+        ? JSON.stringify({
+            recommendedPrice: 205,
+            reasoning: 'Local deterministic mock recommendation for human review.',
+            assumptions: [],
+            scopeSuggestions: [],
+            possibleAddOns: [],
+            complexityFlags: [],
+          })
+        : `Local mock ${actionType} draft for human review. Nothing was sent or published.`;
       return validateProviderOutput({
-        text: `Local mock ${actionType} draft for human review. Nothing was sent or published.`,
+        text,
         providerRequestId: 'local-mock-request',
         modelId: 'local-growthai-mock-v1',
       });

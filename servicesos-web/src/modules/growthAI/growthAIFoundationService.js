@@ -17,6 +17,7 @@ export const GROWTH_AI_ACTION_TYPES = [
   'marketing_post',
   'customer_response',
   'lead_response',
+  'estimate_assistance',
   'estimate_followup',
   'rebooking_message',
   'review_response',

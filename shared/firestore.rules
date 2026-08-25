@@ -961,6 +961,11 @@ service cloud.firestore {
         }
       }
 
+      match /growthAIEstimateRecommendations/{recommendationId} {
+        allow read: if isGrowthAIAdmin(tenantId);
+        allow create, update, delete: if false;
+      }
+
       match /growthAIOpportunities/{opportunityId} {
         allow read: if isGrowthAIAdmin(tenantId);
         allow create: if isGrowthAIAdmin(tenantId) &&
