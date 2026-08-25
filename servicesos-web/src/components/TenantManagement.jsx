@@ -8,6 +8,7 @@ import {
 } from '../services/tenantService';
 import { loadV1SmokeTenants } from '../services/v1SmokeEmulatorService';
 import { useAuth } from '../contexts/AuthContext';
+import './TenantManagement.css';
 
 export default function TenantManagement() {
   const { switchTenant } = useAuth();
@@ -177,7 +178,7 @@ export default function TenantManagement() {
   };
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
+    <div className="tenant-management">
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontSize: 32, fontWeight: 700, color: '#0f172a', margin: '0 0 8px' }}>
           Tenant Management
@@ -227,17 +228,18 @@ export default function TenantManagement() {
 
       {/* List Tab */}
       {activeTab === 'list' && (
-        <div style={{
+        <div className="tenant-management-list-panel" style={{
           background: 'white',
           padding: '24px',
           borderRadius: 12,
           border: '1px solid #e2e8f0'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div className="tenant-management-list-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h3 style={{ fontSize: 18, fontWeight: 600, color: '#0f172a', margin: 0 }}>
               All Tenants ({tenants.length})
             </h3>
             <button
+              className="tenant-management-new-button"
               onClick={() => setActiveTab('create')}
               style={{
                 padding: '10px 20px',
@@ -261,10 +263,11 @@ export default function TenantManagement() {
               <p style={{ fontSize: 14 }}>Create your first tenant to get started</p>
             </div>
           ) : (
-            <div style={{ display: 'grid', gap: 12 }}>
+            <div className="tenant-management-list" style={{ display: 'grid', gap: 12 }}>
               {tenants.map(tenant => (
                 <div
                   key={tenant.id}
+                  className="tenant-management-card"
                   style={{
                     padding: '16px',
                     background: '#f8fafc',
@@ -275,14 +278,14 @@ export default function TenantManagement() {
                     alignItems: 'center'
                   }}
                 >
-                  <div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
+                  <div className="tenant-management-card-copy">
+                    <div className="tenant-management-card-name" style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>
                       {tenant.businessName || 'No Business Name'}
                     </div>
-                    <div style={{ fontSize: 14, color: '#64748b' }}>
+                    <div className="tenant-management-card-meta" style={{ fontSize: 14, color: '#64748b' }}>
                       {tenant.subscriptionTier || 'free'} tier · {tenant.businessEmail || 'No Email'}
                     </div>
-                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                    <div className="tenant-management-card-created" style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
                       Created: {(() => {
                         if (!tenant.createdAt) return 'N/A';
                         try {
@@ -302,8 +305,9 @@ export default function TenantManagement() {
                       })()}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div className="tenant-management-actions" style={{ display: 'flex', gap: 8 }}>
                     <button
+                      className="tenant-management-action tenant-management-action-select"
                       onClick={() => handleSelectTenant(tenant)}
                       style={{
                         padding: '8px 16px',
@@ -319,6 +323,7 @@ export default function TenantManagement() {
                       Select
                     </button>
                     <button
+                      className="tenant-management-action tenant-management-action-manage"
                       onClick={() => handleViewTenant(tenant)}
                       style={{
                         padding: '8px 16px',
@@ -334,6 +339,7 @@ export default function TenantManagement() {
                       Manage
                     </button>
                     <button
+                      className="tenant-management-action tenant-management-action-delete"
                       onClick={() => handleDeleteTenant(tenant.id)}
                       style={{
                         padding: '8px 16px',
@@ -492,7 +498,7 @@ export default function TenantManagement() {
           justifyContent: 'center',
           zIndex: 1000
         }}>
-          <div style={{
+          <div className="tenant-management-modal" style={{
             background: 'white',
             padding: '32px',
             borderRadius: 12,

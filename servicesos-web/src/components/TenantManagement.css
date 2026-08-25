@@ -1,0 +1,107 @@
+.tenant-management {
+  width: 100%;
+  max-width: 1200px;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.tenant-management,
+.tenant-management * {
+  box-sizing: border-box;
+}
+
+.tenant-management-list-panel,
+.tenant-management-list,
+.tenant-management-card,
+.tenant-management-card-copy {
+  min-width: 0;
+}
+
+.tenant-management-card-copy {
+  flex: 1 1 auto;
+}
+
+.tenant-management-card-name,
+.tenant-management-card-meta,
+.tenant-management-card-created {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.tenant-management-actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+.tenant-management-action {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tenant-management-modal {
+  box-sizing: border-box;
+}
+
+@media (max-width: 600px) {
+  .tenant-management {
+    padding: 20px 12px;
+  }
+
+  .tenant-management-list-panel {
+    padding: 16px !important;
+  }
+
+  .tenant-management-list-header {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 12px;
+  }
+
+  .tenant-management-new-button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .tenant-management-card {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 14px;
+    width: 100%;
+  }
+
+  .tenant-management-card-copy {
+    width: 100%;
+  }
+
+  .tenant-management-actions {
+    display: flex !important;
+    width: 100%;
+    gap: 8px !important;
+  }
+
+  .tenant-management-action {
+    flex: 1 1 88px;
+    min-height: 42px;
+    padding: 9px 8px !important;
+    text-align: center;
+  }
+
+  .tenant-management-modal {
+    width: calc(100% - 24px) !important;
+    max-width: 600px !important;
+    padding: 20px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .tenant-management-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tenant-management-action:last-child {
+    grid-column: 1 / -1;
+  }
+}
