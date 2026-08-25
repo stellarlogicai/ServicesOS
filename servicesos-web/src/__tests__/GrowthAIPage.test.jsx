@@ -89,6 +89,15 @@ function savedDraft(overrides = {}) {
   };
 }
 
+function openWorkspaceView(name) {
+  fireEvent.click(screen.getByRole('tab', { name }));
+}
+
+async function expectCreditBalance(value) {
+  const creditSummary = await screen.findByLabelText('AI credit balance');
+  await waitFor(() => expect(creditSummary).toHaveTextContent(String(value)));
+}
+
 describe('GrowthAI V1 tenant draft foundation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -225,7 +234,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
 
   it('shows credits and saves one AI marketing draft for a rapid duplicate click', async () => {
     render(<GrowthAIPage />);
-    expect(await screen.findByText('AI Credits: 5')).toBeInTheDocument();
+    await expectCreditBalance(5);
     const aiButton = screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' });
     fireEvent.click(aiButton);
     fireEvent.click(aiButton);
@@ -238,14 +247,14 @@ describe('GrowthAI V1 tenant draft foundation', () => {
       input: expect.objectContaining({ postTypeId: 'availability' }),
     }));
     expect(await screen.findByText(/AI-assisted draft saved for human review/)).toBeInTheDocument();
-    expect(screen.getByText('AI Credits: 4')).toBeInTheDocument();
+    await expectCreditBalance(4);
     expect(screen.getByLabelText('Full caption')).toHaveValue('AI-assisted draft for human review.');
   });
 
   it('keeps deterministic tools available with zero AI credits', async () => {
     gatewayService.credits = 0;
     render(<GrowthAIPage />);
-    expect(await screen.findByText('AI Credits: 0')).toBeInTheDocument();
+    await expectCreditBalance(0);
     expect(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Generate response with AI · 1 credit' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
@@ -256,10 +265,10 @@ describe('GrowthAI V1 tenant draft foundation', () => {
   it('shows provider failure honestly and reloads the restored balance', async () => {
     gatewayService.generateGrowthAIContent.mockRejectedValueOnce(new Error('AI-assisted generation failed. Your credit was restored.'));
     render(<GrowthAIPage />);
-    await screen.findByText('AI Credits: 5');
+    await expectCreditBalance(5);
     fireEvent.click(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('credit was restored');
-    expect(screen.getByText('AI Credits: 5')).toBeInTheDocument();
+    await expectCreditBalance(5);
     expect(state.drafts).toHaveLength(0);
   });
 
@@ -284,7 +293,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
 
   it('keeps deterministic customer responses free and makes AI assistance explicit', async () => {
     render(<GrowthAIPage />);
-    await screen.findByText('AI Credits: 5');
+    await expectCreditBalance(5);
     expect(screen.getByRole('button', { name: 'Save response draft' })).toBeEnabled();
     const responseAIButton = screen.getByRole('button', { name: 'Generate response with AI · 1 credit' });
     expect(responseAIButton).toBeDisabled();
@@ -358,7 +367,9 @@ describe('GrowthAI V1 tenant draft foundation', () => {
   it('persists a tenant draft across an unmount and reload without localStorage', async () => {
     const localStorageSpy = vi.spyOn(Storage.prototype, 'setItem');
     const first = render(<GrowthAIPage />);
+    openWorkspaceView('Drafts');
     await screen.findByText('No tenant drafts saved yet.');
+    openWorkspaceView('Home');
     fireEvent.change(screen.getByLabelText('Service area'), { target: { value: 'Test City' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save as new draft' }));
@@ -371,6 +382,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
 
     first.unmount();
     render(<GrowthAIPage />);
+    openWorkspaceView('Drafts');
     expect(await screen.findByRole('button', { name: /Availability Post.*Test City/ })).toBeInTheDocument();
     expect(service.listGrowthAIDrafts).toHaveBeenCalledWith('tenant-a');
   });
@@ -378,6 +390,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
   it('supports review and approval, then invalidates approval after a material edit', async () => {
     state.drafts = [savedDraft()];
     render(<GrowthAIPage />);
+    openWorkspaceView('Drafts');
     fireEvent.click(await screen.findByRole('button', { name: /Availability Post - Test City/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Submit for review' }));
     await waitFor(() => expect(screen.getAllByText('Needs review').length).toBeGreaterThan(0));
@@ -393,7 +406,8 @@ describe('GrowthAI V1 tenant draft foundation', () => {
       content: expect.objectContaining({ fullCaption: 'Materially changed customer-facing content.' }),
     }));
     expect(screen.queryByText(/Approved by admin-a/)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/approval invalidated/).length).toBeGreaterThan(0);
+    openWorkspaceView('Activity');
+    expect(screen.getByText('Approval cleared after content changed')).toBeInTheDocument();
   });
 
   it('keeps the current draft audit when an older audit request resolves last', async () => {
@@ -411,26 +425,30 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     });
 
     render(<GrowthAIPage />);
+    openWorkspaceView('Drafts');
     fireEvent.click(await screen.findByRole('button', { name: /Draft A/ }));
     fireEvent.click(screen.getByRole('button', { name: /Draft B/ }));
+    openWorkspaceView('Activity');
 
     await act(async () => resolveDraftB([{
       id: 'audit-b', action: 'draft_b_selected', fromStatus: 'draft', toStatus: 'draft', timestamp: timestamp(),
     }]));
-    expect(await screen.findByText('draft b selected')).toBeInTheDocument();
+    expect(await screen.findByText('Draft b selected')).toBeInTheDocument();
 
     await act(async () => resolveDraftA([{
       id: 'audit-a', action: 'draft_a_selected', fromStatus: 'draft', toStatus: 'draft', timestamp: timestamp(),
     }]));
-    expect(screen.getByText('draft b selected')).toBeInTheDocument();
-    expect(screen.queryByText('draft a selected')).not.toBeInTheDocument();
+    expect(screen.getByText('Draft b selected')).toBeInTheDocument();
+    expect(screen.queryByText('Draft a selected')).not.toBeInTheDocument();
   });
 
   it('restores deterministic marketing outputs and copy controls', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     render(<GrowthAIPage />);
+    openWorkspaceView('Drafts');
     await screen.findByText('No tenant drafts saved yet.');
+    openWorkspaceView('Home');
 
     fireEvent.change(screen.getByLabelText('Service area'), { target: { value: 'Test City' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
@@ -449,7 +467,9 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     render(<GrowthAIPage />);
+    openWorkspaceView('Drafts');
     await screen.findByText('No tenant drafts saved yet.');
+    openWorkspaceView('Home');
 
     fireEvent.change(screen.getByLabelText('Response scenario'), { target: { value: 'review-request' } });
     fireEvent.change(screen.getByLabelText('Response channel'), { target: { value: 'email' } });
@@ -473,6 +493,49 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(screen.getByLabelText('Action type')).toHaveValue('customer_response');
   });
 
+  it('opens on Home and exposes truthful Drafts and selected-draft Activity views', async () => {
+    state.drafts = [savedDraft()];
+    render(<GrowthAIPage />);
+
+    const homeTab = screen.getByRole('tab', { name: 'Home' });
+    expect(homeTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Home');
+    expect(screen.getByText(/Here's what GrowthAI can help you review today/)).toBeInTheDocument();
+
+    openWorkspaceView('Drafts');
+    expect(screen.getByRole('tab', { name: 'Drafts' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(await screen.findByRole('button', { name: /Availability Post - Test City/ }));
+
+    openWorkspaceView('Activity');
+    expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Activity');
+    expect(screen.getByText(/immutable audit history for the selected draft only/)).toBeInTheDocument();
+    expect(screen.getByText(/not a tenant-wide GrowthAI activity feed/)).toBeInTheDocument();
+  });
+
+  it('supports arrow, Home, and End keyboard navigation across workspace tabs', () => {
+    render(<GrowthAIPage />);
+    const homeTab = screen.getByRole('tab', { name: 'Home' });
+    const draftsTab = screen.getByRole('tab', { name: 'Drafts' });
+    const activityTab = screen.getByRole('tab', { name: 'Activity' });
+
+    homeTab.focus();
+    fireEvent.keyDown(homeTab, { key: 'ArrowRight' });
+    expect(draftsTab).toHaveFocus();
+    expect(draftsTab).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(draftsTab, { key: 'End' });
+    expect(activityTab).toHaveFocus();
+    expect(activityTab).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(activityTab, { key: 'Home' });
+    expect(homeTab).toHaveFocus();
+    expect(homeTab).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(homeTab, { key: 'ArrowLeft' });
+    expect(activityTab).toHaveFocus();
+    expect(activityTab).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('blocks ordinary employees before loading tenant GrowthAI records', () => {
     state.auth = { ...state.auth, role: 'employee' };
     render(<GrowthAIPage />);
@@ -484,6 +547,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
   it('clears Tenant A content when the workspace remounts for Tenant B', async () => {
     state.drafts = [savedDraft({ title: 'Tenant A private draft' })];
     const first = render(<GrowthAIPage />);
+    openWorkspaceView('Drafts');
     expect(await screen.findByText('Tenant A private draft')).toBeInTheDocument();
     first.unmount();
 
@@ -494,6 +558,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     };
     state.drafts = [savedDraft({ id: 'draft-b', title: 'Tenant B private draft' })];
     render(<GrowthAIPage />);
+    openWorkspaceView('Drafts');
 
     expect(await screen.findByText('Tenant B private draft')).toBeInTheDocument();
     expect(screen.queryByText('Tenant A private draft')).not.toBeInTheDocument();

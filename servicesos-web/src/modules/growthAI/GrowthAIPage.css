@@ -1,0 +1,686 @@
+.growth-ai-page {
+  min-height: 100vh;
+  background: #f6f8fb;
+  color: #172033;
+}
+
+.growth-ai-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+  padding: 24px clamp(20px, 4vw, 44px);
+  border-bottom: 1px solid #203c59;
+  background: #102a43;
+  color: #fff;
+}
+
+.growth-ai-header-copy {
+  min-width: 0;
+}
+
+.growth-ai-header h1,
+.growth-ai-welcome h2,
+.growth-ai-activity-intro h2,
+.growth-ai-section-heading h2 {
+  letter-spacing: 0;
+}
+
+.growth-ai-header h1 {
+  margin: 3px 0 0;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.growth-ai-header p {
+  max-width: 720px;
+  margin: 7px 0 0;
+  color: #cbd9e6;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.growth-ai-eyebrow,
+.growth-ai-section-kicker {
+  display: block;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.growth-ai-header .growth-ai-eyebrow {
+  color: #7dd3c7;
+}
+
+.growth-ai-credit-summary {
+  display: grid;
+  flex: 0 0 auto;
+  min-width: 126px;
+  padding: 12px 15px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .08);
+  text-align: right;
+}
+
+.growth-ai-credit-summary span,
+.growth-ai-credit-summary small {
+  color: #cbd9e6;
+  font-size: 12px;
+}
+
+.growth-ai-credit-summary strong {
+  margin: 2px 0;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.growth-ai-shell {
+  width: min(1180px, 100%);
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 22px 24px 40px;
+}
+
+.growth-ai-section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin-bottom: 18px;
+  padding: 6px;
+  border: 1px solid #d7e0e9;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 8px 22px rgba(15, 42, 67, .06);
+}
+
+.growth-ai-section-nav [role="tablist"] {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.growth-ai-section-nav button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 6px;
+  padding: 9px 16px;
+  background: transparent;
+  color: #526278;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.growth-ai-section-nav button[aria-selected="true"] {
+  background: #eaf2ff;
+  color: #1d4ed8;
+  box-shadow: inset 0 0 0 1px #bfdbfe;
+}
+
+.growth-ai-section-nav button:focus-visible,
+.growth-ai-button:focus-visible,
+.growth-ai-draft-item:focus-visible,
+.growth-ai-quick-actions a:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.growth-ai-view {
+  min-width: 0;
+  outline: none;
+}
+
+.growth-ai-notice {
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  border: 1px solid;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.growth-ai-notice-error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.growth-ai-notice-success {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.growth-ai-home,
+.growth-ai-activity-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.growth-ai-welcome,
+.growth-ai-activity-intro {
+  padding: 20px 4px 16px;
+  border-bottom: 1px solid #d7e0e9;
+}
+
+.growth-ai-welcome h2,
+.growth-ai-activity-intro h2 {
+  max-width: 760px;
+  margin: 6px 0 8px;
+  color: #102a43;
+  font-size: 25px;
+  line-height: 1.25;
+}
+
+.growth-ai-welcome > p,
+.growth-ai-activity-intro > p {
+  max-width: 760px;
+  margin: 0;
+  color: #526278;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.growth-ai-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.growth-ai-quick-actions a {
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 9px 13px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.growth-ai-surface {
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 20px;
+  border: 1px solid #d7e0e9;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 42, 67, .06);
+}
+
+.growth-ai-section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  margin-bottom: 15px;
+}
+
+.growth-ai-section-heading > div {
+  min-width: 0;
+}
+
+.growth-ai-section-heading h2 {
+  margin: 4px 0 0;
+  color: #172033;
+  font-size: 18px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-section-heading p,
+.growth-ai-section-description {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.growth-ai-count,
+.growth-ai-free-label,
+.growth-ai-state {
+  flex: 0 0 auto;
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.growth-ai-count {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.growth-ai-free-label {
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.growth-ai-state {
+  border: 1px solid #d7e0e9;
+  background: #f1f5f9;
+  color: #526278;
+}
+
+.growth-ai-state-needs_review {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #a16207;
+}
+
+.growth-ai-state-approved,
+.growth-ai-state-success {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.growth-ai-filter-row,
+.growth-ai-actions,
+.growth-ai-idea-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.growth-ai-filter-row {
+  margin-bottom: 14px;
+}
+
+.growth-ai-button {
+  width: auto;
+  max-width: 100%;
+  white-space: normal;
+}
+
+.growth-ai-button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.growth-ai-button-success {
+  border: 1px solid #047857;
+  background: #047857;
+  color: #fff;
+}
+
+.growth-ai-opportunity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.growth-ai-opportunity {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid #d7e0e9;
+  border-left: 4px solid #0f766e;
+  border-radius: 7px;
+  background: #fbfdfd;
+}
+
+.growth-ai-opportunity-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.growth-ai-opportunity-heading > div {
+  min-width: 0;
+}
+
+.growth-ai-item-label {
+  display: block;
+  margin-bottom: 3px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.growth-ai-opportunity-heading strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-opportunity > p {
+  margin: 10px 0 12px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.growth-ai-opportunity > p strong {
+  color: #475569;
+}
+
+.growth-ai-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.growth-ai-tools-grid > div,
+.growth-ai-tools-grid > div > .growth-ai-surface {
+  min-width: 0;
+}
+
+.growth-ai-form-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.growth-ai-form-grid,
+.growth-ai-brand-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.growth-ai-brand-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.growth-ai-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.growth-ai-field input,
+.growth-ai-field select,
+.growth-ai-field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.growth-ai-field textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.growth-ai-field input[readonly] {
+  background: #f1f5f9;
+  color: #526278;
+}
+
+.growth-ai-field input:focus,
+.growth-ai-field select:focus,
+.growth-ai-field textarea:focus {
+  border-color: #2563eb;
+  outline: 3px solid rgba(37, 99, 235, .16);
+}
+
+.growth-ai-preview {
+  padding: 13px;
+  border: 1px solid #d7e0e9;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.growth-ai-preview > strong {
+  display: block;
+  font-size: 14px;
+}
+
+.growth-ai-preview p {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.growth-ai-supporting-copy,
+.growth-ai-credit-warning,
+.growth-ai-empty,
+.growth-ai-approval-note {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.growth-ai-credit-warning {
+  color: #a16207;
+}
+
+.growth-ai-idea-list {
+  margin-top: 14px;
+}
+
+.growth-ai-drafts-layout {
+  display: grid;
+  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.growth-ai-draft-library {
+  position: sticky;
+  top: 80px;
+}
+
+.growth-ai-draft-list {
+  display: grid;
+  gap: 8px;
+}
+
+.growth-ai-draft-item {
+  width: 100%;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #d7e0e9;
+  border-radius: 7px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.growth-ai-draft-item[aria-current="true"] {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: inset 3px 0 #2563eb;
+}
+
+.growth-ai-draft-item strong,
+.growth-ai-draft-item span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-draft-item span {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.growth-ai-copy-actions,
+.growth-ai-review-actions {
+  margin-top: 14px;
+}
+
+.growth-ai-approval-note {
+  margin-top: 12px;
+  color: #047857;
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-activity-layout {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.growth-ai-activity-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.growth-ai-activity-list li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 11px;
+  min-width: 0;
+  padding: 13px 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.growth-ai-activity-list li:first-child {
+  border-top: 0;
+}
+
+.growth-ai-activity-marker {
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border: 3px solid #ccfbf1;
+  border-radius: 50%;
+  background: #0f766e;
+}
+
+.growth-ai-activity-list strong,
+.growth-ai-activity-list p,
+.growth-ai-activity-list time {
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-activity-list p {
+  margin: 4px 0;
+  color: #526278;
+  font-size: 13px;
+}
+
+.growth-ai-activity-list time {
+  color: #64748b;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .growth-ai-tools-grid,
+  .growth-ai-drafts-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .growth-ai-brand-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .growth-ai-draft-library {
+    position: static;
+  }
+}
+
+@media (max-width: 600px) {
+  .growth-ai-header {
+    align-items: stretch;
+    padding: 20px 16px;
+  }
+
+  .growth-ai-header,
+  .growth-ai-section-heading,
+  .growth-ai-opportunity-heading {
+    flex-direction: column;
+  }
+
+  .growth-ai-credit-summary {
+    display: flex;
+    min-width: 0;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    text-align: left;
+  }
+
+  .growth-ai-credit-summary strong {
+    margin-left: auto;
+    font-size: 20px;
+  }
+
+  .growth-ai-shell {
+    padding: 14px 12px 30px;
+  }
+
+  .growth-ai-section-nav {
+    margin-bottom: 12px;
+  }
+
+  .growth-ai-section-nav button {
+    min-height: 44px;
+    padding: 8px;
+  }
+
+  .growth-ai-welcome,
+  .growth-ai-activity-intro {
+    padding: 16px 4px;
+  }
+
+  .growth-ai-welcome h2,
+  .growth-ai-activity-intro h2 {
+    font-size: 22px;
+  }
+
+  .growth-ai-surface {
+    padding: 16px;
+  }
+
+  .growth-ai-form-grid,
+  .growth-ai-brand-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .growth-ai-actions .growth-ai-button,
+  .growth-ai-idea-list .growth-ai-button {
+    flex: 1 1 180px;
+  }
+
+  .growth-ai-quick-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .growth-ai-quick-actions a {
+    display: grid;
+    place-items: center;
+    text-align: center;
+  }
+}
+
+@media (max-width: 390px) {
+  .growth-ai-quick-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .growth-ai-credit-summary small {
+    display: none;
+  }
+}
