@@ -47,7 +47,7 @@ The permanent GrowthAI interface should stay simple as capabilities grow:
 - contextual business briefing
 - deterministic opportunities
 - goal-oriented suggested actions
-- a future guided conversational workspace
+- a guided conversational workspace
 - a future universal composer with typed canonical context
 
 **GrowthAI Home is conversation-first. The conversation is the primary
@@ -75,6 +75,31 @@ GrowthAI responses should support typed ServicesOS result cards rather than bein
 limited to plain text. New capabilities should plug into a capability/action
 registry and result-renderer architecture instead of adding permanent panels to
 the Home page.
+
+## First-run GrowthAI onboarding
+
+The first eligible owner/admin visit to GrowthAI should introduce the assistant
+through the same conversation-first workspace used afterward, not through a
+generic tooltip tour or disconnected carousel.
+
+The first-run guide is deterministic and free. It should explain current
+capabilities, the human-approval boundary, and the difference between included
+ServicesOS intelligence and explicit credit-using AI generation or analysis.
+The guide may safely personalize with canonical tenant setup context already
+available to the page, but it must not fabricate business facts or call an AI
+provider merely to generate onboarding copy.
+
+The guide should be skippable and resumable, should not repeatedly relaunch after
+completion or a deliberate skip, and should provide a subtle way to reopen the
+guide later. Completion should transition directly into real supported GrowthAI
+workflows instead of redirecting to another page. Only capabilities that are
+actually reachable should be presented as active actions; planned capabilities
+must be described honestly as planned or in progress.
+
+Minimal first-run state may be stored as a versioned, tenant-and-user-scoped
+browser preference while the general conversation remains session-local. This is
+not a general conversation-history contract and should not require AI credits,
+provider calls, or new business mutations.
 
 ## Deterministic intelligence and credits
 

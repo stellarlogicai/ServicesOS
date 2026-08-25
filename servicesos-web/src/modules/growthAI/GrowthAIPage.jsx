@@ -460,7 +460,9 @@ export default function GrowthAIPage({ onReviewJob }) {
           postTypeId={postTypeId}
           profile={profile}
           saving={saving}
+          tenantId={tenantId}
           userDisplayName={userProfile?.displayName || user?.displayName || ''}
+          userId={userProfile?.uid || user?.uid || ''}
           visibleOpportunities={visibleOpportunities}
         />
       ) : null}

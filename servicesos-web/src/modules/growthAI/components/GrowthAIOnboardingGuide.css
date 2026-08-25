@@ -1,0 +1,180 @@
+.growth-ai-onboarding {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #b9d7d2;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f7fffd 0%, #f8fbff 100%);
+  box-shadow: 0 10px 28px rgba(15, 42, 67, .08);
+}
+
+.growth-ai-onboarding-mark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 10px;
+  background: #102a43;
+  color: #7dd3c7;
+  font-size: 19px;
+}
+
+.growth-ai-onboarding-content {
+  min-width: 0;
+}
+
+.growth-ai-onboarding-eyebrow,
+.growth-ai-onboarding-progress {
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.growth-ai-onboarding-content h3 {
+  margin: 4px 0 8px;
+  color: #102a43;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.growth-ai-onboarding-content p {
+  margin: 7px 0 0;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-onboarding-content small {
+  display: block;
+  margin-top: 10px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.growth-ai-onboarding-progress {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.growth-ai-onboarding-progress-track {
+  height: 4px;
+  margin: 8px 0 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dce9ee;
+}
+
+.growth-ai-onboarding-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #2563eb);
+  transition: width 180ms ease;
+}
+
+.growth-ai-onboarding-note {
+  padding: 9px 11px;
+  border-left: 3px solid #7dd3c7;
+  background: rgba(255, 255, 255, .72);
+  color: #526278 !important;
+  font-size: 12px !important;
+}
+
+.growth-ai-onboarding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.growth-ai-onboarding-actions button {
+  min-height: 42px;
+  padding: 9px 14px;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.growth-ai-onboarding-primary {
+  border: 1px solid #1d4ed8;
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.growth-ai-onboarding-secondary {
+  border: 1px solid #bfd2e6;
+  background: #fff;
+  color: #174ea6;
+}
+
+.growth-ai-onboarding-actions button:focus-visible,
+.growth-ai-guide-link:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.growth-ai-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.growth-ai-secondary-actions .growth-ai-brand-link {
+  margin-top: 0;
+}
+
+.growth-ai-guide-link {
+  min-height: 36px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: #174ea6;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.growth-ai-guide-link:hover {
+  color: #1d4ed8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .growth-ai-onboarding-progress-track span {
+    transition: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .growth-ai-onboarding {
+    grid-template-columns: 1fr;
+    padding: 15px;
+  }
+
+  .growth-ai-onboarding-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .growth-ai-onboarding-content h3 {
+    font-size: 18px;
+  }
+
+  .growth-ai-onboarding-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .growth-ai-onboarding-actions button {
+    width: 100%;
+  }
+}

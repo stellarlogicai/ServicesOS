@@ -3,7 +3,13 @@ import {
   appendBoundedGrowthAIMessages,
   routeGrowthAIIntent,
 } from '../growthAIConversation';
+import {
+  GROWTH_AI_ONBOARDING_LAST_STEP,
+  loadGrowthAIOnboardingState,
+  saveGrowthAIOnboardingState,
+} from '../growthAIOnboarding';
 import { RESPONSE_CHANNELS, RESPONSE_SCENARIOS, buildResponseTemplate } from '../responseTemplates';
+import GrowthAIOnboardingGuide from './GrowthAIOnboardingGuide';
 import {
   GrowthAIButton,
   GrowthAICopyButton,
@@ -331,12 +337,18 @@ export default function GrowthAIHome({
   postTypeId,
   profile,
   saving,
+  tenantId,
   userDisplayName,
+  userId,
   visibleOpportunities,
 }) {
   const [composerValue, setComposerValue] = useState('');
   const [conversation, setConversation] = useState([]);
   const [activeWorkflow, setActiveWorkflow] = useState(null);
+  const [onboardingState, setOnboardingState] = useState(() => loadGrowthAIOnboardingState({ tenantId, userId }));
+  const [guideOpen, setGuideOpen] = useState(() => onboardingState.status === 'not_started' || onboardingState.status === 'in_progress');
+  const [guideMode, setGuideMode] = useState(() => onboardingState.status === 'not_started' ? 'welcome' : 'tour');
+  const [guideStep, setGuideStep] = useState(() => onboardingState.step || 0);
   const messageSequence = useRef(0);
   const firstName = safeFirstName(userDisplayName);
   const greeting = `${greetingForHour(new Date().getHours())}${firstName ? `, ${firstName}` : ''}.`;
@@ -344,6 +356,12 @@ export default function GrowthAIHome({
   const nextMessageId = prefix => `${prefix}-${++messageSequence.current}`;
   const appendMessages = additions => {
     setConversation(current => appendBoundedGrowthAIMessages(current, additions));
+  };
+
+  const persistOnboarding = nextState => {
+    const saved = saveGrowthAIOnboardingState({ tenantId, userId, state: nextState });
+    setOnboardingState(saved);
+    return saved;
   };
 
   const openCapability = (capabilityType, userText) => {
@@ -377,6 +395,54 @@ export default function GrowthAIHome({
       capabilityMessage,
     ]);
     setActiveWorkflow({ messageId: capabilityMessage.id, capabilityType });
+  };
+
+  const firstRunGuidePending = onboardingState.status === 'not_started' || onboardingState.status === 'in_progress';
+
+  const startGuide = () => {
+    setGuideMode('tour');
+    setGuideStep(onboardingState.status === 'in_progress' ? onboardingState.step : 0);
+    setGuideOpen(true);
+    if (firstRunGuidePending) {
+      persistOnboarding({ status: 'in_progress', step: onboardingState.status === 'in_progress' ? onboardingState.step : 0 });
+    }
+  };
+
+  const closeGuide = () => {
+    if (firstRunGuidePending) persistOnboarding({ status: 'skipped', step: guideStep });
+    setGuideOpen(false);
+    appendMessages([{
+      id: nextMessageId('assistant'),
+      role: 'assistant',
+      type: 'result',
+      content: 'No problem. You can reopen the GrowthAI guide anytime. I am ready when you are.',
+      actions: ['marketing', 'customer_response', 'opportunities'],
+    }]);
+  };
+
+  const advanceGuide = () => {
+    if (guideStep >= GROWTH_AI_ONBOARDING_LAST_STEP) {
+      if (firstRunGuidePending) persistOnboarding({ status: 'completed', step: GROWTH_AI_ONBOARDING_LAST_STEP });
+      setGuideOpen(false);
+      appendMessages([{
+        id: nextMessageId('assistant'),
+        role: 'assistant',
+        type: 'result',
+        content: 'You\'re ready. Talk to me normally—no special prompts required. Pick something useful to start with.',
+        actions: ['marketing', 'customer_response', 'opportunities'],
+      }]);
+      return;
+    }
+
+    const nextStep = guideStep + 1;
+    setGuideStep(nextStep);
+    if (firstRunGuidePending) persistOnboarding({ status: 'in_progress', step: nextStep });
+  };
+
+  const reopenGuide = () => {
+    setGuideMode('tour');
+    setGuideStep(0);
+    setGuideOpen(true);
   };
 
   const submitComposer = event => {
@@ -433,20 +499,38 @@ export default function GrowthAIHome({
             </button>
           ))}
         </div>
-        <button type="button" className="growth-ai-brand-link" onClick={() => openCapability('brand', 'Edit brand settings')}>
-          Using {businessName} brand profile · Edit
-        </button>
+        <div className="growth-ai-secondary-actions">
+          <button type="button" className="growth-ai-brand-link" onClick={() => openCapability('brand', 'Edit brand settings')}>
+            Using {businessName} brand profile · Edit
+          </button>
+          <button type="button" className="growth-ai-guide-link" onClick={reopenGuide}>
+            GrowthAI guide
+          </button>
+        </div>
       </section>
 
       <section className="growth-ai-conversation" aria-labelledby="growth-ai-conversation-title">
         <h2 id="growth-ai-conversation-title" className="growth-ai-visually-hidden">GrowthAI conversation</h2>
         <div className="growth-ai-conversation-stream" role="log" aria-live="polite" aria-relevant="additions">
-          <ConversationMessage message={{ id: 'welcome', role: 'assistant', type: 'text', content: `I'm ready to help you work on growth for ${businessName}. I can review opportunities, create marketing, or prepare customer responses.` }} />
-          <ConversationMessage message={{ id: 'opportunity-status', role: 'system', type: 'result', content: opportunityMessage }}>
-            {!opportunitiesLoading && activeOpportunities.length > 0 ? (
-              <button type="button" className="growth-ai-inline-action" onClick={() => openCapability('opportunities', 'Show opportunities')}>Show opportunities</button>
-            ) : null}
-          </ConversationMessage>
+          {guideOpen ? (
+            <GrowthAIOnboardingGuide
+              businessName={businessName}
+              mode={guideMode}
+              onNext={advanceGuide}
+              onSkip={closeGuide}
+              onStart={startGuide}
+              step={guideStep}
+            />
+          ) : (
+            <>
+              <ConversationMessage message={{ id: 'welcome', role: 'assistant', type: 'text', content: `I'm ready to help you work on growth for ${businessName}. I can review opportunities, create marketing, or prepare customer responses.` }} />
+              <ConversationMessage message={{ id: 'opportunity-status', role: 'system', type: 'result', content: opportunityMessage }}>
+                {!opportunitiesLoading && activeOpportunities.length > 0 ? (
+                  <button type="button" className="growth-ai-inline-action" onClick={() => openCapability('opportunities', 'Show opportunities')}>Show opportunities</button>
+                ) : null}
+              </ConversationMessage>
+            </>
+          )}
 
           {conversation.map(message => (
             <ConversationMessage key={message.id} message={message}>
@@ -454,7 +538,7 @@ export default function GrowthAIHome({
                 <div className="growth-ai-inline-actions">
                   {message.actions.map(actionId => {
                     const action = CAPABILITY_ACTIONS.find(item => item.id === actionId);
-                    return <button key={actionId} type="button" onClick={() => openCapability(actionId, action.label)}>{action.label}</button>;
+                    return action ? <button key={actionId} type="button" onClick={() => openCapability(actionId, action.label)}>{action.label}</button> : null;
                   })}
                 </div>
               ) : null}
