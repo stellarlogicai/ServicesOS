@@ -3,6 +3,7 @@ import { auth, db } from '../../firebase';
 
 export const GROWTH_AI_ACTION_COSTS = Object.freeze({
   customer_response: 1,
+  estimate_assistance: 1,
   estimate_followup: 1,
   marketing_post: 1,
 });

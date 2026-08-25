@@ -630,6 +630,100 @@
   gap: 10px;
 }
 
+.growth-ai-estimate-selector {
+  display: grid;
+  gap: 8px;
+}
+
+.growth-ai-estimate-option {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 3px;
+  padding: 11px 12px;
+  border: 1px solid #d7e0e9;
+  border-radius: 7px;
+  background: #fbfdfd;
+  color: #172033;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.growth-ai-estimate-option span {
+  color: #64748b;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-estimate-option[aria-pressed="true"] {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: inset 3px 0 #2563eb;
+}
+
+.growth-ai-estimate-option:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.growth-ai-estimate-pricing,
+.growth-ai-estimate-result {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #d7e0e9;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.growth-ai-estimate-pricing h4,
+.growth-ai-estimate-result h4 {
+  margin: 4px 0 10px;
+  color: #172033;
+  font-size: 15px;
+}
+
+.growth-ai-estimate-pricing dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.growth-ai-estimate-pricing dl div {
+  min-width: 0;
+  padding: 9px;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.growth-ai-estimate-pricing dt {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.growth-ai-estimate-pricing dd {
+  margin: 3px 0 0;
+  color: #172033;
+  font-size: 14px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-estimate-result > p,
+.growth-ai-estimate-result-list {
+  margin: 9px 0 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.growth-ai-estimate-result-list ul {
+  margin: 5px 0 0;
+  padding-left: 18px;
+}
+
 .growth-ai-opportunity {
   min-width: 0;
   padding: 14px;
@@ -864,6 +958,10 @@
   .growth-ai-actions .growth-ai-button,
   .growth-ai-idea-list .growth-ai-button {
     flex: 1 1 170px;
+  }
+
+  .growth-ai-estimate-pricing dl {
+    grid-template-columns: 1fr;
   }
 
   .growth-ai-composer {

@@ -7,6 +7,10 @@ import {
 
 describe('GrowthAI conversation routing', () => {
   it.each([
+    ['help me with an estimate', 'estimate_assistance'],
+    ['review this estimate', 'estimate_assistance'],
+    ['analyze an estimate', 'estimate_assistance'],
+    ['help price this job', 'estimate_assistance'],
     ['create a Facebook post', 'marketing'],
     ['help me reply to a customer', 'customer_response'],
     ['what should I work on', 'opportunities'],

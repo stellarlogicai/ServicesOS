@@ -9,6 +9,7 @@ import {
   saveGrowthAIOnboardingState,
 } from '../growthAIOnboarding';
 import { RESPONSE_CHANNELS, RESPONSE_SCENARIOS, buildResponseTemplate } from '../responseTemplates';
+import { formatEstimateCurrency } from '../growthAIEstimateAssistance';
 import GrowthAIOnboardingGuide from './GrowthAIOnboardingGuide';
 import {
   GrowthAIButton,
@@ -17,6 +18,7 @@ import {
 } from './GrowthAIPrimitives';
 
 const CAPABILITY_ACTIONS = Object.freeze([
+  { id: 'estimate_assistance', label: 'Help with an estimate' },
   { id: 'marketing', label: 'Create marketing' },
   { id: 'customer_response', label: 'Follow up' },
   { id: 'opportunities', label: 'Review opportunities' },
@@ -24,11 +26,126 @@ const CAPABILITY_ACTIONS = Object.freeze([
 ]);
 
 const CAPABILITY_RESPONSES = Object.freeze({
+  estimate_assistance: 'Choose an existing estimate to review its saved ServicesOS pricing. AI analysis is optional and always requires your approval.',
   marketing: 'Let\'s create something useful. Choose a format and add any details you want included.',
   customer_response: 'I can help prepare a private response. Nothing will be sent automatically.',
   opportunities: 'Here are the current deterministic GrowthAI opportunities for this tenant.',
   brand: 'These preferences shape GrowthAI drafts. Your canonical business identity still comes from Business Settings.',
 });
+
+function formatEstimateDate(value) {
+  const date = value?.toDate?.() || (value ? new Date(value) : null);
+  return date && !Number.isNaN(date.getTime())
+    ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date)
+    : 'Date unavailable';
+}
+
+function EstimateAssistanceResult({ recommendation }) {
+  if (!recommendation) return null;
+  const currency = recommendation.baselinePrice?.currency || 'USD';
+  return (
+    <section className="growth-ai-estimate-result" role="status" aria-live="polite" aria-labelledby="growth-ai-estimate-recommendation-title">
+      <span className="growth-ai-item-label">GrowthAI recommendation</span>
+      <h4 id="growth-ai-estimate-recommendation-title">Review before using</h4>
+      <p><strong>Recommended price:</strong> {formatEstimateCurrency(recommendation.recommendedPrice, currency)}</p>
+      <p><strong>Reasoning:</strong> {recommendation.reasoning}</p>
+      {[
+        ['Assumptions', recommendation.assumptions],
+        ['Suggested scope', recommendation.scopeSuggestions],
+        ['Possible add-ons', recommendation.possibleAddOns],
+        ['Complexity and risk flags', recommendation.complexityFlags],
+      ].map(([label, values]) => Array.isArray(values) && values.length ? (
+        <div key={label} className="growth-ai-estimate-result-list">
+          <strong>{label}</strong>
+          <ul>{values.map(value => <li key={value}>{value}</li>)}</ul>
+        </div>
+      ) : null)}
+      <p className="growth-ai-approval-note">This advisory result is saved for human review. It did not change the estimate, booking, payment, schedule, or customer record.</p>
+    </section>
+  );
+}
+
+function EstimateAssistanceWorkflow({ aiCredits, aiGenerating, estimates, onAnalyze, saving }) {
+  const [selectedEstimateId, setSelectedEstimateId] = useState(null);
+  const [recommendation, setRecommendation] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const selectedEstimate = estimates.find(item => item.id === selectedEstimateId) || null;
+  const pricing = selectedEstimate?.pricing || null;
+  const aiDisabled = !selectedEstimate || !pricing || aiCredits < 1 || aiGenerating || saving || submitting;
+  const disabledReason = !selectedEstimate
+    ? 'Choose an estimate before requesting GrowthAI analysis.'
+    : !pricing
+      ? 'This saved estimate needs a valid ServicesOS price range before it can be analyzed.'
+      : aiCredits < 1
+        ? 'Not enough AI credits. ServicesOS pricing remains available.'
+        : 'GrowthAI analysis uses 1 AI credit.';
+
+  const selectEstimate = estimate => {
+    setSelectedEstimateId(estimate.id);
+    setRecommendation(null);
+  };
+
+  const analyze = async () => {
+    if (aiDisabled) return;
+    setSubmitting(true);
+    setRecommendation(null);
+    try {
+      const result = await onAnalyze(selectedEstimate.id);
+      if (result?.estimateAssistance) setRecommendation(result.estimateAssistance);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="growth-ai-workflow" aria-labelledby="growth-ai-estimate-assistance-title">
+      <div className="growth-ai-workflow-heading">
+        <div>
+          <h3 id="growth-ai-estimate-assistance-title">Estimate assistance</h3>
+          <p>ServicesOS pricing is authoritative. GrowthAI can provide an optional advisory recommendation.</p>
+        </div>
+        <span className="growth-ai-free-label">Pricing view included</span>
+      </div>
+      {estimates.length === 0 ? <p className="growth-ai-empty">No eligible unbooked estimates are available for assistance.</p> : (
+        <div className="growth-ai-estimate-selector" role="group" aria-label="Eligible estimates">
+          {estimates.map(estimate => (
+            <button
+              key={estimate.id}
+              type="button"
+              aria-pressed={selectedEstimateId === estimate.id}
+              className="growth-ai-estimate-option"
+              onClick={() => selectEstimate(estimate)}
+            >
+              <strong>{estimate.customerName}</strong>
+              <span>{estimate.serviceType} · {estimate.status} · {formatEstimateDate(estimate.date)}</span>
+              {estimate.pricing ? <span>{formatEstimateCurrency(estimate.pricing.low, estimate.pricing.currency)} - {formatEstimateCurrency(estimate.pricing.high, estimate.pricing.currency)}</span> : <span>Pricing needs review</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {selectedEstimate ? (
+        <div className="growth-ai-estimate-pricing" aria-live="polite">
+          <span className="growth-ai-item-label">ServicesOS pricing</span>
+          <h4>{selectedEstimate.customerName}</h4>
+          {pricing ? (
+            <dl>
+              <div><dt>Low</dt><dd>{formatEstimateCurrency(pricing.low, pricing.currency)}</dd></div>
+              <div><dt>Suggested</dt><dd>{pricing.suggested == null ? 'Not available' : formatEstimateCurrency(pricing.suggested, pricing.currency)}</dd></div>
+              <div><dt>High</dt><dd>{formatEstimateCurrency(pricing.high, pricing.currency)}</dd></div>
+            </dl>
+          ) : <p className="growth-ai-credit-warning">The canonical saved price range is incomplete. ServicesOS requires owner review before AI analysis.</p>}
+          <div className="growth-ai-actions">
+            <GrowthAIButton disabled={aiDisabled} aria-describedby="growth-ai-estimate-credit-note" onClick={analyze}>
+              {submitting || aiGenerating ? 'Analyzing...' : 'Analyze with GrowthAI · 1 credit'}
+            </GrowthAIButton>
+          </div>
+          <p id="growth-ai-estimate-credit-note" className="growth-ai-cost-note">{disabledReason}</p>
+        </div>
+      ) : null}
+      <EstimateAssistanceResult recommendation={recommendation} />
+    </section>
+  );
+}
 
 function greetingForHour(hour) {
   if (hour < 12) return 'Good morning';
@@ -314,6 +431,8 @@ export default function GrowthAIHome({
   brand,
   businessName,
   contentIdeas,
+  eligibleEstimateLeads,
+  onAIEstimateAssistance,
   inputs,
   onAIEstimateFollowUp,
   onDismissOpportunity,
@@ -373,9 +492,9 @@ export default function GrowthAIHome({
           role: 'assistant',
           type: 'result',
           content: capabilityType === 'help'
-            ? 'I can review growth opportunities, create marketing drafts, prepare customer responses, or update GrowthAI brand preferences.'
-            : 'I can currently help you review growth opportunities, create marketing, or prepare customer responses. Choose an option below or tell me which one you\'d like to work on.',
-          actions: ['marketing', 'customer_response', 'opportunities'],
+            ? 'I can help with an estimate, review growth opportunities, create marketing drafts, prepare customer responses, or update GrowthAI brand preferences.'
+            : 'I can currently help with an estimate, review growth opportunities, create marketing, or prepare customer responses. Choose an option below or tell me which one you\'d like to work on.',
+          actions: ['estimate_assistance', 'marketing', 'customer_response', 'opportunities'],
         },
       ]);
       setActiveWorkflow(null);
@@ -454,6 +573,9 @@ export default function GrowthAIHome({
   };
 
   const renderWorkflow = capabilityType => {
+    if (capabilityType === 'estimate_assistance') {
+      return <EstimateAssistanceWorkflow aiCredits={aiCredits} aiGenerating={aiGenerating} estimates={eligibleEstimateLeads} onAnalyze={onAIEstimateAssistance} saving={saving} />;
+    }
     if (capabilityType === 'marketing') {
       return <MarketingWorkflow {...{
         aiCredits, aiGenerating, brand, contentIdeas, inputs, onGenerateDeterministic, onGenerateMarketingAI,

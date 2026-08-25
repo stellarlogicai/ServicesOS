@@ -8,7 +8,7 @@ export function GrowthAIField({ label, children }) {
   return <label className="growth-ai-field"><span>{label}</span>{children}</label>;
 }
 
-export function GrowthAIButton({ children, className = '', disabled, onClick, tone = 'primary' }) {
+export function GrowthAIButton({ children, className = '', disabled, onClick, tone = 'primary', ...buttonProps }) {
   const toneClass = tone === 'success'
     ? 'growth-ai-button-success'
     : tone === 'secondary'
@@ -21,6 +21,7 @@ export function GrowthAIButton({ children, className = '', disabled, onClick, to
       className={`v1-button growth-ai-button ${toneClass} ${className}`.trim()}
       onClick={onClick}
       disabled={disabled}
+      {...buttonProps}
     >
       {children}
     </button>

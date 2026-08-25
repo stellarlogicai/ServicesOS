@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import GrowthAIActivityView from './components/GrowthAIActivityView';
 import GrowthAIDraftsView from './components/GrowthAIDraftsView';
@@ -28,6 +28,7 @@ import {
   markGrowthAIOpportunityActed,
   refreshGrowthAIOpportunityFeed,
 } from './growthAIOpportunityService';
+import { listEligibleEstimateAssistanceLeads } from './growthAIEstimateAssistance';
 import './GrowthAIPage.css';
 
 const emptyContent = { fullCaption: '', shortCaption: '', callToAction: '', hashtags: '', imagePrompt: '' };
@@ -35,6 +36,7 @@ const emptyInputs = {
   platform: 'facebook', tone: '', cta: '', extraNotes: '', serviceType: '', serviceArea: '',
   offer: '', dateRange: '', cleaningTopic: '',
 };
+const emptyOpportunityWorkspace = { tenantId: null, opportunities: [], leads: [], bookings: [] };
 
 function draftToEditor(draft) {
   return {
@@ -80,14 +82,20 @@ export default function GrowthAIPage({ onReviewJob }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [opportunityWorkspace, setOpportunityWorkspace] = useState({ opportunities: [], leads: [], bookings: [] });
+  const [opportunityWorkspace, setOpportunityWorkspace] = useState(emptyOpportunityWorkspace);
   const [opportunitiesLoading, setOpportunitiesLoading] = useState(true);
   const [opportunityFilter, setOpportunityFilter] = useState('all');
   const [creditBalance, setCreditBalance] = useState({ available: 0, reserved: 0 });
   const [creditsLoading, setCreditsLoading] = useState(true);
   const [aiGenerating, setAiGenerating] = useState(false);
   const auditRequestSequence = useRef(0);
+  const opportunityRequestSequence = useRef(0);
+  const activeOpportunityTenantId = useRef(tenantId);
   const aiRequestInFlight = useRef(false);
+
+  useLayoutEffect(() => {
+    activeOpportunityTenantId.current = tenantId;
+  }, [tenantId]);
 
   const businessSettings = currentTenant?.businessSettings || {};
   const businessName = businessSettings.businessName || currentTenant?.businessName || 'Your business';
@@ -102,13 +110,19 @@ export default function GrowthAIPage({ onReviewJob }) {
 
   const reloadOpportunities = useCallback(async () => {
     if (!tenantId) return null;
+    const requestedTenantId = tenantId;
+    const requestSequence = ++opportunityRequestSequence.current;
     setOpportunitiesLoading(true);
     try {
       const workspace = await refreshGrowthAIOpportunityFeed(tenantId);
-      setOpportunityWorkspace(workspace);
+      if (requestSequence === opportunityRequestSequence.current && activeOpportunityTenantId.current === requestedTenantId) {
+        setOpportunityWorkspace({ ...workspace, tenantId: requestedTenantId });
+      }
       return workspace;
     } finally {
-      setOpportunitiesLoading(false);
+      if (requestSequence === opportunityRequestSequence.current && activeOpportunityTenantId.current === requestedTenantId) {
+        setOpportunitiesLoading(false);
+      }
     }
   }, [tenantId]);
 
@@ -228,7 +242,7 @@ export default function GrowthAIPage({ onReviewJob }) {
     setError('');
   };
 
-  const generateWithAI = useCallback(async ({ actionType, input, sourceRefs = {} }) => {
+  const generateWithAI = useCallback(async ({ actionType, input, sourceRefs = {}, stayOnHome = false }) => {
     if (aiRequestInFlight.current) return null;
     aiRequestInFlight.current = true;
     setAiGenerating(true);
@@ -246,8 +260,10 @@ export default function GrowthAIPage({ onReviewJob }) {
       await loadAudit(result.draftId);
       await reloadCredits();
       if (actionType === 'estimate_followup') await reloadOpportunities();
-      setActiveView('drafts');
-      setMessage(`AI-assisted draft saved for human review. ${result.creditsCharged} AI credit used. Nothing was sent or published.`);
+      if (!stayOnHome) setActiveView('drafts');
+      setMessage(actionType === 'estimate_assistance'
+        ? `GrowthAI recommendation saved for human review. ${result.creditsCharged} AI credit used. ServicesOS pricing was not changed.`
+        : `AI-assisted draft saved for human review. ${result.creditsCharged} AI credit used. Nothing was sent or published.`);
       return result;
     } catch (err) {
       await reloadCredits().catch(() => {});
@@ -323,14 +339,18 @@ export default function GrowthAIPage({ onReviewJob }) {
     return { id: editor.id };
   }, 'GrowthAI brand preferences saved.');
 
-  const activeOpportunities = opportunityWorkspace.opportunities.filter(item =>
+  const tenantOpportunityWorkspace = opportunityWorkspace.tenantId === tenantId
+    ? opportunityWorkspace
+    : emptyOpportunityWorkspace;
+  const activeOpportunities = tenantOpportunityWorkspace.opportunities.filter(item =>
     item.status === 'open' || item.status === 'acted'
   );
   const visibleOpportunities = activeOpportunities.filter(item =>
     opportunityFilter === 'all' || item.pillar === opportunityFilter
   );
-  const leadsById = new Map(opportunityWorkspace.leads.map(item => [item.id, item]));
-  const bookingsById = new Map(opportunityWorkspace.bookings.map(item => [item.id, item]));
+  const leadsById = new Map(tenantOpportunityWorkspace.leads.map(item => [item.id, item]));
+  const bookingsById = new Map(tenantOpportunityWorkspace.bookings.map(item => [item.id, item]));
+  const eligibleEstimateLeads = listEligibleEstimateAssistanceLeads(tenantOpportunityWorkspace.leads, tenantId);
 
   const opportunitySubject = opportunity => {
     if (opportunity.type === 'estimate_followup') {
@@ -423,7 +443,14 @@ export default function GrowthAIPage({ onReviewJob }) {
           brand={brand}
           businessName={businessName}
           contentIdeas={CONTENT_IDEAS.auntbs}
+          eligibleEstimateLeads={eligibleEstimateLeads}
           inputs={inputs}
+          onAIEstimateAssistance={leadId => generateWithAI({
+            actionType: 'estimate_assistance',
+            input: {},
+            sourceRefs: { leadId },
+            stayOnHome: true,
+          })}
           onAIEstimateFollowUp={aiEstimateFollowUp}
           onDismissOpportunity={dismissOpportunity}
           onDraftEstimateFollowUp={draftEstimateFollowUp}

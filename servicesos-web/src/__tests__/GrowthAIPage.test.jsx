@@ -141,7 +141,22 @@ describe('GrowthAI V1 tenant draft foundation', () => {
       });
       state.drafts = [draft, ...state.drafts];
       appendAudit(draft, 'draft_created', null, 'draft');
-      return { success: true, draftId: draft.id, creditsCharged: 1 };
+      return {
+        success: true,
+        draftId: draft.id,
+        creditsCharged: 1,
+        ...(actionType === 'estimate_assistance' ? {
+          estimateAssistance: {
+            baselinePrice: { low: 180, suggested: 220, high: 260, currency: 'USD' },
+            recommendedPrice: 235,
+            reasoning: 'The saved scope includes a detailed kitchen and bathrooms.',
+            assumptions: ['The home is accessible at the scheduled time.'],
+            scopeSuggestions: ['Confirm interior cabinet cleaning.'],
+            possibleAddOns: ['Inside refrigerator'],
+            complexityFlags: ['Heavy buildup may require more time.'],
+          },
+        } : {}),
+      };
     });
 
     service.loadGrowthAIBrandProfile.mockImplementation(async tenantId => {
@@ -592,10 +607,128 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(screen.queryByText('Marketing draft')).not.toBeInTheDocument();
 
     submitComposer('Organize my filing cabinet');
-    expect(await screen.findByText(/currently help you review growth opportunities/)).toBeInTheDocument();
+    expect(await screen.findByText(/currently help with an estimate, review growth opportunities/)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Create marketing' }).length).toBeGreaterThan(1);
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
     await expectCreditBalance(5);
+  });
+
+  it('shows selected canonical estimate pricing without calling the AI gateway', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [],
+      leads: [{
+        id: 'lead-estimate-a', tenantId: 'tenant-a', status: 'quoted',
+        customerSnapshot: { fullName: 'Estimate Customer' },
+        formData: { cleaningType: 'Deep clean' }, createdAt: '2026-08-20T12:00:00.000Z',
+        estimate: { priceLow: 180, priceSuggested: 220, priceHigh: 260, currency: 'USD' },
+      }, {
+        id: 'lead-booked', tenantId: 'tenant-a', status: 'quoted', booking: { bookingId: 'booking-a' },
+        customerSnapshot: { fullName: 'Booked Customer' }, estimate: { priceLow: 100, priceHigh: 120 },
+      }],
+      bookings: [], rebookingImplemented: false,
+    };
+    render(<GrowthAIPage />);
+    submitComposer('Help me with an estimate');
+
+    const option = await screen.findByRole('button', { name: /Estimate Customer/ });
+    expect(option).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText('Booked Customer')).not.toBeInTheDocument();
+    expect(screen.queryByText('ServicesOS pricing')).not.toBeInTheDocument();
+    fireEvent.click(option);
+
+    expect(await screen.findByText('ServicesOS pricing')).toBeInTheDocument();
+    expect(screen.getByText('$180.00')).toBeInTheDocument();
+    expect(screen.getByText('$220.00')).toBeInTheDocument();
+    expect(screen.getByText('$260.00')).toBeInTheDocument();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+  });
+
+  it('keeps saved pricing usable with zero credits and makes estimate analysis explicit', async () => {
+    gatewayService.credits = 0;
+    state.opportunityWorkspace = {
+      opportunities: [],
+      leads: [{
+        id: 'lead-estimate-a', tenantId: 'tenant-a', status: 'new',
+        customerSnapshot: { fullName: 'Zero Credit Customer' },
+        estimate: { priceLow: 180, priceSuggested: 220, priceHigh: 260, currency: 'USD' },
+      }],
+      bookings: [], rebookingImplemented: false,
+    };
+    render(<GrowthAIPage />);
+    openHomeCapability('Help with an estimate');
+    fireEvent.click(await screen.findByRole('button', { name: /Zero Credit Customer/ }));
+
+    expect(await screen.findByText('ServicesOS pricing')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Analyze with GrowthAI · 1 credit' })).toBeDisabled();
+    expect(screen.getByText(/Not enough AI credits. ServicesOS pricing remains available/)).toBeInTheDocument();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+  });
+
+  it('uses one canonical lead request and renders an advisory estimate recommendation without mutations', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [],
+      leads: [{
+        id: 'lead-estimate-a', tenantId: 'tenant-a', status: 'quoted',
+        customerSnapshot: { fullName: 'Advisory Customer' },
+        estimate: { priceLow: 180, priceSuggested: 220, priceHigh: 260, currency: 'USD' },
+      }],
+      bookings: [], rebookingImplemented: false,
+    };
+    render(<GrowthAIPage />);
+    openHomeCapability('Help with an estimate');
+    fireEvent.click(await screen.findByRole('button', { name: /Advisory Customer/ }));
+    const analyze = screen.getByRole('button', { name: 'Analyze with GrowthAI · 1 credit' });
+    fireEvent.click(analyze);
+    fireEvent.click(analyze);
+
+    await waitFor(() => expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledTimes(1));
+    expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: 'tenant-a', actionType: 'estimate_assistance', sourceRefs: { leadId: 'lead-estimate-a' }, input: {},
+    }));
+    expect(await screen.findByText('GrowthAI recommendation')).toBeInTheDocument();
+    expect(screen.getByText('Review before using')).toBeInTheDocument();
+    expect(screen.getByText('$235.00')).toBeInTheDocument();
+    expect(screen.getByText(/did not change the estimate, booking, payment, schedule, or customer record/)).toBeInTheDocument();
+    expect(service.createGrowthAIDraft).not.toHaveBeenCalled();
+    expect(opportunityService.markGrowthAIOpportunityActed).not.toHaveBeenCalled();
+    expect(opportunityService.dismissGrowthAIOpportunity).not.toHaveBeenCalled();
+  });
+
+  it('clears a selected Tenant A estimate before Tenant B estimates load', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [],
+      leads: [{
+        id: 'lead-tenant-a', tenantId: 'tenant-a', status: 'quoted',
+        customerSnapshot: { fullName: 'Tenant A Estimate' },
+        estimate: { priceLow: 180, priceSuggested: 220, priceHigh: 260, currency: 'USD' },
+      }],
+      bookings: [], rebookingImplemented: false,
+    };
+    const view = render(<GrowthAIPage />);
+    openHomeCapability('Help with an estimate');
+    fireEvent.click(await screen.findByRole('button', { name: /Tenant A Estimate/ }));
+    expect(await screen.findByText('ServicesOS pricing')).toBeInTheDocument();
+
+    state.auth = {
+      currentTenant: { id: 'tenant-b', businessName: 'Tenant B Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-b', userProfile: { displayName: 'Taylor Test' },
+    };
+    state.opportunityWorkspace = {
+      opportunities: [],
+      leads: [{
+        id: 'lead-tenant-b', tenantId: 'tenant-b', status: 'new',
+        customerSnapshot: { fullName: 'Tenant B Estimate' },
+        estimate: { priceLow: 120, priceSuggested: 140, priceHigh: 160, currency: 'USD' },
+      }],
+      bookings: [], rebookingImplemented: false,
+    };
+    view.rerender(<GrowthAIPage />);
+
+    expect(screen.queryByText('Tenant A Estimate')).not.toBeInTheDocument();
+    expect(screen.queryByText('ServicesOS pricing')).not.toBeInTheDocument();
+    openHomeCapability('Help with an estimate');
+    expect(await screen.findByRole('button', { name: /Tenant B Estimate/ })).toBeInTheDocument();
+    expect(screen.queryByText('Tenant A Estimate')).not.toBeInTheDocument();
   });
 
   it('clears session-only conversation state when the tenant workspace remounts', async () => {

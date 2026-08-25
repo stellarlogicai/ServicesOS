@@ -1,4 +1,5 @@
 const INTENT_PATTERNS = Object.freeze({
+  estimate_assistance: /\b(help me with (?:an |this )?estimate|review (?:an |this )?estimate|analy[sz]e (?:an |this )?estimate|estimate assistance|help price (?:this |a )?job)\b/i,
   marketing: /\b(marketing|make (?:me )?(?:a )?post|create (?:me )?(?:a )?post|facebook post|instagram post|social post)\b/i,
   customer_response: /\b(follow[ -]?up|respond to (?:a |the )?customer|customer response|help me (?:respond|reply)|reply to (?:a |the )?customer)\b/i,
   opportunities: /\b(show (?:me )?(?:the )?opportunities|growth opportunities|what needs attention|what should i work on|anything i should review|review opportunities)\b/i,
@@ -11,6 +12,7 @@ export const GROWTH_AI_CONVERSATION_LIMIT = 24;
 export function routeGrowthAIIntent(input) {
   const normalized = typeof input === 'string' ? input.trim() : '';
   if (!normalized) return 'empty';
+  if (INTENT_PATTERNS.estimate_assistance.test(normalized)) return 'estimate_assistance';
   if (INTENT_PATTERNS.marketing.test(normalized)) return 'marketing';
   if (INTENT_PATTERNS.customer_response.test(normalized)) return 'customer_response';
   if (INTENT_PATTERNS.opportunities.test(normalized)) return 'opportunities';
