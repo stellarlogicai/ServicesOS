@@ -301,6 +301,70 @@
   margin-top: 10px;
 }
 
+.growth-ai-briefing {
+  min-width: 0;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #d7e0e9;
+  border-left: 4px solid #0f766e;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.growth-ai-briefing-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.growth-ai-briefing-heading h3 {
+  margin: 4px 0 0;
+  color: #172033;
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+.growth-ai-briefing-sections {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.growth-ai-briefing-section {
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.growth-ai-briefing-section h4 {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+}
+
+.growth-ai-briefing-section ul {
+  display: grid;
+  gap: 5px;
+  margin: 7px 0 0;
+  padding-left: 19px;
+  color: #526278;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.growth-ai-briefing-section li {
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-briefing-note {
+  margin: 12px 0 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .growth-ai-workflow {
   min-width: 0;
   margin-top: 14px;
@@ -946,7 +1010,8 @@
 
   .growth-ai-workflow-heading,
   .growth-ai-section-heading,
-  .growth-ai-opportunity-heading {
+  .growth-ai-opportunity-heading,
+  .growth-ai-briefing-heading {
     flex-direction: column;
   }
 

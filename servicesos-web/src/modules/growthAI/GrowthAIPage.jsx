@@ -29,6 +29,7 @@ import {
   refreshGrowthAIOpportunityFeed,
 } from './growthAIOpportunityService';
 import { listEligibleEstimateAssistanceLeads } from './growthAIEstimateAssistance';
+import { buildGrowthAIBusinessBriefing } from './growthAIBusinessBriefing';
 import './GrowthAIPage.css';
 
 const emptyContent = { fullCaption: '', shortCaption: '', callToAction: '', hashtags: '', imagePrompt: '' };
@@ -426,6 +427,10 @@ export default function GrowthAIPage({ onReviewJob }) {
   const activeOpportunities = tenantOpportunityWorkspace.opportunities.filter(item =>
     item.status === 'open' || item.status === 'acted'
   );
+  const businessBriefing = useMemo(() => buildGrowthAIBusinessBriefing({
+    bookings: tenantOpportunityWorkspace.bookings,
+    opportunities: activeOpportunities,
+  }), [activeOpportunities, tenantOpportunityWorkspace.bookings]);
   const visibleOpportunities = activeOpportunities.filter(item =>
     opportunityFilter === 'all' || item.pillar === opportunityFilter
   );
@@ -541,6 +546,8 @@ export default function GrowthAIPage({ onReviewJob }) {
           aiCredits={creditBalanceForTenant.available}
           aiGenerating={aiGeneratingForTenant}
           brand={brand}
+          briefing={businessBriefing}
+          briefingLoading={opportunitiesLoading}
           businessName={businessName}
           contentIdeas={CONTENT_IDEAS.auntbs}
           eligibleEstimateLeads={eligibleEstimateLeads}

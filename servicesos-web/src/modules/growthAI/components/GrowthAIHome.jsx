@@ -18,6 +18,7 @@ import {
 } from './GrowthAIPrimitives';
 
 const CAPABILITY_ACTIONS = Object.freeze([
+  { id: 'business_briefing', label: 'Today\'s briefing' },
   { id: 'estimate_assistance', label: 'Help with an estimate' },
   { id: 'marketing', label: 'Create marketing' },
   { id: 'customer_response', label: 'Follow up' },
@@ -26,6 +27,7 @@ const CAPABILITY_ACTIONS = Object.freeze([
 ]);
 
 const CAPABILITY_RESPONSES = Object.freeze({
+  business_briefing: 'Here is a deterministic briefing based on the current ServicesOS records for this tenant.',
   estimate_assistance: 'Choose an existing estimate to review its saved ServicesOS pricing. AI analysis is optional and always requires your approval.',
   marketing: 'Let\'s create something useful. Choose a format and add any details you want included.',
   customer_response: 'I can help prepare a private response. Nothing will be sent automatically.',
@@ -424,11 +426,55 @@ function ConversationMessage({ children, message }) {
   );
 }
 
+function BusinessBriefing({ briefing, headingId, loading, onOpenCapability }) {
+  if (loading) {
+    return <section className="growth-ai-briefing" aria-live="polite"><p className="growth-ai-empty">Preparing today\'s briefing from ServicesOS records...</p></section>;
+  }
+
+  const sections = [
+    ['Wins', briefing.wins],
+    ['Needs attention', briefing.needsAttention],
+    ['GrowthAI noticed', briefing.noticed],
+  ].filter(([, items]) => items.length > 0);
+
+  return (
+    <section className="growth-ai-briefing" aria-labelledby={headingId}>
+      <div className="growth-ai-briefing-heading">
+        <div>
+          <span className="growth-ai-item-label">Free deterministic briefing</span>
+          <h3 id={headingId}>Business briefing</h3>
+        </div>
+        <span className="growth-ai-free-label">No AI credits used</span>
+      </div>
+      {briefing.isEmpty ? (
+        <p className="growth-ai-empty">There\'s not much to report yet. As estimates and bookings come in, I\'ll highlight what deserves attention.</p>
+      ) : (
+        <div className="growth-ai-briefing-sections">
+          {sections.map(([title, items]) => (
+            <section key={title} className="growth-ai-briefing-section" aria-label={title}>
+              <h4>{title}</h4>
+              <ul>{items.map(item => <li key={item.id}>{item.text}</li>)}</ul>
+            </section>
+          ))}
+        </div>
+      )}
+      <div className="growth-ai-inline-actions" aria-label="Briefing actions">
+        {briefing.actions.map(item => (
+          <button key={item.id} type="button" onClick={() => onOpenCapability(item.capabilityType, item.label)}>{item.label}</button>
+        ))}
+      </div>
+      <p className="growth-ai-briefing-note">Review suggested actions before any draft, approval, or business change is made.</p>
+    </section>
+  );
+}
+
 export default function GrowthAIHome({
   activeOpportunities,
   aiCredits,
   aiGenerating,
   brand,
+  briefing,
+  briefingLoading,
   businessName,
   contentIdeas,
   eligibleEstimateLeads,
@@ -573,6 +619,9 @@ export default function GrowthAIHome({
   };
 
   const renderWorkflow = capabilityType => {
+    if (capabilityType === 'business_briefing') {
+      return <BusinessBriefing briefing={briefing} headingId="growth-ai-business-briefing-workflow" loading={briefingLoading} onOpenCapability={openCapability} />;
+    }
     if (capabilityType === 'estimate_assistance') {
       return <EstimateAssistanceWorkflow aiCredits={aiCredits} aiGenerating={aiGenerating} estimates={eligibleEstimateLeads} onAnalyze={onAIEstimateAssistance} saving={saving} />;
     }
@@ -646,6 +695,9 @@ export default function GrowthAIHome({
           ) : (
             <>
               <ConversationMessage message={{ id: 'welcome', role: 'assistant', type: 'text', content: `I'm ready to help you work on growth for ${businessName}. I can review opportunities, create marketing, or prepare customer responses.` }} />
+              <ConversationMessage message={{ id: 'business-briefing', role: 'assistant', type: 'result', content: 'Here is your current business briefing. It uses ServicesOS data only and does not use AI credits.' }}>
+                <BusinessBriefing briefing={briefing} headingId="growth-ai-business-briefing-home" loading={briefingLoading} onOpenCapability={openCapability} />
+              </ConversationMessage>
               <ConversationMessage message={{ id: 'opportunity-status', role: 'system', type: 'result', content: opportunityMessage }}>
                 {!opportunitiesLoading && activeOpportunities.length > 0 ? (
                   <button type="button" className="growth-ai-inline-action" onClick={() => openCapability('opportunities', 'Show opportunities')}>Show opportunities</button>

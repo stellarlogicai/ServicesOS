@@ -600,9 +600,43 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
 
     submitComposer('What should I work on?');
-    expect(await screen.findByRole('heading', { name: 'Growth opportunities' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Business briefing' })).toBeInTheDocument();
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
     await expectCreditBalance(5);
+  });
+
+  it('shows the default briefing after first-run dismissal without calling the provider', async () => {
+    render(<GrowthAIPage />);
+    fireEvent.click(await screen.findByRole('button', { name: "I'll explore myself" }));
+
+    expect(await screen.findByRole('heading', { name: 'Business briefing' })).toBeInTheDocument();
+    expect(screen.getByText(/not much to report yet/)).toBeInTheDocument();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+    await expectCreditBalance(5);
+  });
+
+  it('renders a free briefing and opens suggested work without mutating records', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [{
+        id: 'estimate-follow-up', type: 'estimate_followup', status: 'open',
+        detectionReason: 'Quoted estimate needs follow-up.', sourceRefs: { leadId: 'lead-a' },
+      }],
+      leads: [], bookings: [], rebookingImplemented: false,
+    };
+    render(<GrowthAIPage />);
+
+    submitComposer('Give me my business briefing');
+    expect(await screen.findByText('Quoted estimate needs follow-up.')).toBeInTheDocument();
+    expect(screen.getAllByText('No AI credits used').length).toBeGreaterThan(0);
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+    await expectCreditBalance(5);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Review estimate follow-ups' }).at(-1));
+    expect(await screen.findByRole('heading', { name: 'Growth opportunities' })).toBeInTheDocument();
+    expect(service.createGrowthAIDraft).not.toHaveBeenCalled();
+    expect(opportunityService.markGrowthAIOpportunityActed).not.toHaveBeenCalled();
+    expect(opportunityService.dismissGrowthAIOpportunity).not.toHaveBeenCalled();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
   });
 
   it('answers help and unknown requests without opening a workflow or spending credits', async () => {
@@ -786,6 +820,51 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     });
     expect(await screen.findByText('Tenant A restored draft')).toBeInTheDocument();
     expect(screen.queryByText('Tenant B private draft')).not.toBeInTheDocument();
+  });
+
+  it('never renders stale briefing data while tenants switch A to B and back to A', async () => {
+    const opportunityLoads = { 'tenant-a': [], 'tenant-b': [] };
+    opportunityService.refreshGrowthAIOpportunityFeed.mockImplementation(tenantId => {
+      const request = deferred();
+      opportunityLoads[tenantId].push(request);
+      return request.promise;
+    });
+
+    const view = render(<GrowthAIPage />);
+    await waitFor(() => expect(opportunityLoads['tenant-a']).toHaveLength(1));
+    state.auth = {
+      currentTenant: { id: 'tenant-b', businessName: 'Tenant B Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-b', userProfile: { displayName: 'Taylor Test' },
+    };
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(opportunityLoads['tenant-b']).toHaveLength(1));
+
+    await act(async () => opportunityLoads['tenant-a'][0].resolve({
+      opportunities: [{ id: 'a-only', type: 'estimate_followup', status: 'open', detectionReason: 'Tenant A briefing only.' }],
+      leads: [], bookings: [], rebookingImplemented: false,
+    }));
+    submitComposer('What should I work on today?');
+    expect(screen.queryByText('Tenant A briefing only.')).not.toBeInTheDocument();
+
+    await act(async () => opportunityLoads['tenant-b'][0].resolve({
+      opportunities: [{ id: 'b-only', type: 'estimate_followup', status: 'open', detectionReason: 'Tenant B briefing only.' }],
+      leads: [], bookings: [], rebookingImplemented: false,
+    }));
+    expect(await screen.findByText('Tenant B briefing only.')).toBeInTheDocument();
+
+    state.auth = {
+      currentTenant: { id: 'tenant-a', businessName: 'Tenant A Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-a', userProfile: { displayName: 'Jamie Brown' },
+    };
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(opportunityLoads['tenant-a']).toHaveLength(2));
+    await act(async () => opportunityLoads['tenant-a'][1].resolve({
+      opportunities: [{ id: 'a-restored', type: 'estimate_followup', status: 'open', detectionReason: 'Tenant A restored briefing.' }],
+      leads: [], bookings: [], rebookingImplemented: false,
+    }));
+    submitComposer('Give me my business briefing');
+    expect(await screen.findByText('Tenant A restored briefing.')).toBeInTheDocument();
+    expect(screen.queryByText('Tenant B briefing only.')).not.toBeInTheDocument();
   });
 
   it('ignores a stale Tenant A credit response after switching to Tenant B', async () => {
