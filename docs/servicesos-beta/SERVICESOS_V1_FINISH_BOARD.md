@@ -32,13 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `3ab77f0af75b80a35edeb961315a75d51eab0c3d` — `Expand GrowthAI marketing content`
+Latest validated product checkpoint: `adda3c1c47bafbb03691cc227c9e63de0e5c7df8` — `Expand GrowthAI customer communication`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **Marketing V1 content types, platform variants, safe completed-job context, and human-reviewed draft generation**
+Just completed: **Customer Communication V1 drafting, deterministic/free templates, explicit AI enhancement, tenant-verified source handling, and review-required output**
 
-Next planned GrowthAI slice: **Customer communication expansion**
+Next planned GrowthAI slice: **Retention / rebooking detection and opportunity handoff**
 
 ---
 
@@ -138,18 +138,23 @@ Security and production verification still continue under Release Hardening.
 - [x] Completed-job provider payload excludes customer, address, photo, payment, Stripe, employee, and internal data
 - [x] Marketing generation remains draft-only with no automatic publish/send behavior
 
-## Customer communication
+## Customer communication — ✅ COMPLETE
 
 - [x] Response workflow foundation
-- [ ] Estimate follow-up drafts
-- [ ] Scheduling responses
-- [ ] Quote questions
-- [ ] Service questions
-- [ ] Problem-resolution drafts
-- [ ] Rebooking messages
-- [ ] Review-request messages
-- [ ] Deterministic/free templates where appropriate
-- [ ] Explicit AI enhancement where useful
+- [x] Estimate follow-up drafts
+- [x] Scheduling responses without fabricated availability
+- [x] Quote/estimate question drafts using authoritative saved values
+- [x] Service-question drafts using verified tenant service context
+- [x] Problem-resolution drafts with liability/refund/employee-data guardrails
+- [x] Explicit rebooking messages
+- [x] Explicit review-request messages
+- [x] Deterministic/free templates where appropriate
+- [x] Explicit one-credit AI enhancement where useful
+- [x] Server reloads and verifies one typed lead or booking source reference
+- [x] Provider context excludes customer identity, addresses, internal notes, payment, and Stripe data
+- [x] Communication output is review-required and never auto-sent
+- [x] No estimate, booking, customer, or payment mutation
+- [x] Tenant-switch stale-result protection preserved
 
 ## Retention / rebooking
 
@@ -157,16 +162,16 @@ Security and production verification still continue under Release Hardening.
 - [ ] Detect recurring customers missing a next booking
 - [ ] Detect unusually long service gaps
 - [ ] Surface rebooking opportunities
-- [ ] Prepare rebooking drafts
-- [ ] Require owner approval before action
+- [x] Prepare rebooking drafts through Customer Communication once the owner selects context
+- [x] Require owner approval before action through the existing review-required communication workflow
 
 ## Reputation
 
 - [ ] Identify appropriate review-request opportunities
-- [ ] Draft review-request messages
+- [x] Draft explicit review-request messages through Customer Communication
 - [ ] Review-response assistance where supported
 - [ ] Positive / neutral / sensitive handling
-- [ ] Human approval before sending/posting
+- [x] Human approval before sending/posting for review-request drafts
 
 ## Brand intelligence
 
@@ -188,9 +193,9 @@ Security and production verification still continue under Release Hardening.
 - [x] Estimate-assistance conversational trigger
 - [x] Business-briefing questions
 - [x] Marketing routing polish for the implemented Marketing V1 content types
-- [ ] Retention/rebooking routing
+- [ ] Retention/rebooking detection routing
 - [ ] Reputation routing
-- [ ] Customer-communication routing
+- [x] Customer-communication routing
 - [ ] Contextual follow-ups
 - [ ] Natural transitions between controlled workflows
 
