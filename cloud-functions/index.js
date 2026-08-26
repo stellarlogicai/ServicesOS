@@ -50,7 +50,8 @@ exports.createBookingCheckoutSession = functions.https.onRequest(createBookingCh
  * AI/ML Backend: Analyze cleaning photos for condition assessment
  * POST /api/analyze-image
  */
-exports.analyzeImage = functions.https.onRequest((req, res) => {
+// Retired legacy prototype: intentionally not exported or deployable.
+const analyzeImage = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' });
@@ -95,7 +96,8 @@ exports.analyzeImage = functions.https.onRequest((req, res) => {
  * Custom Model Training Pipeline
  * POST /api/train-model
  */
-exports.trainModel = functions.https.onRequest((req, res) => {
+// Retired legacy prototype: intentionally not exported or deployable.
+const trainModel = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' });
@@ -157,7 +159,8 @@ exports.trainModel = functions.https.onRequest((req, res) => {
  * Create a Stripe Payment Intent (with Stripe Connect support)
  * POST /api/create-payment-intent
  */
-exports.createPaymentIntent = functions.https.onRequest((req, res) => {
+// Retired legacy endpoint: use the authenticated booking checkout Function.
+const createPaymentIntent = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' });
@@ -231,7 +234,8 @@ exports.createPaymentIntent = functions.https.onRequest((req, res) => {
  * Create a Stripe Checkout session for deposit payment (with Stripe Connect support)
  * POST /api/create-checkout-session
  */
-exports.createCheckoutSession = functions.https.onRequest((req, res) => {
+// Retired legacy endpoint: use the authenticated booking checkout Function.
+const createCheckoutSession = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' });
@@ -322,7 +326,8 @@ exports.createCheckoutSession = functions.https.onRequest((req, res) => {
  * Confirm a payment
  * POST /api/confirm-payment
  */
-exports.confirmPayment = functions.https.onRequest(async (req, res) => {
+// Retired legacy endpoint: payment truth comes from the canonical webhook path.
+const confirmPayment = functions.https.onRequest(async (req, res) => {
   // Set CORS headers
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -593,7 +598,8 @@ function calculateOnboardingProgress(tenantData) {
 /**
  * Create a Stripe customer for a tenant
  */
-exports.createStripeCustomer = functions.https.onRequest((req, res) => {
+// Retired legacy billing endpoint: tenant billing is not exposed through this API.
+const createStripeCustomer = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' });
@@ -619,7 +625,8 @@ exports.createStripeCustomer = functions.https.onRequest((req, res) => {
 /**
  * Create a subscription for a tenant (with Stripe Connect support)
  */
-exports.createSubscription = functions.https.onRequest((req, res) => {
+// Retired legacy billing endpoint: tenant billing is not exposed through this API.
+const createSubscription = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' });
@@ -685,7 +692,8 @@ exports.createSubscription = functions.https.onRequest((req, res) => {
 /**
  * Update subscription tier
  */
-exports.updateSubscription = functions.https.onRequest((req, res) => {
+// Retired legacy billing endpoint: tenant billing is not exposed through this API.
+const updateSubscription = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' });
@@ -717,7 +725,8 @@ exports.updateSubscription = functions.https.onRequest((req, res) => {
 /**
  * Cancel subscription
  */
-exports.cancelSubscription = functions.https.onRequest((req, res) => {
+// Retired legacy billing endpoint: tenant billing is not exposed through this API.
+const cancelSubscription = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' });
@@ -739,7 +748,8 @@ exports.cancelSubscription = functions.https.onRequest((req, res) => {
 /**
  * Get subscription details
  */
-exports.getSubscription = functions.https.onRequest((req, res) => {
+// Retired legacy billing endpoint: tenant billing is not exposed through this API.
+const getSubscription = functions.https.onRequest((req, res) => {
   return cors(req, res, async () => {
     if (req.method !== 'GET') {
       return res.status(405).json({ error: 'Method not allowed' });
@@ -971,7 +981,8 @@ async function handleInvoicePaymentFailed(invoice, db) {
 /**
  * GET /employee/jobs - Get today's jobs for an employee
  */
-exports.getEmployeeJobs = functions.https.onRequest(async (req, res) => {
+// Retired legacy employee API: the canonical employee surface is web Field Mode.
+const getEmployeeJobs = functions.https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -1021,7 +1032,8 @@ exports.getEmployeeJobs = functions.https.onRequest(async (req, res) => {
 /**
  * GET /employee/job/:id - Get job details
  */
-exports.getEmployeeJob = functions.https.onRequest(async (req, res) => {
+// Retired legacy employee API: the canonical employee surface is web Field Mode.
+const getEmployeeJob = functions.https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -1062,7 +1074,8 @@ exports.getEmployeeJob = functions.https.onRequest(async (req, res) => {
 /**
  * POST /employee/checkin - Employee check-in for a job
  */
-exports.employeeCheckIn = functions.https.onRequest(async (req, res) => {
+// Retired legacy employee API: the canonical employee surface is web Field Mode.
+const employeeCheckIn = functions.https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -1103,7 +1116,8 @@ exports.employeeCheckIn = functions.https.onRequest(async (req, res) => {
 /**
  * POST /employee/checkout - Employee check-out from a job
  */
-exports.employeeCheckOut = functions.https.onRequest(async (req, res) => {
+// Retired legacy employee API: the canonical employee surface is web Field Mode.
+const employeeCheckOut = functions.https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -1146,7 +1160,8 @@ exports.employeeCheckOut = functions.https.onRequest(async (req, res) => {
 /**
  * POST /employee/photos - Upload job photos
  */
-exports.uploadJobPhotos = functions.https.onRequest(async (req, res) => {
+// Retired legacy employee API: use canonical tenant-scoped field-photo paths.
+const uploadJobPhotos = functions.https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -1193,7 +1208,8 @@ exports.uploadJobPhotos = functions.https.onRequest(async (req, res) => {
 /**
  * POST /employee/signature - Upload customer signature
  */
-exports.uploadSignature = functions.https.onRequest(async (req, res) => {
+// Retired legacy employee API: signatures are outside the active V1 surface.
+const uploadSignature = functions.https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -1236,7 +1252,8 @@ exports.uploadSignature = functions.https.onRequest(async (req, res) => {
 /**
  * POST /employee/payment - Record payment collected by employee
  */
-exports.recordEmployeePayment = functions.https.onRequest(async (req, res) => {
+// Retired legacy employee API: employees do not record payment through this API.
+const recordEmployeePayment = functions.https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
