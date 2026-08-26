@@ -30,6 +30,7 @@ export const ESTIMATE_FOLLOW_UP_THRESHOLD_DAYS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ESTIMATE_DETECTION_VERSION = 'estimate-followup-v1';
 const MARKETING_DETECTION_VERSION = 'marketing-photo-review-v1';
+const REBOOKING_DETECTION_VERSION = 'rebooking-gap-v1';
 const CLOSED_ESTIMATE_STATUSES = new Set([
   'accepted',
   'approved',
@@ -71,6 +72,75 @@ function canonicalCustomerId(record) {
   return typeof record?.customerId === 'string' && record.customerId.trim()
     ? record.customerId.trim()
     : null;
+}
+
+function text(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function bookingServiceType(booking = {}) {
+  const requestSnapshot = booking.requestSnapshot || {};
+  const formData = booking.formData || {};
+  return text(booking.serviceType) || text(requestSnapshot.cleaningType) ||
+    text(formData.cleaningType) || text(formData.serviceType);
+}
+
+function normalizedServiceType(booking) {
+  return bookingServiceType(booking).toLowerCase().replace(/\s+/g, ' ');
+}
+
+function bookingFrequency(booking = {}) {
+  const requestSnapshot = booking.requestSnapshot || {};
+  const formData = booking.formData || {};
+  return text(requestSnapshot.frequency) || text(formData.frequency) || text(booking.frequency);
+}
+
+function cadenceForFrequency(frequency) {
+  switch (frequency.toLowerCase()) {
+    case 'weekly':
+      return { intervalDays: 7, label: 'weekly' };
+    case 'biweekly':
+    case 'bi-weekly':
+      return { intervalDays: 14, label: 'every two weeks' };
+    case 'monthly':
+      return { intervalMonths: 1, label: 'monthly' };
+    default:
+      return null;
+  }
+}
+
+function bookingDateMillis(booking = {}) {
+  const dateOnly = text(booking.date);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+    return new Date(`${dateOnly}T12:00:00`).getTime();
+  }
+  return timestampMillis(booking.completedAt || booking.scheduledAt || booking.updatedAt || booking.createdAt);
+}
+
+function isEligibleBooking(booking) {
+  return Boolean(booking?.id) && booking.isArchived !== true && booking.isDeleted !== true && booking.status !== 'cancelled';
+}
+
+function isUpcomingBooking(booking, nowMillis) {
+  if (!isEligibleBooking(booking) || isCompletedBooking(booking)) return false;
+  if (booking.status === 'in_progress' || booking.fieldStatus === 'in_progress') return true;
+  const scheduledMillis = bookingDateMillis(booking);
+  return Number.isFinite(scheduledMillis) && scheduledMillis >= nowMillis;
+}
+
+function formatServiceType(serviceType) {
+  return serviceType.replace(/\b\w/g, character => character.toUpperCase());
+}
+
+function nextCadenceMillis(completedAtMillis, cadence) {
+  const due = new Date(completedAtMillis);
+  if (cadence.intervalMonths) {
+    const day = due.getDate();
+    due.setDate(1);
+    due.setMonth(due.getMonth() + cadence.intervalMonths);
+    due.setDate(Math.min(day, new Date(due.getFullYear(), due.getMonth() + 1, 0).getDate()));
+  } else due.setDate(due.getDate() + cadence.intervalDays);
+  return due.getTime();
 }
 
 export function detectEstimateFollowUpOpportunities({
@@ -120,8 +190,65 @@ export function detectEstimateFollowUpOpportunities({
 }
 
 function isCompletedBooking(booking) {
-  if (!booking || booking.isArchived === true || booking.isDeleted === true || booking.status === 'cancelled') return false;
+  if (!isEligibleBooking(booking)) return false;
   return booking.status === 'completed' || booking.fieldStatus === 'completed';
+}
+
+function listDueRebookingCandidates({ bookings = [], now = new Date() } = {}) {
+  const nowMillis = timestampMillis(now);
+  if (!Number.isFinite(nowMillis)) throw new Error('A valid detection time is required.');
+
+  const candidatesByCustomerId = new Map();
+  bookings.forEach(booking => {
+    if (!isCompletedBooking(booking)) return;
+    const customerId = canonicalCustomerId(booking);
+    const serviceType = normalizedServiceType(booking);
+    const cadence = cadenceForFrequency(bookingFrequency(booking));
+    const completedAtMillis = bookingDateMillis(booking);
+    if (!customerId || !serviceType || !cadence || !Number.isFinite(completedAtMillis) || completedAtMillis > nowMillis) return;
+
+    const candidate = { booking, customerId, serviceType, cadence, completedAtMillis };
+    const current = candidatesByCustomerId.get(customerId);
+    if (!current || candidate.completedAtMillis > current.completedAtMillis ||
+      (candidate.completedAtMillis === current.completedAtMillis && candidate.serviceType.localeCompare(current.serviceType) < 0)) {
+      candidatesByCustomerId.set(customerId, candidate);
+    }
+  });
+
+  const candidates = [];
+  candidatesByCustomerId.forEach(candidate => {
+    const hasUpcomingMatchingService = bookings.some(booking => (
+      canonicalCustomerId(booking) === candidate.customerId &&
+      normalizedServiceType(booking) === candidate.serviceType &&
+      isUpcomingBooking(booking, nowMillis)
+    ));
+    if (hasUpcomingMatchingService) return;
+
+    if (nowMillis < nextCadenceMillis(candidate.completedAtMillis, candidate.cadence)) return;
+
+    const completedDate = text(candidate.booking.date) || 'a prior completed job';
+    candidates.push({ ...candidate, completedDate });
+  });
+
+  return candidates;
+}
+
+export function detectRebookingOpportunities({ bookings = [], now = new Date() } = {}) {
+  return listDueRebookingCandidates({ bookings, now }).map(candidate => ({
+    id: opportunityId('rebooking_gap', candidate.customerId),
+    type: 'rebooking_gap',
+    pillar: 'retain',
+    sourceRefs: { customerId: candidate.customerId },
+    detectionReason: `${formatServiceType(candidate.serviceType)} was last completed on ${candidate.completedDate}. Its configured ${candidate.cadence.label} cadence is now due, and no upcoming matching booking is scheduled.`,
+    detectionVersion: REBOOKING_DETECTION_VERSION,
+  }));
+}
+
+export function listRebookingOpportunityCandidates({ bookings = [], now = new Date() } = {}) {
+  return listDueRebookingCandidates({ bookings, now }).map(candidate => ({
+    customerId: candidate.customerId,
+    bookingId: candidate.booking.id,
+  }));
 }
 
 function isLabeledPhoto(photo, phase) {
@@ -304,10 +431,12 @@ export async function refreshGrowthAIOpportunityFeed(tenantId, { now = new Date(
     booking.id,
     await listFieldPhotos(resolvedTenantId, booking.id),
   ])));
+  const rebookingCandidates = listRebookingOpportunityCandidates({ bookings, now });
   const detections = [
     ...detectEstimateFollowUpOpportunities({ leads, bookings, now }),
+    ...detectRebookingOpportunities({ bookings, now }),
     ...detectMarketingPhotoReviewOpportunities({ bookings, photosByBookingId }),
   ];
   const opportunities = await reconcileGrowthAIOpportunities(resolvedTenantId, detections);
-  return { opportunities, leads, bookings, rebookingImplemented: false };
+  return { opportunities, leads, bookings, rebookingCandidates, rebookingImplemented: true };
 }

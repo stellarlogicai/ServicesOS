@@ -37,6 +37,24 @@ describe('GrowthAI business briefing', () => {
     ]);
   });
 
+  it('surfaces a retention opportunity through the existing controlled opportunity review path', () => {
+    const briefing = buildGrowthAIBusinessBriefing({
+      now: controlledNow,
+      opportunities: [{
+        id: 'rebooking_gap__customer-a',
+        type: 'rebooking_gap',
+        status: 'open',
+        detectionReason: 'A configured bi-weekly service is now due with no upcoming booking.',
+      }],
+    });
+
+    expect(briefing.noticed).toEqual([{
+      id: 'rebooking_gap__customer-a',
+      text: 'A configured bi-weekly service is now due with no upcoming booking.',
+    }]);
+    expect(briefing.actions).toEqual([{ id: 'opportunities', capabilityType: 'opportunities', label: 'Review opportunities' }]);
+  });
+
   it('degrades safely when canonical records are partial or missing fields', () => {
     const briefing = buildGrowthAIBusinessBriefing({
       now: controlledNow,

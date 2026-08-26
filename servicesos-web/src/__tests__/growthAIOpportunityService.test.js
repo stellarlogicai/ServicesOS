@@ -28,6 +28,7 @@ vi.mock('firebase/firestore', () => ({
 import {
   detectEstimateFollowUpOpportunities,
   detectMarketingPhotoReviewOpportunities,
+  detectRebookingOpportunities,
   dismissGrowthAIOpportunity,
   markGrowthAIOpportunityActed,
   planGrowthAIOpportunityReconciliation,
@@ -56,6 +57,19 @@ function opportunity(overrides = {}) {
     detectionReason: 'Estimate needs follow-up.',
     detectionVersion: 'estimate-followup-v1',
     firstDetectedAt: { preserved: true },
+    ...overrides,
+  };
+}
+
+function recurringCompletedBooking(overrides = {}) {
+  return {
+    id: 'completed-recurring-a',
+    tenantId: 'tenant-a',
+    customerId: 'customer-a',
+    status: 'completed',
+    date: '2026-08-01',
+    serviceType: 'standard clean',
+    requestSnapshot: { frequency: 'bi-weekly' },
     ...overrides,
   };
 }
@@ -164,6 +178,78 @@ describe('GrowthAI deterministic opportunity detection', () => {
         ],
       },
     })).toEqual([]);
+  });
+
+  it('detects a canonical recurring customer with no matching next booking at the configured cadence', () => {
+    const opportunities = detectRebookingOpportunities({
+      now: new Date('2026-08-20T12:00:00'),
+      bookings: [recurringCompletedBooking()],
+    });
+
+    expect(opportunities).toEqual([expect.objectContaining({
+      id: 'rebooking_gap__customer-a',
+      type: 'rebooking_gap',
+      pillar: 'retain',
+      sourceRefs: { customerId: 'customer-a' },
+      detectionVersion: 'rebooking-gap-v1',
+    })]);
+    expect(opportunities[0].detectionReason).toContain('configured every two weeks cadence is now due');
+    expect(JSON.stringify(opportunities[0])).not.toMatch(/credit|provider|payment|stripe/i);
+  });
+
+  it('suppresses a recurring retention opportunity when a matching upcoming booking exists', () => {
+    expect(detectRebookingOpportunities({
+      now: new Date('2026-08-20T12:00:00'),
+      bookings: [
+        recurringCompletedBooking(),
+        recurringCompletedBooking({ id: 'upcoming-recurring-a', status: 'scheduled', date: '2026-08-27' }),
+      ],
+    })).toEqual([]);
+  });
+
+  it('suppresses a retention opportunity while the matching service is actively in progress', () => {
+    expect(detectRebookingOpportunities({
+      now: new Date('2026-08-20T12:00:00'),
+      bookings: [
+        recurringCompletedBooking(),
+        recurringCompletedBooking({ id: 'active-recurring-a', status: 'in_progress', date: '2026-08-19' }),
+      ],
+    })).toEqual([]);
+  });
+
+  it('does not fabricate a due claim before cadence or without a canonical recurring frequency', () => {
+    expect(detectRebookingOpportunities({
+      now: new Date('2026-08-10T12:00:00'),
+      bookings: [recurringCompletedBooking()],
+    })).toEqual([]);
+    expect(detectRebookingOpportunities({
+      now: new Date('2026-08-20T12:00:00'),
+      bookings: [recurringCompletedBooking({ requestSnapshot: { frequency: 'one-time' } })],
+    })).toEqual([]);
+  });
+
+  it('uses the canonical monthly cadence without converting it to an arbitrary global day threshold', () => {
+    expect(detectRebookingOpportunities({
+      now: new Date('2026-02-28T12:00:00'),
+      bookings: [recurringCompletedBooking({
+        date: '2026-01-31',
+        requestSnapshot: { frequency: 'monthly' },
+      })],
+    })).toHaveLength(1);
+  });
+
+  it('uses the configured cadence as the only service-gap baseline and deduplicates by customer identity', () => {
+    const opportunities = detectRebookingOpportunities({
+      now: new Date('2026-09-15T12:00:00'),
+      bookings: [
+        recurringCompletedBooking({ id: 'old-completed-a', date: '2026-08-01' }),
+        recurringCompletedBooking({ id: 'latest-completed-a', date: '2026-08-20', requestSnapshot: { frequency: 'weekly' } }),
+      ],
+    });
+
+    expect(opportunities).toHaveLength(1);
+    expect(opportunities[0].id).toBe('rebooking_gap__customer-a');
+    expect(opportunities[0].detectionReason).toContain('configured weekly cadence');
   });
 
   it('plans stable idempotent creation, preserves dismissal, and resolves only active records', () => {

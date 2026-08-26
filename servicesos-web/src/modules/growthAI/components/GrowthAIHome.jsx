@@ -189,6 +189,7 @@ function OpportunityCard({
   onDismiss,
   onDraftFollowUp,
   onStartMarketingFromOpportunity,
+  onStartRebookingFromOpportunity,
   onReviewJob,
   saving,
 }) {
@@ -220,6 +221,11 @@ function OpportunityCard({
             <GrowthAIButton disabled={saving} onClick={() => onStartMarketingFromOpportunity(opportunity)}>Create marketing draft</GrowthAIButton>
             <GrowthAIButton tone="secondary" disabled={saving} onClick={() => onReviewJob(opportunity)}>Review Job</GrowthAIButton>
           </>
+        ) : null}
+        {opportunity.type === 'rebooking_gap' ? (
+          <GrowthAIButton disabled={saving} onClick={() => onStartRebookingFromOpportunity(opportunity)}>
+            Prepare Rebooking Draft
+          </GrowthAIButton>
         ) : null}
         <GrowthAIButton tone="secondary" disabled={saving} onClick={() => onDismiss(opportunity)}>Dismiss</GrowthAIButton>
       </div>
@@ -324,15 +330,19 @@ function CustomerResponseWorkflow({
   leads,
   onGenerateAI,
   onSave,
+  rebookingIntent,
   saving,
 }) {
   const scenarios = RESPONSE_SCENARIOS.auntbs;
+  const prefilledRebookingBookingId = bookings.some(booking => booking.id === rebookingIntent?.bookingId && booking.completed)
+    ? rebookingIntent.bookingId
+    : '';
   const [scenarioId, setScenarioId] = useState(scenarios[0].id);
   const [channelId, setChannelId] = useState('sms');
   const [customerMessage, setCustomerMessage] = useState('');
-  const [communicationTypeId, setCommunicationTypeId] = useState('estimate_followup');
+  const [communicationTypeId, setCommunicationTypeId] = useState(prefilledRebookingBookingId ? 'rebooking' : 'estimate_followup');
   const [selectedLeadId, setSelectedLeadId] = useState('');
-  const [selectedBookingId, setSelectedBookingId] = useState('');
+  const [selectedBookingId, setSelectedBookingId] = useState(prefilledRebookingBookingId);
   const communicationType = communicationTypeById(communicationTypeId);
   const sourceOptions = communicationType.source === 'lead'
     ? leads
@@ -481,6 +491,7 @@ function OpportunitiesWorkflow({
   onRefreshOpportunities,
   onReviewOpportunityJob,
   onStartMarketingFromOpportunity,
+  onStartRebookingFromOpportunity,
   opportunitiesLoading,
   opportunityFilter,
   opportunitySubject,
@@ -519,6 +530,7 @@ function OpportunitiesWorkflow({
             onAIFollowUp={onAIEstimateFollowUp}
             onReviewJob={onReviewOpportunityJob}
             onStartMarketingFromOpportunity={onStartMarketingFromOpportunity}
+            onStartRebookingFromOpportunity={onStartRebookingFromOpportunity}
             onDismiss={onDismissOpportunity}
             saving={saving}
             aiGenerating={aiGenerating}
@@ -616,6 +628,7 @@ export default function GrowthAIHome({
   eligibleEstimateLeads,
   communicationBookings,
   communicationLeads,
+  customerCommunicationIntent,
   onAIEstimateAssistance,
   inputs,
   onAIEstimateFollowUp,
@@ -633,6 +646,7 @@ export default function GrowthAIHome({
   onRefreshOpportunities,
   onReviewOpportunityJob,
   onStartMarketingFromOpportunity,
+  onStartRebookingFromOpportunity,
   onSaveProfile,
   onSaveResponseDraft,
   opportunitiesLoading,
@@ -775,12 +789,17 @@ export default function GrowthAIHome({
       }} />;
     }
     if (capabilityType === 'customer_response') {
-      return <CustomerResponseWorkflow aiCredits={aiCredits} aiGenerating={aiGenerating} bookings={communicationBookings} businessName={businessName} leads={communicationLeads} onGenerateAI={onGenerateResponseAI} onSave={onSaveResponseDraft} saving={saving} />;
+      return <CustomerResponseWorkflow aiCredits={aiCredits} aiGenerating={aiGenerating} bookings={communicationBookings} businessName={businessName} leads={communicationLeads} onGenerateAI={onGenerateResponseAI} onSave={onSaveResponseDraft} rebookingIntent={customerCommunicationIntent} saving={saving} />;
     }
     if (capabilityType === 'opportunities') {
       return <OpportunitiesWorkflow {...{
         activeOpportunities, aiCredits, aiGenerating, onAIEstimateFollowUp, onDismissOpportunity,
         onDraftEstimateFollowUp, onOpportunityFilterChange, onRefreshOpportunities, onReviewOpportunityJob,
+        onStartRebookingFromOpportunity: opportunity => {
+          if (onStartRebookingFromOpportunity(opportunity) !== false) {
+            openCapability('customer_response', 'Prepare a rebooking draft');
+          }
+        },
         onStartMarketingFromOpportunity: opportunity => {
           onStartMarketingFromOpportunity(opportunity);
           openCapability('marketing', 'Create marketing from completed job');

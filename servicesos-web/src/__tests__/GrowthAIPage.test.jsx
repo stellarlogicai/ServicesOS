@@ -390,6 +390,41 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
   });
 
+  it('hands a rebooking opportunity into the existing review-required customer communication workflow without using AI', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [{
+        id: 'rebooking_gap__customer-a', type: 'rebooking_gap', pillar: 'retain', status: 'open',
+        sourceRefs: { customerId: 'customer-a' },
+        detectionReason: 'Standard clean is due with no upcoming matching booking.',
+      }],
+      leads: [],
+      bookings: [{
+        id: 'booking-completed', tenantId: 'tenant-a', customerId: 'customer-a', status: 'completed',
+        serviceType: 'Standard clean', customerName: 'Retention Customer',
+      }],
+      rebookingCandidates: [{ customerId: 'customer-a', bookingId: 'booking-completed' }],
+      rebookingImplemented: true,
+    };
+
+    render(<GrowthAIPage />);
+    openHomeCapability('Review opportunities');
+    fireEvent.click(await screen.findByRole('button', { name: 'Prepare Rebooking Draft' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Communication type')).toHaveValue('rebooking'));
+    expect(screen.getByLabelText('Completed job to use')).toHaveValue('booking-completed');
+    expect(screen.getByText(/Nothing is sent automatically/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save response draft' }));
+
+    await waitFor(() => expect(service.createGrowthAIDraft).toHaveBeenCalledWith('tenant-a', expect.objectContaining({
+      pillar: 'retain',
+      actionType: 'customer_response',
+      sourceRefs: { bookingId: 'booking-completed' },
+      content: expect.objectContaining({ callToAction: 'Review and send manually' }),
+    })));
+    expect(opportunityService.markGrowthAIOpportunityActed).toHaveBeenCalledWith('tenant-a', 'rebooking_gap__customer-a');
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+  });
+
   it('dismisses a stable opportunity and does not render it after refresh', async () => {
     state.opportunityWorkspace = {
       opportunities: [{

@@ -91,6 +91,7 @@ export default function GrowthAIPage({ onReviewJob }) {
   const [postTypeId, setPostTypeId] = useState('availability');
   const [inputs, setInputs] = useState(emptyInputs);
   const [marketingOpportunity, setMarketingOpportunity] = useState(null);
+  const [customerCommunicationIntent, setCustomerCommunicationIntent] = useState(null);
   const [editor, setEditor] = useState(emptyEditor);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -125,6 +126,7 @@ export default function GrowthAIPage({ onReviewJob }) {
       setInputs(emptyInputs);
       setPostTypeId('availability');
       setMarketingOpportunity(null);
+      setCustomerCommunicationIntent(null);
     }
   }, [tenantId]);
 
@@ -405,6 +407,8 @@ export default function GrowthAIPage({ onReviewJob }) {
   };
 
   const saveResponseDraft = async responseTemplate => {
+    const requestedTenantId = tenantId;
+    const { version: requestVersion } = requestContext();
     const result = await runAction(
       () => createGrowthAIDraft(tenantId, {
         pillar: responseTemplate.pillar || 'convert',
@@ -420,6 +424,13 @@ export default function GrowthAIPage({ onReviewJob }) {
       }),
       'Customer response draft saved for this tenant. Nothing was sent.',
     );
+    if (result && responseTemplate.communicationType === 'rebooking' &&
+      customerCommunicationIntent?.bookingId === responseTemplate.sourceRefs?.bookingId &&
+      isCurrentTenantRequest(requestedTenantId, requestVersion)) {
+      await markGrowthAIOpportunityActed(requestedTenantId, customerCommunicationIntent.opportunityId);
+      await reloadOpportunities();
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setCustomerCommunicationIntent(null);
+    }
     if (result) setActiveView('drafts');
     return result;
   };
@@ -493,7 +504,24 @@ export default function GrowthAIPage({ onReviewJob }) {
     if (opportunity.type === 'estimate_followup') {
       return canonicalDisplayName(leadsById.get(opportunity.sourceRefs?.leadId), 'Estimate customer');
     }
+    if (opportunity.type === 'rebooking_gap') {
+      const candidate = tenantOpportunityWorkspace.rebookingCandidates?.find(item => item.customerId === opportunity.sourceRefs?.customerId);
+      return canonicalDisplayName(bookingsById.get(candidate?.bookingId), 'Recurring customer');
+    }
     return canonicalDisplayName(bookingsById.get(opportunity.sourceRefs?.bookingId), 'Completed job');
+  };
+
+  const startRebookingFromOpportunity = opportunity => {
+    const candidate = tenantOpportunityWorkspace.rebookingCandidates?.find(item => item.customerId === opportunity.sourceRefs?.customerId);
+    const booking = communicationBookings.find(item => item.id === candidate?.bookingId && item.completed);
+    if (!booking) {
+      setScopedError('The completed job for this rebooking opportunity is no longer eligible. Refresh opportunities before preparing a draft.');
+      return false;
+    }
+    setCustomerCommunicationIntent({ opportunityId: opportunity.id, bookingId: booking.id });
+    setScopedError('');
+    setScopedMessage('Rebooking draft prepared from a verified completed job. Nothing will be sent automatically.');
+    return true;
   };
 
   const draftEstimateFollowUp = async opportunity => {
@@ -612,6 +640,7 @@ export default function GrowthAIPage({ onReviewJob }) {
           businessName={businessName}
           communicationBookings={communicationBookings}
           communicationLeads={communicationLeads}
+          customerCommunicationIntent={customerCommunicationIntent}
           contentIdeas={CONTENT_IDEAS.auntbs}
           eligibleEstimateLeads={eligibleEstimateLeads}
           inputs={inputs}
@@ -639,6 +668,7 @@ export default function GrowthAIPage({ onReviewJob }) {
           onProfileChange={patch => setProfile(value => ({ ...value, ...patch }))}
           onRefreshOpportunities={() => reloadOpportunities().catch(err => setScopedError(err.message))}
           onReviewOpportunityJob={reviewOpportunityJob}
+          onStartRebookingFromOpportunity={startRebookingFromOpportunity}
           onStartMarketingFromOpportunity={startMarketingFromOpportunity}
           onSaveProfile={saveProfile}
           onSaveResponseDraft={saveResponseDraft}
