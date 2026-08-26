@@ -152,8 +152,9 @@ function resolveRebookingCadence(booking, servicesById) {
   if (!customerId || !serviceType) return null;
 
   const recurringServiceId = text(booking?.recurringServiceId);
-  const recurringService = recurringServiceId ? servicesById.get(recurringServiceId) : null;
-  if (recurringService) {
+  if (recurringServiceId) {
+    const recurringService = servicesById.get(recurringServiceId);
+    if (!recurringService) return null;
     const recurringCustomerId = canonicalCustomerId(recurringService);
     const recurringServiceType = normalizedServiceType(recurringService);
     const cadence = cadenceForRecurringService(recurringService);

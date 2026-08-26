@@ -352,7 +352,9 @@ describe('GrowthAI deterministic opportunity detection', () => {
   });
 
   it('does not invent cadence for missing, inactive, or cross-tenant recurring-service references', () => {
-    const booking = recurringCompletedBooking({ requestSnapshot: {}, recurringServiceId: 'recurring-standard' });
+    const booking = recurringCompletedBooking({
+      requestSnapshot: { frequency: 'weekly' }, recurringServiceId: 'recurring-standard',
+    });
     expect(detectRebookingOpportunities({
       tenantId: 'tenant-a', now: new Date('2026-08-20T12:00:00'), bookings: [booking], recurringServices: [],
     })).toEqual([]);
