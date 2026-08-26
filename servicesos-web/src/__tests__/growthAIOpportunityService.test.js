@@ -15,6 +15,7 @@ vi.mock('../firebase', () => firebase);
 vi.mock('../core/leads/leadService', () => ({ getLeads: vi.fn() }));
 vi.mock('../core/scheduling/schedulingService', () => ({ getJobs: vi.fn() }));
 vi.mock('../services/fieldPhotoService', () => ({ listFieldPhotos: vi.fn() }));
+vi.mock('../services/recurringService', () => ({ getRecurringServices: vi.fn() }));
 vi.mock('firebase/firestore', () => ({
   collection: (parent, ...segments) => ({ path: [parent?.path, ...segments].filter(Boolean).join('/') }),
   doc: (parent, ...segments) => ({ path: [parent?.path, ...segments].filter(Boolean).join('/'), id: segments.at(-1) }),
@@ -70,6 +71,18 @@ function recurringCompletedBooking(overrides = {}) {
     date: '2026-08-01',
     serviceType: 'standard clean',
     requestSnapshot: { frequency: 'bi-weekly' },
+    ...overrides,
+  };
+}
+
+function activeRecurringService(overrides = {}) {
+  return {
+    id: 'recurring-standard',
+    tenantId: 'tenant-a',
+    customerId: 'customer-a',
+    serviceType: 'standard clean',
+    scheduleType: 'weekly',
+    status: 'active',
     ...overrides,
   };
 }
@@ -240,11 +253,13 @@ describe('GrowthAI deterministic opportunity detection', () => {
 
   it('uses the configured cadence as the only service-gap baseline and deduplicates by recurring service identity', () => {
     const opportunities = detectRebookingOpportunities({
+      tenantId: 'tenant-a',
       now: new Date('2026-09-15T12:00:00'),
       bookings: [
         recurringCompletedBooking({ id: 'old-completed-a', date: '2026-08-01', recurringServiceId: 'recurring-standard' }),
         recurringCompletedBooking({ id: 'latest-completed-a', date: '2026-08-20', requestSnapshot: { frequency: 'weekly' }, recurringServiceId: 'recurring-standard' }),
       ],
+      recurringServices: [activeRecurringService()],
     });
 
     expect(opportunities).toHaveLength(1);
@@ -257,10 +272,15 @@ describe('GrowthAI deterministic opportunity detection', () => {
 
   it('creates distinct opportunities for separate recurring services for the same customer', () => {
     const opportunities = detectRebookingOpportunities({
+      tenantId: 'tenant-a',
       now: new Date('2026-09-15T12:00:00'),
       bookings: [
-        recurringCompletedBooking({ id: 'standard-latest', date: '2026-09-01', requestSnapshot: { frequency: 'weekly' }, recurringServiceId: 'recurring-standard' }),
-        recurringCompletedBooking({ id: 'deep-monthly', date: '2026-08-01', serviceType: 'deep clean', requestSnapshot: { frequency: 'monthly' }, recurringServiceId: 'recurring-deep' }),
+        recurringCompletedBooking({ id: 'standard-latest', date: '2026-09-01', requestSnapshot: {}, recurringServiceId: 'recurring-standard' }),
+        recurringCompletedBooking({ id: 'deep-monthly', date: '2026-08-01', serviceType: 'deep clean', requestSnapshot: {}, recurringServiceId: 'recurring-deep' }),
+      ],
+      recurringServices: [
+        activeRecurringService(),
+        activeRecurringService({ id: 'recurring-deep', serviceType: 'deep clean', scheduleType: 'monthly' }),
       ],
     });
 
@@ -279,11 +299,16 @@ describe('GrowthAI deterministic opportunity detection', () => {
 
   it('does not let an upcoming recurring service suppress another due service for the same customer', () => {
     const opportunities = detectRebookingOpportunities({
+      tenantId: 'tenant-a',
       now: new Date('2026-09-15T12:00:00'),
       bookings: [
-        recurringCompletedBooking({ id: 'standard-completed', date: '2026-09-01', requestSnapshot: { frequency: 'weekly' }, recurringServiceId: 'recurring-standard' }),
-        recurringCompletedBooking({ id: 'deep-completed', date: '2026-08-01', serviceType: 'deep clean', requestSnapshot: { frequency: 'monthly' }, recurringServiceId: 'recurring-deep' }),
-        recurringCompletedBooking({ id: 'standard-upcoming', status: 'scheduled', date: '2026-09-18', requestSnapshot: { frequency: 'weekly' }, recurringServiceId: 'recurring-standard' }),
+        recurringCompletedBooking({ id: 'standard-completed', date: '2026-09-01', requestSnapshot: {}, recurringServiceId: 'recurring-standard' }),
+        recurringCompletedBooking({ id: 'deep-completed', date: '2026-08-01', serviceType: 'deep clean', requestSnapshot: {}, recurringServiceId: 'recurring-deep' }),
+        recurringCompletedBooking({ id: 'standard-upcoming', status: 'scheduled', date: '2026-09-18', requestSnapshot: {}, recurringServiceId: 'recurring-standard' }),
+      ],
+      recurringServices: [
+        activeRecurringService(),
+        activeRecurringService({ id: 'recurring-deep', serviceType: 'deep clean', scheduleType: 'monthly' }),
       ],
     });
 
@@ -291,6 +316,72 @@ describe('GrowthAI deterministic opportunity detection', () => {
       id: 'rebooking_gap__customer-a__recurring-service%3Arecurring-deep',
       sourceRefs: { customerId: 'customer-a', serviceKey: 'recurring-service:recurring-deep' },
     })]);
+  });
+
+  it('resolves a generated recurring job without duplicated frequency from its active canonical plan', () => {
+    const opportunities = detectRebookingOpportunities({
+      tenantId: 'tenant-a',
+      now: new Date('2026-08-08T12:00:00'),
+      bookings: [recurringCompletedBooking({ requestSnapshot: {}, recurringServiceId: 'recurring-standard' })],
+      recurringServices: [activeRecurringService()],
+    });
+
+    expect(opportunities).toEqual([expect.objectContaining({
+      id: 'rebooking_gap__customer-a__recurring-service%3Arecurring-standard',
+      sourceRefs: { customerId: 'customer-a', serviceKey: 'recurring-service:recurring-standard' },
+    })]);
+    expect(opportunities[0].detectionReason).toContain('configured weekly cadence');
+  });
+
+  it('uses the canonical biweekly and monthly plan cadences', () => {
+    const biweekly = detectRebookingOpportunities({
+      tenantId: 'tenant-a',
+      now: new Date('2026-08-15T12:00:00'),
+      bookings: [recurringCompletedBooking({ requestSnapshot: {}, recurringServiceId: 'recurring-biweekly' })],
+      recurringServices: [activeRecurringService({ id: 'recurring-biweekly', scheduleType: 'biweekly' })],
+    });
+    const monthly = detectRebookingOpportunities({
+      tenantId: 'tenant-a',
+      now: new Date('2026-02-28T12:00:00'),
+      bookings: [recurringCompletedBooking({ date: '2026-01-31', requestSnapshot: {}, recurringServiceId: 'recurring-monthly' })],
+      recurringServices: [activeRecurringService({ id: 'recurring-monthly', scheduleType: 'monthly' })],
+    });
+
+    expect(biweekly[0].detectionReason).toContain('configured every two weeks cadence');
+    expect(monthly[0].detectionReason).toContain('configured monthly cadence');
+  });
+
+  it('does not invent cadence for missing, inactive, or cross-tenant recurring-service references', () => {
+    const booking = recurringCompletedBooking({ requestSnapshot: {}, recurringServiceId: 'recurring-standard' });
+    expect(detectRebookingOpportunities({
+      tenantId: 'tenant-a', now: new Date('2026-08-20T12:00:00'), bookings: [booking], recurringServices: [],
+    })).toEqual([]);
+    expect(detectRebookingOpportunities({
+      tenantId: 'tenant-a', now: new Date('2026-08-20T12:00:00'), bookings: [booking],
+      recurringServices: [activeRecurringService({ status: 'paused' })],
+    })).toEqual([]);
+    expect(detectRebookingOpportunities({
+      tenantId: 'tenant-a', now: new Date('2026-08-20T12:00:00'), bookings: [booking],
+      recurringServices: [activeRecurringService({ tenantId: 'tenant-b' })],
+    })).toEqual([]);
+    expect(detectRebookingOpportunities({
+      tenantId: 'tenant-a', now: new Date('2026-08-20T12:00:00'), bookings: [booking],
+      recurringServices: [activeRecurringService({ scheduleType: 'custom' })],
+    })).toEqual([]);
+  });
+
+  it('uses canonical plan cadence over a stale duplicated booking frequency', () => {
+    const opportunities = detectRebookingOpportunities({
+      tenantId: 'tenant-a',
+      now: new Date('2026-08-08T12:00:00'),
+      bookings: [recurringCompletedBooking({
+        requestSnapshot: { frequency: 'monthly' }, recurringServiceId: 'recurring-standard',
+      })],
+      recurringServices: [activeRecurringService({ scheduleType: 'weekly' })],
+    });
+
+    expect(opportunities).toHaveLength(1);
+    expect(opportunities[0].detectionReason).toContain('configured weekly cadence');
   });
 
   it('plans stable idempotent creation, preserves dismissal, and resolves only active records', () => {

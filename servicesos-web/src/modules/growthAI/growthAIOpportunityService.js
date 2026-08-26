@@ -11,6 +11,7 @@ import { auth, db } from '../../firebase';
 import { getLeads } from '../../core/leads/leadService';
 import { getJobs } from '../../core/scheduling/schedulingService';
 import { listFieldPhotos } from '../../services/fieldPhotoService';
+import { getRecurringServices } from '../../services/recurringService';
 
 export const GROWTH_AI_OPPORTUNITY_TYPES = Object.freeze([
   'estimate_followup',
@@ -109,10 +110,67 @@ function cadenceForFrequency(frequency) {
   }
 }
 
-function rebookingServiceKey(booking, serviceType, cadence) {
-  const recurringServiceId = text(booking?.recurringServiceId);
-  if (recurringServiceId) return `recurring-service:${recurringServiceId}`;
+function cadenceForRecurringService(recurringService = {}) {
+  const scheduleType = text(recurringService.scheduleType).toLowerCase();
+  if (scheduleType === 'every_x_weeks') {
+    const intervalWeeks = Number(recurringService.intervalWeeks);
+    if (Number.isInteger(intervalWeeks) && intervalWeeks > 0) {
+      return {
+        key: `every-${intervalWeeks}-weeks`,
+        intervalDays: intervalWeeks * 7,
+        label: intervalWeeks === 1 ? 'weekly' : `every ${intervalWeeks} weeks`,
+      };
+    }
+    return null;
+  }
+  return cadenceForFrequency(scheduleType || text(recurringService.frequency));
+}
+
+function rebookingServiceKey(serviceType, cadence) {
   return `booking-service:${serviceType}:${cadence.key}`;
+}
+
+function isActiveRecurringService(recurringService = {}) {
+  return text(recurringService.status).toLowerCase() === 'active';
+}
+
+function recurringServiceIndex(recurringServices = [], tenantId) {
+  const servicesById = new Map();
+  if (!Array.isArray(recurringServices)) return servicesById;
+  recurringServices.forEach(recurringService => {
+    const id = text(recurringService?.id);
+    const recordTenantId = text(recurringService?.tenantId);
+    if (!id || (recordTenantId && tenantId && recordTenantId !== tenantId)) return;
+    servicesById.set(id, recurringService);
+  });
+  return servicesById;
+}
+
+function resolveRebookingCadence(booking, servicesById) {
+  const customerId = canonicalCustomerId(booking);
+  const serviceType = normalizedServiceType(booking);
+  if (!customerId || !serviceType) return null;
+
+  const recurringServiceId = text(booking?.recurringServiceId);
+  const recurringService = recurringServiceId ? servicesById.get(recurringServiceId) : null;
+  if (recurringService) {
+    const recurringCustomerId = canonicalCustomerId(recurringService);
+    const recurringServiceType = normalizedServiceType(recurringService);
+    const cadence = cadenceForRecurringService(recurringService);
+    if (isActiveRecurringService(recurringService) && recurringCustomerId === customerId && recurringServiceType === serviceType && cadence) {
+      return {
+        customerId,
+        serviceType,
+        cadence,
+        serviceKey: `recurring-service:${recurringServiceId}`,
+      };
+    }
+    return null;
+  }
+
+  const cadence = cadenceForFrequency(bookingFrequency(booking));
+  if (!cadence) return null;
+  return { customerId, serviceType, cadence, serviceKey: rebookingServiceKey(serviceType, cadence) };
 }
 
 function bookingDateMillis(booking = {}) {
@@ -200,22 +258,20 @@ function isCompletedBooking(booking) {
   return booking.status === 'completed' || booking.fieldStatus === 'completed';
 }
 
-function listDueRebookingCandidates({ bookings = [], now = new Date() } = {}) {
+function listDueRebookingCandidates({ bookings = [], recurringServices = [], tenantId, now = new Date() } = {}) {
   const nowMillis = timestampMillis(now);
   if (!Number.isFinite(nowMillis)) throw new Error('A valid detection time is required.');
 
+  const servicesById = recurringServiceIndex(recurringServices, tenantId);
   const candidatesByService = new Map();
   bookings.forEach(booking => {
     if (!isCompletedBooking(booking)) return;
-    const customerId = canonicalCustomerId(booking);
-    const serviceType = normalizedServiceType(booking);
-    const cadence = cadenceForFrequency(bookingFrequency(booking));
+    const recurrence = resolveRebookingCadence(booking, servicesById);
     const completedAtMillis = bookingDateMillis(booking);
-    if (!customerId || !serviceType || !cadence || !Number.isFinite(completedAtMillis) || completedAtMillis > nowMillis) return;
+    if (!recurrence || !Number.isFinite(completedAtMillis) || completedAtMillis > nowMillis) return;
 
-    const serviceKey = rebookingServiceKey(booking, serviceType, cadence);
-    const candidate = { booking, customerId, serviceKey, serviceType, cadence, completedAtMillis };
-    const candidateKey = `${customerId}::${serviceKey}`;
+    const candidate = { booking, ...recurrence, completedAtMillis };
+    const candidateKey = `${candidate.customerId}::${candidate.serviceKey}`;
     const current = candidatesByService.get(candidateKey);
     if (!current || candidate.completedAtMillis > current.completedAtMillis ||
       (candidate.completedAtMillis === current.completedAtMillis && candidate.serviceType.localeCompare(current.serviceType) < 0)) {
@@ -226,11 +282,9 @@ function listDueRebookingCandidates({ bookings = [], now = new Date() } = {}) {
   const candidates = [];
   candidatesByService.forEach(candidate => {
     const hasUpcomingMatchingService = bookings.some(booking => {
-      const upcomingServiceType = normalizedServiceType(booking);
-      const upcomingCadence = cadenceForFrequency(bookingFrequency(booking));
-      return canonicalCustomerId(booking) === candidate.customerId &&
-        Boolean(upcomingServiceType) && Boolean(upcomingCadence) &&
-        rebookingServiceKey(booking, upcomingServiceType, upcomingCadence) === candidate.serviceKey &&
+      const recurrence = resolveRebookingCadence(booking, servicesById);
+      return recurrence?.customerId === candidate.customerId &&
+        recurrence.serviceKey === candidate.serviceKey &&
         isUpcomingBooking(booking, nowMillis);
     });
     if (hasUpcomingMatchingService) return;
@@ -244,8 +298,8 @@ function listDueRebookingCandidates({ bookings = [], now = new Date() } = {}) {
   return candidates;
 }
 
-export function detectRebookingOpportunities({ bookings = [], now = new Date() } = {}) {
-  return listDueRebookingCandidates({ bookings, now }).map(candidate => ({
+export function detectRebookingOpportunities({ bookings = [], recurringServices = [], tenantId, now = new Date() } = {}) {
+  return listDueRebookingCandidates({ bookings, recurringServices, tenantId, now }).map(candidate => ({
     id: opportunityId('rebooking_gap', `${candidate.customerId}__${candidate.serviceKey}`),
     type: 'rebooking_gap',
     pillar: 'retain',
@@ -255,8 +309,8 @@ export function detectRebookingOpportunities({ bookings = [], now = new Date() }
   }));
 }
 
-export function listRebookingOpportunityCandidates({ bookings = [], now = new Date() } = {}) {
-  return listDueRebookingCandidates({ bookings, now }).map(candidate => ({
+export function listRebookingOpportunityCandidates({ bookings = [], recurringServices = [], tenantId, now = new Date() } = {}) {
+  return listDueRebookingCandidates({ bookings, recurringServices, tenantId, now }).map(candidate => ({
     customerId: candidate.customerId,
     serviceKey: candidate.serviceKey,
     bookingId: candidate.booking.id,
@@ -429,9 +483,10 @@ export function dismissGrowthAIOpportunity(tenantId, opportunityIdValue) {
 
 export async function refreshGrowthAIOpportunityFeed(tenantId, { now = new Date() } = {}) {
   const resolvedTenantId = requireTenantId(tenantId);
-  const [leadResponse, bookingResponse] = await Promise.all([
+  const [leadResponse, bookingResponse, recurringServices] = await Promise.all([
     getLeads(resolvedTenantId),
     getJobs(resolvedTenantId),
+    getRecurringServices(resolvedTenantId),
   ]);
   if (!leadResponse?.success) throw new Error(leadResponse?.error || 'GrowthAI could not load estimates.');
   if (!bookingResponse?.success) throw new Error(bookingResponse?.error || 'GrowthAI could not load bookings.');
@@ -443,10 +498,12 @@ export async function refreshGrowthAIOpportunityFeed(tenantId, { now = new Date(
     booking.id,
     await listFieldPhotos(resolvedTenantId, booking.id),
   ])));
-  const rebookingCandidates = listRebookingOpportunityCandidates({ bookings, now });
+  const rebookingCandidates = listRebookingOpportunityCandidates({
+    bookings, recurringServices, tenantId: resolvedTenantId, now,
+  });
   const detections = [
     ...detectEstimateFollowUpOpportunities({ leads, bookings, now }),
-    ...detectRebookingOpportunities({ bookings, now }),
+    ...detectRebookingOpportunities({ bookings, recurringServices, tenantId: resolvedTenantId, now }),
     ...detectMarketingPhotoReviewOpportunities({ bookings, photosByBookingId }),
   ];
   const opportunities = await reconcileGrowthAIOpportunities(resolvedTenantId, detections);
