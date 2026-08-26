@@ -41,6 +41,7 @@ import {
   createGrowthAIDraft,
   normalizeGrowthAIContent,
   normalizeGrowthAISourceRefs,
+  saveGrowthAIBrandProfile,
   updateGrowthAIDraftContent,
 } from '../modules/growthAI/growthAIFoundationService';
 
@@ -101,6 +102,29 @@ describe('GrowthAI foundation service', () => {
       bookingId: 'booking-a',
       photoIds: ['photo-0', 'photo-1', 'photo-2', 'photo-3', 'photo-4', 'photo-5', 'photo-6', 'photo-7'],
     });
+  });
+
+  it('persists only the normalized tenant-owned GrowthAI brand preferences', async () => {
+    firestore.getDoc.mockResolvedValueOnce({ exists: () => false });
+    const profile = await saveGrowthAIBrandProfile('tenant-a', {
+      brandVoice: ' Warm and direct ',
+      contentTone: 'Clear',
+      writingStyle: 'Short sentences',
+      defaultCTA: 'Request a quote',
+      avoidTerms: 'guaranteed results',
+      platformPreferences: { instagram: true, unknown: true },
+      brandColors: { primary: '#0f766e', secondary: 'invalid', accent: '#F59E0B' },
+      businessName: 'Client-supplied business name must not persist',
+    });
+
+    expect(profile).toMatchObject({
+      tenantId: 'tenant-a',
+      createdByUid: 'admin-a',
+      platformPreferences: { general: false, facebook: false, instagram: true, linkedin: false, website: false },
+      brandColors: { primary: '#0f766e', secondary: '', accent: '#F59E0B' },
+    });
+    expect(profile).not.toHaveProperty('businessName');
+    expect(firestore.setDoc).toHaveBeenCalledWith(expect.objectContaining({ path: 'tenants/tenant-a/growthAI/config' }), profile);
   });
 
   it('creates a tenant draft and matching immutable audit with the authenticated actor', async () => {

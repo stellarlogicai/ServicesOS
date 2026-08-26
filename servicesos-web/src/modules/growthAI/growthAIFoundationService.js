@@ -10,6 +10,7 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
+import { normalizeGrowthAIBrandProfile } from './growthAIBrandContext';
 
 export const GROWTH_AI_PILLARS = ['find', 'attract', 'convert', 'retain', 'reputation'];
 export const GROWTH_AI_STATUSES = ['draft', 'needs_review', 'approved'];
@@ -119,9 +120,7 @@ export async function saveGrowthAIBrandProfile(tenantId, values) {
   const shared = {
     schemaVersion: 1,
     tenantId: resolvedTenantId,
-    brandVoice: cleanString(values.brandVoice, 500),
-    contentTone: cleanString(values.contentTone, 300),
-    defaultCTA: cleanString(values.defaultCTA, 500),
+    ...normalizeGrowthAIBrandProfile(values),
     updatedByUid: actorUid,
     updatedAt: serverTimestamp(),
   };

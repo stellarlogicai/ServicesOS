@@ -20,6 +20,7 @@ const MARKETING_CONTENT_TYPES = new Set([
   'availability', 'local_community', 'completed_job', 'before_after', 'testimonial',
 ]);
 const MARKETING_PLATFORMS = new Set(['general', 'facebook', 'instagram', 'linkedin', 'website']);
+const BRAND_COLOR_KEYS = ['primary', 'secondary', 'accent'];
 const CUSTOMER_COMMUNICATION_TYPES = new Set([
   'legacy', 'estimate_followup', 'scheduling', 'quote_question', 'service_question',
   'problem_resolution', 'rebooking', 'review_request', 'review_response',
@@ -37,6 +38,25 @@ class GrowthAIGatewayError extends Error {
 
 function cleanString(value, maxLength) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+function normalizeBrandProfile(profile = {}) {
+  const preferences = profile.platformPreferences && typeof profile.platformPreferences === 'object'
+    ? profile.platformPreferences
+    : {};
+  const colors = profile.brandColors && typeof profile.brandColors === 'object' ? profile.brandColors : {};
+  return {
+    brandVoice: cleanString(profile.brandVoice, 500),
+    contentTone: cleanString(profile.contentTone, 300),
+    writingStyle: cleanString(profile.writingStyle, 500),
+    defaultCTA: cleanString(profile.defaultCTA, 500),
+    avoidTerms: cleanString(profile.avoidTerms, 1_000),
+    platformPreferences: [...MARKETING_PLATFORMS].filter(platform => preferences[platform] === true),
+    brandColors: Object.fromEntries(BRAND_COLOR_KEYS.map(key => {
+      const value = cleanString(colors[key], 7);
+      return [key, /^#[0-9a-fA-F]{6}$/.test(value) ? value : ''];
+    })),
+  };
 }
 
 function exactKeys(value, allowed, required = []) {
@@ -182,6 +202,11 @@ async function verifyGrowthAIActor({ db, uid, tenantId }) {
   return { profile, tenant };
 }
 
+async function loadGrowthAIBrandProfile({ db, tenantId }) {
+  const snapshot = await db.collection('tenants').doc(tenantId).collection('growthAI').doc('config').get();
+  return normalizeBrandProfile(snapshot.exists ? snapshot.data() || {} : {});
+}
+
 async function verifySourceContext({ db, request }) {
   if (request.actionType === 'estimate_assistance') {
     const leadRef = db.collection('tenants').doc(request.tenantId)
@@ -198,15 +223,12 @@ async function verifySourceContext({ db, request }) {
     return { lead, baselinePrice: deterministicEstimateBaseline(lead.estimate) };
   }
   if (request.actionType === 'marketing_post') {
-    const brandProfileRef = db.collection('tenants').doc(request.tenantId).collection('growthAI').doc('config');
-    const brandProfileSnapshot = await brandProfileRef.get();
-    const brandProfile = brandProfileSnapshot.exists ? brandProfileSnapshot.data() || {} : {};
     const requiresOpportunity = ['completed_job', 'before_after'].includes(request.input.postTypeId);
     if (!request.sourceRefs.opportunityId) {
       if (requiresOpportunity) {
         throw new GrowthAIGatewayError('Choose an eligible completed-job opportunity before generating this marketing content.', { code: 'invalid_source' });
       }
-      return { brandProfile };
+      return {};
     }
     const opportunityRef = db.collection('tenants').doc(request.tenantId)
       .collection('growthAIOpportunities').doc(request.sourceRefs.opportunityId);
@@ -226,7 +248,6 @@ async function verifySourceContext({ db, request }) {
       throw new GrowthAIGatewayError('The completed-job marketing opportunity is no longer eligible.', { code: 'invalid_source', status: 403 });
     }
     return {
-      brandProfile,
       opportunity,
       opportunityRef,
       marketingServiceType: cleanString(booking.serviceType, 160),
@@ -333,16 +354,20 @@ function deterministicEstimateBaseline(estimate = {}) {
 
 function businessContext(tenant = {}, brandProfile = {}) {
   const settings = tenant.businessSettings || {};
+  const profile = normalizeBrandProfile(brandProfile);
   return {
     businessName: cleanString(settings.businessName || tenant.businessName, 180) || 'the cleaning business',
-    serviceArea: cleanString(settings.serviceArea, 180),
-    brandVoice: cleanString(brandProfile.contentTone || brandProfile.brandVoice || tenant.growthAIBrandVoice, 300),
-    defaultCTA: cleanString(brandProfile.defaultCTA, 500),
+    serviceArea: cleanString(settings.serviceArea || tenant.serviceArea, 180),
+    brandVoice: profile.contentTone || profile.brandVoice || cleanString(tenant.growthAIBrandVoice, 300),
+    writingStyle: profile.writingStyle,
+    defaultCTA: profile.defaultCTA,
+    avoidTerms: profile.avoidTerms,
+    platformPreferences: profile.platformPreferences,
   };
 }
 
-function buildPrompt({ request, tenant, sourceContext }) {
-  const business = businessContext(tenant, sourceContext.brandProfile);
+function buildPrompt({ request, tenant, sourceContext, brandProfile = {} }) {
+  const business = businessContext(tenant, brandProfile);
   const systemInstruction = [
     'You draft private business content for ServicesOS.',
     'Return only the requested draft text, with no analysis or metadata.',
@@ -350,6 +375,8 @@ function buildPrompt({ request, tenant, sourceContext }) {
     'Do not include payment details, Stripe data, hidden notes, or unrelated customer information.',
     `Write for ${business.businessName}${business.serviceArea ? ` serving ${business.serviceArea}` : ''}.`,
     business.brandVoice ? `Use this approved brand preference: ${business.brandVoice}.` : 'Use a neutral, professional service-business style.',
+    business.writingStyle ? `Apply this approved writing style: ${business.writingStyle}.` : '',
+    business.avoidTerms ? `Avoid these owner-specified words or topics when possible: ${business.avoidTerms}.` : '',
   ].join(' ');
 
   if (request.actionType === 'estimate_assistance') {
@@ -476,6 +503,7 @@ function buildPrompt({ request, tenant, sourceContext }) {
       request.input.cleaningTopic ? `Cleaning topic: ${request.input.cleaningTopic}.` : '',
       request.input.extraNotes ? `Owner notes: ${request.input.extraNotes}.` : '',
       business.defaultCTA ? `Use this approved default CTA when appropriate: ${business.defaultCTA}.` : '',
+      business.platformPreferences.length ? `Owner-approved preferred platforms: ${business.platformPreferences.join(', ')}.` : '',
       request.input.postTypeId === 'before_after' ? 'Do not infer, describe, or claim visual details from photos.' : '',
       'Do not invent discounts, prices, coupons, guarantees, deadlines, customer quotes, ratings, sponsorships, events, awards, local facts, or availability times.',
       'Do not mention customer identities, addresses, job photos, photo permissions, medical details, internal notes, payment data, or Stripe data.',
@@ -801,8 +829,11 @@ async function generateGrowthAIContent({ admin, provider, requestBody, uid }) {
   const request = normalizeGenerationRequest(requestBody);
   const db = admin.firestore();
   const { tenant } = await verifyGrowthAIActor({ db, uid, tenantId: request.tenantId });
-  const sourceContext = await verifySourceContext({ db, request });
-  const prompt = buildPrompt({ request, tenant, sourceContext });
+  const [sourceContext, brandProfile] = await Promise.all([
+    verifySourceContext({ db, request }),
+    loadGrowthAIBrandProfile({ db, tenantId: request.tenantId }),
+  ]);
+  const prompt = buildPrompt({ request, tenant, sourceContext, brandProfile });
   const reservation = await reserveCredits({ admin, db, request, uid });
   if (reservation.kind === 'finalized') {
     return { success: true, reused: true, creditsCharged: reservation.ledger.credits, ...reservation.ledger.result };
@@ -873,5 +904,6 @@ module.exports = {
   createGrowthAIGenerationHandler,
   generateGrowthAIContent,
   normalizeGenerationRequest,
+  normalizeBrandProfile,
   verifyGrowthAIActor,
 };

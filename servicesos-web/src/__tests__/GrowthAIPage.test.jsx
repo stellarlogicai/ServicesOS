@@ -621,7 +621,11 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     await waitFor(() => expect(service.saveGrowthAIBrandProfile).toHaveBeenCalledWith('tenant-a', {
       brandVoice: 'Warm and direct',
       contentTone: '',
+      writingStyle: '',
       defaultCTA: 'Request an estimate.',
+      avoidTerms: '',
+      platformPreferences: { general: false, facebook: false, instagram: false, linkedin: false, website: false },
+      brandColors: { primary: '', secondary: '', accent: '' },
     }));
     expect(screen.getByText(/Business identity comes from Business Settings/)).toBeInTheDocument();
   });

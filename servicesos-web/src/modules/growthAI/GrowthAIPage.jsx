@@ -5,6 +5,7 @@ import GrowthAIDraftsView from './components/GrowthAIDraftsView';
 import GrowthAIHome from './components/GrowthAIHome';
 import GrowthAIWorkspaceShell from './components/GrowthAIWorkspaceShell';
 import { BRANDS, CONTENT_IDEAS, PLATFORMS } from './brandProfiles';
+import { getApprovedGrowthAIBrandContext, normalizeGrowthAIBrandProfile } from './growthAIBrandContext';
 import {
   buildMarketingSourceRefs,
   deriveTenantMarketingServices,
@@ -42,7 +43,7 @@ import { buildGrowthAIBusinessBriefing } from './growthAIBusinessBriefing';
 import './GrowthAIPage.css';
 
 const emptyContent = { fullCaption: '', shortCaption: '', callToAction: '', hashtags: '', imagePrompt: '' };
-const emptyProfile = { brandVoice: '', contentTone: '', defaultCTA: '' };
+const emptyProfile = normalizeGrowthAIBrandProfile();
 const emptyEditor = {
   id: null,
   pillar: 'attract',
@@ -149,10 +150,10 @@ export default function GrowthAIPage({ onReviewJob }) {
     setErrorTenantId(tenantId);
   }, [tenantId]);
 
-  const businessSettings = currentTenant?.businessSettings || {};
-  const businessName = businessSettings.businessName || currentTenant?.businessName || 'Your business';
   const tenantWorkspaceReady = workspaceTenantId === tenantId;
   const profileForTenant = tenantWorkspaceReady ? profile : emptyProfile;
+  const brandContext = useMemo(() => getApprovedGrowthAIBrandContext({ tenant: currentTenant, profile: profileForTenant }), [currentTenant, profileForTenant]);
+  const businessName = brandContext.businessName || 'Your business';
   const draftsForTenant = tenantWorkspaceReady ? drafts : [];
   const auditForTenant = auditTenantId === tenantId ? audit : [];
   const creditBalanceForTenant = creditsTenantId === tenantId ? creditBalance : { available: 0, reserved: 0 };
@@ -165,9 +166,9 @@ export default function GrowthAIPage({ onReviewJob }) {
   const brand = useMemo(() => ({
     ...BRANDS.auntbs,
     name: businessName,
-    tone: profileForTenant.contentTone || profileForTenant.brandVoice || 'friendly, trustworthy, and clear',
-    defaultCTA: profileForTenant.defaultCTA || 'Contact us to learn more.',
-  }), [businessName, profileForTenant]);
+    tone: [brandContext.tone, brandContext.writingStyle].filter(Boolean).join(', ') || 'friendly, trustworthy, and clear',
+    defaultCTA: brandContext.defaultCTA || 'Contact us to learn more.',
+  }), [brandContext, businessName]);
   const postType = brand.postTypes.find(item => item.id === postTypeId) || brand.postTypes[0];
 
   const reloadOpportunities = useCallback(async () => {
@@ -198,11 +199,7 @@ export default function GrowthAIPage({ onReviewJob }) {
       listGrowthAIDrafts(requestedTenantId),
     ]);
     if (!isCurrentTenantRequest(requestedTenantId, requestVersion)) return null;
-    setProfile({
-      brandVoice: savedProfile?.brandVoice || '',
-      contentTone: savedProfile?.contentTone || '',
-      defaultCTA: savedProfile?.defaultCTA || '',
-    });
+    setProfile(normalizeGrowthAIBrandProfile(savedProfile));
     setDrafts(savedDrafts);
     setWorkspaceTenantId(requestedTenantId);
     const selected = savedDrafts.find(item => item.id === selectedDraftId);
@@ -653,6 +650,7 @@ export default function GrowthAIPage({ onReviewJob }) {
           brand={brand}
           briefing={businessBriefing}
           briefingLoading={opportunitiesLoading}
+          brandContext={brandContext}
           businessName={businessName}
           communicationBookings={communicationBookings}
           communicationLeads={communicationLeads}

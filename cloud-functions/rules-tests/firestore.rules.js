@@ -1596,7 +1596,11 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       tenantId: TENANT_A,
       brandVoice: 'Friendly and practical',
       contentTone: 'Clear and local',
+      writingStyle: 'Short, practical sentences.',
       defaultCTA: 'Request a quote.',
+      avoidTerms: 'guaranteed',
+      platformPreferences: { general: true, facebook: true, instagram: false, linkedin: false, website: true },
+      brandColors: { primary: '#0F766E', secondary: '', accent: '#F59E0B' },
       createdByUid: 'admin-a',
       createdAt: serverTimestamp(),
       updatedByUid: 'admin-a',
@@ -1613,6 +1617,10 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       })
     );
     assert.equal((await assertSucceeds(getDoc(profileReference))).data().tenantId, TENANT_A);
+    await assertFails(updateDoc(profileReference, { brandColors: { primary: 'not-a-color', secondary: '', accent: '' } }));
+    await assertFails(updateDoc(profileReference, {
+      platformPreferences: { general: true, facebook: false, instagram: 'true', linkedin: false, website: false },
+    }));
     assert.equal((await assertSucceeds(getDoc(draftReference))).data().status, 'draft');
     assert.equal((await assertSucceeds(getDoc(auditReference))).data().action, 'draft_created');
     await assertFails(updateDoc(auditReference, { action: 'approved' }));

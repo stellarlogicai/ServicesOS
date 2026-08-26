@@ -293,6 +293,17 @@ describe('GrowthAI server gateway', () => {
 
   test('rebuilds customer communication context from a verified tenant booking without exposing identity or private records', async () => {
     const documents = seed();
+    documents['tenants/tenant-a/growthAI/config'] = {
+      tenantId: 'tenant-a',
+      brandVoice: 'Warm and direct',
+      contentTone: 'Clear and local',
+      writingStyle: 'Use short, helpful sentences',
+      defaultCTA: 'Request a quote.',
+      avoidTerms: 'guaranteed results',
+      platformPreferences: { general: true, facebook: true, instagram: false, linkedin: false, website: true },
+      brandColors: { primary: '#0F766E', secondary: '', accent: '#F59E0B' },
+      logoRef: 'must-not-reach-provider-logo-reference',
+    };
     documents['tenants/tenant-a/bookings/booking-a'] = {
       tenantId: 'tenant-a', status: 'completed', serviceType: 'deep clean', date: '2026-09-01', time: '10:00',
       customerName: 'Must Not Reach Provider', customerEmail: 'private@example.test',
@@ -313,6 +324,9 @@ describe('GrowthAI server gateway', () => {
     const draft = db.documents.get(`tenants/tenant-a/growthAIDrafts/${result.draftId}`);
     assert.match(serialized, /review_request/);
     assert.match(serialized, /deep clean/);
+    assert.match(serialized, /Clear and local|Warm and direct/);
+    assert.match(serialized, /Use short, helpful sentences/);
+    assert.match(serialized, /guaranteed results/);
     assert.doesNotMatch(serialized, /Must Not Reach Provider|private@example|Private Address|Private incident|must-not-reach-provider/);
     assert.match(calls[0].systemInstruction, /Do not claim the customer was satisfied/);
     assert.equal(result.creditsCharged, 1);

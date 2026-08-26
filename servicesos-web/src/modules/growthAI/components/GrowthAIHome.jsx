@@ -571,21 +571,35 @@ function OpportunitiesWorkflow({
   );
 }
 
-function BrandPreferencesWorkflow({ businessName, onProfileChange, onSaveProfile, profile, saving }) {
+function BrandPreferencesWorkflow({ brandContext, onProfileChange, onSaveProfile, profile, saving }) {
   return (
     <section className="growth-ai-workflow" aria-labelledby="growth-ai-brand-title">
       <div className="growth-ai-workflow-heading">
         <div>
           <h3 id="growth-ai-brand-title">Brand settings</h3>
-          <p>Business identity comes from Business Settings. These are GrowthAI-specific preferences.</p>
+          <p>Business identity comes from Business Settings. These owner-approved preferences guide GrowthAI drafts.</p>
         </div>
       </div>
       <div className="growth-ai-brand-grid">
-        <GrowthAIField label="Business name"><input aria-label="Business name" value={businessName} readOnly /></GrowthAIField>
+        <GrowthAIField label="Business name"><input aria-label="Business name" value={brandContext.businessName} readOnly /></GrowthAIField>
+        <GrowthAIField label="Service area"><input aria-label="Service area" value={brandContext.serviceArea} readOnly /></GrowthAIField>
         <GrowthAIField label="Brand voice"><input aria-label="Brand voice" value={profile.brandVoice} onChange={event => onProfileChange({ brandVoice: event.target.value })} /></GrowthAIField>
         <GrowthAIField label="Content tone"><input aria-label="Content tone" value={profile.contentTone} onChange={event => onProfileChange({ contentTone: event.target.value })} /></GrowthAIField>
+        <GrowthAIField label="Writing style"><input aria-label="Writing style" value={profile.writingStyle} onChange={event => onProfileChange({ writingStyle: event.target.value })} /></GrowthAIField>
         <GrowthAIField label="Default call to action"><input aria-label="Default call to action" value={profile.defaultCTA} onChange={event => onProfileChange({ defaultCTA: event.target.value })} /></GrowthAIField>
+        <GrowthAIField label="Words or topics to avoid"><textarea aria-label="Words or topics to avoid" value={profile.avoidTerms} onChange={event => onProfileChange({ avoidTerms: event.target.value })} rows={3} /></GrowthAIField>
+        <GrowthAIField label="Brand colors">
+          <div className="growth-ai-color-row">
+            {['primary', 'secondary', 'accent'].map(key => <label key={key}>{key}<input aria-label={`${key} brand color`} placeholder="#RRGGBB" value={profile.brandColors[key]} onChange={event => onProfileChange({ brandColors: { ...profile.brandColors, [key]: event.target.value } })} /></label>)}
+          </div>
+        </GrowthAIField>
+        <GrowthAIField label="Preferred platforms">
+          <div className="growth-ai-platform-preferences">
+            {['general', 'facebook', 'instagram', 'linkedin', 'website'].map(platform => <label key={platform}><input type="checkbox" checked={profile.platformPreferences[platform]} onChange={event => onProfileChange({ platformPreferences: { ...profile.platformPreferences, [platform]: event.target.checked } })} />{platform}</label>)}
+          </div>
+        </GrowthAIField>
       </div>
+      {brandContext.logoRef ? <p className="growth-ai-cost-note">An existing tenant logo reference is available and remains managed outside GrowthAI.</p> : null}
       <div className="growth-ai-actions"><GrowthAIButton onClick={onSaveProfile} disabled={saving}>Save brand preferences</GrowthAIButton></div>
     </section>
   );
@@ -650,6 +664,7 @@ export default function GrowthAIHome({
   aiCredits,
   aiGenerating,
   brand,
+  brandContext,
   briefing,
   briefingLoading,
   businessName,
@@ -843,7 +858,7 @@ export default function GrowthAIHome({
       }} />;
     }
     if (capabilityType === 'brand') {
-      return <BrandPreferencesWorkflow businessName={businessName} onProfileChange={onProfileChange} onSaveProfile={onSaveProfile} profile={profile} saving={saving} />;
+      return <BrandPreferencesWorkflow brandContext={brandContext} onProfileChange={onProfileChange} onSaveProfile={onSaveProfile} profile={profile} saving={saving} />;
     }
     return null;
   };

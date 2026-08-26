@@ -606,6 +606,32 @@
   margin-bottom: 14px;
 }
 
+.growth-ai-color-row,
+.growth-ai-platform-preferences {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.growth-ai-color-row label,
+.growth-ai-platform-preferences label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  text-transform: capitalize;
+}
+
+.growth-ai-color-row input {
+  width: 96px;
+  min-height: 34px;
+}
+
+.growth-ai-platform-preferences input {
+  width: auto;
+  min-height: auto;
+}
+
 .growth-ai-field {
   display: grid;
   min-width: 0;

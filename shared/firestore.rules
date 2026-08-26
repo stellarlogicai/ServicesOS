@@ -728,17 +728,38 @@ service cloud.firestore {
 
     function isValidGrowthAIBrandProfile(data, tenantId) {
       return data.keys().hasAll([
-               'schemaVersion', 'tenantId', 'brandVoice', 'contentTone', 'defaultCTA',
+               'schemaVersion', 'tenantId', 'brandVoice', 'contentTone', 'writingStyle', 'defaultCTA', 'avoidTerms',
+               'platformPreferences', 'brandColors',
                'createdByUid', 'createdAt', 'updatedByUid', 'updatedAt'
              ]) &&
              data.keys().hasOnly([
-               'schemaVersion', 'tenantId', 'brandVoice', 'contentTone', 'defaultCTA',
+               'schemaVersion', 'tenantId', 'brandVoice', 'contentTone', 'writingStyle', 'defaultCTA', 'avoidTerms',
+               'platformPreferences', 'brandColors',
                'createdByUid', 'createdAt', 'updatedByUid', 'updatedAt'
              ]) &&
              data.schemaVersion == 1 && data.tenantId == tenantId &&
              isGrowthAIString(data.brandVoice, 500) &&
              isGrowthAIString(data.contentTone, 300) &&
-              isGrowthAIString(data.defaultCTA, 500);
+             isGrowthAIString(data.writingStyle, 500) &&
+             isGrowthAIString(data.defaultCTA, 500) &&
+             isGrowthAIString(data.avoidTerms, 1000) &&
+             data.platformPreferences is map &&
+             data.platformPreferences.keys().hasOnly(['general', 'facebook', 'instagram', 'linkedin', 'website']) &&
+             data.platformPreferences.keys().hasAll(['general', 'facebook', 'instagram', 'linkedin', 'website']) &&
+             data.platformPreferences.general is bool &&
+             data.platformPreferences.facebook is bool &&
+             data.platformPreferences.instagram is bool &&
+             data.platformPreferences.linkedin is bool &&
+             data.platformPreferences.website is bool &&
+             data.brandColors is map &&
+             data.brandColors.keys().hasOnly(['primary', 'secondary', 'accent']) &&
+             data.brandColors.keys().hasAll(['primary', 'secondary', 'accent']) &&
+             isGrowthAIString(data.brandColors.primary, 7) &&
+             isGrowthAIString(data.brandColors.secondary, 7) &&
+             isGrowthAIString(data.brandColors.accent, 7) &&
+             (data.brandColors.primary == '' || data.brandColors.primary.matches('^#[0-9A-Fa-f]{6}$')) &&
+             (data.brandColors.secondary == '' || data.brandColors.secondary.matches('^#[0-9A-Fa-f]{6}$')) &&
+             (data.brandColors.accent == '' || data.brandColors.accent.matches('^#[0-9A-Fa-f]{6}$'));
     }
 
     function isValidGrowthAIOpportunitySource(type, sourceRefs) {
