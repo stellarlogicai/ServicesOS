@@ -32,13 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `adda3c1c47bafbb03691cc227c9e63de0e5c7df8` — `Expand GrowthAI customer communication`
+Latest validated product checkpoint: `ae3edcfdfeb055fb653c0f8ec26d08ac08bc600a` — `Harden GrowthAI retention cadence fallback`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **Customer Communication V1 drafting, deterministic/free templates, explicit AI enhancement, tenant-verified source handling, and review-required output**
+Just completed: **Retention / Rebooking V1 deterministic opportunity detection, canonical cadence resolution, service-aware identity/suppression, and handoff into review-required Customer Communication**
 
-Next planned GrowthAI slice: **Retention / rebooking detection and opportunity handoff**
+Next planned GrowthAI slice: **Reputation**
 
 ---
 
@@ -106,7 +106,7 @@ Security and production verification still continue under Release Hardening.
 - [x] Estimate follow-up signals
 - [x] Work signals where canonical data safely supports them; no payment metric invented without a safe canonical selector
 - [x] Existing observed opportunities can surface without new AI generation
-- [ ] Dedicated rebooking opportunities — completed under the Retention / rebooking V1 slice
+- [x] Dedicated rebooking opportunities from the completed Retention / rebooking V1 slice
 - [x] Suggested next actions are non-mutating and use controlled existing workflows
 - [x] Routine briefing is deterministic/free and does not call the AI provider
 - [x] Natural-language briefing intents
@@ -156,14 +156,20 @@ Security and production verification still continue under Release Hardening.
 - [x] No estimate, booking, customer, or payment mutation
 - [x] Tenant-switch stale-result protection preserved
 
-## Retention / rebooking
+## Retention / rebooking — ✅ COMPLETE
 
-- [ ] Detect customers due for another service
-- [ ] Detect recurring customers missing a next booking
-- [ ] Detect unusually long service gaps
-- [ ] Surface rebooking opportunities
+- [x] Detect customers due for another service from supported canonical weekly, bi-weekly, and monthly cadence
+- [x] Detect recurring customers missing a matching next booking
+- [x] Long-gap handling is covered by authoritative cadence-based due detection; no separate guessed threshold is invented without a defensible history baseline
+- [x] Surface stable tenant-scoped, service-aware rebooking opportunities
+- [x] Resolve authoritative cadence from tenant-scoped `recurring_services` when `recurringServiceId` is present
+- [x] Canonical recurring-service cadence overrides conflicting duplicated booking frequency
+- [x] Missing, paused, invalid, unsupported, mismatched, or cross-tenant canonical recurrence does not fall back to stale booking cadence
+- [x] Legacy supported booking cadence remains a fallback only when no `recurringServiceId` exists
+- [x] Upcoming/in-progress suppression matches the same service identity so Service A does not suppress Service B
 - [x] Prepare rebooking drafts through Customer Communication once the owner selects context
 - [x] Require owner approval before action through the existing review-required communication workflow
+- [x] Detection and opportunity display use zero provider calls and zero credits
 
 ## Reputation
 
@@ -193,7 +199,7 @@ Security and production verification still continue under Release Hardening.
 - [x] Estimate-assistance conversational trigger
 - [x] Business-briefing questions
 - [x] Marketing routing polish for the implemented Marketing V1 content types
-- [ ] Retention/rebooking detection routing
+- [x] Retention/rebooking detection routing
 - [ ] Reputation routing
 - [x] Customer-communication routing
 - [ ] Contextual follow-ups
