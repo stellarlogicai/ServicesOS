@@ -56,6 +56,12 @@ function timestamp() {
   return { toDate: () => new Date('2026-08-24T12:00:00.000Z') };
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise(nextResolve => { resolve = nextResolve; });
+  return { promise, resolve };
+}
+
 function appendAudit(draft, action, fromStatus, toStatus) {
   const entry = {
     id: `audit-${draft.version}`,
@@ -729,6 +735,147 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     openHomeCapability('Help with an estimate');
     expect(await screen.findByRole('button', { name: /Tenant B Estimate/ })).toBeInTheDocument();
     expect(screen.queryByText('Tenant A Estimate')).not.toBeInTheDocument();
+  });
+
+  it('ignores stale workspace responses across a tenant switch and reloads when switching back', async () => {
+    const workspaceLoads = { 'tenant-a': [], 'tenant-b': [] };
+    service.loadGrowthAIBrandProfile.mockImplementation(tenantId => {
+      const request = deferred();
+      workspaceLoads[tenantId].push({ kind: 'profile', request });
+      return request.promise;
+    });
+    service.listGrowthAIDrafts.mockImplementation(tenantId => {
+      const request = deferred();
+      workspaceLoads[tenantId].push({ kind: 'drafts', request });
+      return request.promise;
+    });
+
+    const view = render(<GrowthAIPage />);
+    openWorkspaceView('Drafts');
+    await waitFor(() => expect(workspaceLoads['tenant-a']).toHaveLength(2));
+
+    state.auth = {
+      currentTenant: { id: 'tenant-b', businessName: 'Tenant B Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-b', userProfile: { displayName: 'Taylor Test' },
+    };
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(workspaceLoads['tenant-b']).toHaveLength(2));
+
+    await act(async () => {
+      workspaceLoads['tenant-a'][0].request.resolve({ brandVoice: 'Tenant A private voice' });
+      workspaceLoads['tenant-a'][1].request.resolve([savedDraft({ title: 'Tenant A private draft' })]);
+    });
+    expect(screen.queryByText('Tenant A private draft')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tenant A private voice')).not.toBeInTheDocument();
+
+    await act(async () => {
+      workspaceLoads['tenant-b'][0].request.resolve({ brandVoice: 'Tenant B voice' });
+      workspaceLoads['tenant-b'][1].request.resolve([savedDraft({ id: 'draft-b', title: 'Tenant B private draft' })]);
+    });
+    expect(await screen.findByText('Tenant B private draft')).toBeInTheDocument();
+
+    state.auth = {
+      currentTenant: { id: 'tenant-a', businessName: 'Tenant A Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-a', userProfile: { displayName: 'Jamie Brown' },
+    };
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(workspaceLoads['tenant-a']).toHaveLength(4));
+    await act(async () => {
+      workspaceLoads['tenant-a'][2].request.resolve({ brandVoice: 'Tenant A restored voice' });
+      workspaceLoads['tenant-a'][3].request.resolve([savedDraft({ title: 'Tenant A restored draft' })]);
+    });
+    expect(await screen.findByText('Tenant A restored draft')).toBeInTheDocument();
+    expect(screen.queryByText('Tenant B private draft')).not.toBeInTheDocument();
+  });
+
+  it('ignores a stale Tenant A credit response after switching to Tenant B', async () => {
+    const creditLoads = { 'tenant-a': deferred(), 'tenant-b': deferred() };
+    gatewayService.loadGrowthAICreditBalance.mockImplementation(tenantId => creditLoads[tenantId].promise);
+
+    const view = render(<GrowthAIPage />);
+    await waitFor(() => expect(gatewayService.loadGrowthAICreditBalance).toHaveBeenCalledWith('tenant-a'));
+    state.auth = {
+      currentTenant: { id: 'tenant-b', businessName: 'Tenant B Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-b', userProfile: { displayName: 'Taylor Test' },
+    };
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(gatewayService.loadGrowthAICreditBalance).toHaveBeenCalledWith('tenant-b'));
+
+    await act(async () => creditLoads['tenant-a'].resolve({ available: 99, reserved: 0 }));
+    expect(screen.getByLabelText('AI credit balance')).not.toHaveTextContent('99');
+    await act(async () => creditLoads['tenant-b'].resolve({ available: 7, reserved: 0 }));
+    await expectCreditBalance(7);
+  });
+
+  it('ignores stale Tenant A audit results after switching to Tenant B', async () => {
+    const auditA = deferred();
+    state.drafts = [savedDraft({ id: 'draft-a', title: 'Tenant A draft' })];
+    service.listGrowthAIDraftAudit.mockImplementation((tenantId, draftId) => {
+      if (tenantId === 'tenant-a' && draftId === 'draft-a') return auditA.promise;
+      return Promise.resolve([]);
+    });
+
+    const view = render(<GrowthAIPage />);
+    openWorkspaceView('Drafts');
+    fireEvent.click(await screen.findByRole('button', { name: /Tenant A draft/ }));
+    openWorkspaceView('Activity');
+
+    state.auth = {
+      currentTenant: { id: 'tenant-b', businessName: 'Tenant B Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-b', userProfile: { displayName: 'Taylor Test' },
+    };
+    state.drafts = [];
+    view.rerender(<GrowthAIPage />);
+    await act(async () => auditA.resolve([{
+      id: 'audit-a', action: 'tenant_a_private_action', fromStatus: 'draft', toStatus: 'draft', timestamp: timestamp(),
+    }]));
+
+    expect(screen.queryByText('Tenant a private action')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tenant A draft')).not.toBeInTheDocument();
+  });
+
+  it('does not render a Tenant A AI result or message after switching to Tenant B', async () => {
+    const aiResult = deferred();
+    state.opportunityWorkspace = {
+      opportunities: [],
+      leads: [{
+        id: 'lead-estimate-a', tenantId: 'tenant-a', status: 'quoted',
+        customerSnapshot: { fullName: 'Tenant A AI Customer' },
+        estimate: { priceLow: 180, priceSuggested: 220, priceHigh: 260, currency: 'USD' },
+      }],
+      bookings: [], rebookingImplemented: false,
+    };
+    service.loadGrowthAIBrandProfile.mockResolvedValue({});
+    service.listGrowthAIDrafts.mockResolvedValue([]);
+    gatewayService.generateGrowthAIContent.mockReturnValue(aiResult.promise);
+
+    const view = render(<GrowthAIPage />);
+    openHomeCapability('Help with an estimate');
+    fireEvent.click(await screen.findByRole('button', { name: /Tenant A AI Customer/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analyze with GrowthAI · 1 credit' }));
+    await waitFor(() => expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledTimes(1));
+
+    state.auth = {
+      currentTenant: { id: 'tenant-b', businessName: 'Tenant B Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-b', userProfile: { displayName: 'Taylor Test' },
+    };
+    state.opportunityWorkspace = { opportunities: [], leads: [], bookings: [], rebookingImplemented: false };
+    view.rerender(<GrowthAIPage />);
+    await act(async () => aiResult.resolve({
+      success: true,
+      draftId: 'tenant-a-ai-draft',
+      creditsCharged: 1,
+      estimateAssistance: {
+        baselinePrice: { low: 180, suggested: 220, high: 260, currency: 'USD' },
+        recommendedPrice: 235,
+        reasoning: 'Tenant A only',
+      },
+    }));
+
+    expect(screen.queryByText('Tenant A AI Customer')).not.toBeInTheDocument();
+    expect(screen.queryByText('GrowthAI recommendation')).not.toBeInTheDocument();
+    expect(screen.queryByText(/GrowthAI recommendation saved for human review/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Tenant A AI Customer')).not.toBeInTheDocument();
   });
 
   it('clears session-only conversation state when the tenant workspace remounts', async () => {

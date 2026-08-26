@@ -32,6 +32,18 @@ import { listEligibleEstimateAssistanceLeads } from './growthAIEstimateAssistanc
 import './GrowthAIPage.css';
 
 const emptyContent = { fullCaption: '', shortCaption: '', callToAction: '', hashtags: '', imagePrompt: '' };
+const emptyProfile = { brandVoice: '', contentTone: '', defaultCTA: '' };
+const emptyEditor = {
+  id: null,
+  pillar: 'attract',
+  actionType: 'marketing_post',
+  title: '',
+  content: emptyContent,
+  sourceRefs: {},
+  status: 'draft',
+  approvedByUid: null,
+  approvedAt: null,
+};
 const emptyInputs = {
   platform: 'facebook', tone: '', cta: '', extraNotes: '', serviceType: '', serviceArea: '',
   offer: '', dateRange: '', cleaningTopic: '',
@@ -61,23 +73,14 @@ function canonicalDisplayName(record, fallback) {
 
 export default function GrowthAIPage({ onReviewJob }) {
   const { currentTenant, role, tenantId, user, userProfile } = useAuth();
+  const authorized = role === 'admin' || role === 'super-admin';
   const [activeView, setActiveView] = useState('home');
-  const [profile, setProfile] = useState({ brandVoice: '', contentTone: '', defaultCTA: '' });
+  const [profile, setProfile] = useState(emptyProfile);
   const [drafts, setDrafts] = useState([]);
   const [audit, setAudit] = useState([]);
   const [postTypeId, setPostTypeId] = useState('availability');
   const [inputs, setInputs] = useState(emptyInputs);
-  const [editor, setEditor] = useState({
-    id: null,
-    pillar: 'attract',
-    actionType: 'marketing_post',
-    title: '',
-    content: emptyContent,
-    sourceRefs: {},
-    status: 'draft',
-    approvedByUid: null,
-    approvedAt: null,
-  });
+  const [editor, setEditor] = useState(emptyEditor);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -88,139 +91,206 @@ export default function GrowthAIPage({ onReviewJob }) {
   const [creditBalance, setCreditBalance] = useState({ available: 0, reserved: 0 });
   const [creditsLoading, setCreditsLoading] = useState(true);
   const [aiGenerating, setAiGenerating] = useState(false);
+  const [workspaceTenantId, setWorkspaceTenantId] = useState(null);
+  const [auditTenantId, setAuditTenantId] = useState(null);
+  const [creditsTenantId, setCreditsTenantId] = useState(null);
+  const [editorTenantId, setEditorTenantId] = useState(null);
+  const [messageTenantId, setMessageTenantId] = useState(null);
+  const [errorTenantId, setErrorTenantId] = useState(null);
+  const [aiGeneratingTenantId, setAiGeneratingTenantId] = useState(null);
+  const [savingTenantId, setSavingTenantId] = useState(null);
   const auditRequestSequence = useRef(0);
   const opportunityRequestSequence = useRef(0);
-  const activeOpportunityTenantId = useRef(tenantId);
+  const activeTenantId = useRef(tenantId);
+  const tenantRequestVersion = useRef(0);
   const aiRequestInFlight = useRef(false);
+  const aiGeneratingTenantIdRef = useRef(null);
+  const savingTenantIdRef = useRef(null);
 
   useLayoutEffect(() => {
-    activeOpportunityTenantId.current = tenantId;
+    if (activeTenantId.current !== tenantId) {
+      activeTenantId.current = tenantId;
+      tenantRequestVersion.current += 1;
+    }
+  }, [tenantId]);
+
+  const requestContext = useCallback(() => ({
+    tenantId,
+    version: tenantRequestVersion.current,
+  }), [tenantId]);
+
+  const isCurrentTenantRequest = useCallback((requestedTenantId, requestVersion) => (
+    requestedTenantId === activeTenantId.current && requestVersion === tenantRequestVersion.current
+  ), []);
+
+  const setScopedMessage = useCallback(value => {
+    setMessage(value);
+    setMessageTenantId(tenantId);
+  }, [tenantId]);
+
+  const setScopedError = useCallback(value => {
+    setError(value);
+    setErrorTenantId(tenantId);
   }, [tenantId]);
 
   const businessSettings = currentTenant?.businessSettings || {};
   const businessName = businessSettings.businessName || currentTenant?.businessName || 'Your business';
+  const tenantWorkspaceReady = workspaceTenantId === tenantId;
+  const profileForTenant = tenantWorkspaceReady ? profile : emptyProfile;
+  const draftsForTenant = tenantWorkspaceReady ? drafts : [];
+  const auditForTenant = auditTenantId === tenantId ? audit : [];
+  const creditBalanceForTenant = creditsTenantId === tenantId ? creditBalance : { available: 0, reserved: 0 };
+  const editorForTenant = editorTenantId === tenantId ? editor : emptyEditor;
+  const loadingForTenant = loading || workspaceTenantId !== tenantId;
+  const messageForTenant = messageTenantId === tenantId ? message : '';
+  const errorForTenant = errorTenantId === tenantId ? error : '';
+  const aiGeneratingForTenant = aiGenerating && aiGeneratingTenantId === tenantId;
+  const savingForTenant = saving && savingTenantId === tenantId;
   const brand = useMemo(() => ({
     ...BRANDS.auntbs,
     name: businessName,
-    tone: profile.contentTone || profile.brandVoice || 'friendly, trustworthy, and clear',
-    defaultCTA: profile.defaultCTA || 'Contact us to learn more.',
-  }), [businessName, profile]);
+    tone: profileForTenant.contentTone || profileForTenant.brandVoice || 'friendly, trustworthy, and clear',
+    defaultCTA: profileForTenant.defaultCTA || 'Contact us to learn more.',
+  }), [businessName, profileForTenant]);
   const postType = brand.postTypes.find(item => item.id === postTypeId) || brand.postTypes[0];
-  const authorized = role === 'admin' || role === 'super-admin';
 
   const reloadOpportunities = useCallback(async () => {
     if (!tenantId) return null;
     const requestedTenantId = tenantId;
+    const { version: requestVersion } = requestContext();
     const requestSequence = ++opportunityRequestSequence.current;
     setOpportunitiesLoading(true);
     try {
       const workspace = await refreshGrowthAIOpportunityFeed(tenantId);
-      if (requestSequence === opportunityRequestSequence.current && activeOpportunityTenantId.current === requestedTenantId) {
+      if (requestSequence === opportunityRequestSequence.current && isCurrentTenantRequest(requestedTenantId, requestVersion)) {
         setOpportunityWorkspace({ ...workspace, tenantId: requestedTenantId });
       }
       return workspace;
     } finally {
-      if (requestSequence === opportunityRequestSequence.current && activeOpportunityTenantId.current === requestedTenantId) {
+      if (requestSequence === opportunityRequestSequence.current && isCurrentTenantRequest(requestedTenantId, requestVersion)) {
         setOpportunitiesLoading(false);
       }
     }
-  }, [tenantId]);
+  }, [isCurrentTenantRequest, requestContext, tenantId]);
 
   const reloadWorkspace = useCallback(async selectedDraftId => {
     if (!tenantId) return;
+    const requestedTenantId = tenantId;
+    const { version: requestVersion } = requestContext();
     const [savedProfile, savedDrafts] = await Promise.all([
-      loadGrowthAIBrandProfile(tenantId),
-      listGrowthAIDrafts(tenantId),
+      loadGrowthAIBrandProfile(requestedTenantId),
+      listGrowthAIDrafts(requestedTenantId),
     ]);
+    if (!isCurrentTenantRequest(requestedTenantId, requestVersion)) return null;
     setProfile({
       brandVoice: savedProfile?.brandVoice || '',
       contentTone: savedProfile?.contentTone || '',
       defaultCTA: savedProfile?.defaultCTA || '',
     });
     setDrafts(savedDrafts);
+    setWorkspaceTenantId(requestedTenantId);
     const selected = savedDrafts.find(item => item.id === selectedDraftId);
-    if (selected) setEditor(draftToEditor(selected));
-  }, [tenantId]);
+    if (selected) {
+      setEditor(draftToEditor(selected));
+      setEditorTenantId(requestedTenantId);
+    }
+    return savedDrafts;
+  }, [isCurrentTenantRequest, requestContext, tenantId]);
 
   const reloadCredits = useCallback(async () => {
     if (!tenantId) return;
+    const requestedTenantId = tenantId;
+    const { version: requestVersion } = requestContext();
     setCreditsLoading(true);
     try {
-      setCreditBalance(await loadGrowthAICreditBalance(tenantId));
+      const balance = await loadGrowthAICreditBalance(requestedTenantId);
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) {
+        setCreditBalance(balance);
+        setCreditsTenantId(requestedTenantId);
+      }
     } finally {
-      setCreditsLoading(false);
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setCreditsLoading(false);
     }
-  }, [tenantId]);
+  }, [isCurrentTenantRequest, requestContext, tenantId]);
 
   useEffect(() => {
-    let active = true;
-    if (!authorized || !tenantId) return () => { active = false; };
-    Promise.all([loadGrowthAIBrandProfile(tenantId), listGrowthAIDrafts(tenantId)])
-      .then(([savedProfile, savedDrafts]) => {
-        if (!active) return;
-        setProfile({
-          brandVoice: savedProfile?.brandVoice || '',
-          contentTone: savedProfile?.contentTone || '',
-          defaultCTA: savedProfile?.defaultCTA || '',
-        });
-        setDrafts(savedDrafts);
+    if (!authorized || !tenantId) return;
+    const { tenantId: requestedTenantId, version: requestVersion } = requestContext();
+    Promise.resolve().then(() => reloadWorkspace(null))
+      .catch(err => {
+        if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setScopedError(err.message);
       })
-      .catch(err => active && setError(err.message))
-      .finally(() => active && setLoading(false));
-    return () => { active = false; };
-  }, [authorized, tenantId]);
+      .finally(() => {
+        if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setLoading(false);
+      });
+  }, [authorized, isCurrentTenantRequest, reloadWorkspace, requestContext, setScopedError, tenantId]);
 
   useEffect(() => {
-    let active = true;
-    if (!authorized || !tenantId) return () => { active = false; };
-    Promise.resolve()
-      .then(() => active && reloadOpportunities())
-      .catch(err => active && setError(err.message));
-    return () => { active = false; };
-  }, [authorized, reloadOpportunities, tenantId]);
+    if (!authorized || !tenantId) return;
+    const { tenantId: requestedTenantId, version: requestVersion } = requestContext();
+    Promise.resolve().then(() => reloadOpportunities()).catch(err => {
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setScopedError(err.message);
+    });
+  }, [authorized, isCurrentTenantRequest, reloadOpportunities, requestContext, setScopedError, tenantId]);
 
   useEffect(() => {
-    let active = true;
-    if (!authorized || !tenantId) return () => { active = false; };
-    loadGrowthAICreditBalance(tenantId)
-      .then(balance => active && setCreditBalance(balance))
-      .catch(err => active && setError(err.message))
-      .finally(() => active && setCreditsLoading(false));
-    return () => { active = false; };
-  }, [authorized, tenantId]);
+    if (!authorized || !tenantId) return;
+    const { tenantId: requestedTenantId, version: requestVersion } = requestContext();
+    Promise.resolve().then(() => reloadCredits()).catch(err => {
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setScopedError(err.message);
+    });
+  }, [authorized, isCurrentTenantRequest, reloadCredits, requestContext, setScopedError, tenantId]);
 
   const loadAudit = useCallback(async draftId => {
     const requestSequence = ++auditRequestSequence.current;
+    const requestedTenantId = tenantId;
+    const { version: requestVersion } = requestContext();
     if (!draftId) {
-      setAudit([]);
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) {
+        setAudit([]);
+        setAuditTenantId(requestedTenantId);
+      }
       return;
     }
     try {
-      const nextAudit = await listGrowthAIDraftAudit(tenantId, draftId);
-      if (requestSequence === auditRequestSequence.current) setAudit(nextAudit);
+      const nextAudit = await listGrowthAIDraftAudit(requestedTenantId, draftId);
+      if (requestSequence === auditRequestSequence.current && isCurrentTenantRequest(requestedTenantId, requestVersion)) {
+        setAudit(nextAudit);
+        setAuditTenantId(requestedTenantId);
+      }
     } catch (err) {
-      if (requestSequence === auditRequestSequence.current) throw err;
+      if (requestSequence === auditRequestSequence.current && isCurrentTenantRequest(requestedTenantId, requestVersion)) throw err;
     }
-  }, [tenantId]);
+  }, [isCurrentTenantRequest, requestContext, tenantId]);
 
   const runAction = useCallback(async (action, successMessage) => {
+    const requestedTenantId = tenantId;
+    const { version: requestVersion } = requestContext();
+    savingTenantIdRef.current = requestedTenantId;
+    setSavingTenantId(requestedTenantId);
     setSaving(true);
-    setError('');
-    setMessage('');
+    setScopedError('');
+    setScopedMessage('');
     try {
       const result = await action();
+      if (!isCurrentTenantRequest(requestedTenantId, requestVersion)) return null;
       const selectedId = result?.id || editor.id;
       await reloadWorkspace(selectedId);
       await loadAudit(selectedId);
-      setMessage(successMessage);
+      if (!isCurrentTenantRequest(requestedTenantId, requestVersion)) return null;
+      setScopedMessage(successMessage);
       return result;
     } catch (err) {
-      setError(err.message);
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setScopedError(err.message);
       return null;
     } finally {
-      setSaving(false);
+      if (savingTenantIdRef.current === requestedTenantId) {
+        setSaving(false);
+        savingTenantIdRef.current = null;
+        setSavingTenantId(null);
+      }
     }
-  }, [editor.id, loadAudit, reloadWorkspace]);
+  }, [editor.id, isCurrentTenantRequest, loadAudit, reloadWorkspace, requestContext, setScopedError, setScopedMessage, tenantId]);
 
   const generate = () => {
     const { generated } = generateDraft(brand, postType, inputs);
@@ -236,21 +306,26 @@ export default function GrowthAIPage({ onReviewJob }) {
       approvedByUid: null,
       approvedAt: null,
     }));
+    setEditorTenantId(tenantId);
     void loadAudit(null);
     setActiveView('drafts');
-    setMessage('Deterministic draft created locally. Save it to persist it for this tenant.');
-    setError('');
+    setScopedMessage('Deterministic draft created locally. Save it to persist it for this tenant.');
+    setScopedError('');
   };
 
   const generateWithAI = useCallback(async ({ actionType, input, sourceRefs = {}, stayOnHome = false }) => {
+    const requestedTenantId = tenantId;
+    const { version: requestVersion } = requestContext();
     if (aiRequestInFlight.current) return null;
     aiRequestInFlight.current = true;
+    aiGeneratingTenantIdRef.current = requestedTenantId;
+    setAiGeneratingTenantId(requestedTenantId);
     setAiGenerating(true);
-    setError('');
-    setMessage('');
+    setScopedError('');
+    setScopedMessage('');
     try {
       const result = await requestGrowthAIGeneration({
-        tenantId,
+        tenantId: requestedTenantId,
         actionType,
         input,
         sourceRefs,
@@ -260,20 +335,25 @@ export default function GrowthAIPage({ onReviewJob }) {
       await loadAudit(result.draftId);
       await reloadCredits();
       if (actionType === 'estimate_followup') await reloadOpportunities();
+      if (!isCurrentTenantRequest(requestedTenantId, requestVersion)) return result;
       if (!stayOnHome) setActiveView('drafts');
-      setMessage(actionType === 'estimate_assistance'
+      setScopedMessage(actionType === 'estimate_assistance'
         ? `GrowthAI recommendation saved for human review. ${result.creditsCharged} AI credit used. ServicesOS pricing was not changed.`
         : `AI-assisted draft saved for human review. ${result.creditsCharged} AI credit used. Nothing was sent or published.`);
       return result;
     } catch (err) {
       await reloadCredits().catch(() => {});
-      setError(err.message);
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setScopedError(err.message);
       return null;
     } finally {
       aiRequestInFlight.current = false;
-      setAiGenerating(false);
+      if (aiGeneratingTenantIdRef.current === requestedTenantId) {
+        setAiGenerating(false);
+        aiGeneratingTenantIdRef.current = null;
+        setAiGeneratingTenantId(null);
+      }
     }
-  }, [loadAudit, reloadCredits, reloadOpportunities, reloadWorkspace, tenantId]);
+  }, [isCurrentTenantRequest, loadAudit, reloadCredits, reloadOpportunities, reloadWorkspace, requestContext, setScopedError, setScopedMessage, tenantId]);
 
   const saveResponseDraft = async responseTemplate => {
     const result = await runAction(
@@ -305,7 +385,7 @@ export default function GrowthAIPage({ onReviewJob }) {
 
   const saveDraft = async () => {
     if (!editor.content.fullCaption.trim()) {
-      setError('Add draft content before saving.');
+      setScopedError('Add draft content before saving.');
       return;
     }
     if (!editor.id) {
@@ -321,12 +401,13 @@ export default function GrowthAIPage({ onReviewJob }) {
 
   const selectDraft = async draft => {
     setEditor(draftToEditor(draft));
-    setMessage('');
-    setError('');
+    setEditorTenantId(tenantId);
+    setScopedMessage('');
+    setScopedError('');
     try {
       await loadAudit(draft.id);
     } catch (err) {
-      setError(err.message);
+      setScopedError(err.message);
     }
   };
 
@@ -390,33 +471,52 @@ export default function GrowthAIPage({ onReviewJob }) {
   });
 
   const reviewOpportunityJob = async opportunity => {
+    const requestedTenantId = tenantId;
+    const { version: requestVersion } = requestContext();
     setSaving(true);
-    setError('');
-    setMessage('');
+    savingTenantIdRef.current = requestedTenantId;
+    setSavingTenantId(requestedTenantId);
+    setScopedError('');
+    setScopedMessage('');
     try {
       if (opportunity.status === 'open') await markGrowthAIOpportunityActed(tenantId, opportunity.id);
       await reloadOpportunities();
+      if (!isCurrentTenantRequest(requestedTenantId, requestVersion)) return;
       if (onReviewJob) onReviewJob(opportunity.sourceRefs?.bookingId);
-      else setMessage('Open Bookings to review this completed job and its photos.');
+      else setScopedMessage('Open Bookings to review this completed job and its photos.');
     } catch (err) {
-      setError(err.message);
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setScopedError(err.message);
     } finally {
-      setSaving(false);
+      if (savingTenantIdRef.current === requestedTenantId) {
+        setSaving(false);
+        savingTenantIdRef.current = null;
+        setSavingTenantId(null);
+      }
     }
   };
 
   const dismissOpportunity = async opportunity => {
+    const requestedTenantId = tenantId;
+    const { version: requestVersion } = requestContext();
     setSaving(true);
-    setError('');
-    setMessage('');
+    savingTenantIdRef.current = requestedTenantId;
+    setSavingTenantId(requestedTenantId);
+    setScopedError('');
+    setScopedMessage('');
     try {
       await dismissGrowthAIOpportunity(tenantId, opportunity.id);
       await reloadOpportunities();
-      setMessage('Opportunity dismissed. It will not reappear for the same detection identity.');
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) {
+        setScopedMessage('Opportunity dismissed. It will not reappear for the same detection identity.');
+      }
     } catch (err) {
-      setError(err.message);
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setScopedError(err.message);
     } finally {
-      setSaving(false);
+      if (savingTenantIdRef.current === requestedTenantId) {
+        setSaving(false);
+        savingTenantIdRef.current = null;
+        setSavingTenantId(null);
+      }
     }
   };
 
@@ -426,20 +526,20 @@ export default function GrowthAIPage({ onReviewJob }) {
   return (
     <GrowthAIWorkspaceShell
       activeView={activeView}
-      creditBalance={creditBalance}
-      creditsLoading={creditsLoading}
-      draftCount={drafts.length}
-      error={error}
-      message={message}
+      creditBalance={creditBalanceForTenant}
+      creditsLoading={creditsTenantId !== tenantId || creditsLoading}
+      draftCount={draftsForTenant.length}
+      error={errorForTenant}
+      message={messageForTenant}
       onViewChange={setActiveView}
     >
-      {loading ? <p className="growth-ai-empty" role="status">Loading tenant GrowthAI workspace...</p> : null}
+      {loadingForTenant ? <p className="growth-ai-empty" role="status">Loading tenant GrowthAI workspace...</p> : null}
       {activeView === 'home' ? (
         <GrowthAIHome
           key={tenantId}
           activeOpportunities={activeOpportunities}
-          aiCredits={creditBalance.available}
-          aiGenerating={aiGenerating}
+          aiCredits={creditBalanceForTenant.available}
+          aiGenerating={aiGeneratingForTenant}
           brand={brand}
           businessName={businessName}
           contentIdeas={CONTENT_IDEAS.auntbs}
@@ -476,7 +576,7 @@ export default function GrowthAIPage({ onReviewJob }) {
             setInputs(value => ({ ...value, ...idea.prefill.inputs }));
           }}
           onProfileChange={patch => setProfile(value => ({ ...value, ...patch }))}
-          onRefreshOpportunities={() => reloadOpportunities().catch(err => setError(err.message))}
+          onRefreshOpportunities={() => reloadOpportunities().catch(err => setScopedError(err.message))}
           onReviewOpportunityJob={reviewOpportunityJob}
           onSaveProfile={saveProfile}
           onSaveResponseDraft={saveResponseDraft}
@@ -485,8 +585,8 @@ export default function GrowthAIPage({ onReviewJob }) {
           opportunitySubject={opportunitySubject}
           platforms={PLATFORMS}
           postTypeId={postTypeId}
-          profile={profile}
-          saving={saving}
+          profile={profileForTenant}
+          saving={savingForTenant}
           tenantId={tenantId}
           userDisplayName={userProfile?.displayName || user?.displayName || ''}
           userId={userProfile?.uid || user?.uid || ''}
@@ -495,8 +595,8 @@ export default function GrowthAIPage({ onReviewJob }) {
       ) : null}
       {activeView === 'drafts' ? (
         <GrowthAIDraftsView
-          drafts={drafts}
-          editor={editor}
+          drafts={draftsForTenant}
+          editor={editorForTenant}
           onApprove={() => transition(approveGrowthAIDraft, 'Approved inside ServicesOS. Nothing was sent or published.')}
           onEditorChange={patch => setEditor(value => ({ ...value, ...patch }))}
           onReturnToDraft={() => transition(returnGrowthAIDraftToDraft, 'Content returned to draft status.')}
@@ -504,10 +604,10 @@ export default function GrowthAIPage({ onReviewJob }) {
           onSelectDraft={selectDraft}
           onSubmitForReview={() => transition(submitGrowthAIDraftForReview, 'Draft submitted for review.')}
           pillars={GROWTH_AI_PILLARS}
-          saving={saving}
+          saving={savingForTenant}
         />
       ) : null}
-      {activeView === 'activity' ? <GrowthAIActivityView audit={audit} editor={editor} /> : null}
+      {activeView === 'activity' ? <GrowthAIActivityView audit={auditForTenant} editor={editorForTenant} /> : null}
     </GrowthAIWorkspaceShell>
   );
 }
