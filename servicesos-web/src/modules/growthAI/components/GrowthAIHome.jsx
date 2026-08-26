@@ -17,6 +17,11 @@ import {
   CUSTOMER_COMMUNICATION_TYPES,
   validateCommunicationSelection,
 } from '../growthAICommunicationService';
+import {
+  buildDeterministicReviewResponseDraft,
+  REVIEW_RESPONSE_TONES,
+  validateOwnerReviewText,
+} from '../growthAIReputationService';
 import GrowthAIOnboardingGuide from './GrowthAIOnboardingGuide';
 import {
   GrowthAIButton,
@@ -177,6 +182,7 @@ function opportunityTypeLabel(type) {
   if (type === 'estimate_followup') return 'Estimate Follow-Up';
   if (type === 'marketing_photo_review') return 'Marketing Opportunity';
   if (type === 'rebooking_gap') return 'Rebooking Opportunity';
+  if (type === 'review_request') return 'Review Request Opportunity';
   return 'Growth Opportunity';
 }
 
@@ -190,6 +196,7 @@ function OpportunityCard({
   onDraftFollowUp,
   onStartMarketingFromOpportunity,
   onStartRebookingFromOpportunity,
+  onStartReviewRequestFromOpportunity,
   onReviewJob,
   saving,
 }) {
@@ -225,6 +232,11 @@ function OpportunityCard({
         {opportunity.type === 'rebooking_gap' ? (
           <GrowthAIButton disabled={saving} onClick={() => onStartRebookingFromOpportunity(opportunity)}>
             Prepare Rebooking Draft
+          </GrowthAIButton>
+        ) : null}
+        {opportunity.type === 'review_request' ? (
+          <GrowthAIButton disabled={saving} onClick={() => onStartReviewRequestFromOpportunity(opportunity)}>
+            Prepare Review Request
           </GrowthAIButton>
         ) : null}
         <GrowthAIButton tone="secondary" disabled={saving} onClick={() => onDismiss(opportunity)}>Dismiss</GrowthAIButton>
@@ -330,20 +342,23 @@ function CustomerResponseWorkflow({
   leads,
   onGenerateAI,
   onSave,
-  rebookingIntent,
+  customerCommunicationIntent,
   saving,
 }) {
   const scenarios = RESPONSE_SCENARIOS.auntbs;
-  const prefilledRebookingBookingId = bookings.some(booking => booking.id === rebookingIntent?.bookingId && booking.completed)
-    ? rebookingIntent.bookingId
+  const prefilledBookingId = bookings.some(booking => booking.id === customerCommunicationIntent?.bookingId && booking.completed)
+    ? customerCommunicationIntent.bookingId
     : '';
   const [scenarioId, setScenarioId] = useState(scenarios[0].id);
   const [channelId, setChannelId] = useState('sms');
   const [customerMessage, setCustomerMessage] = useState('');
-  const [communicationTypeId, setCommunicationTypeId] = useState(prefilledRebookingBookingId ? 'rebooking' : 'estimate_followup');
+  const [communicationTypeId, setCommunicationTypeId] = useState(customerCommunicationIntent?.type || (prefilledBookingId ? 'rebooking' : 'estimate_followup'));
   const [selectedLeadId, setSelectedLeadId] = useState('');
-  const [selectedBookingId, setSelectedBookingId] = useState(prefilledRebookingBookingId);
+  const [selectedBookingId, setSelectedBookingId] = useState(prefilledBookingId);
+  const [reviewText, setReviewText] = useState('');
+  const [reviewTone, setReviewTone] = useState('positive');
   const communicationType = communicationTypeById(communicationTypeId);
+  const isReviewResponse = communicationType.id === 'review_response';
   const sourceOptions = communicationType.source === 'lead'
     ? leads
     : communicationType.source === 'completed_booking'
@@ -365,12 +380,16 @@ function CustomerResponseWorkflow({
     selectedLeadId,
     selectedBookingId,
   });
-  const deterministicDraft = buildDeterministicCommunicationDraft({
-    businessName,
-    channelId,
-    typeId: communicationTypeId,
-    source: selectedContext,
-  });
+  const reviewTextError = isReviewResponse ? validateOwnerReviewText(reviewText) : '';
+  const workflowError = selectionError || reviewTextError;
+  const deterministicDraft = isReviewResponse
+    ? buildDeterministicReviewResponseDraft({ businessName, toneId: reviewTone })
+    : buildDeterministicCommunicationDraft({
+      businessName,
+      channelId,
+      typeId: communicationTypeId,
+      source: selectedContext,
+    });
   const responseTemplate = useMemo(() => {
     const template = buildResponseTemplate({ brandKey: 'auntbs', scenarioId, channelId });
     const replaceBusinessName = value => value
@@ -385,19 +404,14 @@ function CustomerResponseWorkflow({
   }, [businessName, channelId, scenarioId]);
 
   const generateAI = () => {
-    if (selectionError || !customerMessage.trim()) return;
+    if (workflowError || (!isReviewResponse && !customerMessage.trim())) return;
     onGenerateAI({
-      sourceRefs: buildCommunicationSourceRefs({
-        typeId: communicationTypeId,
-        selectedLeadId,
-        selectedBookingId,
+      sourceRefs: isReviewResponse ? {} : buildCommunicationSourceRefs({
+        typeId: communicationTypeId, selectedLeadId, selectedBookingId,
       }),
-      input: {
-        channelId,
-        communicationType: communicationTypeId,
-        customerMessage,
-        scenarioId: scenarioId,
-      },
+      input: isReviewResponse
+        ? { channelId, communicationType: communicationTypeId, reviewText, reviewTone }
+        : { channelId, communicationType: communicationTypeId, customerMessage, scenarioId },
     });
   };
 
@@ -427,7 +441,7 @@ function CustomerResponseWorkflow({
             </select>
           </GrowthAIField>
         </div>
-        {
+        {!isReviewResponse ? (
           <GrowthAIField label={communicationType.source === 'lead' ? 'Estimate to use' : communicationType.source === 'completed_booking' ? 'Completed job to use' : 'Booking to use'}>
             <select
               aria-label={communicationType.source === 'lead' ? 'Estimate to use' : communicationType.source === 'completed_booking' ? 'Completed job to use' : 'Booking to use'}
@@ -441,25 +455,38 @@ function CustomerResponseWorkflow({
               {sourceOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
           </GrowthAIField>
-        }
-        <GrowthAIField label="Customer message for optional AI assistance">
-          <textarea aria-label="Customer message for AI" rows="3" value={customerMessage} onChange={event => setCustomerMessage(event.target.value)} />
-        </GrowthAIField>
+        ) : null}
+        {isReviewResponse ? (
+          <>
+            <GrowthAIField label="Response tone">
+              <select aria-label="Review response tone" value={reviewTone} onChange={event => setReviewTone(event.target.value)}>
+                {REVIEW_RESPONSE_TONES.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+            </GrowthAIField>
+            <GrowthAIField label="Owner-pasted review text">
+              <textarea aria-label="Owner-pasted review text" rows="4" maxLength="1200" value={reviewText} onChange={event => setReviewText(event.target.value)} />
+            </GrowthAIField>
+          </>
+        ) : (
+          <GrowthAIField label="Customer message for optional AI assistance">
+            <textarea aria-label="Customer message for AI" rows="3" value={customerMessage} onChange={event => setCustomerMessage(event.target.value)} />
+          </GrowthAIField>
+        )}
         <div className="growth-ai-preview">
           <strong>{deterministicDraft.title}</strong>
           {deterministicDraft.subjectLine ? <p><strong>Subject:</strong> {deterministicDraft.subjectLine}</p> : null}
           <p>{deterministicDraft.messageTemplate}</p>
         </div>
         <p className="growth-ai-supporting-copy">{deterministicDraft.notes}</p>
-        {selectionError ? <p className="growth-ai-credit-warning">{selectionError}</p> : null}
+        {workflowError ? <p className="growth-ai-credit-warning">{workflowError}</p> : null}
         <div className="growth-ai-actions">
           <GrowthAICopyButton label="Copy response" text={deterministicDraft.messageTemplate} />
-          <GrowthAIButton tone="secondary" disabled={saving || Boolean(selectionError)} onClick={() => onSave(deterministicDraft)}>Save response draft</GrowthAIButton>
-          <GrowthAIButton disabled={saving || aiGenerating || aiCredits < 1 || !customerMessage.trim() || Boolean(selectionError)} onClick={generateAI}>Improve with GrowthAI · 1 credit</GrowthAIButton>
+          <GrowthAIButton tone="secondary" disabled={saving || Boolean(workflowError)} onClick={() => onSave(deterministicDraft)}>Save response draft</GrowthAIButton>
+          <GrowthAIButton disabled={saving || aiGenerating || aiCredits < 1 || Boolean(workflowError) || (!isReviewResponse && !customerMessage.trim())} onClick={generateAI}>Improve with GrowthAI · 1 credit</GrowthAIButton>
         </div>
         <p className="growth-ai-cost-note">AI generation uses 1 AI credit. Templates, editing, and copying are free.</p>
         {aiCredits < 1 ? <p className="growth-ai-credit-warning">Not enough AI credits. Deterministic response templates remain available.</p> : null}
-        <details className="growth-ai-preview">
+        {!isReviewResponse ? <details className="growth-ai-preview">
           <summary>Existing quick response templates</summary>
           <div className="growth-ai-form-grid">
             <GrowthAIField label="Response scenario">
@@ -474,7 +501,7 @@ function CustomerResponseWorkflow({
             <GrowthAICopyButton label="Copy quick response" text={responseTemplate.messageTemplate} />
             <GrowthAIButton tone="secondary" disabled={saving} onClick={() => onSave({ ...responseTemplate, pillar: 'convert', sourceRefs: {} })}>Save quick response draft</GrowthAIButton>
           </div>
-        </details>
+        </details> : null}
       </div>
     </section>
   );
@@ -492,6 +519,7 @@ function OpportunitiesWorkflow({
   onReviewOpportunityJob,
   onStartMarketingFromOpportunity,
   onStartRebookingFromOpportunity,
+  onStartReviewRequestFromOpportunity,
   opportunitiesLoading,
   opportunityFilter,
   opportunitySubject,
@@ -509,7 +537,7 @@ function OpportunitiesWorkflow({
       </div>
       <div className="growth-ai-filter-row" aria-label="Filter growth opportunities">
         {[
-          ['all', 'All'], ['attract', 'Marketing'], ['convert', 'Estimates'], ['retain', 'Rebooking'],
+          ['all', 'All'], ['attract', 'Marketing'], ['convert', 'Estimates'], ['retain', 'Rebooking'], ['reputation', 'Reputation'],
         ].map(([value, label]) => (
           <GrowthAIButton key={value} tone={opportunityFilter === value ? 'primary' : 'secondary'} onClick={() => onOpportunityFilterChange(value)}>{label}</GrowthAIButton>
         ))}
@@ -531,6 +559,7 @@ function OpportunitiesWorkflow({
             onReviewJob={onReviewOpportunityJob}
             onStartMarketingFromOpportunity={onStartMarketingFromOpportunity}
             onStartRebookingFromOpportunity={onStartRebookingFromOpportunity}
+            onStartReviewRequestFromOpportunity={onStartReviewRequestFromOpportunity}
             onDismiss={onDismissOpportunity}
             saving={saving}
             aiGenerating={aiGenerating}
@@ -647,6 +676,7 @@ export default function GrowthAIHome({
   onReviewOpportunityJob,
   onStartMarketingFromOpportunity,
   onStartRebookingFromOpportunity,
+  onStartReviewRequestFromOpportunity,
   onSaveProfile,
   onSaveResponseDraft,
   opportunitiesLoading,
@@ -789,7 +819,7 @@ export default function GrowthAIHome({
       }} />;
     }
     if (capabilityType === 'customer_response') {
-      return <CustomerResponseWorkflow aiCredits={aiCredits} aiGenerating={aiGenerating} bookings={communicationBookings} businessName={businessName} leads={communicationLeads} onGenerateAI={onGenerateResponseAI} onSave={onSaveResponseDraft} rebookingIntent={customerCommunicationIntent} saving={saving} />;
+      return <CustomerResponseWorkflow aiCredits={aiCredits} aiGenerating={aiGenerating} bookings={communicationBookings} businessName={businessName} leads={communicationLeads} onGenerateAI={onGenerateResponseAI} onSave={onSaveResponseDraft} customerCommunicationIntent={customerCommunicationIntent} saving={saving} />;
     }
     if (capabilityType === 'opportunities') {
       return <OpportunitiesWorkflow {...{
@@ -798,6 +828,11 @@ export default function GrowthAIHome({
         onStartRebookingFromOpportunity: opportunity => {
           if (onStartRebookingFromOpportunity(opportunity) !== false) {
             openCapability('customer_response', 'Prepare a rebooking draft');
+          }
+        },
+        onStartReviewRequestFromOpportunity: opportunity => {
+          if (onStartReviewRequestFromOpportunity(opportunity) !== false) {
+            openCapability('customer_response', 'Prepare a review request');
           }
         },
         onStartMarketingFromOpportunity: opportunity => {

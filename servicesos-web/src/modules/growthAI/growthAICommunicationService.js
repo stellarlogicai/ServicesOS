@@ -9,6 +9,7 @@ export const CUSTOMER_COMMUNICATION_TYPES = Object.freeze([
   { id: 'problem_resolution', label: 'Problem resolution', source: 'booking', pillar: 'convert' },
   { id: 'rebooking', label: 'Rebooking request', source: 'completed_booking', pillar: 'retain' },
   { id: 'review_request', label: 'Review request', source: 'completed_booking', pillar: 'reputation' },
+  { id: 'review_response', label: 'Review response', source: 'owner_review', pillar: 'reputation' },
 ]);
 
 function text(value) {

@@ -760,7 +760,12 @@ service cloud.firestore {
                 isGrowthAIRefId(sourceRefs.bookingId) &&
                 isValidGrowthAIPhotoIds(sourceRefs.photoIds) &&
                 sourceRefs.photoIds.size() >= 2 &&
-                (!('customerId' in sourceRefs) || isGrowthAIRefId(sourceRefs.customerId))));
+                (!('customerId' in sourceRefs) || isGrowthAIRefId(sourceRefs.customerId))) ||
+              (type == 'review_request' &&
+                sourceRefs.keys().hasAll(['bookingId', 'customerId']) &&
+                sourceRefs.keys().hasOnly(['bookingId', 'customerId']) &&
+                isGrowthAIRefId(sourceRefs.bookingId) &&
+                isGrowthAIRefId(sourceRefs.customerId)));
     }
 
     function hasValidGrowthAIOpportunityShape(data, tenantId, opportunityId) {
@@ -779,10 +784,11 @@ service cloud.firestore {
                'dismissedAt', 'dismissedByUid', 'resolvedAt'
              ]) &&
              data.schemaVersion == 1 && data.id == opportunityId && data.tenantId == tenantId &&
-             data.type in ['estimate_followup', 'rebooking_gap', 'marketing_photo_review'] &&
+             data.type in ['estimate_followup', 'rebooking_gap', 'marketing_photo_review', 'review_request'] &&
              ((data.type == 'estimate_followup' && data.pillar == 'convert') ||
               (data.type == 'rebooking_gap' && data.pillar == 'retain') ||
-              (data.type == 'marketing_photo_review' && data.pillar == 'attract')) &&
+              (data.type == 'marketing_photo_review' && data.pillar == 'attract') ||
+              (data.type == 'review_request' && data.pillar == 'reputation')) &&
              data.status in ['open', 'acted', 'dismissed', 'resolved'] &&
              isValidGrowthAIOpportunitySource(data.type, data.sourceRefs) &&
              isGrowthAIString(data.detectionReason, 500) && data.detectionReason.size() > 0 &&

@@ -187,6 +187,21 @@ function customerCommunicationRequest(overrides = {}) {
   });
 }
 
+function reviewResponseRequest(overrides = {}) {
+  return request({
+    actionType: 'customer_response',
+    idempotencyKey: 'review-response-1',
+    sourceRefs: {},
+    input: {
+      channelId: 'website',
+      communicationType: 'review_response',
+      reviewTone: 'sensitive_negative',
+      reviewText: 'The service did not meet my expectations.',
+    },
+    ...overrides,
+  });
+}
+
 function estimateAssistanceProvider(calls = [], overrides = {}) {
   return {
     async generateText(payload) {
@@ -306,6 +321,44 @@ describe('GrowthAI server gateway', () => {
     assert.deepEqual(draft.sourceRefs, { bookingId: 'booking-a' });
     assert.deepEqual(db.documents.get('tenants/tenant-a/bookings/booking-a'), originalBooking);
     assert.equal([...db.documents.keys()].some(path => path.includes('/payments/')), false);
+  });
+
+  test('uses only bounded owner-pasted review text and a selected tone for review responses', async () => {
+    const { admin, db } = fakeAdmin(seed());
+    const calls = [];
+    const result = await generateGrowthAIContent({
+      admin,
+      provider: successProvider(calls),
+      requestBody: reviewResponseRequest(),
+      uid: 'admin-a',
+    });
+    const serialized = JSON.stringify(calls[0]);
+    const draft = db.documents.get(`tenants/tenant-a/growthAIDrafts/${result.draftId}`);
+    assert.match(serialized, /The service did not meet my expectations/);
+    assert.match(serialized, /sensitive_negative/);
+    assert.doesNotMatch(serialized, /Must Not Reach Provider|private@example|Private Address|must-not-reach-provider/);
+    assert.match(calls[0].systemInstruction, /Do not admit liability|refund/);
+    assert.deepEqual(draft.sourceRefs, {});
+    assert.equal(draft.pillar, 'reputation');
+    assert.equal(draft.status, 'draft');
+  });
+
+  test('rejects malformed review-response input before reserving a credit', async () => {
+    const { admin, db } = fakeAdmin(seed());
+    const calls = [];
+    await assert.rejects(
+      generateGrowthAIContent({
+        admin,
+        provider: successProvider(calls),
+        requestBody: reviewResponseRequest({ input: {
+          channelId: 'website', communicationType: 'review_response', reviewTone: 'positive', reviewText: '',
+        } }),
+        uid: 'admin-a',
+      }),
+      error => error.code === 'invalid_request',
+    );
+    assert.equal(calls.length, 0);
+    assert.equal(ledgerEntries(db).length, 0);
   });
 
   test('requires matching canonical sources for customer communication before reserving a credit', async () => {

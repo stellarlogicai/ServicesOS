@@ -30,6 +30,7 @@ import {
   detectEstimateFollowUpOpportunities,
   detectMarketingPhotoReviewOpportunities,
   detectRebookingOpportunities,
+  detectReviewRequestOpportunities,
   dismissGrowthAIOpportunity,
   markGrowthAIOpportunityActed,
   planGrowthAIOpportunityReconciliation,
@@ -190,6 +191,41 @@ describe('GrowthAI deterministic opportunity detection', () => {
           { id: 'after-a', phase: 'after', roomLabel: '' },
         ],
       },
+    })).toEqual([]);
+  });
+
+  it('surfaces one neutral review-request opportunity for a completed tenant booking with a customer reference', () => {
+    const bookings = [{
+      id: 'booking-completed', tenantId: 'tenant-a', customerId: 'customer-a', status: 'completed', serviceType: 'deep clean',
+    }];
+    const first = detectReviewRequestOpportunities({ bookings, tenantId: 'tenant-a' });
+    const second = detectReviewRequestOpportunities({ bookings, tenantId: 'tenant-a' });
+    expect(first).toEqual([expect.objectContaining({
+      id: 'review_request__booking-completed',
+      type: 'review_request',
+      pillar: 'reputation',
+      sourceRefs: { bookingId: 'booking-completed', customerId: 'customer-a' },
+      detectionVersion: 'review-request-v1',
+    })]);
+    expect(first).toEqual(second);
+    expect(first[0].detectionReason).toMatch(/consider asking for feedback or a review/i);
+    expect(JSON.stringify(first[0])).not.toMatch(/happy|satisfied|star|credit|provider|payment|stripe/i);
+  });
+
+  it('suppresses review requests for incomplete, cancelled, unlinked, or issue-flagged bookings', () => {
+    expect(detectReviewRequestOpportunities({ bookings: [
+      { id: 'in-progress', customerId: 'customer-a', status: 'in_progress' },
+      { id: 'cancelled', customerId: 'customer-a', status: 'cancelled', fieldStatus: 'completed' },
+      { id: 'missing-customer', status: 'completed' },
+      { id: 'field-issue', customerId: 'customer-a', status: 'completed', fieldIssue: 'Door access issue' },
+      { id: 'incident', customerId: 'customer-a', status: 'completed', hasIncident: true },
+    ] })).toEqual([]);
+  });
+
+  it('does not surface another tenant\'s completed booking in a tenant-scoped review refresh', () => {
+    expect(detectReviewRequestOpportunities({
+      tenantId: 'tenant-a',
+      bookings: [{ id: 'tenant-b-booking', tenantId: 'tenant-b', customerId: 'customer-b', status: 'completed' }],
     })).toEqual([]);
   });
 

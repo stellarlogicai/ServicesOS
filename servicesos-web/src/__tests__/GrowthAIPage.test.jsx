@@ -390,6 +390,66 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
   });
 
+  it('hands a review-request opportunity into the existing completed-job communication draft without using AI', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [{
+        id: 'review_request__booking-completed', type: 'review_request', pillar: 'reputation', status: 'open',
+        sourceRefs: { bookingId: 'booking-completed', customerId: 'customer-a' },
+        detectionReason: 'Job completed - consider asking for feedback or a review.',
+      }],
+      leads: [],
+      bookings: [{
+        id: 'booking-completed', tenantId: 'tenant-a', customerId: 'customer-a', status: 'completed',
+        serviceType: 'Deep clean', customerName: 'Review Customer',
+      }],
+      rebookingImplemented: true,
+    };
+
+    render(<GrowthAIPage />);
+    openHomeCapability('Review opportunities');
+    fireEvent.click(await screen.findByRole('button', { name: 'Prepare Review Request' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Communication type')).toHaveValue('review_request'));
+    expect(screen.getByLabelText('Completed job to use')).toHaveValue('booking-completed');
+    fireEvent.click(screen.getByRole('button', { name: 'Save response draft' }));
+
+    await waitFor(() => expect(service.createGrowthAIDraft).toHaveBeenCalledWith('tenant-a', expect.objectContaining({
+      pillar: 'reputation', actionType: 'customer_response', sourceRefs: { bookingId: 'booking-completed' },
+    })));
+    expect(opportunityService.markGrowthAIOpportunityActed).toHaveBeenCalledWith('tenant-a', 'review_request__booking-completed');
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+  });
+
+  it('creates a free owner-pasted review-response draft and sends only bounded review text for optional AI assistance', async () => {
+    render(<GrowthAIPage />);
+    await expectCreditBalance(5);
+    openHomeCapability('Follow up');
+    fireEvent.change(screen.getByLabelText('Communication type'), { target: { value: 'review_response' } });
+    expect(screen.getByRole('button', { name: 'Save response draft' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Review response tone'), { target: { value: 'sensitive_negative' } });
+    fireEvent.change(screen.getByLabelText('Owner-pasted review text'), { target: { value: 'The service was not what I expected.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save response draft' }));
+    await waitFor(() => expect(service.createGrowthAIDraft).toHaveBeenCalledWith('tenant-a', expect.objectContaining({
+      pillar: 'reputation', actionType: 'customer_response', sourceRefs: {},
+      content: expect.objectContaining({ fullCaption: expect.stringMatching(/discuss it directly/i) }),
+    })));
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+  });
+
+  it('passes only the owner-pasted review text and selected tone to optional review-response AI assistance', async () => {
+    render(<GrowthAIPage />);
+    await expectCreditBalance(5);
+    openHomeCapability('Follow up');
+    fireEvent.change(screen.getByLabelText('Communication type'), { target: { value: 'review_response' } });
+    fireEvent.change(screen.getByLabelText('Review response tone'), { target: { value: 'sensitive_negative' } });
+    fireEvent.change(screen.getByLabelText('Owner-pasted review text'), { target: { value: 'The service was not what I expected.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Improve with GrowthAI · 1 credit' }));
+    await waitFor(() => expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'customer_response', sourceRefs: {},
+      input: { channelId: 'sms', communicationType: 'review_response', reviewText: 'The service was not what I expected.', reviewTone: 'sensitive_negative' },
+    })));
+  });
+
   it('hands a rebooking opportunity into the existing review-required customer communication workflow without using AI', async () => {
     state.opportunityWorkspace = {
       opportunities: [{

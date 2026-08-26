@@ -424,7 +424,7 @@ export default function GrowthAIPage({ onReviewJob }) {
       }),
       'Customer response draft saved for this tenant. Nothing was sent.',
     );
-    if (result && responseTemplate.communicationType === 'rebooking' &&
+    if (result && ['rebooking', 'review_request'].includes(responseTemplate.communicationType) &&
       customerCommunicationIntent?.bookingId === responseTemplate.sourceRefs?.bookingId &&
       isCurrentTenantRequest(requestedTenantId, requestVersion)) {
       await markGrowthAIOpportunityActed(requestedTenantId, customerCommunicationIntent.opportunityId);
@@ -522,9 +522,21 @@ export default function GrowthAIPage({ onReviewJob }) {
       setScopedError('The completed job for this rebooking opportunity is no longer eligible. Refresh opportunities before preparing a draft.');
       return false;
     }
-    setCustomerCommunicationIntent({ opportunityId: opportunity.id, bookingId: booking.id });
+    setCustomerCommunicationIntent({ opportunityId: opportunity.id, bookingId: booking.id, type: 'rebooking' });
     setScopedError('');
     setScopedMessage('Rebooking draft prepared from a verified completed job. Nothing will be sent automatically.');
+    return true;
+  };
+
+  const startReviewRequestFromOpportunity = opportunity => {
+    const booking = communicationBookings.find(item => item.id === opportunity.sourceRefs?.bookingId && item.completed);
+    if (!booking) {
+      setScopedError('The completed job for this review-request opportunity is no longer eligible. Refresh opportunities before preparing a draft.');
+      return false;
+    }
+    setCustomerCommunicationIntent({ opportunityId: opportunity.id, bookingId: booking.id, type: 'review_request' });
+    setScopedError('');
+    setScopedMessage('Review-request draft prepared from a verified completed job. Nothing will be sent automatically.');
     return true;
   };
 
@@ -673,6 +685,7 @@ export default function GrowthAIPage({ onReviewJob }) {
           onRefreshOpportunities={() => reloadOpportunities().catch(err => setScopedError(err.message))}
           onReviewOpportunityJob={reviewOpportunityJob}
           onStartRebookingFromOpportunity={startRebookingFromOpportunity}
+          onStartReviewRequestFromOpportunity={startReviewRequestFromOpportunity}
           onStartMarketingFromOpportunity={startMarketingFromOpportunity}
           onSaveProfile={saveProfile}
           onSaveResponseDraft={saveResponseDraft}

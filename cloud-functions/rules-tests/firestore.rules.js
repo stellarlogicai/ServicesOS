@@ -490,7 +490,9 @@ const growthAIOpportunity = ({
     ? 'marketing-photo-review-v1'
     : type === 'rebooking_gap'
       ? 'rebooking-gap-v1'
-      : 'estimate-followup-v1',
+      : type === 'review_request'
+        ? 'review-request-v1'
+        : 'estimate-followup-v1',
   firstDetectedAt: serverTimestamp(),
   lastDetectedAt: serverTimestamp(),
   createdByUid: actorUid,
@@ -1814,6 +1816,18 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       type: 'rebooking_gap',
       pillar: 'retain',
       sourceRefs: { customerId: 'customer-a', serviceKey: '' },
+    })));
+    await assertSucceeds(setDoc(doc(database, ...basePath, 'review_request__booking-a'), growthAIOpportunity({
+      opportunityId: 'review_request__booking-a',
+      type: 'review_request',
+      pillar: 'reputation',
+      sourceRefs: { bookingId: 'booking-a', customerId: 'customer-a' },
+    })));
+    await assertFails(setDoc(doc(database, ...basePath, 'bad-review-request'), growthAIOpportunity({
+      opportunityId: 'bad-review-request',
+      type: 'review_request',
+      pillar: 'reputation',
+      sourceRefs: { bookingId: 'booking-a' },
     })));
 
     const valid = doc(database, ...basePath, 'estimate_followup__lead-a');

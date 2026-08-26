@@ -17,6 +17,7 @@ export const GROWTH_AI_OPPORTUNITY_TYPES = Object.freeze([
   'estimate_followup',
   'rebooking_gap',
   'marketing_photo_review',
+  'review_request',
 ]);
 
 export const GROWTH_AI_OPPORTUNITY_STATUSES = Object.freeze([
@@ -32,6 +33,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const ESTIMATE_DETECTION_VERSION = 'estimate-followup-v1';
 const MARKETING_DETECTION_VERSION = 'marketing-photo-review-v1';
 const REBOOKING_DETECTION_VERSION = 'rebooking-gap-v1';
+const REVIEW_REQUEST_DETECTION_VERSION = 'review-request-v1';
 const CLOSED_ESTIMATE_STATUSES = new Set([
   'accepted',
   'approved',
@@ -257,6 +259,26 @@ export function detectEstimateFollowUpOpportunities({
 function isCompletedBooking(booking) {
   if (!isEligibleBooking(booking)) return false;
   return booking.status === 'completed' || booking.fieldStatus === 'completed';
+}
+
+function hasRecordedReviewRequestConcern(booking = {}) {
+  return text(booking.fieldIssue).length > 0 || booking.hasIncident === true ||
+    (Array.isArray(booking.incidentIds) && booking.incidentIds.length > 0);
+}
+
+export function detectReviewRequestOpportunities({ bookings = [], tenantId } = {}) {
+  return bookings.flatMap(booking => {
+    const customerId = canonicalCustomerId(booking);
+    if ((tenantId && booking?.tenantId !== tenantId) || !isCompletedBooking(booking) || !customerId || hasRecordedReviewRequestConcern(booking)) return [];
+    return [{
+      id: opportunityId('review_request', booking.id),
+      type: 'review_request',
+      pillar: 'reputation',
+      sourceRefs: { bookingId: booking.id, customerId },
+      detectionReason: 'Job completed - consider asking for feedback or a review.',
+      detectionVersion: REVIEW_REQUEST_DETECTION_VERSION,
+    }];
+  });
 }
 
 function listDueRebookingCandidates({ bookings = [], recurringServices = [], tenantId, now = new Date() } = {}) {
@@ -506,6 +528,7 @@ export async function refreshGrowthAIOpportunityFeed(tenantId, { now = new Date(
     ...detectEstimateFollowUpOpportunities({ leads, bookings, now }),
     ...detectRebookingOpportunities({ bookings, recurringServices, tenantId: resolvedTenantId, now }),
     ...detectMarketingPhotoReviewOpportunities({ bookings, photosByBookingId }),
+    ...detectReviewRequestOpportunities({ bookings, tenantId: resolvedTenantId }),
   ];
   const opportunities = await reconcileGrowthAIOpportunities(resolvedTenantId, detections);
   return { opportunities, leads, bookings, rebookingCandidates, rebookingImplemented: true };

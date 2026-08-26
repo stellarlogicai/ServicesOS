@@ -22,8 +22,9 @@ const MARKETING_CONTENT_TYPES = new Set([
 const MARKETING_PLATFORMS = new Set(['general', 'facebook', 'instagram', 'linkedin', 'website']);
 const CUSTOMER_COMMUNICATION_TYPES = new Set([
   'legacy', 'estimate_followup', 'scheduling', 'quote_question', 'service_question',
-  'problem_resolution', 'rebooking', 'review_request',
+  'problem_resolution', 'rebooking', 'review_request', 'review_response',
 ]);
+const REVIEW_RESPONSE_TONES = new Set(['positive', 'neutral_mixed', 'sensitive_negative']);
 
 class GrowthAIGatewayError extends Error {
   constructor(message, { code = 'gateway_error', status = 400 } = {}) {
@@ -77,9 +78,9 @@ function normalizeSourceRefs(actionType, sourceRefs = {}) {
 function normalizeInput(actionType, input = {}) {
   const shapes = {
     customer_response: {
-      allowed: ['customerMessage', 'scenarioId', 'channelId', 'communicationType'],
-      required: ['customerMessage', 'scenarioId', 'channelId'],
-      limits: { customerMessage: 2_000, scenarioId: 64, channelId: 32, communicationType: 64 },
+      allowed: ['customerMessage', 'scenarioId', 'channelId', 'communicationType', 'reviewText', 'reviewTone'],
+      required: ['channelId', 'communicationType'],
+      limits: { customerMessage: 2_000, scenarioId: 64, channelId: 32, communicationType: 64, reviewText: 1_200, reviewTone: 64 },
     },
     estimate_assistance: {
       allowed: [],
@@ -125,6 +126,15 @@ function normalizeInput(actionType, input = {}) {
   if (actionType === 'customer_response' && normalized.communicationType &&
       !CUSTOMER_COMMUNICATION_TYPES.has(normalized.communicationType)) {
     throw new GrowthAIGatewayError('Choose a supported customer communication type.', { code: 'invalid_request' });
+  }
+  if (actionType === 'customer_response') {
+    if (normalized.communicationType === 'review_response') {
+      if (!normalized.reviewText || !REVIEW_RESPONSE_TONES.has(normalized.reviewTone) || normalized.customerMessage || normalized.scenarioId) {
+        throw new GrowthAIGatewayError('A bounded review text and supported response tone are required.', { code: 'invalid_request' });
+      }
+    } else if (!normalized.customerMessage || !normalized.scenarioId || normalized.reviewText || normalized.reviewTone) {
+      throw new GrowthAIGatewayError('Customer communication requires the supported response inputs.', { code: 'invalid_request' });
+    }
   }
   return normalized;
 }
@@ -224,6 +234,9 @@ async function verifySourceContext({ db, request }) {
   }
   if (request.actionType === 'customer_response') {
     const communicationType = request.input.communicationType || 'legacy';
+    if (communicationType === 'review_response' && Object.keys(request.sourceRefs).length > 0) {
+      throw new GrowthAIGatewayError('Review-response assistance does not accept customer or booking references.', { code: 'invalid_source' });
+    }
     const requiresLead = ['estimate_followup', 'quote_question'].includes(communicationType);
     const requiresBooking = ['scheduling', 'service_question', 'problem_resolution', 'rebooking', 'review_request'].includes(communicationType);
     const requiresCompletedBooking = ['rebooking', 'review_request'].includes(communicationType);
@@ -401,6 +414,7 @@ function buildPrompt({ request, tenant, sourceContext }) {
     const communication = sourceContext.communication || { type: 'legacy' };
     const isProblemResolution = communication.type === 'problem_resolution';
     const isReviewRequest = communication.type === 'review_request';
+    const isReviewResponse = communication.type === 'review_response';
     const hasPrice = communication.pricing != null;
     return {
       systemInstruction: [
@@ -409,6 +423,7 @@ function buildPrompt({ request, tenant, sourceContext }) {
         'Do not invent customer identity, address, availability, arrival windows, employee details, discounts, guarantees, service exclusions, chemicals, products, or payment facts.',
         isProblemResolution ? 'Do not admit liability, promise a refund, credit, compensation, or make factual findings about an incident.' : '',
         isReviewRequest ? 'Do not claim the customer was satisfied, offer an incentive, or imply a positive review.' : '',
+        isReviewResponse ? 'Do not admit liability, promise a refund, credit, compensation, or make factual findings. Do not mention employees, internal processes, customer identity, addresses, booking details, or payments.' : '',
       ].filter(Boolean).join(' '),
       userPrompt: [
         `Draft a ${request.input.channelId} customer communication of type ${communication.type}.`,
@@ -418,11 +433,14 @@ function buildPrompt({ request, tenant, sourceContext }) {
         communication.bookingStatus ? `Verified booking status: ${communication.bookingStatus}.` : '',
         communication.scheduledDate ? `Verified scheduled date: ${communication.scheduledDate}.` : '',
         communication.scheduledTime ? `Verified scheduled time: ${communication.scheduledTime}.` : '',
-        `Owner-provided instruction: ${request.input.customerMessage}`,
+        isReviewResponse
+          ? `Owner-pasted review text: ${request.input.reviewText}`
+          : `Owner-provided instruction: ${request.input.customerMessage}`,
+        isReviewResponse ? `Selected response tone: ${request.input.reviewTone}.` : '',
         'Keep it concise, courteous, and ready for human review.',
       ].filter(Boolean).join('\n'),
       title: `[AI customer communication] ${communication.type.replaceAll('_', ' ')}`,
-      pillar: communication.type === 'rebooking' ? 'retain' : communication.type === 'review_request' ? 'reputation' : 'convert',
+      pillar: communication.type === 'rebooking' ? 'retain' : ['review_request', 'review_response'].includes(communication.type) ? 'reputation' : 'convert',
     };
   }
 
