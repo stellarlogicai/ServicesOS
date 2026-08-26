@@ -32,13 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `b1c6842ca6287180cf3189797b4c4da0cbcbb95f` — `Add GrowthAI business briefing`
+Latest validated product checkpoint: `3ab77f0af75b80a35edeb961315a75d51eab0c3d` — `Expand GrowthAI marketing content`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **Business Briefing / intelligent Home**
+Just completed: **Marketing V1 content types, platform variants, safe completed-job context, and human-reviewed draft generation**
 
-Next planned GrowthAI slice: **Marketing expansion**
+Next planned GrowthAI slice: **Customer communication expansion**
 
 ---
 
@@ -114,23 +114,29 @@ Security and production verification still continue under Release Hardening.
 - [x] Empty/loading behavior
 - [x] Tenant A → B → A stale-result protection
 
-## Marketing
+## Marketing — 🟡 MOSTLY COMPLETE
 
 - [x] Marketing workflow foundation
 - [x] Human-reviewed draft model
-- [ ] Completed-job content
-- [ ] Service spotlights
-- [ ] Promotional content
-- [ ] Seasonal content
-- [ ] Educational/tip content
-- [ ] Humor/engagement content
-- [ ] Availability content
-- [ ] Local/community content
-- [ ] Before/after content where authorized assets exist
-- [ ] Testimonial/review content
-- [ ] Platform variants
-- [ ] Brand-aware generation
+- [x] Completed-job content using verified minimal service context
+- [x] Service spotlights
+- [x] Promotional content
+- [x] Seasonal content
+- [x] Educational/tip content
+- [x] Humor/engagement content
+- [x] Availability content
+- [x] Local/community content
+- [x] Before/after copy-only draft path without invented visual facts
+- [ ] Authorized photo/asset integration where supported by the approved canonical architecture
+- [x] Testimonial/review content is structurally blocked unless an approved source exists; no fabricated testimonials or ratings
+- [ ] Approved testimonial/review source integration
+- [x] Platform variants: General, Facebook, Instagram, LinkedIn, Website
+- [ ] Full canonical brand-aware generation integration
 - [ ] Lightweight content planning already defined for V1
+- [x] Deterministic marketing setup costs zero credits
+- [x] Provider marketing generation preserves the existing one-credit contract
+- [x] Completed-job provider payload excludes customer, address, photo, payment, Stripe, employee, and internal data
+- [x] Marketing generation remains draft-only with no automatic publish/send behavior
 
 ## Customer communication
 
@@ -181,7 +187,7 @@ Security and production verification still continue under Release Hardening.
 - [x] Intent-routing foundation
 - [x] Estimate-assistance conversational trigger
 - [x] Business-briefing questions
-- [ ] Marketing routing polish
+- [x] Marketing routing polish for the implemented Marketing V1 content types
 - [ ] Retention/rebooking routing
 - [ ] Reputation routing
 - [ ] Customer-communication routing
