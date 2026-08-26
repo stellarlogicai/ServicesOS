@@ -32,13 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `ae3edcfdfeb055fb653c0f8ec26d08ac08bc600a` — `Harden GrowthAI retention cadence fallback`
+Latest validated product checkpoint: `70d75ec27d26272f3b64306f27fad503cc7f1379` — `Harden GrowthAI review-request lifecycle`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **Retention / Rebooking V1 deterministic opportunity detection, canonical cadence resolution, service-aware identity/suppression, and handoff into review-required Customer Communication**
+Just completed: **Reputation V1 deterministic review-request opportunities, customer-scoped lifecycle/deduplication, review-response assistance, positive/neutral/sensitive draft handling, and human-review guardrails**
 
-Next planned GrowthAI slice: **Reputation**
+Next planned GrowthAI slice: **Brand Intelligence**
 
 ---
 
@@ -129,7 +129,7 @@ Security and production verification still continue under Release Hardening.
 - [x] Before/after copy-only draft path without invented visual facts
 - [ ] Authorized photo/asset integration where supported by the approved canonical architecture
 - [x] Testimonial/review content is structurally blocked unless an approved source exists; no fabricated testimonials or ratings
-- [ ] Approved testimonial/review source integration
+- [ ] Approved testimonial/review source integration — Reputation V1 intentionally does not create a canonical testimonial source; owner-pasted review text is temporary response context only
 - [x] Platform variants: General, Facebook, Instagram, LinkedIn, Website
 - [ ] Full canonical brand-aware generation integration
 - [ ] Lightweight content planning already defined for V1
@@ -171,13 +171,22 @@ Security and production verification still continue under Release Hardening.
 - [x] Require owner approval before action through the existing review-required communication workflow
 - [x] Detection and opportunity display use zero provider calls and zero credits
 
-## Reputation
+## Reputation — ✅ COMPLETE
 
-- [ ] Identify appropriate review-request opportunities
+- [x] Identify tenant-scoped review-request opportunities from qualifying completed, non-problem bookings
+- [x] Review-request lifecycle is customer-scoped so recurring work cannot flood the owner with simultaneous prompts
+- [x] Most recent qualifying completed booking can refresh context while the customer-scoped opportunity identity remains stable
+- [x] Acted opportunities remain acted and disable the duplicate action as `Review Request Drafted`
+- [x] Dismissed/resolved opportunities preserve existing GrowthAI lifecycle behavior and are not reopened by refresh
+- [x] Issue-flagged, cancelled, unlinked, and wrong-tenant booking contexts remain excluded
 - [x] Draft explicit review-request messages through Customer Communication
-- [ ] Review-response assistance where supported
-- [ ] Positive / neutral / sensitive handling
-- [x] Human approval before sending/posting for review-request drafts
+- [x] Review-response assistance accepts bounded owner-pasted review text without creating a canonical review/testimonial record
+- [x] Positive / neutral / sensitive deterministic response handling
+- [x] Deterministic review-response drafts are free
+- [x] Optional AI review-response enhancement uses the existing one-credit gateway contract
+- [x] Human approval before sending/posting for review-request and review-response drafts
+- [x] No automatic send/post, external review integration, reputation scoring, or satisfaction prediction
+- [x] Owner-pasted review text is temporary response context and is not an approved Marketing testimonial source
 
 ## Brand intelligence
 
@@ -200,7 +209,7 @@ Security and production verification still continue under Release Hardening.
 - [x] Business-briefing questions
 - [x] Marketing routing polish for the implemented Marketing V1 content types
 - [x] Retention/rebooking detection routing
-- [ ] Reputation routing
+- [x] Reputation routing
 - [x] Customer-communication routing
 - [ ] Contextual follow-ups
 - [ ] Natural transitions between controlled workflows
