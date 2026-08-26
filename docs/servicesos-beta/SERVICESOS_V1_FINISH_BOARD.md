@@ -32,11 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product/security checkpoint before this board: `9531745c01916af0828f3952604eb3d1d5cee367` — `Retire legacy unauthenticated functions`
+Latest validated product checkpoint: `b1c6842ca6287180cf3189797b4c4da0cbcbb95f` — `Add GrowthAI business briefing`
 
 Current focus: **Finish GrowthAI V1**
 
-Next planned GrowthAI slice: **Business Briefing / intelligent Home**
+Just completed: **Business Briefing / intelligent Home**
+
+Next planned GrowthAI slice: **Marketing expansion**
 
 ---
 
@@ -95,18 +97,22 @@ Security and production verification still continue under Release Hardening.
 - [x] AI Estimate Assistance foundation
 - [x] ServicesOS deterministic estimate remains authoritative
 
-## Business Briefing / intelligent Home
+## Business Briefing / intelligent Home — ✅ COMPLETE
 
-- [ ] Today's business summary
-- [ ] Today's wins
-- [ ] Needs attention
-- [ ] GrowthAI noticed
-- [ ] Estimate follow-up signals
-- [ ] Payment/work signals where canonical data supports them
-- [ ] Marketing opportunities
-- [ ] Rebooking opportunities
-- [ ] Suggested next actions
-- [ ] Routine briefing remains primarily deterministic/free
+- [x] Today's business summary
+- [x] Today's wins from canonical completed-today booking data
+- [x] Needs attention
+- [x] GrowthAI noticed from existing deterministic opportunities
+- [x] Estimate follow-up signals
+- [x] Work signals where canonical data safely supports them; no payment metric invented without a safe canonical selector
+- [x] Existing observed opportunities can surface without new AI generation
+- [ ] Dedicated rebooking opportunities — completed under the Retention / rebooking V1 slice
+- [x] Suggested next actions are non-mutating and use controlled existing workflows
+- [x] Routine briefing is deterministic/free and does not call the AI provider
+- [x] Natural-language briefing intents
+- [x] Controlled-date behavior
+- [x] Empty/loading behavior
+- [x] Tenant A → B → A stale-result protection
 
 ## Marketing
 
@@ -174,7 +180,7 @@ Security and production verification still continue under Release Hardening.
 
 - [x] Intent-routing foundation
 - [x] Estimate-assistance conversational trigger
-- [ ] Business-briefing questions
+- [x] Business-briefing questions
 - [ ] Marketing routing polish
 - [ ] Retention/rebooking routing
 - [ ] Reputation routing
