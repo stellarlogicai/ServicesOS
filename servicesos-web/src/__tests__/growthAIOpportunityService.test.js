@@ -201,7 +201,7 @@ describe('GrowthAI deterministic opportunity detection', () => {
     const first = detectReviewRequestOpportunities({ bookings, tenantId: 'tenant-a' });
     const second = detectReviewRequestOpportunities({ bookings, tenantId: 'tenant-a' });
     expect(first).toEqual([expect.objectContaining({
-      id: 'review_request__booking-completed',
+      id: 'review_request__customer-a',
       type: 'review_request',
       pillar: 'reputation',
       sourceRefs: { bookingId: 'booking-completed', customerId: 'customer-a' },
@@ -210,6 +210,51 @@ describe('GrowthAI deterministic opportunity detection', () => {
     expect(first).toEqual(second);
     expect(first[0].detectionReason).toMatch(/consider asking for feedback or a review/i);
     expect(JSON.stringify(first[0])).not.toMatch(/happy|satisfied|star|credit|provider|payment|stripe/i);
+  });
+
+  it('uses one most-recent qualifying review request per customer without suppressing other customers', () => {
+    const opportunities = detectReviewRequestOpportunities({
+      tenantId: 'tenant-a',
+      bookings: [
+        { id: 'booking-old', tenantId: 'tenant-a', customerId: 'customer-a', status: 'completed', date: '2026-08-01' },
+        { id: 'booking-new', tenantId: 'tenant-a', customerId: 'customer-a', status: 'completed', date: '2026-08-15', recurringServiceId: 'weekly-plan' },
+        { id: 'booking-other-customer', tenantId: 'tenant-a', customerId: 'customer-b', status: 'completed', date: '2026-08-14' },
+        { id: 'booking-other-tenant', tenantId: 'tenant-b', customerId: 'customer-a', status: 'completed', date: '2026-08-20' },
+      ],
+    });
+
+    expect(opportunities).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'review_request__customer-a',
+        sourceRefs: { bookingId: 'booking-new', customerId: 'customer-a' },
+      }),
+      expect.objectContaining({
+        id: 'review_request__customer-b',
+        sourceRefs: { bookingId: 'booking-other-customer', customerId: 'customer-b' },
+      }),
+    ]));
+    expect(opportunities).toHaveLength(2);
+    expect(JSON.stringify(opportunities)).not.toMatch(/satisfied|credit|provider|payment|stripe/i);
+  });
+
+  it('reuses the customer-level lifecycle without reopening a dismissed review request', () => {
+    const [detection] = detectReviewRequestOpportunities({
+      tenantId: 'tenant-a',
+      bookings: [{ id: 'booking-new', tenantId: 'tenant-a', customerId: 'customer-a', status: 'completed', date: '2026-08-15' }],
+    });
+    const open = opportunity({
+      id: 'review_request__customer-a', type: 'review_request', pillar: 'reputation',
+      sourceRefs: { bookingId: 'booking-old', customerId: 'customer-a' },
+    });
+
+    expect(planGrowthAIOpportunityReconciliation([open], [detection])).toMatchObject({
+      create: [],
+      refresh: [{ current: open, detection }],
+      resolve: [],
+    });
+    expect(planGrowthAIOpportunityReconciliation([{ ...open, status: 'dismissed' }], [detection])).toEqual({
+      create: [], refresh: [], resolve: [],
+    });
   });
 
   it('suppresses review requests for incomplete, cancelled, unlinked, or issue-flagged bookings', () => {

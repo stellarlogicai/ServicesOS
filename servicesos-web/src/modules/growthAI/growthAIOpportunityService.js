@@ -267,18 +267,29 @@ function hasRecordedReviewRequestConcern(booking = {}) {
 }
 
 export function detectReviewRequestOpportunities({ bookings = [], tenantId } = {}) {
-  return bookings.flatMap(booking => {
+  const candidatesByCustomer = new Map();
+  bookings.forEach(booking => {
     const customerId = canonicalCustomerId(booking);
-    if ((tenantId && booking?.tenantId !== tenantId) || !isCompletedBooking(booking) || !customerId || hasRecordedReviewRequestConcern(booking)) return [];
-    return [{
-      id: opportunityId('review_request', booking.id),
+    if ((tenantId && booking?.tenantId !== tenantId) || !isCompletedBooking(booking) || !customerId || hasRecordedReviewRequestConcern(booking)) return;
+    const current = candidatesByCustomer.get(customerId);
+    const completedAtMillis = bookingDateMillis(booking);
+    const currentCompletedAtMillis = bookingDateMillis(current);
+    const completedAtRank = Number.isFinite(completedAtMillis) ? completedAtMillis : Number.NEGATIVE_INFINITY;
+    const currentCompletedAtRank = Number.isFinite(currentCompletedAtMillis) ? currentCompletedAtMillis : Number.NEGATIVE_INFINITY;
+    if (!current || completedAtRank > currentCompletedAtRank ||
+      (completedAtRank === currentCompletedAtRank && booking.id.localeCompare(current.id) > 0)) {
+      candidatesByCustomer.set(customerId, booking);
+    }
+  });
+
+  return [...candidatesByCustomer.entries()].map(([customerId, booking]) => ({
+      id: opportunityId('review_request', customerId),
       type: 'review_request',
       pillar: 'reputation',
       sourceRefs: { bookingId: booking.id, customerId },
       detectionReason: 'Job completed - consider asking for feedback or a review.',
       detectionVersion: REVIEW_REQUEST_DETECTION_VERSION,
-    }];
-  });
+    }));
 }
 
 function listDueRebookingCandidates({ bookings = [], recurringServices = [], tenantId, now = new Date() } = {}) {
@@ -451,6 +462,7 @@ export async function reconcileGrowthAIOpportunities(tenantId, detections) {
         if (detection && (current.status === 'open' || current.status === 'acted')) {
           transaction.update(reference, {
             detectionReason: detection.detectionReason,
+            ...(current.type === 'review_request' ? { sourceRefs: detection.sourceRefs } : {}),
             lastDetectedAt: serverTimestamp(),
             updatedByUid: actorUid,
             updatedAt: serverTimestamp(),

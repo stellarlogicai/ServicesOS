@@ -1817,12 +1817,27 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       pillar: 'retain',
       sourceRefs: { customerId: 'customer-a', serviceKey: '' },
     })));
-    await assertSucceeds(setDoc(doc(database, ...basePath, 'review_request__booking-a'), growthAIOpportunity({
-      opportunityId: 'review_request__booking-a',
+    const reviewRequest = doc(database, ...basePath, 'review_request__customer-a');
+    await assertSucceeds(setDoc(reviewRequest, growthAIOpportunity({
+      opportunityId: 'review_request__customer-a',
       type: 'review_request',
       pillar: 'reputation',
       sourceRefs: { bookingId: 'booking-a', customerId: 'customer-a' },
     })));
+    await assertSucceeds(updateDoc(reviewRequest, {
+      sourceRefs: { bookingId: 'booking-b', customerId: 'customer-a' },
+      detectionReason: 'A newer completed job is available for review-request context.',
+      lastDetectedAt: serverTimestamp(),
+      updatedByUid: 'admin-a',
+      updatedAt: serverTimestamp(),
+    }));
+    await assertFails(updateDoc(reviewRequest, {
+      sourceRefs: { bookingId: 'booking-b', customerId: 'customer-b' },
+      detectionReason: 'A cross-customer context must be denied.',
+      lastDetectedAt: serverTimestamp(),
+      updatedByUid: 'admin-a',
+      updatedAt: serverTimestamp(),
+    }));
     await assertFails(setDoc(doc(database, ...basePath, 'bad-review-request'), growthAIOpportunity({
       opportunityId: 'bad-review-request',
       type: 'review_request',

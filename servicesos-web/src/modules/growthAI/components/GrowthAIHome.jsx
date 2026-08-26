@@ -235,8 +235,8 @@ function OpportunityCard({
           </GrowthAIButton>
         ) : null}
         {opportunity.type === 'review_request' ? (
-          <GrowthAIButton disabled={saving} onClick={() => onStartReviewRequestFromOpportunity(opportunity)}>
-            Prepare Review Request
+          <GrowthAIButton disabled={saving || acted} onClick={() => onStartReviewRequestFromOpportunity(opportunity)}>
+            {acted ? 'Review Request Drafted' : 'Prepare Review Request'}
           </GrowthAIButton>
         ) : null}
         <GrowthAIButton tone="secondary" disabled={saving} onClick={() => onDismiss(opportunity)}>Dismiss</GrowthAIButton>

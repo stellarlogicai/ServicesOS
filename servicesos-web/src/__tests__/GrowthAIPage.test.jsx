@@ -393,7 +393,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
   it('hands a review-request opportunity into the existing completed-job communication draft without using AI', async () => {
     state.opportunityWorkspace = {
       opportunities: [{
-        id: 'review_request__booking-completed', type: 'review_request', pillar: 'reputation', status: 'open',
+        id: 'review_request__customer-a', type: 'review_request', pillar: 'reputation', status: 'open',
         sourceRefs: { bookingId: 'booking-completed', customerId: 'customer-a' },
         detectionReason: 'Job completed - consider asking for feedback or a review.',
       }],
@@ -416,8 +416,28 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     await waitFor(() => expect(service.createGrowthAIDraft).toHaveBeenCalledWith('tenant-a', expect.objectContaining({
       pillar: 'reputation', actionType: 'customer_response', sourceRefs: { bookingId: 'booking-completed' },
     })));
-    expect(opportunityService.markGrowthAIOpportunityActed).toHaveBeenCalledWith('tenant-a', 'review_request__booking-completed');
+    expect(opportunityService.markGrowthAIOpportunityActed).toHaveBeenCalledWith('tenant-a', 'review_request__customer-a');
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+  });
+
+  it('does not offer a duplicate review-request draft after the customer-level opportunity was acted on', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [{
+        id: 'review_request__customer-a', type: 'review_request', pillar: 'reputation', status: 'acted',
+        sourceRefs: { bookingId: 'booking-completed', customerId: 'customer-a' },
+        detectionReason: 'Job completed - consider asking for feedback or a review.',
+      }],
+      leads: [],
+      bookings: [{
+        id: 'booking-completed', tenantId: 'tenant-a', customerId: 'customer-a', status: 'completed',
+        serviceType: 'Deep clean', customerName: 'Review Customer',
+      }],
+      rebookingImplemented: true,
+    };
+
+    render(<GrowthAIPage />);
+    openHomeCapability('Review opportunities');
+    expect(await screen.findByRole('button', { name: 'Review Request Drafted' })).toBeDisabled();
   });
 
   it('creates a free owner-pasted review-response draft and sends only bounded review text for optional AI assistance', async () => {

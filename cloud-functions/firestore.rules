@@ -801,7 +801,9 @@ service cloud.firestore {
              request.resource.data.tenantId == resource.data.tenantId &&
              request.resource.data.type == resource.data.type &&
              request.resource.data.pillar == resource.data.pillar &&
-             request.resource.data.sourceRefs == resource.data.sourceRefs &&
+             (request.resource.data.type == 'review_request'
+               ? request.resource.data.sourceRefs.customerId == resource.data.sourceRefs.customerId
+               : request.resource.data.sourceRefs == resource.data.sourceRefs) &&
              request.resource.data.detectionVersion == resource.data.detectionVersion &&
              request.resource.data.firstDetectedAt == resource.data.firstDetectedAt &&
              request.resource.data.createdByUid == resource.data.createdByUid &&
@@ -815,9 +817,13 @@ service cloud.firestore {
              ((request.resource.data.status == resource.data.status &&
                 resource.data.status in ['open', 'acted'] &&
                 request.resource.data.lastDetectedAt == request.time &&
-                request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                  'detectionReason', 'lastDetectedAt', 'updatedByUid', 'updatedAt'
-                ])) ||
+                (resource.data.type == 'review_request'
+                  ? request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                    'detectionReason', 'sourceRefs', 'lastDetectedAt', 'updatedByUid', 'updatedAt'
+                  ])
+                  : request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                    'detectionReason', 'lastDetectedAt', 'updatedByUid', 'updatedAt'
+                  ]))) ||
               (resource.data.status == 'open' && request.resource.data.status == 'acted' &&
                 request.resource.data.actedByUid == request.auth.uid &&
                 request.resource.data.actedAt == request.time &&
