@@ -92,7 +92,7 @@ export const RESPONSE_SCENARIOS = {
       title: 'Aunt B response - review request',
       subjectLine: 'Thank you for choosing Aunt B\'s Cleaning Services',
       messageTemplate:
-        'Thank you for choosing Aunt B\'s Cleaning Services! If you were happy with your clean, a review would mean a lot to our family business.',
+        'Thank you for choosing Aunt B\'s Cleaning Services! If you have a moment, an honest review would mean a lot to our family business.',
       notes: 'Use after a completed job when the owner chooses to ask for a review.',
     },
     {

@@ -34,6 +34,10 @@ import {
   refreshGrowthAIOpportunityFeed,
 } from './growthAIOpportunityService';
 import { listEligibleEstimateAssistanceLeads } from './growthAIEstimateAssistance';
+import {
+  listCommunicationBookings,
+  listCommunicationLeads,
+} from './growthAICommunicationService';
 import { buildGrowthAIBusinessBriefing } from './growthAIBusinessBriefing';
 import './GrowthAIPage.css';
 
@@ -403,16 +407,16 @@ export default function GrowthAIPage({ onReviewJob }) {
   const saveResponseDraft = async responseTemplate => {
     const result = await runAction(
       () => createGrowthAIDraft(tenantId, {
-        pillar: 'convert',
+        pillar: responseTemplate.pillar || 'convert',
         actionType: 'customer_response',
-        title: `[Customer response] ${responseTemplate.title}`,
+        title: `[Deterministic customer communication] ${responseTemplate.title}`,
         content: {
           ...emptyContent,
           fullCaption: responseTemplate.messageTemplate,
           shortCaption: responseTemplate.subjectLine || responseTemplate.messageTemplate.slice(0, 140),
           callToAction: 'Review and send manually',
         },
-        sourceRefs: {},
+        sourceRefs: responseTemplate.sourceRefs || {},
       }),
       'Customer response draft saved for this tenant. Nothing was sent.',
     );
@@ -481,6 +485,8 @@ export default function GrowthAIPage({ onReviewJob }) {
   const leadsById = new Map(tenantOpportunityWorkspace.leads.map(item => [item.id, item]));
   const bookingsById = new Map(tenantOpportunityWorkspace.bookings.map(item => [item.id, item]));
   const eligibleEstimateLeads = listEligibleEstimateAssistanceLeads(tenantOpportunityWorkspace.leads, tenantId);
+  const communicationLeads = listCommunicationLeads(tenantOpportunityWorkspace.leads, tenantId);
+  const communicationBookings = listCommunicationBookings(tenantOpportunityWorkspace.bookings, tenantId);
   const marketingServices = deriveTenantMarketingServices(tenantOpportunityWorkspace.bookings);
 
   const opportunitySubject = opportunity => {
@@ -604,6 +610,8 @@ export default function GrowthAIPage({ onReviewJob }) {
           briefing={businessBriefing}
           briefingLoading={opportunitiesLoading}
           businessName={businessName}
+          communicationBookings={communicationBookings}
+          communicationLeads={communicationLeads}
           contentIdeas={CONTENT_IDEAS.auntbs}
           eligibleEstimateLeads={eligibleEstimateLeads}
           inputs={inputs}
@@ -618,7 +626,7 @@ export default function GrowthAIPage({ onReviewJob }) {
           onDraftEstimateFollowUp={draftEstimateFollowUp}
           onGenerateDeterministic={generate}
           onGenerateMarketingAI={generateMarketingWithAI}
-          onGenerateResponseAI={input => generateWithAI({ actionType: 'customer_response', input })}
+          onGenerateResponseAI={({ input, sourceRefs }) => generateWithAI({ actionType: 'customer_response', input, sourceRefs })}
           onInputChange={patch => setInputs(value => ({ ...value, ...patch }))}
           onOpportunityFilterChange={setOpportunityFilter}
           onPostTypeChange={setPostTypeId}

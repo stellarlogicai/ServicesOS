@@ -292,7 +292,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     openHomeCapability('Create marketing');
     expect(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' })).toBeDisabled();
     openHomeCapability('Follow up');
-    expect(screen.getByRole('button', { name: 'Generate response with AI · 1 credit' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Improve with GrowthAI · 1 credit' })).toBeDisabled();
     openHomeCapability('Create marketing');
     fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
     expect(screen.getByLabelText('Full caption')).not.toHaveValue('');
@@ -331,18 +331,63 @@ describe('GrowthAI V1 tenant draft foundation', () => {
   });
 
   it('keeps deterministic customer responses free and makes AI assistance explicit', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [],
+      leads: [{
+        id: 'lead-response-a', tenantId: 'tenant-a', status: 'quoted',
+        customerSnapshot: { fullName: 'Response Customer' },
+        requestSnapshot: { cleaningType: 'Deep clean' },
+        estimate: { priceLow: 180, priceHigh: 220, currency: 'USD' },
+      }],
+      bookings: [], rebookingImplemented: false,
+    };
     render(<GrowthAIPage />);
     await expectCreditBalance(5);
     openHomeCapability('Follow up');
-    expect(screen.getByRole('button', { name: 'Save response draft' })).toBeEnabled();
-    const responseAIButton = screen.getByRole('button', { name: 'Generate response with AI · 1 credit' });
+    const responseAIButton = screen.getByRole('button', { name: 'Improve with GrowthAI · 1 credit' });
     expect(responseAIButton).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Estimate to use'), { target: { value: 'lead-response-a' } });
+    expect(screen.getByRole('button', { name: 'Save response draft' })).toBeEnabled();
     fireEvent.change(screen.getByLabelText('Customer message for AI'), { target: { value: 'Can you clean next week?' } });
     fireEvent.click(responseAIButton);
     await waitFor(() => expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledWith(expect.objectContaining({
       actionType: 'customer_response',
-      input: expect.objectContaining({ customerMessage: 'Can you clean next week?', channelId: 'sms' }),
+      sourceRefs: { leadId: 'lead-response-a' },
+      input: expect.objectContaining({ customerMessage: 'Can you clean next week?', channelId: 'sms', communicationType: 'estimate_followup' }),
     })));
+  });
+
+  it('requires an explicit completed-job selection for a neutral deterministic review request', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [],
+      leads: [],
+      bookings: [{
+        id: 'booking-completed', tenantId: 'tenant-a', status: 'completed', serviceType: 'Deep clean',
+        customerName: 'Completed Customer',
+      }, {
+        id: 'booking-active', tenantId: 'tenant-a', status: 'scheduled', serviceType: 'Standard clean',
+        customerName: 'Active Customer',
+      }],
+      rebookingImplemented: false,
+    };
+    render(<GrowthAIPage />);
+    openHomeCapability('Follow up');
+    fireEvent.change(screen.getByLabelText('Communication type'), { target: { value: 'review_request' } });
+
+    expect(screen.getByRole('button', { name: 'Save response draft' })).toBeDisabled();
+    expect(await screen.findByRole('option', { name: /Completed Customer/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Active Customer/ })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Completed job to use'), { target: { value: 'booking-completed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save response draft' }));
+
+    await waitFor(() => expect(service.createGrowthAIDraft).toHaveBeenCalledWith('tenant-a', expect.objectContaining({
+      pillar: 'reputation',
+      actionType: 'customer_response',
+      title: expect.stringContaining('Deterministic customer communication'),
+      sourceRefs: { bookingId: 'booking-completed' },
+      content: expect.objectContaining({ fullCaption: expect.stringContaining('honest review') }),
+    })));
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
   });
 
   it('dismisses a stable opportunity and does not render it after refresh', async () => {
@@ -571,14 +616,14 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     fireEvent.change(screen.getByLabelText('Response channel'), { target: { value: 'email' } });
     expect(screen.getAllByText(/Thank you for choosing Tenant A Cleaning/)).toHaveLength(2);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Copy response' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy quick response' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Tenant A Cleaning')));
-    fireEvent.click(screen.getByRole('button', { name: 'Save response draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save quick response draft' }));
 
     await waitFor(() => expect(service.createGrowthAIDraft).toHaveBeenCalledWith('tenant-a', expect.objectContaining({
       pillar: 'convert',
       actionType: 'customer_response',
-      title: expect.stringContaining('[Customer response]'),
+      title: expect.stringContaining('[Deterministic customer communication]'),
       content: expect.objectContaining({
         fullCaption: expect.stringContaining('Tenant A Cleaning'),
         callToAction: 'Review and send manually',

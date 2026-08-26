@@ -20,6 +20,10 @@ const MARKETING_CONTENT_TYPES = new Set([
   'availability', 'local_community', 'completed_job', 'before_after', 'testimonial',
 ]);
 const MARKETING_PLATFORMS = new Set(['general', 'facebook', 'instagram', 'linkedin', 'website']);
+const CUSTOMER_COMMUNICATION_TYPES = new Set([
+  'legacy', 'estimate_followup', 'scheduling', 'quote_question', 'service_question',
+  'problem_resolution', 'rebooking', 'review_request',
+]);
 
 class GrowthAIGatewayError extends Error {
   constructor(message, { code = 'gateway_error', status = 400 } = {}) {
@@ -41,27 +45,31 @@ function exactKeys(value, allowed, required = []) {
 }
 
 function normalizeSourceRefs(actionType, sourceRefs = {}) {
-  if (!exactKeys(sourceRefs, ['opportunityId', 'leadId'])) {
+  if (!exactKeys(sourceRefs, ['opportunityId', 'leadId', 'bookingId'])) {
     throw new GrowthAIGatewayError('The GrowthAI source references are invalid.', { code: 'invalid_request' });
   }
-  if (!['estimate_assistance', 'estimate_followup', 'marketing_post'].includes(actionType) && Object.keys(sourceRefs).length > 0) {
+  if (!['estimate_assistance', 'estimate_followup', 'marketing_post', 'customer_response'].includes(actionType) && Object.keys(sourceRefs).length > 0) {
     throw new GrowthAIGatewayError('This GrowthAI action does not accept source references.', { code: 'invalid_request' });
   }
   const normalized = {};
-  for (const key of ['opportunityId', 'leadId']) {
+  for (const key of ['opportunityId', 'leadId', 'bookingId']) {
     const value = cleanString(sourceRefs[key], 128);
     if (value) normalized[key] = value;
   }
-  if (actionType === 'estimate_followup' && (!normalized.opportunityId || !normalized.leadId)) {
+  if (actionType === 'estimate_followup' && (!normalized.opportunityId || !normalized.leadId || normalized.bookingId || Object.keys(normalized).length !== 2)) {
     throw new GrowthAIGatewayError('Estimate follow-up requires a canonical opportunity and lead.', { code: 'invalid_request' });
   }
   if (actionType === 'estimate_assistance' &&
-      (!normalized.leadId || normalized.opportunityId || Object.keys(normalized).length !== 1)) {
+      (!normalized.leadId || normalized.opportunityId || normalized.bookingId || Object.keys(normalized).length !== 1)) {
     throw new GrowthAIGatewayError('Estimate assistance requires exactly one canonical lead.', { code: 'invalid_request' });
   }
-  if (actionType === 'marketing_post' && (normalized.leadId ||
+  if (actionType === 'marketing_post' && (normalized.leadId || normalized.bookingId ||
       (normalized.opportunityId && Object.keys(normalized).length !== 1))) {
     throw new GrowthAIGatewayError('Completed-job marketing requires exactly one canonical opportunity.', { code: 'invalid_request' });
+  }
+  if (actionType === 'customer_response' && (normalized.opportunityId ||
+      (normalized.leadId && normalized.bookingId))) {
+    throw new GrowthAIGatewayError('Customer communication accepts at most one canonical lead or booking.', { code: 'invalid_request' });
   }
   return normalized;
 }
@@ -69,9 +77,9 @@ function normalizeSourceRefs(actionType, sourceRefs = {}) {
 function normalizeInput(actionType, input = {}) {
   const shapes = {
     customer_response: {
-      allowed: ['customerMessage', 'scenarioId', 'channelId'],
+      allowed: ['customerMessage', 'scenarioId', 'channelId', 'communicationType'],
       required: ['customerMessage', 'scenarioId', 'channelId'],
-      limits: { customerMessage: 2_000, scenarioId: 64, channelId: 32 },
+      limits: { customerMessage: 2_000, scenarioId: 64, channelId: 32, communicationType: 64 },
     },
     estimate_assistance: {
       allowed: [],
@@ -113,6 +121,10 @@ function normalizeInput(actionType, input = {}) {
     if (normalized.platform && !MARKETING_PLATFORMS.has(normalized.platform)) {
       throw new GrowthAIGatewayError('Choose a supported marketing platform.', { code: 'invalid_request' });
     }
+  }
+  if (actionType === 'customer_response' && normalized.communicationType &&
+      !CUSTOMER_COMMUNICATION_TYPES.has(normalized.communicationType)) {
+    throw new GrowthAIGatewayError('Choose a supported customer communication type.', { code: 'invalid_request' });
   }
   return normalized;
 }
@@ -208,6 +220,63 @@ async function verifySourceContext({ db, request }) {
       opportunity,
       opportunityRef,
       marketingServiceType: cleanString(booking.serviceType, 160),
+    };
+  }
+  if (request.actionType === 'customer_response') {
+    const communicationType = request.input.communicationType || 'legacy';
+    const requiresLead = ['estimate_followup', 'quote_question'].includes(communicationType);
+    const requiresBooking = ['scheduling', 'service_question', 'problem_resolution', 'rebooking', 'review_request'].includes(communicationType);
+    const requiresCompletedBooking = ['rebooking', 'review_request'].includes(communicationType);
+    if ((requiresLead && !request.sourceRefs.leadId) ||
+        (requiresBooking && !request.sourceRefs.bookingId)) {
+      throw new GrowthAIGatewayError('Choose the required canonical communication source before requesting AI assistance.', { code: 'invalid_source' });
+    }
+    if (!request.sourceRefs.leadId && !request.sourceRefs.bookingId) {
+      return { communication: { type: communicationType } };
+    }
+    const collectionName = request.sourceRefs.leadId ? 'leads' : 'bookings';
+    const sourceId = request.sourceRefs.leadId || request.sourceRefs.bookingId;
+    const sourceSnapshot = await db.collection('tenants').doc(request.tenantId).collection(collectionName).doc(sourceId).get();
+    if (!sourceSnapshot.exists) {
+      throw new GrowthAIGatewayError('The selected communication source could not be verified.', { code: 'invalid_source', status: 404 });
+    }
+    const source = sourceSnapshot.data() || {};
+    const isLead = collectionName === 'leads';
+    const isCompleted = source.status === 'completed' || source.fieldStatus === 'completed';
+    const isInactiveBooking = !isLead && (source.isArchived === true || source.isDeleted === true || source.status === 'cancelled');
+    if (source.tenantId !== request.tenantId || isInactiveBooking ||
+        (requiresLead && !isLead) || (requiresBooking && isLead) ||
+        (requiresLead && (!['new', 'quoted'].includes(source.status) || source.booking != null || !source.estimate)) ||
+        (requiresCompletedBooking && !isCompleted)) {
+      throw new GrowthAIGatewayError('The selected communication source is no longer eligible for this tenant.', { code: 'invalid_source', status: 403 });
+    }
+    const formData = source.formData || {};
+    const requestSnapshot = source.requestSnapshot || {};
+    const serviceType = cleanString(
+      isLead
+        ? requestSnapshot.cleaningType || formData.cleaningType || formData.serviceType
+        : source.serviceType || requestSnapshot.cleaningType || formData.cleaningType || formData.serviceType,
+      160,
+    );
+    if (!serviceType) {
+      throw new GrowthAIGatewayError('The selected communication source does not contain a supported service context.', { code: 'invalid_source', status: 422 });
+    }
+    const pricing = isLead && source.estimate ? (() => {
+      try { return deterministicEstimateBaseline(source.estimate); } catch { return null; }
+    })() : null;
+    if (communicationType === 'quote_question' && !pricing) {
+      throw new GrowthAIGatewayError('The selected quote does not contain a valid saved estimate range.', { code: 'invalid_source', status: 422 });
+    }
+    return {
+      communication: {
+        type: communicationType,
+        serviceType,
+        estimateStatus: isLead ? cleanString(source.estimate?.status || source.status, 64) : '',
+        pricing,
+        bookingStatus: isLead ? '' : cleanString(source.status || source.fieldStatus, 64),
+        scheduledDate: !isLead && communicationType === 'scheduling' ? cleanString(source.date || source.scheduledDate, 32) : '',
+        scheduledTime: !isLead && communicationType === 'scheduling' ? cleanString(source.time || source.scheduledTime, 32) : '',
+      },
     };
   }
   if (request.actionType !== 'estimate_followup') return {};
@@ -329,15 +398,31 @@ function buildPrompt({ request, tenant, sourceContext }) {
   }
 
   if (request.actionType === 'customer_response') {
+    const communication = sourceContext.communication || { type: 'legacy' };
+    const isProblemResolution = communication.type === 'problem_resolution';
+    const isReviewRequest = communication.type === 'review_request';
+    const hasPrice = communication.pricing != null;
     return {
-      systemInstruction,
+      systemInstruction: [
+        systemInstruction,
+        'This is a draft only. A human must review and send it manually.',
+        'Do not invent customer identity, address, availability, arrival windows, employee details, discounts, guarantees, service exclusions, chemicals, products, or payment facts.',
+        isProblemResolution ? 'Do not admit liability, promise a refund, credit, compensation, or make factual findings about an incident.' : '',
+        isReviewRequest ? 'Do not claim the customer was satisfied, offer an incentive, or imply a positive review.' : '',
+      ].filter(Boolean).join(' '),
       userPrompt: [
-        `Draft a ${request.input.channelId} customer response for scenario ${request.input.scenarioId}.`,
-        `Customer message: ${request.input.customerMessage}`,
+        `Draft a ${request.input.channelId} customer communication of type ${communication.type}.`,
+        communication.serviceType ? `Verified service context: ${communication.serviceType}.` : '',
+        communication.estimateStatus ? `Verified estimate status: ${communication.estimateStatus}.` : '',
+        hasPrice ? `Verified saved estimate range: ${communication.pricing.currency} ${communication.pricing.low}-${communication.pricing.high}${communication.pricing.suggested == null ? '' : `; suggested ${communication.pricing.suggested}`}.` : '',
+        communication.bookingStatus ? `Verified booking status: ${communication.bookingStatus}.` : '',
+        communication.scheduledDate ? `Verified scheduled date: ${communication.scheduledDate}.` : '',
+        communication.scheduledTime ? `Verified scheduled time: ${communication.scheduledTime}.` : '',
+        `Owner-provided instruction: ${request.input.customerMessage}`,
         'Keep it concise, courteous, and ready for human review.',
-      ].join('\n'),
-      title: '[AI customer response] Review before sending',
-      pillar: 'convert',
+      ].filter(Boolean).join('\n'),
+      title: `[AI customer communication] ${communication.type.replaceAll('_', ' ')}`,
+      pillar: communication.type === 'rebooking' ? 'retain' : communication.type === 'review_request' ? 'reputation' : 'convert',
     };
   }
 

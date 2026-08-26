@@ -172,6 +172,21 @@ function estimateAssistanceRequest(overrides = {}) {
   });
 }
 
+function customerCommunicationRequest(overrides = {}) {
+  return request({
+    actionType: 'customer_response',
+    idempotencyKey: 'customer-communication-1',
+    sourceRefs: { bookingId: 'booking-a' },
+    input: {
+      channelId: 'sms',
+      scenarioId: 'legacy-compatible',
+      communicationType: 'review_request',
+      customerMessage: 'Please make this warm and concise.',
+    },
+    ...overrides,
+  });
+}
+
 function estimateAssistanceProvider(calls = [], overrides = {}) {
   return {
     async generateText(payload) {
@@ -259,6 +274,73 @@ describe('GrowthAI server gateway', () => {
     assert.doesNotMatch(prompt, /Must Not Reach Provider|Private Address|must-not-reach-provider|photo-before|photo-after|customer-a/);
     assert.deepEqual(draft.sourceRefs, { opportunityId: 'photo-opportunity-a' });
     assert.equal(db.documents.get('tenants/tenant-a/growthAIOpportunities/photo-opportunity-a').status, 'acted');
+  });
+
+  test('rebuilds customer communication context from a verified tenant booking without exposing identity or private records', async () => {
+    const documents = seed();
+    documents['tenants/tenant-a/bookings/booking-a'] = {
+      tenantId: 'tenant-a', status: 'completed', serviceType: 'deep clean', date: '2026-09-01', time: '10:00',
+      customerName: 'Must Not Reach Provider', customerEmail: 'private@example.test',
+      serviceAddress: 'Private Address', internalNotes: 'Private incident detail',
+      paymentStatus: 'must-not-reach-provider', stripePaymentIntentId: 'must-not-reach-provider',
+    };
+    const originalBooking = clone(documents['tenants/tenant-a/bookings/booking-a']);
+    const { admin, db } = fakeAdmin(documents);
+    const calls = [];
+    const result = await generateGrowthAIContent({
+      admin,
+      provider: successProvider(calls),
+      requestBody: customerCommunicationRequest(),
+      uid: 'admin-a',
+    });
+
+    const serialized = JSON.stringify(calls[0]);
+    const draft = db.documents.get(`tenants/tenant-a/growthAIDrafts/${result.draftId}`);
+    assert.match(serialized, /review_request/);
+    assert.match(serialized, /deep clean/);
+    assert.doesNotMatch(serialized, /Must Not Reach Provider|private@example|Private Address|Private incident|must-not-reach-provider/);
+    assert.match(calls[0].systemInstruction, /Do not claim the customer was satisfied/);
+    assert.equal(result.creditsCharged, 1);
+    assert.equal(draft.status, 'draft');
+    assert.equal(draft.pillar, 'reputation');
+    assert.deepEqual(draft.sourceRefs, { bookingId: 'booking-a' });
+    assert.deepEqual(db.documents.get('tenants/tenant-a/bookings/booking-a'), originalBooking);
+    assert.equal([...db.documents.keys()].some(path => path.includes('/payments/')), false);
+  });
+
+  test('requires matching canonical sources for customer communication before reserving a credit', async () => {
+    const documents = seed();
+    documents['tenants/tenant-a/bookings/booking-a'] = {
+      tenantId: 'tenant-a', status: 'completed', serviceType: 'deep clean',
+    };
+    const { admin, db } = fakeAdmin(documents);
+    const calls = [];
+    await assert.rejects(
+      generateGrowthAIContent({
+        admin,
+        provider: successProvider(calls),
+        requestBody: customerCommunicationRequest({
+          idempotencyKey: 'missing-completed-source',
+          sourceRefs: {},
+        }),
+        uid: 'admin-a',
+      }),
+      error => error.code === 'invalid_source',
+    );
+    await assert.rejects(
+      generateGrowthAIContent({
+        admin,
+        provider: successProvider(calls),
+        requestBody: customerCommunicationRequest({
+          idempotencyKey: 'cross-tenant-source',
+          sourceRefs: { bookingId: 'booking-a' },
+        }),
+        uid: 'admin-b',
+      }),
+      error => error.code === 'forbidden',
+    );
+    assert.equal(calls.length, 0);
+    assert.equal(ledgerEntries(db).length, 0);
   });
 
   test('requires an eligible completed-job opportunity for before-and-after marketing before reserving credit', async () => {

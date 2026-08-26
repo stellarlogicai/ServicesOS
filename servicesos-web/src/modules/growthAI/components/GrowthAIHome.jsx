@@ -10,6 +10,13 @@ import {
 } from '../growthAIOnboarding';
 import { RESPONSE_CHANNELS, RESPONSE_SCENARIOS, buildResponseTemplate } from '../responseTemplates';
 import { formatEstimateCurrency } from '../growthAIEstimateAssistance';
+import {
+  buildCommunicationSourceRefs,
+  buildDeterministicCommunicationDraft,
+  communicationTypeById,
+  CUSTOMER_COMMUNICATION_TYPES,
+  validateCommunicationSelection,
+} from '../growthAICommunicationService';
 import GrowthAIOnboardingGuide from './GrowthAIOnboardingGuide';
 import {
   GrowthAIButton,
@@ -309,11 +316,51 @@ function MarketingWorkflow({
   );
 }
 
-function CustomerResponseWorkflow({ aiCredits, aiGenerating, businessName, onGenerateAI, onSave, saving }) {
+function CustomerResponseWorkflow({
+  aiCredits,
+  aiGenerating,
+  bookings,
+  businessName,
+  leads,
+  onGenerateAI,
+  onSave,
+  saving,
+}) {
   const scenarios = RESPONSE_SCENARIOS.auntbs;
   const [scenarioId, setScenarioId] = useState(scenarios[0].id);
   const [channelId, setChannelId] = useState('sms');
   const [customerMessage, setCustomerMessage] = useState('');
+  const [communicationTypeId, setCommunicationTypeId] = useState('estimate_followup');
+  const [selectedLeadId, setSelectedLeadId] = useState('');
+  const [selectedBookingId, setSelectedBookingId] = useState('');
+  const communicationType = communicationTypeById(communicationTypeId);
+  const sourceOptions = communicationType.source === 'lead'
+    ? leads
+    : communicationType.source === 'completed_booking'
+      ? bookings.filter(booking => booking.completed)
+      : communicationType.source === 'booking'
+        ? bookings
+        : [];
+  const selectedSource = communicationType.source === 'lead'
+    ? leads.find(item => item.id === selectedLeadId)
+    : sourceOptions.find(item => item.id === selectedBookingId);
+  const selectedContext = selectedSource
+    ? {
+      ...selectedSource,
+      ...(communicationType.source === 'lead' ? { leadId: selectedSource.id } : { bookingId: selectedSource.id }),
+    }
+    : null;
+  const selectionError = validateCommunicationSelection({
+    typeId: communicationTypeId,
+    selectedLeadId,
+    selectedBookingId,
+  });
+  const deterministicDraft = buildDeterministicCommunicationDraft({
+    businessName,
+    channelId,
+    typeId: communicationTypeId,
+    source: selectedContext,
+  });
   const responseTemplate = useMemo(() => {
     const template = buildResponseTemplate({ brandKey: 'auntbs', scenarioId, channelId });
     const replaceBusinessName = value => value
@@ -327,20 +374,41 @@ function CustomerResponseWorkflow({ aiCredits, aiGenerating, businessName, onGen
     };
   }, [businessName, channelId, scenarioId]);
 
+  const generateAI = () => {
+    if (selectionError || !customerMessage.trim()) return;
+    onGenerateAI({
+      sourceRefs: buildCommunicationSourceRefs({
+        typeId: communicationTypeId,
+        selectedLeadId,
+        selectedBookingId,
+      }),
+      input: {
+        channelId,
+        communicationType: communicationTypeId,
+        customerMessage,
+        scenarioId: scenarioId,
+      },
+    });
+  };
+
   return (
     <section className="growth-ai-workflow" aria-labelledby="growth-ai-response-title">
       <div className="growth-ai-workflow-heading">
         <div>
           <h3 id="growth-ai-response-title">Customer response</h3>
-          <p>Prepare a private template. Nothing is sent automatically.</p>
+          <p>Prepare a customer communication draft. Nothing is sent automatically.</p>
         </div>
         <span className="growth-ai-free-label">Free template</span>
       </div>
       <div className="growth-ai-form-stack">
         <div className="growth-ai-form-grid">
-          <GrowthAIField label="Response scenario">
-            <select aria-label="Response scenario" value={scenarioId} onChange={event => setScenarioId(event.target.value)}>
-              {scenarios.map(item => <option key={item.id} value={item.id}>{item.scenario}</option>)}
+          <GrowthAIField label="Communication type">
+            <select aria-label="Communication type" value={communicationTypeId} onChange={event => {
+              setCommunicationTypeId(event.target.value);
+              setSelectedLeadId('');
+              setSelectedBookingId('');
+            }}>
+              {CUSTOMER_COMMUNICATION_TYPES.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
             </select>
           </GrowthAIField>
           <GrowthAIField label="Response channel">
@@ -349,26 +417,54 @@ function CustomerResponseWorkflow({ aiCredits, aiGenerating, businessName, onGen
             </select>
           </GrowthAIField>
         </div>
+        {
+          <GrowthAIField label={communicationType.source === 'lead' ? 'Estimate to use' : communicationType.source === 'completed_booking' ? 'Completed job to use' : 'Booking to use'}>
+            <select
+              aria-label={communicationType.source === 'lead' ? 'Estimate to use' : communicationType.source === 'completed_booking' ? 'Completed job to use' : 'Booking to use'}
+              value={communicationType.source === 'lead' ? selectedLeadId : selectedBookingId}
+              onChange={event => {
+                if (communicationType.source === 'lead') setSelectedLeadId(event.target.value);
+                else setSelectedBookingId(event.target.value);
+              }}
+            >
+              <option value="">Choose a canonical record</option>
+              {sourceOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </GrowthAIField>
+        }
         <GrowthAIField label="Customer message for optional AI assistance">
           <textarea aria-label="Customer message for AI" rows="3" value={customerMessage} onChange={event => setCustomerMessage(event.target.value)} />
         </GrowthAIField>
         <div className="growth-ai-preview">
-          <strong>{responseTemplate.title}</strong>
-          {responseTemplate.subjectLine ? <p><strong>Subject:</strong> {responseTemplate.subjectLine}</p> : null}
-          <p>{responseTemplate.messageTemplate}</p>
+          <strong>{deterministicDraft.title}</strong>
+          {deterministicDraft.subjectLine ? <p><strong>Subject:</strong> {deterministicDraft.subjectLine}</p> : null}
+          <p>{deterministicDraft.messageTemplate}</p>
         </div>
-        <p className="growth-ai-supporting-copy">{responseTemplate.notes}</p>
+        <p className="growth-ai-supporting-copy">{deterministicDraft.notes}</p>
+        {selectionError ? <p className="growth-ai-credit-warning">{selectionError}</p> : null}
         <div className="growth-ai-actions">
-          <GrowthAICopyButton label="Copy response" text={responseTemplate.messageTemplate} />
-          <GrowthAIButton tone="secondary" disabled={saving} onClick={() => onSave(responseTemplate)}>Save response draft</GrowthAIButton>
-          <GrowthAIButton disabled={saving || aiGenerating || aiCredits < 1 || !customerMessage.trim()} onClick={() => onGenerateAI({
-            customerMessage,
-            scenarioId,
-            channelId,
-          })}>Generate response with AI · 1 credit</GrowthAIButton>
+          <GrowthAICopyButton label="Copy response" text={deterministicDraft.messageTemplate} />
+          <GrowthAIButton tone="secondary" disabled={saving || Boolean(selectionError)} onClick={() => onSave(deterministicDraft)}>Save response draft</GrowthAIButton>
+          <GrowthAIButton disabled={saving || aiGenerating || aiCredits < 1 || !customerMessage.trim() || Boolean(selectionError)} onClick={generateAI}>Improve with GrowthAI · 1 credit</GrowthAIButton>
         </div>
         <p className="growth-ai-cost-note">AI generation uses 1 AI credit. Templates, editing, and copying are free.</p>
         {aiCredits < 1 ? <p className="growth-ai-credit-warning">Not enough AI credits. Deterministic response templates remain available.</p> : null}
+        <details className="growth-ai-preview">
+          <summary>Existing quick response templates</summary>
+          <div className="growth-ai-form-grid">
+            <GrowthAIField label="Response scenario">
+              <select aria-label="Response scenario" value={scenarioId} onChange={event => setScenarioId(event.target.value)}>
+                {scenarios.map(item => <option key={item.id} value={item.id}>{item.scenario}</option>)}
+              </select>
+            </GrowthAIField>
+          </div>
+          {responseTemplate.subjectLine ? <p><strong>Subject:</strong> {responseTemplate.subjectLine}</p> : null}
+          <p>{responseTemplate.messageTemplate}</p>
+          <div className="growth-ai-actions">
+            <GrowthAICopyButton label="Copy quick response" text={responseTemplate.messageTemplate} />
+            <GrowthAIButton tone="secondary" disabled={saving} onClick={() => onSave({ ...responseTemplate, pillar: 'convert', sourceRefs: {} })}>Save quick response draft</GrowthAIButton>
+          </div>
+        </details>
       </div>
     </section>
   );
@@ -518,6 +614,8 @@ export default function GrowthAIHome({
   businessName,
   contentIdeas,
   eligibleEstimateLeads,
+  communicationBookings,
+  communicationLeads,
   onAIEstimateAssistance,
   inputs,
   onAIEstimateFollowUp,
@@ -677,7 +775,7 @@ export default function GrowthAIHome({
       }} />;
     }
     if (capabilityType === 'customer_response') {
-      return <CustomerResponseWorkflow aiCredits={aiCredits} aiGenerating={aiGenerating} businessName={businessName} onGenerateAI={onGenerateResponseAI} onSave={onSaveResponseDraft} saving={saving} />;
+      return <CustomerResponseWorkflow aiCredits={aiCredits} aiGenerating={aiGenerating} bookings={communicationBookings} businessName={businessName} leads={communicationLeads} onGenerateAI={onGenerateResponseAI} onSave={onSaveResponseDraft} saving={saving} />;
     }
     if (capabilityType === 'opportunities') {
       return <OpportunitiesWorkflow {...{
