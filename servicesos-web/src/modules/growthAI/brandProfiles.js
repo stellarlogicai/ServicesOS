@@ -20,12 +20,16 @@ export const BRANDS = {
     imageStyle: 'friendly local cleaning brand — bright, welcoming, real home',
     audience: 'local homeowners and renters in the service area',
     postTypes: [
-      { id: 'availability',  label: 'Availability Post',         emoji: '📅' },
-      { id: 'promo',         label: 'Promo / Discount Post',     emoji: '🎉' },
-      { id: 'cleaning-tip',  label: 'Cleaning Tip Post',         emoji: '💡' },
-      { id: 'seasonal',      label: 'Seasonal Post',             emoji: '🍂' },
-      { id: 'review-trust',  label: 'Review / Trust Post',       emoji: '⭐' },
-      { id: 'before-after',  label: 'Before / After Style Post', emoji: '✨' },
+      { id: 'service_spotlight', label: 'Service spotlight', emoji: '🧽' },
+      { id: 'promotional', label: 'Promotional content', emoji: '📣' },
+      { id: 'seasonal', label: 'Seasonal content', emoji: '🍂' },
+      { id: 'educational_tip', label: 'Educational / tip content', emoji: '💡' },
+      { id: 'humor_engagement', label: 'Humor / engagement', emoji: '💬' },
+      { id: 'availability', label: 'Availability content', emoji: '📅' },
+      { id: 'local_community', label: 'Local / community content', emoji: '🏘️' },
+      { id: 'completed_job', label: 'Completed-job content', emoji: '✓' },
+      { id: 'before_after', label: 'Before / after content', emoji: '✨' },
+      { id: 'testimonial', label: 'Testimonial / review content', emoji: '⭐' },
     ],
   },
 
@@ -50,6 +54,7 @@ export const BRANDS = {
 };
 
 export const PLATFORMS = [
+  { id: 'general',    label: 'General',    maxChars: 600  },
   { id: 'facebook',   label: 'Facebook',   maxChars: 500  },
   { id: 'instagram',  label: 'Instagram',  maxChars: 300  },
   { id: 'linkedin',   label: 'LinkedIn',   maxChars: 700  },
@@ -88,11 +93,11 @@ export const DRAFT_STATUS = {
 export const CONTENT_IDEAS = {
   auntbs: [
     {
-      label: 'Now booking this week',
+      label: 'Share availability',
       emoji: '📅',
       prefill: {
         postTypeId: 'availability',
-        inputs: { serviceType: 'standard clean', dateRange: 'this week', offer: 'limited slots available' },
+        inputs: { serviceType: '', dateRange: '', offer: '' },
       },
     },
     {
@@ -100,38 +105,38 @@ export const CONTENT_IDEAS = {
       emoji: '🌸',
       prefill: {
         postTypeId: 'seasonal',
-        inputs: { dateRange: 'spring', cleaningTopic: 'fresh start, declutter, deep reset', serviceType: 'deep clean' },
+        inputs: { dateRange: 'Spring', cleaningTopic: 'fresh start, declutter, deep reset', serviceType: '' },
       },
     },
     {
-      label: 'Move-out cleaning availability',
+      label: 'Availability message',
       emoji: '🏠',
       prefill: {
         postTypeId: 'availability',
-        inputs: { serviceType: 'move-out clean', offer: 'last-minute slots available', cleaningTopic: 'spotless for landlord inspection' },
+        inputs: { serviceType: '', offer: '', cleaningTopic: '' },
       },
     },
     {
-      label: 'Deep clean promo',
+      label: 'Owner-supplied promotion',
       emoji: '🎉',
       prefill: {
-        postTypeId: 'promo',
-        inputs: { serviceType: 'deep clean', offer: '10% off your first deep clean this month' },
+        postTypeId: 'promotional',
+        inputs: { serviceType: '', offer: '' },
       },
     },
     {
       label: 'Review / trust builder',
       emoji: '⭐',
       prefill: {
-        postTypeId: 'review-trust',
-        inputs: { cleaningTopic: 'reliable, friendly, thorough', serviceType: 'recurring clean' },
+        postTypeId: 'educational_tip',
+        inputs: { cleaningTopic: 'reliable routines that help keep a home fresh' },
       },
     },
     {
       label: 'Cleaning tip of the week',
       emoji: '💡',
       prefill: {
-        postTypeId: 'cleaning-tip',
+        postTypeId: 'educational_tip',
         inputs: { cleaningTopic: 'quick tip that saves time or keeps the home fresh longer' },
       },
     },

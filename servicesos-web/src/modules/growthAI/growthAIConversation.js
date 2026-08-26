@@ -1,6 +1,6 @@
 const INTENT_PATTERNS = Object.freeze({
   estimate_assistance: /\b(help me with (?:an |this )?estimate|review (?:an |this )?estimate|analy[sz]e (?:an |this )?estimate|estimate assistance|help price (?:this |a )?job)\b/i,
-  marketing: /\b(marketing|make (?:me )?(?:a )?post|create (?:me )?(?:a )?post|facebook post|instagram post|social post)\b/i,
+  marketing: /\b(marketing|make (?:me )?(?:a )?post|create (?:me )?(?:a )?post|facebook post|instagram post|social post|promote|promotion|availability|spring cleaning|cleaning tip|funny(?: (?:cleaning|to))? post|completed job|before(?:\s|\/)after|move[ -]?out cleaning)\b/i,
   customer_response: /\b(follow[ -]?up|respond to (?:a |the )?customer|customer response|help me (?:respond|reply)|reply to (?:a |the )?customer)\b/i,
   business_briefing: /\b(what should i work on(?: today)?|how is (?:the )?business looking today|what needs (?:my )?attention|give me (?:my |the )?business briefing|anything i should know about today)\b/i,
   opportunities: /\b(show (?:me )?(?:the )?opportunities|growth opportunities|anything i should review|review opportunities)\b/i,

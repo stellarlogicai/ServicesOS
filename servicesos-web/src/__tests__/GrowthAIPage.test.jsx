@@ -389,6 +389,58 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(opportunityService.markGrowthAIOpportunityActed).toHaveBeenCalledWith('tenant-a', 'marketing_photo_review__booking-a');
   });
 
+  it('hands an eligible completed-job opportunity to marketing without passing booking, customer, or photo references to the client gateway', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [{
+        id: 'marketing_photo_review__booking-a', type: 'marketing_photo_review', pillar: 'attract', status: 'open',
+        sourceRefs: { bookingId: 'booking-a', photoIds: ['before-a', 'after-a'], customerId: 'customer-a' },
+        detectionReason: 'Completed job has labeled Before and After field photos.',
+      }],
+      leads: [],
+      bookings: [{ id: 'booking-a', serviceType: 'deep', customerName: 'Private customer' }],
+      rebookingImplemented: false,
+    };
+
+    render(<GrowthAIPage />);
+    openHomeCapability('Review opportunities');
+    fireEvent.click(await screen.findByRole('button', { name: 'Create marketing draft' }));
+    expect(await screen.findByRole('heading', { name: 'Marketing draft' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Content type')).toHaveValue('before_after');
+    expect(screen.getByText(/No image analysis or customer details are included/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' }));
+
+    await waitFor(() => expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: 'marketing_post',
+      sourceRefs: { opportunityId: 'marketing_photo_review__booking-a' },
+      input: expect.objectContaining({ postTypeId: 'before_after' }),
+    })));
+  });
+
+  it('uses a tenant booking service for a service spotlight and blocks testimonial generation', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [],
+      leads: [],
+      bookings: [{ id: 'booking-a', serviceType: 'deep' }],
+      rebookingImplemented: false,
+    };
+
+    render(<GrowthAIPage />);
+    openHomeCapability('Create marketing');
+    await screen.findByRole('option', { name: 'Deep Cleaning' });
+    fireEvent.change(screen.getByLabelText('Content type'), { target: { value: 'service_spotlight' } });
+    fireEvent.change(screen.getByLabelText('Tenant service'), { target: { value: 'deep' } });
+    const createDraft = screen.getByRole('button', { name: 'Create deterministic draft' });
+    await waitFor(() => expect(createDraft).toBeEnabled());
+    fireEvent.click(createDraft);
+    expect((await screen.findByLabelText('Full caption')).value).toContain('deep');
+
+    openWorkspaceView('Home');
+    openHomeCapability('Create marketing');
+    fireEvent.change(screen.getByLabelText('Content type'), { target: { value: 'testimonial' } });
+    expect(screen.getByRole('button', { name: 'Create deterministic draft' })).toBeDisabled();
+    expect(screen.getByText(/safe approved testimonial source/)).toBeInTheDocument();
+  });
+
   it('uses canonical tenant identity and stores only GrowthAI brand preferences', async () => {
     render(<GrowthAIPage />);
     fireEvent.click(screen.getByRole('button', { name: /Using Tenant A Cleaning brand profile/ }));
@@ -414,7 +466,6 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     await screen.findByText('No tenant drafts saved yet.');
     openWorkspaceView('Home');
     openHomeCapability('Create marketing');
-    fireEvent.change(screen.getByLabelText('Service area'), { target: { value: 'Test City' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save as new draft' }));
     await waitFor(() => expect(service.createGrowthAIDraft).toHaveBeenCalledWith('tenant-a', expect.objectContaining({
@@ -427,7 +478,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     first.unmount();
     render(<GrowthAIPage />);
     openWorkspaceView('Drafts');
-    expect(await screen.findByRole('button', { name: /Availability Post.*Test City/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Availability content.*cleaning service/ })).toBeInTheDocument();
     expect(service.listGrowthAIDrafts).toHaveBeenCalledWith('tenant-a');
   });
 
@@ -495,7 +546,6 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     openWorkspaceView('Home');
     openHomeCapability('Create marketing');
 
-    fireEvent.change(screen.getByLabelText('Service area'), { target: { value: 'Test City' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
 
     const fullCaption = screen.getByLabelText('Full caption').value;
@@ -586,7 +636,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
   it('keeps workflows hidden until deterministic conversation routing invokes one', async () => {
     render(<GrowthAIPage />);
 
-    expect(screen.queryByLabelText('Service area')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Tenant service')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Customer message for AI')).not.toBeInTheDocument();
 
     submitComposer('Please make me a Facebook post');

@@ -15,6 +15,11 @@ const ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
 ]);
 const MAX_IDEMPOTENCY_LENGTH = 128;
+const MARKETING_CONTENT_TYPES = new Set([
+  'service_spotlight', 'promotional', 'seasonal', 'educational_tip', 'humor_engagement',
+  'availability', 'local_community', 'completed_job', 'before_after', 'testimonial',
+]);
+const MARKETING_PLATFORMS = new Set(['general', 'facebook', 'instagram', 'linkedin', 'website']);
 
 class GrowthAIGatewayError extends Error {
   constructor(message, { code = 'gateway_error', status = 400 } = {}) {
@@ -39,7 +44,7 @@ function normalizeSourceRefs(actionType, sourceRefs = {}) {
   if (!exactKeys(sourceRefs, ['opportunityId', 'leadId'])) {
     throw new GrowthAIGatewayError('The GrowthAI source references are invalid.', { code: 'invalid_request' });
   }
-  if (!['estimate_assistance', 'estimate_followup'].includes(actionType) && Object.keys(sourceRefs).length > 0) {
+  if (!['estimate_assistance', 'estimate_followup', 'marketing_post'].includes(actionType) && Object.keys(sourceRefs).length > 0) {
     throw new GrowthAIGatewayError('This GrowthAI action does not accept source references.', { code: 'invalid_request' });
   }
   const normalized = {};
@@ -53,6 +58,10 @@ function normalizeSourceRefs(actionType, sourceRefs = {}) {
   if (actionType === 'estimate_assistance' &&
       (!normalized.leadId || normalized.opportunityId || Object.keys(normalized).length !== 1)) {
     throw new GrowthAIGatewayError('Estimate assistance requires exactly one canonical lead.', { code: 'invalid_request' });
+  }
+  if (actionType === 'marketing_post' && (normalized.leadId ||
+      (normalized.opportunityId && Object.keys(normalized).length !== 1))) {
+    throw new GrowthAIGatewayError('Completed-job marketing requires exactly one canonical opportunity.', { code: 'invalid_request' });
   }
   return normalized;
 }
@@ -75,11 +84,11 @@ function normalizeInput(actionType, input = {}) {
       limits: { channelId: 32 },
     },
     marketing_post: {
-      allowed: ['postTypeId', 'platform', 'serviceType', 'serviceArea', 'offer', 'cleaningTopic', 'extraNotes'],
+      allowed: ['postTypeId', 'platform', 'serviceType', 'serviceArea', 'offer', 'dateRange', 'cleaningTopic', 'extraNotes'],
       required: ['postTypeId'],
       limits: {
         postTypeId: 64, platform: 32, serviceType: 160, serviceArea: 160,
-        offer: 300, cleaningTopic: 300, extraNotes: 1_000,
+        offer: 300, dateRange: 80, cleaningTopic: 300, extraNotes: 1_000,
       },
     },
   };
@@ -95,6 +104,14 @@ function normalizeInput(actionType, input = {}) {
   for (const key of shape.required) {
     if (!normalized[key]) {
       throw new GrowthAIGatewayError('Required GrowthAI input is missing.', { code: 'invalid_request' });
+    }
+  }
+  if (actionType === 'marketing_post') {
+    if (!MARKETING_CONTENT_TYPES.has(normalized.postTypeId) || normalized.postTypeId === 'testimonial') {
+      throw new GrowthAIGatewayError('This marketing content type is not available for AI generation.', { code: 'invalid_request' });
+    }
+    if (normalized.platform && !MARKETING_PLATFORMS.has(normalized.platform)) {
+      throw new GrowthAIGatewayError('Choose a supported marketing platform.', { code: 'invalid_request' });
     }
   }
   return normalized;
@@ -158,6 +175,41 @@ async function verifySourceContext({ db, request }) {
     }
     return { lead, baselinePrice: deterministicEstimateBaseline(lead.estimate) };
   }
+  if (request.actionType === 'marketing_post') {
+    const brandProfileRef = db.collection('tenants').doc(request.tenantId).collection('growthAI').doc('config');
+    const brandProfileSnapshot = await brandProfileRef.get();
+    const brandProfile = brandProfileSnapshot.exists ? brandProfileSnapshot.data() || {} : {};
+    const requiresOpportunity = ['completed_job', 'before_after'].includes(request.input.postTypeId);
+    if (!request.sourceRefs.opportunityId) {
+      if (requiresOpportunity) {
+        throw new GrowthAIGatewayError('Choose an eligible completed-job opportunity before generating this marketing content.', { code: 'invalid_source' });
+      }
+      return { brandProfile };
+    }
+    const opportunityRef = db.collection('tenants').doc(request.tenantId)
+      .collection('growthAIOpportunities').doc(request.sourceRefs.opportunityId);
+    const opportunitySnapshot = await opportunityRef.get();
+    if (!opportunitySnapshot.exists) {
+      throw new GrowthAIGatewayError('The completed-job marketing opportunity could not be verified.', { code: 'invalid_source', status: 404 });
+    }
+    const opportunity = opportunitySnapshot.data() || {};
+    const bookingId = cleanString(opportunity.sourceRefs?.bookingId, 128);
+    const bookingRef = bookingId ? db.collection('tenants').doc(request.tenantId).collection('bookings').doc(bookingId) : null;
+    const bookingSnapshot = bookingRef ? await bookingRef.get() : null;
+    const booking = bookingSnapshot?.exists ? bookingSnapshot.data() || {} : {};
+    const completed = booking.status === 'completed' || booking.fieldStatus === 'completed';
+    if (opportunity.tenantId !== request.tenantId || opportunity.type !== 'marketing_photo_review' ||
+        !['open', 'acted'].includes(opportunity.status) || !bookingId || !bookingSnapshot?.exists ||
+        booking.tenantId !== request.tenantId || !completed || booking.isArchived === true || booking.isDeleted === true || booking.status === 'cancelled') {
+      throw new GrowthAIGatewayError('The completed-job marketing opportunity is no longer eligible.', { code: 'invalid_source', status: 403 });
+    }
+    return {
+      brandProfile,
+      opportunity,
+      opportunityRef,
+      marketingServiceType: cleanString(booking.serviceType, 160),
+    };
+  }
   if (request.actionType !== 'estimate_followup') return {};
   const opportunityRef = db.collection('tenants').doc(request.tenantId)
     .collection('growthAIOpportunities').doc(request.sourceRefs.opportunityId);
@@ -197,23 +249,25 @@ function deterministicEstimateBaseline(estimate = {}) {
   };
 }
 
-function businessContext(tenant = {}) {
+function businessContext(tenant = {}, brandProfile = {}) {
   const settings = tenant.businessSettings || {};
   return {
     businessName: cleanString(settings.businessName || tenant.businessName, 180) || 'the cleaning business',
     serviceArea: cleanString(settings.serviceArea, 180),
-    brandVoice: cleanString(tenant.growthAIBrandVoice, 300),
+    brandVoice: cleanString(brandProfile.contentTone || brandProfile.brandVoice || tenant.growthAIBrandVoice, 300),
+    defaultCTA: cleanString(brandProfile.defaultCTA, 500),
   };
 }
 
 function buildPrompt({ request, tenant, sourceContext }) {
-  const business = businessContext(tenant);
+  const business = businessContext(tenant, sourceContext.brandProfile);
   const systemInstruction = [
     'You draft private business content for ServicesOS.',
     'Return only the requested draft text, with no analysis or metadata.',
     'Do not claim that anything was sent, booked, paid, approved, or published.',
     'Do not include payment details, Stripe data, hidden notes, or unrelated customer information.',
     `Write for ${business.businessName}${business.serviceArea ? ` serving ${business.serviceArea}` : ''}.`,
+    business.brandVoice ? `Use this approved brand preference: ${business.brandVoice}.` : 'Use a neutral, professional service-business style.',
   ].join(' ');
 
   if (request.actionType === 'estimate_assistance') {
@@ -310,13 +364,18 @@ function buildPrompt({ request, tenant, sourceContext }) {
   return {
     systemInstruction,
     userPrompt: [
-      `Draft a ${request.input.platform || 'social'} marketing post of type ${request.input.postTypeId}.`,
-      request.input.serviceType ? `Service: ${request.input.serviceType}.` : '',
+      `Draft a ${request.input.platform || 'general'} marketing post of type ${request.input.postTypeId}.`,
+      sourceContext.marketingServiceType ? `Verified completed-job service context: ${sourceContext.marketingServiceType}.` : '',
+      request.input.serviceType ? `Owner-selected tenant service: ${request.input.serviceType}.` : '',
       request.input.serviceArea ? `Area: ${request.input.serviceArea}.` : '',
       request.input.offer ? `Offer: ${request.input.offer}.` : '',
+      request.input.dateRange ? `Seasonal context: ${request.input.dateRange}.` : '',
       request.input.cleaningTopic ? `Cleaning topic: ${request.input.cleaningTopic}.` : '',
       request.input.extraNotes ? `Owner notes: ${request.input.extraNotes}.` : '',
-      'Do not mention customer identities, job photos, photo permissions, medical details, or unsupported claims.',
+      business.defaultCTA ? `Use this approved default CTA when appropriate: ${business.defaultCTA}.` : '',
+      request.input.postTypeId === 'before_after' ? 'Do not infer, describe, or claim visual details from photos.' : '',
+      'Do not invent discounts, prices, coupons, guarantees, deadlines, customer quotes, ratings, sponsorships, events, awards, local facts, or availability times.',
+      'Do not mention customer identities, addresses, job photos, photo permissions, medical details, internal notes, payment data, or Stripe data.',
     ].filter(Boolean).join('\n'),
     title: `[AI marketing post] ${request.input.serviceType || request.input.postTypeId}`,
     pillar: 'attract',

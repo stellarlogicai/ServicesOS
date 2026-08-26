@@ -48,6 +48,55 @@ function areaTag(area) {
   return area.replace(/[^a-zA-Z0-9]/g, '');
 }
 
+function marketingHashtags(platform, area, brandName) {
+  const areaTagValue = areaTag(area) || 'LocalCleaning';
+  const brandTag = areaTag(brandName) || 'CleaningBusiness';
+  const compact = `#CleanHome #${areaTagValue}`;
+  return platform === 'instagram'
+    ? `${compact} #${brandTag} #ProfessionalCleaning #LocalBusiness`
+    : `${compact} #${brandTag}`;
+}
+
+function formatMarketingForPlatform({ platform, label, bodyLines, cta, hashtags, preserveAllLines = false }) {
+  const summary = bodyLines[0] || label;
+  if (platform === 'instagram') {
+    return {
+      fullCaption: [preserveAllLines ? bodyLines.join('\n') : summary, '', cta, '', hashtags].join('\n'),
+      shortCaption: summary,
+      callToAction: cta,
+    };
+  }
+  if (platform === 'facebook') {
+    const callToAction = `Questions? ${cta}`;
+    return {
+      fullCaption: [label, '', ...bodyLines, '', callToAction, '', hashtags].join('\n'),
+      shortCaption: `${summary} ${callToAction}`,
+      callToAction,
+    };
+  }
+  if (platform === 'linkedin') {
+    const callToAction = `Connect with us: ${cta}`;
+    return {
+      fullCaption: [label, '', ...bodyLines, '', callToAction, '', hashtags].join('\n'),
+      shortCaption: `${label}: ${summary} ${callToAction}`,
+      callToAction,
+    };
+  }
+  if (platform === 'website') {
+    const callToAction = `Learn more: ${cta}`;
+    return {
+      fullCaption: [label, '', ...bodyLines, '', callToAction].join('\n'),
+      shortCaption: `${label}: ${summary}`,
+      callToAction,
+    };
+  }
+  return {
+    fullCaption: [label, '', ...bodyLines, '', cta, '', hashtags].join('\n'),
+    shortCaption: `${label}: ${summary} ${cta}`,
+    callToAction: cta,
+  };
+}
+
 function placeholderDraft(brand, postType, inputs) {
   const cta   = safeTrim(inputs.cta)   || brand.defaultCTA;
   const notes = safeTrim(inputs.extraNotes) ? ` ${inputs.extraNotes.trim()}` : '';
@@ -55,30 +104,75 @@ function placeholderDraft(brand, postType, inputs) {
   if (brand.key === 'auntbs') {
     const service = safeTrim(inputs.serviceType)  || 'cleaning service';
     const area    = safeTrim(inputs.serviceArea)   || 'your area';
-    const offer   = safeTrim(inputs.offer)         || 'professional results';
+    const offer   = safeTrim(inputs.offer);
     const season  = safeTrim(inputs.dateRange)     || 'this season';
-    const topic   = safeTrim(inputs.cleaningTopic) || 'spotless results';
-    const tag     = areaTag(area) || 'CleaningServices';
-    const brandTag = areaTag(brand.name) || 'LocalCleaning';
-
-    const fullCaption =
-      `✨ ${postType.label} ✨\n\n` +
-      `Looking for a reliable ${service} in ${area}?${notes}\n\n` +
-      `We deliver ${topic} and take real pride in every home we clean. ` +
-      `${season} slots are filling fast — don't wait!\n\n` +
-      `🎯 ${offer}\n\n` +
-      `${cta}\n\n` +
-      `#CleanHome #${tag} #${brandTag} #ProfessionalCleaning #LocalBusiness`;
+    const topic   = safeTrim(inputs.cleaningTopic) || 'a practical cleaning reminder';
+    const platform = safeTrim(inputs.platform) || 'general';
+    const hashtags = marketingHashtags(platform, area, brand.name);
+    const contentType = postType.id;
+    const linesByType = {
+      service_spotlight: [
+        `Need help with ${service} in ${area}?`,
+        `Our team is ready to help with a thoughtful, professional clean.${notes}`,
+      ],
+      promotional: [
+        `We are sharing an update about ${service} in ${area}.`,
+        offer ? `Owner-approved offer or availability detail: ${offer}.` : 'Contact us to ask what is currently available.',
+      ],
+      seasonal: [
+        `${season} is a good time to plan ahead for a cleaner, more comfortable home.`,
+        `Ask about ${service} in ${area}.${notes}`,
+      ],
+      educational_tip: [
+        `Cleaning tip: ${topic}.`,
+        'For a detailed or unusual cleaning need, choose a method appropriate for the surface and follow product directions.',
+      ],
+      humor_engagement: [
+        'A clean home does not have to start with a perfect week.',
+        `${topic}. What is one cleaning task you would rather hand off?`,
+      ],
+      availability: [
+        `We have service availability for ${service} in ${area}.`,
+        'Reach out to confirm the right service and timing for your home.',
+      ],
+      local_community: [
+        `Proud to serve homes in ${area}.`,
+        `When you need ${service}, our local team is here to help.${notes}`,
+      ],
+      completed_job: [
+        `A completed ${service} job is ready for owner review before any marketing use.`,
+        'This draft does not describe a customer, address, or job-specific result.',
+      ],
+      before_after: [
+        `A completed ${service} job may support a before-and-after post after owner review.`,
+        'This draft does not infer or describe any image details.',
+      ],
+    };
+    const bodyLines = contentType === 'testimonial'
+      ? ['Testimonial content needs a safe, approved source before a draft can be created.']
+      : contentType in linesByType
+        ? linesByType[contentType]
+        : [`Professional ${service} for homes in ${area}.`, topic];
+    const platformDraft = formatMarketingForPlatform({
+      platform,
+      label: postType.label,
+      bodyLines,
+      cta,
+      hashtags,
+      preserveAllLines: ['before_after', 'completed_job'].includes(contentType),
+    });
 
     return {
-      title:        `${postType.label} — ${area}`,
-      fullCaption,
-      shortCaption: `✨ Need a ${service} in ${area}? ${cta}`,
-      callToAction: cta,
-      hashtags:     `#CleanHome #${tag} #${brandTag} #ProfessionalCleaning #LocalBusiness`,
+      title:        `${postType.label} — ${service}`,
+      fullCaption:   platformDraft.fullCaption,
+      shortCaption: platformDraft.shortCaption,
+      callToAction: platformDraft.callToAction,
+      hashtags: platform === 'website' ? '' : hashtags,
       imagePrompt:
-        `${brand.imageStyle}: visual for a "${postType.label.toLowerCase()}" post. ` +
-        `Bright, welcoming ${area} home. Real, not stock-photo. No text overlay.`,
+        contentType === 'before_after' || contentType === 'completed_job'
+          ? ''
+          : `${brand.imageStyle}: visual for a "${postType.label.toLowerCase()}" post. ` +
+            `Bright, welcoming ${area} home. No customer details or text overlay.`,
     };
   }
 

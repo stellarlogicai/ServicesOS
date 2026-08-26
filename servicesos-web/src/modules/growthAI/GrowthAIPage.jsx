@@ -5,6 +5,11 @@ import GrowthAIDraftsView from './components/GrowthAIDraftsView';
 import GrowthAIHome from './components/GrowthAIHome';
 import GrowthAIWorkspaceShell from './components/GrowthAIWorkspaceShell';
 import { BRANDS, CONTENT_IDEAS, PLATFORMS } from './brandProfiles';
+import {
+  buildMarketingSourceRefs,
+  deriveTenantMarketingServices,
+  validateMarketingSelection,
+} from './growthAIMarketingService';
 import { generateDraft } from './growthAIService';
 import {
   createGrowthAIIdempotencyKey,
@@ -46,7 +51,7 @@ const emptyEditor = {
   approvedAt: null,
 };
 const emptyInputs = {
-  platform: 'facebook', tone: '', cta: '', extraNotes: '', serviceType: '', serviceArea: '',
+  platform: 'general', tone: '', cta: '', extraNotes: '', serviceType: '', serviceArea: '',
   offer: '', dateRange: '', cleaningTopic: '',
 };
 const emptyOpportunityWorkspace = { tenantId: null, opportunities: [], leads: [], bookings: [] };
@@ -81,6 +86,7 @@ export default function GrowthAIPage({ onReviewJob }) {
   const [audit, setAudit] = useState([]);
   const [postTypeId, setPostTypeId] = useState('availability');
   const [inputs, setInputs] = useState(emptyInputs);
+  const [marketingOpportunity, setMarketingOpportunity] = useState(null);
   const [editor, setEditor] = useState(emptyEditor);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -112,6 +118,9 @@ export default function GrowthAIPage({ onReviewJob }) {
     if (activeTenantId.current !== tenantId) {
       activeTenantId.current = tenantId;
       tenantRequestVersion.current += 1;
+      setInputs(emptyInputs);
+      setPostTypeId('availability');
+      setMarketingOpportunity(null);
     }
   }, [tenantId]);
 
@@ -294,6 +303,15 @@ export default function GrowthAIPage({ onReviewJob }) {
   }, [editor.id, isCurrentTenantRequest, loadAudit, reloadWorkspace, requestContext, setScopedError, setScopedMessage, tenantId]);
 
   const generate = () => {
+    const validationError = validateMarketingSelection({
+      contentTypeId: postTypeId,
+      serviceType: inputs.serviceType,
+      sourceOpportunity: marketingOpportunity,
+    });
+    if (validationError) {
+      setScopedError(validationError);
+      return;
+    }
     const { generated } = generateDraft(brand, postType, inputs);
     setEditor(previous => ({
       ...previous,
@@ -302,7 +320,7 @@ export default function GrowthAIPage({ onReviewJob }) {
       actionType: 'marketing_post',
       title: generated.title,
       content: { ...emptyContent, ...generated },
-      sourceRefs: {},
+      sourceRefs: buildMarketingSourceRefs(marketingOpportunity),
       status: 'draft',
       approvedByUid: null,
       approvedAt: null,
@@ -355,6 +373,32 @@ export default function GrowthAIPage({ onReviewJob }) {
       }
     }
   }, [isCurrentTenantRequest, loadAudit, reloadCredits, reloadOpportunities, reloadWorkspace, requestContext, setScopedError, setScopedMessage, tenantId]);
+
+  const generateMarketingWithAI = () => {
+    const validationError = validateMarketingSelection({
+      contentTypeId: postTypeId,
+      serviceType: inputs.serviceType,
+      sourceOpportunity: marketingOpportunity,
+    });
+    if (validationError) {
+      setScopedError(validationError);
+      return null;
+    }
+    return generateWithAI({
+      actionType: 'marketing_post',
+      input: {
+        postTypeId,
+        platform: inputs.platform,
+        serviceType: inputs.serviceType,
+        serviceArea: inputs.serviceArea,
+        offer: inputs.offer,
+        dateRange: inputs.dateRange,
+        cleaningTopic: inputs.cleaningTopic,
+        extraNotes: inputs.extraNotes,
+      },
+      sourceRefs: buildMarketingSourceRefs(marketingOpportunity),
+    });
+  };
 
   const saveResponseDraft = async responseTemplate => {
     const result = await runAction(
@@ -437,6 +481,7 @@ export default function GrowthAIPage({ onReviewJob }) {
   const leadsById = new Map(tenantOpportunityWorkspace.leads.map(item => [item.id, item]));
   const bookingsById = new Map(tenantOpportunityWorkspace.bookings.map(item => [item.id, item]));
   const eligibleEstimateLeads = listEligibleEstimateAssistanceLeads(tenantOpportunityWorkspace.leads, tenantId);
+  const marketingServices = deriveTenantMarketingServices(tenantOpportunityWorkspace.bookings);
 
   const opportunitySubject = opportunity => {
     if (opportunity.type === 'estimate_followup') {
@@ -498,6 +543,16 @@ export default function GrowthAIPage({ onReviewJob }) {
         setSavingTenantId(null);
       }
     }
+  };
+
+  const startMarketingFromOpportunity = opportunity => {
+    const booking = bookingsById.get(opportunity.sourceRefs?.bookingId);
+    const matchingService = marketingServices.find(item => item.id === booking?.serviceType);
+    setMarketingOpportunity({ id: opportunity.id, type: opportunity.type });
+    setPostTypeId('before_after');
+    setInputs(value => ({ ...value, serviceType: matchingService?.id || value.serviceType }));
+    setScopedError('');
+    setScopedMessage('Marketing content will remain a draft for human review. No photo details will be sent to AI.');
   };
 
   const dismissOpportunity = async opportunity => {
@@ -562,29 +617,21 @@ export default function GrowthAIPage({ onReviewJob }) {
           onDismissOpportunity={dismissOpportunity}
           onDraftEstimateFollowUp={draftEstimateFollowUp}
           onGenerateDeterministic={generate}
-          onGenerateMarketingAI={() => generateWithAI({
-            actionType: 'marketing_post',
-            input: {
-              postTypeId,
-              platform: inputs.platform,
-              serviceType: inputs.serviceType,
-              serviceArea: inputs.serviceArea,
-              offer: inputs.offer,
-              cleaningTopic: inputs.cleaningTopic,
-              extraNotes: inputs.extraNotes,
-            },
-          })}
+          onGenerateMarketingAI={generateMarketingWithAI}
           onGenerateResponseAI={input => generateWithAI({ actionType: 'customer_response', input })}
           onInputChange={patch => setInputs(value => ({ ...value, ...patch }))}
           onOpportunityFilterChange={setOpportunityFilter}
           onPostTypeChange={setPostTypeId}
+          onMarketingOpportunityChange={setMarketingOpportunity}
           onPrefillIdea={idea => {
             setPostTypeId(idea.prefill.postTypeId);
             setInputs(value => ({ ...value, ...idea.prefill.inputs }));
+            setMarketingOpportunity(null);
           }}
           onProfileChange={patch => setProfile(value => ({ ...value, ...patch }))}
           onRefreshOpportunities={() => reloadOpportunities().catch(err => setScopedError(err.message))}
           onReviewOpportunityJob={reviewOpportunityJob}
+          onStartMarketingFromOpportunity={startMarketingFromOpportunity}
           onSaveProfile={saveProfile}
           onSaveResponseDraft={saveResponseDraft}
           opportunitiesLoading={opportunitiesLoading}
@@ -592,6 +639,8 @@ export default function GrowthAIPage({ onReviewJob }) {
           opportunitySubject={opportunitySubject}
           platforms={PLATFORMS}
           postTypeId={postTypeId}
+          marketingOpportunity={marketingOpportunity}
+          marketingServices={marketingServices}
           profile={profileForTenant}
           saving={savingForTenant}
           tenantId={tenantId}

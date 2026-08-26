@@ -212,6 +212,67 @@ describe('GrowthAI server gateway', () => {
       () => normalizeGenerationRequest(request({ input: { postTypeId: 'availability', creditCost: 0 } })),
       error => error.code === 'invalid_request',
     );
+    assert.throws(
+      () => normalizeGenerationRequest(request({ input: { postTypeId: 'testimonial' } })),
+      error => error.code === 'invalid_request',
+    );
+    assert.throws(
+      () => normalizeGenerationRequest(request({
+        input: { postTypeId: 'before_after' },
+        sourceRefs: { leadId: 'lead-a' },
+      })),
+      error => error.code === 'invalid_request',
+    );
+  });
+
+  test('validates completed-job marketing server-side and keeps provider context free of customer, photo, payment, and Stripe data', async () => {
+    const documents = seed();
+    documents['tenants/tenant-a/growthAI/config'] = {
+      tenantId: 'tenant-a', brandVoice: 'Warm and direct', contentTone: 'Clear and local', defaultCTA: 'Request a quote.',
+    };
+    documents['tenants/tenant-a/growthAIOpportunities/photo-opportunity-a'] = {
+      tenantId: 'tenant-a', type: 'marketing_photo_review', status: 'open',
+      sourceRefs: { bookingId: 'booking-a', photoIds: ['photo-before', 'photo-after'], customerId: 'customer-a' },
+    };
+    documents['tenants/tenant-a/bookings/booking-a'] = {
+      tenantId: 'tenant-a', status: 'completed', serviceType: 'deep clean',
+      customerName: 'Must Not Reach Provider', serviceAddress: 'Private Address',
+      paymentStatus: 'must-not-reach-provider', stripePaymentIntentId: 'must-not-reach-provider',
+    };
+    const { admin, db } = fakeAdmin(documents);
+    const calls = [];
+    const result = await generateGrowthAIContent({
+      admin,
+      provider: successProvider(calls),
+      requestBody: request({
+        idempotencyKey: 'completed-job-marketing',
+        sourceRefs: { opportunityId: 'photo-opportunity-a' },
+        input: { postTypeId: 'before_after', platform: 'instagram' },
+      }),
+      uid: 'admin-a',
+    });
+    const prompt = JSON.stringify(calls[0]);
+    const draft = db.documents.get(`tenants/tenant-a/growthAIDrafts/${result.draftId}`);
+
+    assert.match(prompt, /deep clean/);
+    assert.match(prompt, /Warm and direct|Clear and local/);
+    assert.doesNotMatch(prompt, /Must Not Reach Provider|Private Address|must-not-reach-provider|photo-before|photo-after|customer-a/);
+    assert.deepEqual(draft.sourceRefs, { opportunityId: 'photo-opportunity-a' });
+    assert.equal(db.documents.get('tenants/tenant-a/growthAIOpportunities/photo-opportunity-a').status, 'acted');
+  });
+
+  test('requires an eligible completed-job opportunity for before-and-after marketing before reserving credit', async () => {
+    const { admin, db } = fakeAdmin(seed());
+    await assert.rejects(
+      generateGrowthAIContent({
+        admin,
+        provider: successProvider(),
+        requestBody: request({ input: { postTypeId: 'before_after' } }),
+        uid: 'admin-a',
+      }),
+      error => error.code === 'invalid_source',
+    );
+    assert.equal(ledgerEntries(db).length, 0);
   });
 
   test('denies anonymous HTTP requests before provider access', async () => {

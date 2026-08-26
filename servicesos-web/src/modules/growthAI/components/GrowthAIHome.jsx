@@ -16,6 +16,11 @@ import {
   GrowthAICopyButton,
   GrowthAIField,
 } from './GrowthAIPrimitives';
+import {
+  requiresMarketingOpportunity,
+  requiresMarketingService,
+  validateMarketingSelection,
+} from '../growthAIMarketingService';
 
 const CAPABILITY_ACTIONS = Object.freeze([
   { id: 'business_briefing', label: 'Today\'s briefing' },
@@ -176,6 +181,7 @@ function OpportunityCard({
   onAIFollowUp,
   onDismiss,
   onDraftFollowUp,
+  onStartMarketingFromOpportunity,
   onReviewJob,
   saving,
 }) {
@@ -203,7 +209,10 @@ function OpportunityCard({
           </>
         ) : null}
         {opportunity.type === 'marketing_photo_review' ? (
-          <GrowthAIButton disabled={saving} onClick={() => onReviewJob(opportunity)}>Review Job</GrowthAIButton>
+          <>
+            <GrowthAIButton disabled={saving} onClick={() => onStartMarketingFromOpportunity(opportunity)}>Create marketing draft</GrowthAIButton>
+            <GrowthAIButton tone="secondary" disabled={saving} onClick={() => onReviewJob(opportunity)}>Review Job</GrowthAIButton>
+          </>
         ) : null}
         <GrowthAIButton tone="secondary" disabled={saving} onClick={() => onDismiss(opportunity)}>Dismiss</GrowthAIButton>
       </div>
@@ -217,15 +226,26 @@ function MarketingWorkflow({
   brand,
   contentIdeas,
   inputs,
+  marketingOpportunity,
+  marketingServices,
   onGenerateDeterministic,
   onGenerateMarketingAI,
   onInputChange,
+  onMarketingOpportunityChange,
   onPostTypeChange,
   onPrefillIdea,
   platforms,
   postTypeId,
   saving,
 }) {
+  const contentType = brand.postTypes.find(item => item.id === postTypeId) || brand.postTypes[0];
+  const selectionError = validateMarketingSelection({
+    contentTypeId: contentType.id,
+    serviceType: inputs.serviceType,
+    sourceOpportunity: marketingOpportunity,
+  });
+  const showService = requiresMarketingService(contentType.id) || ['promotional', 'availability', 'completed_job', 'before_after'].includes(contentType.id);
+
   return (
     <section className="growth-ai-workflow" aria-labelledby="growth-ai-marketing-title">
       <div className="growth-ai-workflow-heading">
@@ -237,8 +257,16 @@ function MarketingWorkflow({
       </div>
       <div className="growth-ai-form-stack">
         <div className="growth-ai-form-grid">
-          <GrowthAIField label="Post type">
-            <select aria-label="Post type" value={postTypeId} onChange={event => onPostTypeChange(event.target.value)}>
+          <GrowthAIField label="Content type">
+            <select
+              aria-label="Content type"
+              value={postTypeId}
+              onChange={event => {
+                const nextType = event.target.value;
+                onPostTypeChange(nextType);
+                if (!requiresMarketingOpportunity(nextType)) onMarketingOpportunityChange(null);
+              }}
+            >
               {brand.postTypes.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
             </select>
           </GrowthAIField>
@@ -248,16 +276,26 @@ function MarketingWorkflow({
             </select>
           </GrowthAIField>
         </div>
-        <div className="growth-ai-form-grid">
-          <GrowthAIField label="Service type"><input aria-label="Service type" value={inputs.serviceType} onChange={event => onInputChange({ serviceType: event.target.value })} /></GrowthAIField>
-          <GrowthAIField label="Service area"><input aria-label="Service area" value={inputs.serviceArea} onChange={event => onInputChange({ serviceArea: event.target.value })} /></GrowthAIField>
-        </div>
-        <GrowthAIField label="Offer"><input aria-label="Offer" value={inputs.offer} onChange={event => onInputChange({ offer: event.target.value })} /></GrowthAIField>
-        <GrowthAIField label="Cleaning topic"><input aria-label="Cleaning topic" value={inputs.cleaningTopic} onChange={event => onInputChange({ cleaningTopic: event.target.value })} /></GrowthAIField>
+        {showService ? (
+          <GrowthAIField label="Tenant service">
+            <select aria-label="Tenant service" value={inputs.serviceType} onChange={event => onInputChange({ serviceType: event.target.value })}>
+              <option value="">{marketingServices.length ? 'Choose a service' : 'No known tenant services available'}</option>
+              {marketingServices.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </GrowthAIField>
+        ) : null}
+        {showService && marketingServices.length === 0 ? <p className="growth-ai-credit-warning">No canonical tenant service is available in this workspace yet. Service spotlight content remains unavailable.</p> : null}
+        {contentType.id === 'promotional' ? <GrowthAIField label="Owner-supplied offer"><input aria-label="Owner-supplied offer" value={inputs.offer} onChange={event => onInputChange({ offer: event.target.value })} /></GrowthAIField> : null}
+        {contentType.id === 'seasonal' ? <GrowthAIField label="Seasonal context"><select aria-label="Seasonal context" value={inputs.dateRange} onChange={event => onInputChange({ dateRange: event.target.value })}><option value="">Choose a season</option><option value="Spring">Spring</option><option value="Summer">Summer</option><option value="Back-to-school season">Back-to-school season</option><option value="Holiday season">Holiday season</option><option value="Winter">Winter</option></select></GrowthAIField> : null}
+        {['educational_tip', 'humor_engagement'].includes(contentType.id) ? <GrowthAIField label="Topic"><input aria-label="Topic" value={inputs.cleaningTopic} onChange={event => onInputChange({ cleaningTopic: event.target.value })} /></GrowthAIField> : null}
+        {requiresMarketingOpportunity(contentType.id) ? (
+          <p className="growth-ai-cost-note">{marketingOpportunity ? 'Using the selected eligible completed-job opportunity. No image analysis or customer details are included.' : 'Choose an eligible completed-job opportunity from GrowthAI opportunities first.'}</p>
+        ) : null}
+        {contentType.id === 'testimonial' ? <p className="growth-ai-credit-warning">A safe approved testimonial source is not available in ServicesOS yet, so this content type cannot generate a draft.</p> : null}
         <GrowthAIField label="Extra notes"><textarea aria-label="Extra notes" rows="2" value={inputs.extraNotes} onChange={event => onInputChange({ extraNotes: event.target.value })} /></GrowthAIField>
         <div className="growth-ai-actions">
-          <GrowthAIButton onClick={onGenerateDeterministic}>Create deterministic draft</GrowthAIButton>
-          <GrowthAIButton disabled={saving || aiGenerating || aiCredits < 1} onClick={onGenerateMarketingAI}>
+          <GrowthAIButton disabled={Boolean(selectionError)} onClick={onGenerateDeterministic}>Create deterministic draft</GrowthAIButton>
+          <GrowthAIButton disabled={Boolean(selectionError) || saving || aiGenerating || aiCredits < 1} onClick={onGenerateMarketingAI}>
             Generate marketing with AI · 1 credit
           </GrowthAIButton>
         </div>
@@ -346,6 +384,7 @@ function OpportunitiesWorkflow({
   onOpportunityFilterChange,
   onRefreshOpportunities,
   onReviewOpportunityJob,
+  onStartMarketingFromOpportunity,
   opportunitiesLoading,
   opportunityFilter,
   opportunitySubject,
@@ -383,6 +422,7 @@ function OpportunitiesWorkflow({
             onDraftFollowUp={onDraftEstimateFollowUp}
             onAIFollowUp={onAIEstimateFollowUp}
             onReviewJob={onReviewOpportunityJob}
+            onStartMarketingFromOpportunity={onStartMarketingFromOpportunity}
             onDismiss={onDismissOpportunity}
             saving={saving}
             aiGenerating={aiGenerating}
@@ -487,12 +527,14 @@ export default function GrowthAIHome({
   onGenerateMarketingAI,
   onGenerateResponseAI,
   onInputChange,
+  onMarketingOpportunityChange,
   onOpportunityFilterChange,
   onPostTypeChange,
   onPrefillIdea,
   onProfileChange,
   onRefreshOpportunities,
   onReviewOpportunityJob,
+  onStartMarketingFromOpportunity,
   onSaveProfile,
   onSaveResponseDraft,
   opportunitiesLoading,
@@ -500,6 +542,8 @@ export default function GrowthAIHome({
   opportunitySubject,
   platforms,
   postTypeId,
+  marketingOpportunity,
+  marketingServices,
   profile,
   saving,
   tenantId,
@@ -628,7 +672,8 @@ export default function GrowthAIHome({
     if (capabilityType === 'marketing') {
       return <MarketingWorkflow {...{
         aiCredits, aiGenerating, brand, contentIdeas, inputs, onGenerateDeterministic, onGenerateMarketingAI,
-        onInputChange, onPostTypeChange, onPrefillIdea, platforms, postTypeId, saving,
+        marketingOpportunity, marketingServices, onInputChange, onMarketingOpportunityChange, onPostTypeChange,
+        onPrefillIdea, platforms, postTypeId, saving,
       }} />;
     }
     if (capabilityType === 'customer_response') {
@@ -638,7 +683,11 @@ export default function GrowthAIHome({
       return <OpportunitiesWorkflow {...{
         activeOpportunities, aiCredits, aiGenerating, onAIEstimateFollowUp, onDismissOpportunity,
         onDraftEstimateFollowUp, onOpportunityFilterChange, onRefreshOpportunities, onReviewOpportunityJob,
-        opportunitiesLoading, opportunityFilter, opportunitySubject, saving, visibleOpportunities,
+        onStartMarketingFromOpportunity: opportunity => {
+          onStartMarketingFromOpportunity(opportunity);
+          openCapability('marketing', 'Create marketing from completed job');
+        }, opportunitiesLoading, opportunityFilter, opportunitySubject, saving,
+        visibleOpportunities,
       }} />;
     }
     if (capabilityType === 'brand') {
