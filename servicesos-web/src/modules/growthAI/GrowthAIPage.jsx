@@ -505,14 +505,18 @@ export default function GrowthAIPage({ onReviewJob }) {
       return canonicalDisplayName(leadsById.get(opportunity.sourceRefs?.leadId), 'Estimate customer');
     }
     if (opportunity.type === 'rebooking_gap') {
-      const candidate = tenantOpportunityWorkspace.rebookingCandidates?.find(item => item.customerId === opportunity.sourceRefs?.customerId);
+      const candidate = tenantOpportunityWorkspace.rebookingCandidates?.find(item =>
+        item.customerId === opportunity.sourceRefs?.customerId && item.serviceKey === opportunity.sourceRefs?.serviceKey
+      );
       return canonicalDisplayName(bookingsById.get(candidate?.bookingId), 'Recurring customer');
     }
     return canonicalDisplayName(bookingsById.get(opportunity.sourceRefs?.bookingId), 'Completed job');
   };
 
   const startRebookingFromOpportunity = opportunity => {
-    const candidate = tenantOpportunityWorkspace.rebookingCandidates?.find(item => item.customerId === opportunity.sourceRefs?.customerId);
+    const candidate = tenantOpportunityWorkspace.rebookingCandidates?.find(item =>
+      item.customerId === opportunity.sourceRefs?.customerId && item.serviceKey === opportunity.sourceRefs?.serviceKey
+    );
     const booking = communicationBookings.find(item => item.id === candidate?.bookingId && item.completed);
     if (!booking) {
       setScopedError('The completed job for this rebooking opportunity is no longer eligible. Refresh opportunities before preparing a draft.');

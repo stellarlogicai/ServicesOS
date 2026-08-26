@@ -486,7 +486,11 @@ const growthAIOpportunity = ({
   status: 'open',
   sourceRefs,
   detectionReason: 'Estimate has been marked quoted for 4 days and no booking is linked.',
-  detectionVersion: type === 'marketing_photo_review' ? 'marketing-photo-review-v1' : 'estimate-followup-v1',
+  detectionVersion: type === 'marketing_photo_review'
+    ? 'marketing-photo-review-v1'
+    : type === 'rebooking_gap'
+      ? 'rebooking-gap-v1'
+      : 'estimate-followup-v1',
   firstDetectedAt: serverTimestamp(),
   lastDetectedAt: serverTimestamp(),
   createdByUid: actorUid,
@@ -1799,6 +1803,18 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       pillar: 'attract',
       sourceRefs: { bookingId: 'field-booking', photoIds: ['before-only'] },
     })));
+    await assertSucceeds(setDoc(doc(database, ...basePath, 'rebooking_gap__customer-a__recurring-service-standard'), growthAIOpportunity({
+      opportunityId: 'rebooking_gap__customer-a__recurring-service-standard',
+      type: 'rebooking_gap',
+      pillar: 'retain',
+      sourceRefs: { customerId: 'customer-a', serviceKey: 'recurring-service:standard' },
+    })));
+    await assertFails(setDoc(doc(database, ...basePath, 'bad-rebooking-service-key'), growthAIOpportunity({
+      opportunityId: 'bad-rebooking-service-key',
+      type: 'rebooking_gap',
+      pillar: 'retain',
+      sourceRefs: { customerId: 'customer-a', serviceKey: '' },
+    })));
 
     const valid = doc(database, ...basePath, 'estimate_followup__lead-a');
     await assertSucceeds(setDoc(valid, growthAIOpportunity()));
@@ -1819,12 +1835,12 @@ describe('tenant-scoped customer intake Firestore rules', () => {
 
   test('GrowthAI opportunities remain tenant-admin scoped and unavailable to employees, customers, and anonymous users', async () => {
     const adminA = authenticatedDatabase('admin-a');
-    const reference = doc(adminA, 'tenants', TENANT_A, 'growthAIOpportunities', 'marketing_photo_review__field-booking');
+    const reference = doc(adminA, 'tenants', TENANT_A, 'growthAIOpportunities', 'rebooking_gap__customer-a__recurring-service-standard');
     await assertSucceeds(setDoc(reference, growthAIOpportunity({
-      opportunityId: 'marketing_photo_review__field-booking',
-      type: 'marketing_photo_review',
-      pillar: 'attract',
-      sourceRefs: { bookingId: 'field-booking', photoIds: ['photo-before', 'photo-after'] },
+      opportunityId: 'rebooking_gap__customer-a__recurring-service-standard',
+      type: 'rebooking_gap',
+      pillar: 'retain',
+      sourceRefs: { customerId: 'customer-a', serviceKey: 'recurring-service:standard' },
     })));
 
     for (const database of [
@@ -1833,7 +1849,7 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       authenticatedDatabase('customer-a-auth'),
       testEnvironment.unauthenticatedContext().firestore(),
     ]) {
-      const denied = doc(database, 'tenants', TENANT_A, 'growthAIOpportunities', 'marketing_photo_review__field-booking');
+      const denied = doc(database, 'tenants', TENANT_A, 'growthAIOpportunities', 'rebooking_gap__customer-a__recurring-service-standard');
       await assertFails(getDoc(denied));
       await assertFails(updateDoc(denied, {
         status: 'dismissed',

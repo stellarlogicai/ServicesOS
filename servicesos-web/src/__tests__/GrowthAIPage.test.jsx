@@ -393,16 +393,21 @@ describe('GrowthAI V1 tenant draft foundation', () => {
   it('hands a rebooking opportunity into the existing review-required customer communication workflow without using AI', async () => {
     state.opportunityWorkspace = {
       opportunities: [{
-        id: 'rebooking_gap__customer-a', type: 'rebooking_gap', pillar: 'retain', status: 'open',
-        sourceRefs: { customerId: 'customer-a' },
+        id: 'rebooking_gap__customer-a__recurring-service%3Arecurring-standard', type: 'rebooking_gap', pillar: 'retain', status: 'open',
+        sourceRefs: { customerId: 'customer-a', serviceKey: 'recurring-service:recurring-standard' },
         detectionReason: 'Standard clean is due with no upcoming matching booking.',
       }],
       leads: [],
       bookings: [{
+        id: 'booking-deep', tenantId: 'tenant-a', customerId: 'customer-a', status: 'completed',
+        serviceType: 'Deep clean', customerName: 'Retention Customer',
+      }, {
         id: 'booking-completed', tenantId: 'tenant-a', customerId: 'customer-a', status: 'completed',
         serviceType: 'Standard clean', customerName: 'Retention Customer',
       }],
-      rebookingCandidates: [{ customerId: 'customer-a', bookingId: 'booking-completed' }],
+      rebookingCandidates: [{ customerId: 'customer-a', serviceKey: 'recurring-service:recurring-deep', bookingId: 'booking-deep' }, {
+        customerId: 'customer-a', serviceKey: 'recurring-service:recurring-standard', bookingId: 'booking-completed',
+      }],
       rebookingImplemented: true,
     };
 
@@ -421,7 +426,9 @@ describe('GrowthAI V1 tenant draft foundation', () => {
       sourceRefs: { bookingId: 'booking-completed' },
       content: expect.objectContaining({ callToAction: 'Review and send manually' }),
     })));
-    expect(opportunityService.markGrowthAIOpportunityActed).toHaveBeenCalledWith('tenant-a', 'rebooking_gap__customer-a');
+    expect(opportunityService.markGrowthAIOpportunityActed).toHaveBeenCalledWith(
+      'tenant-a', 'rebooking_gap__customer-a__recurring-service%3Arecurring-standard'
+    );
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
   });
 

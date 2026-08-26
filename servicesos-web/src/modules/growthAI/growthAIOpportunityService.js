@@ -98,15 +98,21 @@ function bookingFrequency(booking = {}) {
 function cadenceForFrequency(frequency) {
   switch (frequency.toLowerCase()) {
     case 'weekly':
-      return { intervalDays: 7, label: 'weekly' };
+      return { key: 'weekly', intervalDays: 7, label: 'weekly' };
     case 'biweekly':
     case 'bi-weekly':
-      return { intervalDays: 14, label: 'every two weeks' };
+      return { key: 'biweekly', intervalDays: 14, label: 'every two weeks' };
     case 'monthly':
-      return { intervalMonths: 1, label: 'monthly' };
+      return { key: 'monthly', intervalMonths: 1, label: 'monthly' };
     default:
       return null;
   }
+}
+
+function rebookingServiceKey(booking, serviceType, cadence) {
+  const recurringServiceId = text(booking?.recurringServiceId);
+  if (recurringServiceId) return `recurring-service:${recurringServiceId}`;
+  return `booking-service:${serviceType}:${cadence.key}`;
 }
 
 function bookingDateMillis(booking = {}) {
@@ -198,7 +204,7 @@ function listDueRebookingCandidates({ bookings = [], now = new Date() } = {}) {
   const nowMillis = timestampMillis(now);
   if (!Number.isFinite(nowMillis)) throw new Error('A valid detection time is required.');
 
-  const candidatesByCustomerId = new Map();
+  const candidatesByService = new Map();
   bookings.forEach(booking => {
     if (!isCompletedBooking(booking)) return;
     const customerId = canonicalCustomerId(booking);
@@ -207,21 +213,26 @@ function listDueRebookingCandidates({ bookings = [], now = new Date() } = {}) {
     const completedAtMillis = bookingDateMillis(booking);
     if (!customerId || !serviceType || !cadence || !Number.isFinite(completedAtMillis) || completedAtMillis > nowMillis) return;
 
-    const candidate = { booking, customerId, serviceType, cadence, completedAtMillis };
-    const current = candidatesByCustomerId.get(customerId);
+    const serviceKey = rebookingServiceKey(booking, serviceType, cadence);
+    const candidate = { booking, customerId, serviceKey, serviceType, cadence, completedAtMillis };
+    const candidateKey = `${customerId}::${serviceKey}`;
+    const current = candidatesByService.get(candidateKey);
     if (!current || candidate.completedAtMillis > current.completedAtMillis ||
       (candidate.completedAtMillis === current.completedAtMillis && candidate.serviceType.localeCompare(current.serviceType) < 0)) {
-      candidatesByCustomerId.set(customerId, candidate);
+      candidatesByService.set(candidateKey, candidate);
     }
   });
 
   const candidates = [];
-  candidatesByCustomerId.forEach(candidate => {
-    const hasUpcomingMatchingService = bookings.some(booking => (
-      canonicalCustomerId(booking) === candidate.customerId &&
-      normalizedServiceType(booking) === candidate.serviceType &&
-      isUpcomingBooking(booking, nowMillis)
-    ));
+  candidatesByService.forEach(candidate => {
+    const hasUpcomingMatchingService = bookings.some(booking => {
+      const upcomingServiceType = normalizedServiceType(booking);
+      const upcomingCadence = cadenceForFrequency(bookingFrequency(booking));
+      return canonicalCustomerId(booking) === candidate.customerId &&
+        Boolean(upcomingServiceType) && Boolean(upcomingCadence) &&
+        rebookingServiceKey(booking, upcomingServiceType, upcomingCadence) === candidate.serviceKey &&
+        isUpcomingBooking(booking, nowMillis);
+    });
     if (hasUpcomingMatchingService) return;
 
     if (nowMillis < nextCadenceMillis(candidate.completedAtMillis, candidate.cadence)) return;
@@ -235,10 +246,10 @@ function listDueRebookingCandidates({ bookings = [], now = new Date() } = {}) {
 
 export function detectRebookingOpportunities({ bookings = [], now = new Date() } = {}) {
   return listDueRebookingCandidates({ bookings, now }).map(candidate => ({
-    id: opportunityId('rebooking_gap', candidate.customerId),
+    id: opportunityId('rebooking_gap', `${candidate.customerId}__${candidate.serviceKey}`),
     type: 'rebooking_gap',
     pillar: 'retain',
-    sourceRefs: { customerId: candidate.customerId },
+    sourceRefs: { customerId: candidate.customerId, serviceKey: candidate.serviceKey },
     detectionReason: `${formatServiceType(candidate.serviceType)} was last completed on ${candidate.completedDate}. Its configured ${candidate.cadence.label} cadence is now due, and no upcoming matching booking is scheduled.`,
     detectionVersion: REBOOKING_DETECTION_VERSION,
   }));
@@ -247,6 +258,7 @@ export function detectRebookingOpportunities({ bookings = [], now = new Date() }
 export function listRebookingOpportunityCandidates({ bookings = [], now = new Date() } = {}) {
   return listDueRebookingCandidates({ bookings, now }).map(candidate => ({
     customerId: candidate.customerId,
+    serviceKey: candidate.serviceKey,
     bookingId: candidate.booking.id,
   }));
 }

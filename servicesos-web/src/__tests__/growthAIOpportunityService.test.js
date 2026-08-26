@@ -187,10 +187,10 @@ describe('GrowthAI deterministic opportunity detection', () => {
     });
 
     expect(opportunities).toEqual([expect.objectContaining({
-      id: 'rebooking_gap__customer-a',
+      id: 'rebooking_gap__customer-a__booking-service%3Astandard%20clean%3Abiweekly',
       type: 'rebooking_gap',
       pillar: 'retain',
-      sourceRefs: { customerId: 'customer-a' },
+      sourceRefs: { customerId: 'customer-a', serviceKey: 'booking-service:standard clean:biweekly' },
       detectionVersion: 'rebooking-gap-v1',
     })]);
     expect(opportunities[0].detectionReason).toContain('configured every two weeks cadence is now due');
@@ -238,18 +238,59 @@ describe('GrowthAI deterministic opportunity detection', () => {
     })).toHaveLength(1);
   });
 
-  it('uses the configured cadence as the only service-gap baseline and deduplicates by customer identity', () => {
+  it('uses the configured cadence as the only service-gap baseline and deduplicates by recurring service identity', () => {
     const opportunities = detectRebookingOpportunities({
       now: new Date('2026-09-15T12:00:00'),
       bookings: [
-        recurringCompletedBooking({ id: 'old-completed-a', date: '2026-08-01' }),
-        recurringCompletedBooking({ id: 'latest-completed-a', date: '2026-08-20', requestSnapshot: { frequency: 'weekly' } }),
+        recurringCompletedBooking({ id: 'old-completed-a', date: '2026-08-01', recurringServiceId: 'recurring-standard' }),
+        recurringCompletedBooking({ id: 'latest-completed-a', date: '2026-08-20', requestSnapshot: { frequency: 'weekly' }, recurringServiceId: 'recurring-standard' }),
       ],
     });
 
     expect(opportunities).toHaveLength(1);
-    expect(opportunities[0].id).toBe('rebooking_gap__customer-a');
+    expect(opportunities[0]).toMatchObject({
+      id: 'rebooking_gap__customer-a__recurring-service%3Arecurring-standard',
+      sourceRefs: { customerId: 'customer-a', serviceKey: 'recurring-service:recurring-standard' },
+    });
     expect(opportunities[0].detectionReason).toContain('configured weekly cadence');
+  });
+
+  it('creates distinct opportunities for separate recurring services for the same customer', () => {
+    const opportunities = detectRebookingOpportunities({
+      now: new Date('2026-09-15T12:00:00'),
+      bookings: [
+        recurringCompletedBooking({ id: 'standard-latest', date: '2026-09-01', requestSnapshot: { frequency: 'weekly' }, recurringServiceId: 'recurring-standard' }),
+        recurringCompletedBooking({ id: 'deep-monthly', date: '2026-08-01', serviceType: 'deep clean', requestSnapshot: { frequency: 'monthly' }, recurringServiceId: 'recurring-deep' }),
+      ],
+    });
+
+    expect(opportunities).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'rebooking_gap__customer-a__recurring-service%3Arecurring-standard',
+        sourceRefs: { customerId: 'customer-a', serviceKey: 'recurring-service:recurring-standard' },
+      }),
+      expect.objectContaining({
+        id: 'rebooking_gap__customer-a__recurring-service%3Arecurring-deep',
+        sourceRefs: { customerId: 'customer-a', serviceKey: 'recurring-service:recurring-deep' },
+      }),
+    ]));
+    expect(new Set(opportunities.map(item => item.id)).size).toBe(2);
+  });
+
+  it('does not let an upcoming recurring service suppress another due service for the same customer', () => {
+    const opportunities = detectRebookingOpportunities({
+      now: new Date('2026-09-15T12:00:00'),
+      bookings: [
+        recurringCompletedBooking({ id: 'standard-completed', date: '2026-09-01', requestSnapshot: { frequency: 'weekly' }, recurringServiceId: 'recurring-standard' }),
+        recurringCompletedBooking({ id: 'deep-completed', date: '2026-08-01', serviceType: 'deep clean', requestSnapshot: { frequency: 'monthly' }, recurringServiceId: 'recurring-deep' }),
+        recurringCompletedBooking({ id: 'standard-upcoming', status: 'scheduled', date: '2026-09-18', requestSnapshot: { frequency: 'weekly' }, recurringServiceId: 'recurring-standard' }),
+      ],
+    });
+
+    expect(opportunities).toEqual([expect.objectContaining({
+      id: 'rebooking_gap__customer-a__recurring-service%3Arecurring-deep',
+      sourceRefs: { customerId: 'customer-a', serviceKey: 'recurring-service:recurring-deep' },
+    })]);
   });
 
   it('plans stable idempotent creation, preserves dismissal, and resolves only active records', () => {

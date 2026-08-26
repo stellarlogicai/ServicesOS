@@ -750,8 +750,10 @@ service cloud.firestore {
                 (!('customerId' in sourceRefs) || isGrowthAIRefId(sourceRefs.customerId))) ||
               (type == 'rebooking_gap' &&
                 sourceRefs.keys().hasAll(['customerId']) &&
-                sourceRefs.keys().hasOnly(['customerId']) &&
-                isGrowthAIRefId(sourceRefs.customerId)) ||
+                sourceRefs.keys().hasOnly(['customerId', 'serviceKey']) &&
+                isGrowthAIRefId(sourceRefs.customerId) &&
+                (!('serviceKey' in sourceRefs) ||
+                  (isGrowthAIString(sourceRefs.serviceKey, 256) && sourceRefs.serviceKey.size() > 0))) ||
               (type == 'marketing_photo_review' &&
                 sourceRefs.keys().hasAll(['bookingId', 'photoIds']) &&
                 sourceRefs.keys().hasOnly(['bookingId', 'photoIds', 'customerId']) &&
