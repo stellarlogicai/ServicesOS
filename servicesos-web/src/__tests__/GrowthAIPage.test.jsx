@@ -526,6 +526,34 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
   });
 
+  it('uses the first surfaced rebooking opportunity as bounded conversation context without creating a draft', async () => {
+    state.opportunityWorkspace = {
+      opportunities: [{
+        id: 'rebooking_gap__customer-a__recurring-service%3Arecurring-standard', type: 'rebooking_gap', pillar: 'retain', status: 'open',
+        sourceRefs: { customerId: 'customer-a', serviceKey: 'recurring-service:recurring-standard' },
+        detectionReason: 'Standard clean is due with no upcoming matching booking.',
+      }],
+      leads: [],
+      bookings: [{
+        id: 'booking-completed', tenantId: 'tenant-a', customerId: 'customer-a', status: 'completed',
+        serviceType: 'Standard clean', customerName: 'Retention Customer',
+      }],
+      rebookingCandidates: [{ customerId: 'customer-a', serviceKey: 'recurring-service:recurring-standard', bookingId: 'booking-completed' }],
+      rebookingImplemented: true,
+    };
+
+    render(<GrowthAIPage />);
+    submitComposer('What needs my attention today?');
+    expect(await screen.findByRole('heading', { name: 'Business briefing' })).toBeInTheDocument();
+    submitComposer('Help me with the first one.');
+
+    expect(await screen.findByRole('heading', { name: 'Customer response' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Communication type')).toHaveValue('rebooking');
+    expect(screen.getByLabelText('Completed job to use')).toHaveValue('booking-completed');
+    expect(service.createGrowthAIDraft).not.toHaveBeenCalled();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+  });
+
   it('dismisses a stable opportunity and does not render it after refresh', async () => {
     state.opportunityWorkspace = {
       opportunities: [{

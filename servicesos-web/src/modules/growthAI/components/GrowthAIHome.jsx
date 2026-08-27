@@ -199,6 +199,7 @@ function OpportunityCard({
   onDismiss,
   onDraftFollowUp,
   onStartMarketingFromOpportunity,
+  onStartFirstOpportunity,
   onStartRebookingFromOpportunity,
   onStartReviewRequestFromOpportunity,
   onReviewJob,
@@ -560,6 +561,7 @@ function OpportunitiesWorkflow({
   opportunitiesLoading,
   opportunityFilter,
   opportunitySubject,
+  focusedOpportunityId,
   saving,
   visibleOpportunities,
 }) {
@@ -587,21 +589,23 @@ function OpportunitiesWorkflow({
       {!opportunitiesLoading && activeOpportunities.length > 0 && visibleOpportunities.length === 0 ? <p className="growth-ai-empty">No opportunities match this filter.</p> : null}
       <div className="growth-ai-opportunity-list">
         {visibleOpportunities.map(opportunity => (
-          <OpportunityCard
-            key={opportunity.id}
-            opportunity={opportunity}
-            subject={opportunitySubject(opportunity)}
-            onDraftFollowUp={onDraftEstimateFollowUp}
-            onAIFollowUp={onAIEstimateFollowUp}
-            onReviewJob={onReviewOpportunityJob}
-            onStartMarketingFromOpportunity={onStartMarketingFromOpportunity}
-            onStartRebookingFromOpportunity={onStartRebookingFromOpportunity}
-            onStartReviewRequestFromOpportunity={onStartReviewRequestFromOpportunity}
-            onDismiss={onDismissOpportunity}
-            saving={saving}
-            aiGenerating={aiGenerating}
-            aiCredits={aiCredits}
-          />
+          <div key={opportunity.id} className="growth-ai-opportunity-item" data-focused={focusedOpportunityId === opportunity.id || undefined}>
+            {focusedOpportunityId === opportunity.id ? <p className="growth-ai-cost-note" role="status">This is the opportunity you asked to review.</p> : null}
+            <OpportunityCard
+              opportunity={opportunity}
+              subject={opportunitySubject(opportunity)}
+              onDraftFollowUp={onDraftEstimateFollowUp}
+              onAIFollowUp={onAIEstimateFollowUp}
+              onReviewJob={onReviewOpportunityJob}
+              onStartMarketingFromOpportunity={onStartMarketingFromOpportunity}
+              onStartRebookingFromOpportunity={onStartRebookingFromOpportunity}
+              onStartReviewRequestFromOpportunity={onStartReviewRequestFromOpportunity}
+              onDismiss={onDismissOpportunity}
+              saving={saving}
+              aiGenerating={aiGenerating}
+              aiCredits={aiCredits}
+            />
+          </div>
         ))}
       </div>
     </section>
@@ -731,6 +735,7 @@ export default function GrowthAIHome({
   onResolveAmbiguousIntent,
   onReviewOpportunityJob,
   onStartMarketingFromOpportunity,
+  onStartFirstOpportunity,
   onStartRebookingFromOpportunity,
   onStartReviewRequestFromOpportunity,
   onSaveProfile,
@@ -798,7 +803,7 @@ export default function GrowthAIHome({
     setActiveWorkflow(null);
   };
 
-  const openCapability = (requestedCapabilityType, userText) => {
+  const openCapability = (requestedCapabilityType, userText, context = {}) => {
     const skill = getGrowthAISkill(requestedCapabilityType) || getGrowthAISkillForWorkflow(requestedCapabilityType);
     const capabilityType = skill?.workflowId || requestedCapabilityType;
     if (capabilityType === 'help' || capabilityType === 'unknown') {
@@ -835,7 +840,7 @@ export default function GrowthAIHome({
       { id: nextMessageId('user'), role: 'user', type: 'text', content: userText },
       capabilityMessage,
     ]);
-    setActiveWorkflow({ messageId: capabilityMessage.id, capabilityType, skillId: skill.id });
+    setActiveWorkflow({ messageId: capabilityMessage.id, capabilityType, skillId: skill.id, context });
   };
 
   const firstRunGuidePending = onboardingState.status === 'not_started' || onboardingState.status === 'in_progress';
@@ -893,7 +898,7 @@ export default function GrowthAIHome({
     setComposerValue('');
     const route = routeGrowthAIConversation(input, {
       activeSkillId: activeWorkflow?.skillId || '',
-      hasVisibleOpportunity: activeOpportunities.length > 0,
+      hasVisibleOpportunity: visibleOpportunities.length > 0,
     });
     if (route.kind === 'route') {
       openCapability(route.skillId, input);
@@ -905,7 +910,16 @@ export default function GrowthAIHome({
     }
     if (route.kind === 'contextual') {
       if (route.context === 'first_opportunity') {
-        openCapability('retention', input);
+        const firstOpportunity = visibleOpportunities[0];
+        const handoff = firstOpportunity && onStartFirstOpportunity?.(firstOpportunity);
+        if (handoff?.workflowId) {
+          openCapability(handoff.workflowId, input, { focusedOpportunityId: handoff.focusedOpportunityId || null });
+        } else {
+          appendMessages([
+            { id: nextMessageId('user'), role: 'user', type: 'text', content: input },
+            { id: nextMessageId('assistant'), role: 'assistant', type: 'result', content: 'That opportunity is no longer available. Refresh opportunities and choose one to review.' },
+          ]);
+        }
         return;
       }
       appendMessages([
@@ -988,7 +1002,7 @@ export default function GrowthAIHome({
         onStartMarketingFromOpportunity: opportunity => {
           onStartMarketingFromOpportunity(opportunity);
           openCapability('marketing', 'Create marketing from completed job');
-        }, opportunitiesLoading, opportunityFilter, opportunitySubject, saving,
+        }, focusedOpportunityId: activeWorkflow?.context?.focusedOpportunityId || null, opportunitiesLoading, opportunityFilter, opportunitySubject, saving,
         visibleOpportunities,
       }} />;
     }

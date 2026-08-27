@@ -642,6 +642,22 @@ export default function GrowthAIPage({ onReviewJob }) {
     setScopedMessage('Marketing content will remain a draft for human review. No photo details will be sent to AI.');
   };
 
+  const startFirstOpportunityFromConversation = opportunity => {
+    const current = activeOpportunities.find(item => item.id === opportunity?.id && ['open', 'acted'].includes(item.status));
+    if (!current) return null;
+    if (current.type === 'rebooking_gap') {
+      return startRebookingFromOpportunity(current) ? { workflowId: 'customer_response' } : null;
+    }
+    if (current.type === 'review_request') {
+      return startReviewRequestFromOpportunity(current) ? { workflowId: 'customer_response' } : null;
+    }
+    if (current.type === 'marketing_photo_review') {
+      startMarketingFromOpportunity(current);
+      return { workflowId: 'marketing' };
+    }
+    return { workflowId: 'opportunities', focusedOpportunityId: current.id };
+  };
+
   const marketingContentPlan = useMemo(() => buildMarketingContentPlan({
     marketingServices,
     opportunities: activeOpportunities,
@@ -750,6 +766,7 @@ export default function GrowthAIPage({ onReviewJob }) {
           onStartRebookingFromOpportunity={startRebookingFromOpportunity}
           onStartReviewRequestFromOpportunity={startReviewRequestFromOpportunity}
           onStartMarketingFromOpportunity={startMarketingFromOpportunity}
+          onStartFirstOpportunity={startFirstOpportunityFromConversation}
           onStartMarketingPlan={startMarketingPlan}
           onToggleMarketingAsset={photoId => {
             setMarketingOpportunity(current => {
