@@ -174,7 +174,7 @@ describe('App onboarding router context', () => {
     render(<App />);
 
     expect(screen.queryByRole('heading', { name: 'Welcome to CleanOps' })).not.toBeInTheDocument();
-    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export', 'GrowthAI'].forEach(label => {
+    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export', 'SLAI Assistant'].forEach(label => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
     [
@@ -251,7 +251,7 @@ describe('App onboarding router context', () => {
 
     expect(screen.getByRole('button', { name: 'Close navigation menu' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('navigation')).toHaveStyle({ zIndex: '130' });
-    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export', 'GrowthAI'].forEach(label => {
+    ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export', 'SLAI Assistant'].forEach(label => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
     expect(screen.queryByText('Settings')).not.toBeInTheDocument();
@@ -283,7 +283,7 @@ describe('App onboarding router context', () => {
       window.history.pushState({}, '', path);
       const { unmount } = render(<App />);
 
-      ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export', 'GrowthAI'].forEach(label => {
+      ['Dashboard', 'Create estimate', 'Customers', 'Bookings', 'Field Mode', 'Calendar', 'Business Settings', 'Data export', 'SLAI Assistant'].forEach(label => {
         expect(screen.getByText(label)).toBeInTheDocument();
       });
 
@@ -323,7 +323,7 @@ describe('App onboarding router context', () => {
     authState.userProfile = { uid: 'admin-test', onboardingCompleted: true };
     render(<App />);
 
-    fireEvent.click(screen.getByText('GrowthAI'));
+    fireEvent.click(screen.getByText('SLAI Assistant'));
 
     expect(screen.getByRole('heading', { name: 'GrowthAI Draft Workspace' })).toBeInTheDocument();
     expect(screen.getByText(/Approval does not send or publish anything/)).toBeInTheDocument();
@@ -352,7 +352,7 @@ describe('App onboarding router context', () => {
       'Data export',
       'Tenant management',
       'AI training',
-      'GrowthAI',
+      'SLAI Assistant',
       'Backup',
       'Settings'
     ].forEach(label => {
@@ -372,7 +372,7 @@ describe('App onboarding router context', () => {
 
     render(<App />);
 
-    fireEvent.click(screen.getByText('GrowthAI'));
+    fireEvent.click(screen.getByText('SLAI Assistant'));
 
     expect(screen.getByRole('heading', { name: 'Select a tenant to view this area.' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'GrowthAI Draft Workspace' })).not.toBeInTheDocument();
@@ -489,7 +489,7 @@ describe('App onboarding router context', () => {
     render(<App />);
 
     expect(screen.getByText('Customer portal')).toBeInTheDocument();
-    expect(screen.queryByText('GrowthAI')).not.toBeInTheDocument();
+    expect(screen.queryByText('SLAI Assistant')).not.toBeInTheDocument();
     expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
     expect(screen.queryByText('Data export')).not.toBeInTheDocument();
     expect(screen.queryByText('Business Settings')).not.toBeInTheDocument();
@@ -529,7 +529,7 @@ describe('App onboarding router context', () => {
         'Customer portal',
         'Staff scheduling',
         'Tenant management',
-        'GrowthAI',
+        'SLAI Assistant',
       ].forEach(label => expect(screen.queryByText(label)).not.toBeInTheDocument());
 
       [

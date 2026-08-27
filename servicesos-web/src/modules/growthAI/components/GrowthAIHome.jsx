@@ -27,11 +27,13 @@ import {
   validateOwnerReviewText,
 } from '../growthAIReputationService';
 import GrowthAIOnboardingGuide from './GrowthAIOnboardingGuide';
+import GrowthAICreditSummary from './GrowthAICreditSummary';
 import {
   GrowthAIButton,
   GrowthAICopyButton,
   GrowthAIField,
 } from './GrowthAIPrimitives';
+import { growthAIDraftTypeLabel } from '../growthAIDraftPresentation';
 import {
   requiresMarketingOpportunity,
   requiresMarketingService,
@@ -47,13 +49,22 @@ const CAPABILITY_ACTIONS = Object.freeze([
   { id: 'help', label: 'What can you do?' },
 ]);
 
+const QUICK_ACTIONS = Object.freeze([
+  { id: 'business_briefing', label: 'What needs attention?' },
+  { id: 'opportunities', label: 'Find rebooking opportunities', filter: 'retain' },
+  { id: 'customer_response', label: 'Draft customer message' },
+  { id: 'marketing', label: 'Create marketing post' },
+  { id: 'opportunities', label: 'Check reputation', filter: 'reputation' },
+  { id: 'marketing', label: 'Plan my posts' },
+]);
+
 const CAPABILITY_RESPONSES = Object.freeze({
   business_briefing: 'Here is a deterministic briefing based on the current ServicesOS records for this tenant.',
   estimate_assistance: 'Choose an existing estimate to review its saved ServicesOS pricing. AI analysis is optional and always requires your approval.',
   marketing: 'Let\'s create something useful. Choose a format and add any details you want included.',
   customer_response: 'I can help prepare a private response. Nothing will be sent automatically.',
-  opportunities: 'Here are the current deterministic GrowthAI opportunities for this tenant.',
-  brand: 'These preferences shape GrowthAI drafts. Your canonical business identity still comes from Business Settings.',
+  opportunities: 'Here are the current deterministic SLAI opportunities for this tenant.',
+  brand: 'These preferences shape SLAI drafts. Your canonical business identity still comes from Business Settings.',
 });
 
 function formatEstimateDate(value) {
@@ -68,7 +79,7 @@ function EstimateAssistanceResult({ recommendation }) {
   const currency = recommendation.baselinePrice?.currency || 'USD';
   return (
     <section className="growth-ai-estimate-result" role="status" aria-live="polite" aria-labelledby="growth-ai-estimate-recommendation-title">
-      <span className="growth-ai-item-label">GrowthAI recommendation</span>
+      <span className="growth-ai-item-label">SLAI recommendation</span>
       <h4 id="growth-ai-estimate-recommendation-title">Review before using</h4>
       <p><strong>Recommended price:</strong> {formatEstimateCurrency(recommendation.recommendedPrice, currency)}</p>
       <p><strong>Reasoning:</strong> {recommendation.reasoning}</p>
@@ -96,7 +107,7 @@ function EstimateAssistanceWorkflow({ aiGenerating, creditPresentation, estimate
   const pricing = selectedEstimate?.pricing || null;
   const aiDisabled = !selectedEstimate || !pricing || aiCreditActionBlocked(creditPresentation) || aiGenerating || saving || submitting;
   const disabledReason = !selectedEstimate
-    ? 'Choose an estimate before requesting GrowthAI analysis.'
+    ? 'Choose an estimate before requesting SLAI analysis.'
     : !pricing
       ? 'This saved estimate needs a valid ServicesOS price range before it can be analyzed.'
       : aiCreditActionMessage(creditPresentation, 'ServicesOS pricing remains available.');
@@ -123,7 +134,7 @@ function EstimateAssistanceWorkflow({ aiGenerating, creditPresentation, estimate
       <div className="growth-ai-workflow-heading">
         <div>
           <h3 id="growth-ai-estimate-assistance-title">Estimate assistance</h3>
-          <p>ServicesOS pricing is authoritative. GrowthAI can provide an optional advisory recommendation.</p>
+          <p>ServicesOS pricing is authoritative. SLAI can provide an optional advisory recommendation.</p>
         </div>
         <span className="growth-ai-free-label">Pricing view included</span>
       </div>
@@ -157,7 +168,7 @@ function EstimateAssistanceWorkflow({ aiGenerating, creditPresentation, estimate
           ) : <p className="growth-ai-credit-warning">The canonical saved price range is incomplete. ServicesOS requires owner review before AI analysis.</p>}
           <div className="growth-ai-actions">
             <GrowthAIButton disabled={aiDisabled} aria-describedby="growth-ai-estimate-credit-note" onClick={analyze}>
-              {submitting || aiGenerating ? 'Analyzing...' : 'Analyze with GrowthAI · 1 credit'}
+              {submitting || aiGenerating ? 'Analyzing...' : 'Analyze with SLAI · 1 credit'}
             </GrowthAIButton>
           </div>
           <p id="growth-ai-estimate-credit-note" className="growth-ai-cost-note">{disabledReason}</p>
@@ -341,7 +352,7 @@ function MarketingWorkflow({
         {['educational_tip', 'humor_engagement'].includes(contentType.id) ? <GrowthAIField label="Topic"><input aria-label="Topic" value={inputs.cleaningTopic} onChange={event => onInputChange({ cleaningTopic: event.target.value })} /></GrowthAIField> : null}
         {requiresMarketingOpportunity(contentType.id) ? (
           <>
-            <p className="growth-ai-cost-note">{marketingOpportunity ? 'Using the selected eligible completed-job opportunity. No image analysis or customer details are included.' : 'Choose an eligible completed-job opportunity from GrowthAI opportunities first.'}</p>
+            <p className="growth-ai-cost-note">{marketingOpportunity ? 'Using the selected eligible completed-job opportunity. No image analysis or customer details are included.' : 'Choose an eligible completed-job opportunity from SLAI opportunities first.'}</p>
             {marketingOpportunity ? (
               <section className="growth-ai-marketing-assets" aria-labelledby="growth-ai-marketing-assets-title">
                 <h4 id="growth-ai-marketing-assets-title">Owner-approved field photos</h4>
@@ -538,7 +549,7 @@ function CustomerResponseWorkflow({
         <div className="growth-ai-actions">
           <GrowthAICopyButton label="Copy response" text={deterministicDraft.messageTemplate} />
           <GrowthAIButton tone="secondary" disabled={saving || Boolean(workflowError)} onClick={() => onSave(deterministicDraft)}>Save response draft</GrowthAIButton>
-          <GrowthAIButton disabled={saving || aiGenerating || aiCreditActionBlocked(creditPresentation) || Boolean(workflowError) || (!isReviewResponse && !customerMessage.trim())} onClick={generateAI}>Improve with GrowthAI · 1 credit</GrowthAIButton>
+          <GrowthAIButton disabled={saving || aiGenerating || aiCreditActionBlocked(creditPresentation) || Boolean(workflowError) || (!isReviewResponse && !customerMessage.trim())} onClick={generateAI}>Improve with SLAI · 1 credit</GrowthAIButton>
         </div>
         <p className={aiCreditActionBlocked(creditPresentation) ? 'growth-ai-credit-warning' : 'growth-ai-cost-note'}>
           {aiCreditActionMessage(creditPresentation, 'Templates, editing, copying, and deterministic drafts remain free.')}
@@ -604,7 +615,7 @@ function OpportunitiesWorkflow({
         </GrowthAIButton>
       </div>
       {opportunitiesLoading && activeOpportunities.length === 0 ? <p className="growth-ai-empty">Checking tenant records for opportunities...</p> : null}
-      {!opportunitiesLoading && activeOpportunities.length === 0 ? <p className="growth-ai-empty">You\'re caught up. No GrowthAI opportunities need attention right now.</p> : null}
+      {!opportunitiesLoading && activeOpportunities.length === 0 ? <p className="growth-ai-empty">You\'re caught up. No SLAI opportunities need attention right now.</p> : null}
       {!opportunitiesLoading && activeOpportunities.length > 0 && visibleOpportunities.length === 0 ? <p className="growth-ai-empty">No opportunities match this filter.</p> : null}
       <div className="growth-ai-opportunity-list">
         {visibleOpportunities.map(opportunity => (
@@ -637,7 +648,7 @@ function BrandPreferencesWorkflow({ brandContext, onProfileChange, onSaveProfile
       <div className="growth-ai-workflow-heading">
         <div>
           <h3 id="growth-ai-brand-title">Brand settings</h3>
-          <p>Business identity comes from Business Settings. These owner-approved preferences guide GrowthAI drafts.</p>
+          <p>Business identity comes from Business Settings. These owner-approved preferences guide SLAI drafts.</p>
         </div>
       </div>
       <div className="growth-ai-brand-grid">
@@ -659,7 +670,7 @@ function BrandPreferencesWorkflow({ brandContext, onProfileChange, onSaveProfile
           </div>
         </GrowthAIField>
       </div>
-      {brandContext.logoRef ? <p className="growth-ai-cost-note">An existing tenant logo reference is available and remains managed outside GrowthAI.</p> : null}
+      {brandContext.logoRef ? <p className="growth-ai-cost-note">An existing tenant logo reference is available and remains managed outside SLAI.</p> : null}
       <div className="growth-ai-actions"><GrowthAIButton onClick={onSaveProfile} disabled={saving}>Save brand preferences</GrowthAIButton></div>
     </section>
   );
@@ -668,7 +679,7 @@ function BrandPreferencesWorkflow({ brandContext, onProfileChange, onSaveProfile
 function ConversationMessage({ children, message }) {
   return (
     <article className={`growth-ai-message growth-ai-message-${message.role}`} data-message-type={message.type}>
-      <div className="growth-ai-message-identity">{message.role === 'user' ? 'You' : message.role === 'system' ? 'ServicesOS' : 'GrowthAI'}</div>
+      <div className="growth-ai-message-identity">{message.role === 'user' ? 'You' : message.role === 'system' ? 'ServicesOS' : 'SLAI'}</div>
       <div className="growth-ai-message-content">
         <p>{message.content}</p>
         {children}
@@ -685,7 +696,7 @@ function BusinessBriefing({ briefing, headingId, loading, onOpenCapability }) {
   const sections = [
     ['Wins', briefing.wins],
     ['Needs attention', briefing.needsAttention],
-    ['GrowthAI noticed', briefing.noticed],
+    ['SLAI Noticed', briefing.noticed],
   ].filter(([, items]) => items.length > 0);
 
   return (
@@ -716,6 +727,148 @@ function BusinessBriefing({ briefing, headingId, loading, onOpenCapability }) {
       </div>
       <p className="growth-ai-briefing-note">Review suggested actions before any draft, approval, or business change is made.</p>
     </section>
+  );
+}
+
+function currentContextFor({ activeOpportunities, activeWorkflow, customerCommunicationIntent, marketingOpportunity, opportunitySubject }) {
+  const focusedOpportunity = activeOpportunities.find(item => item.id === activeWorkflow?.context?.focusedOpportunityId)
+    || activeOpportunities.find(item => item.id === marketingOpportunity?.id)
+    || null;
+
+  if (focusedOpportunity) {
+    return {
+      label: opportunityTypeLabel(focusedOpportunity.type),
+      detail: opportunitySubject(focusedOpportunity),
+      opportunity: focusedOpportunity,
+    };
+  }
+
+  if (customerCommunicationIntent?.type === 'rebooking') {
+    return { label: 'Rebooking message', detail: 'Preparing a review-required customer message.' };
+  }
+  if (customerCommunicationIntent?.type === 'review_request') {
+    return { label: 'Review request', detail: 'Preparing a review-required customer message.' };
+  }
+
+  const labels = {
+    business_briefing: 'Today\'s business briefing',
+    customer_response: 'Customer message',
+    estimate_assistance: 'Estimate assistance',
+    marketing: 'Marketing draft',
+    opportunities: 'Growth opportunities',
+  };
+  const label = labels[activeWorkflow?.capabilityType];
+  return label ? { label, detail: 'This context is limited to the current browser session.' } : null;
+}
+
+function SLAIContextRail({
+  activeOpportunities,
+  context,
+  creditPresentation,
+  drafts,
+  onOpenCapability,
+  onOpenDrafts,
+  onStartMarketingFromOpportunity,
+  onStartRebookingFromOpportunity,
+  onStartReviewRequestFromOpportunity,
+}) {
+  const customerCommunicationContext = ['Customer message', 'Rebooking message', 'Review request'].includes(context?.label);
+
+  const startContextAction = () => {
+    const opportunity = context?.opportunity;
+    if (!opportunity) {
+      if (customerCommunicationContext) {
+        onOpenCapability('customer_response', 'Continue customer message');
+        return;
+      }
+      if (context?.label === 'Marketing draft') {
+        onOpenCapability('marketing', 'Continue marketing draft');
+        return;
+      }
+      onOpenCapability('opportunities', 'Review current opportunities');
+      return;
+    }
+    if (opportunity.type === 'rebooking_gap') {
+      if (onStartRebookingFromOpportunity(opportunity) !== false) {
+        onOpenCapability('customer_response', 'Prepare a rebooking draft');
+      }
+      return;
+    }
+    if (opportunity.type === 'review_request') {
+      if (onStartReviewRequestFromOpportunity(opportunity) !== false) {
+        onOpenCapability('customer_response', 'Prepare a review request');
+      }
+      return;
+    }
+    if (opportunity.type === 'marketing_photo_review') {
+      onStartMarketingFromOpportunity(opportunity);
+      onOpenCapability('marketing', 'Create marketing from completed job');
+      return;
+    }
+    onOpenCapability('opportunities', 'Review estimate follow-up');
+  };
+
+  const actionLabel = context?.opportunity?.type === 'rebooking_gap'
+    ? 'Prepare customer message'
+    : context?.opportunity?.type === 'review_request'
+      ? 'Prepare review request'
+      : context?.opportunity?.type === 'marketing_photo_review'
+        ? 'Create marketing draft'
+        : customerCommunicationContext
+          ? 'Open Customer Communication'
+          : context?.label === 'Marketing draft'
+            ? 'Continue marketing draft'
+            : 'View opportunities';
+
+  return (
+    <aside className="growth-ai-context-rail" aria-label="Current SLAI Assistant context">
+      <details open>
+        <summary>Current context</summary>
+        <div className="growth-ai-context-rail-content">
+          <section className="growth-ai-context-section" aria-labelledby="growth-ai-current-context-title">
+            <span className="growth-ai-rail-label" id="growth-ai-current-context-title">Current Context</span>
+            {context ? (
+              <>
+                <strong>{context.label}</strong>
+                <p>{context.detail}</p>
+                <span className="growth-ai-rail-label">Suggested Next Steps</span>
+                <div className="growth-ai-context-actions">
+                  <button type="button" onClick={startContextAction}>{actionLabel}</button>
+                  <button type="button" onClick={() => onOpenCapability('opportunities', 'View all opportunities')}>View all</button>
+                </div>
+              </>
+            ) : <p>Select an opportunity or ask SLAI for help.</p>}
+          </section>
+
+          <section className="growth-ai-context-section" aria-labelledby="growth-ai-noticed-title">
+            <span className="growth-ai-rail-label" id="growth-ai-noticed-title">SLAI Noticed</span>
+            {activeOpportunities.length ? (
+              <ul className="growth-ai-noticed-list">
+                {activeOpportunities.slice(0, 3).map(opportunity => <li key={opportunity.id}>{opportunityTypeLabel(opportunity.type)}</li>)}
+              </ul>
+            ) : <p>No current opportunities need attention.</p>}
+            {activeOpportunities.length ? <button type="button" className="growth-ai-rail-link" onClick={() => onOpenCapability('opportunities', 'View all opportunities')}>View all opportunities</button> : null}
+          </section>
+
+          <section className="growth-ai-context-section" aria-labelledby="growth-ai-recent-drafts-title">
+            <span className="growth-ai-rail-label" id="growth-ai-recent-drafts-title">Recent Drafts</span>
+            {drafts.length ? (
+              <div className="growth-ai-recent-drafts">
+                {drafts.map(draft => (
+                  <button key={draft.id || draft.title} type="button" onClick={onOpenDrafts}>
+                    <strong>{growthAIDraftTypeLabel(draft)}</strong>
+                    <span>{draft.status === 'approved' ? 'Approved' : draft.status === 'needs_review' ? 'Needs Review' : 'Draft'}</span>
+                  </button>
+                ))}
+              </div>
+            ) : <p>No saved drafts yet.</p>}
+            <button type="button" className="growth-ai-rail-link" onClick={onOpenDrafts}>Open Drafts</button>
+          </section>
+
+          <GrowthAICreditSummary ariaLabel="Current context credit balance" presentation={creditPresentation} />
+        </div>
+      </details>
+    </aside>
   );
 }
 
@@ -768,11 +921,14 @@ export default function GrowthAIHome({
   marketingAssets = { items: [], loading: false, error: '' },
   marketingServices,
   profile,
+  recentDrafts = [],
   saving,
   tenantId,
   userDisplayName,
   userId,
   visibleOpportunities,
+  onOpenDrafts,
+  onWorkingOnChange,
 }) {
   const [composerValue, setComposerValue] = useState('');
   const [conversation, setConversation] = useState([]);
@@ -787,6 +943,17 @@ export default function GrowthAIHome({
   const mountedRef = useRef(true);
   const firstName = safeFirstName(userDisplayName);
   const greeting = `${greetingForHour(new Date().getHours())}${firstName ? `, ${firstName}` : ''}.`;
+  const currentContext = useMemo(() => currentContextFor({
+    activeOpportunities,
+    activeWorkflow,
+    customerCommunicationIntent,
+    marketingOpportunity,
+    opportunitySubject,
+  }), [activeOpportunities, activeWorkflow, customerCommunicationIntent, marketingOpportunity, opportunitySubject]);
+
+  useEffect(() => {
+    onWorkingOnChange?.(currentContext?.label || '');
+  }, [currentContext?.label, onWorkingOnChange]);
 
   const nextMessageId = prefix => `${prefix}-${++messageSequence.current}`;
   const appendMessages = additions => {
@@ -833,7 +1000,7 @@ export default function GrowthAIHome({
           role: 'assistant',
           type: 'result',
           content: capabilityType === 'help'
-            ? 'I can help with an estimate, review growth opportunities, create marketing drafts, prepare customer responses, or update GrowthAI brand preferences.'
+            ? 'I can help with an estimate, review growth opportunities, create marketing drafts, prepare customer responses, or update SLAI brand preferences.'
             : 'I can currently help with an estimate, review growth opportunities, create marketing, or prepare customer responses. Choose an option below or tell me which one you\'d like to work on.',
           actions: ['estimate_assistance', 'marketing', 'customer_response', 'opportunities'],
         },
@@ -1035,38 +1202,55 @@ export default function GrowthAIHome({
     ? 'I\'m checking ServicesOS for current growth opportunities.'
     : activeOpportunities.length > 0
       ? `I found ${activeOpportunities.length} ${activeOpportunities.length === 1 ? 'thing' : 'things'} worth reviewing.`
-      : 'You\'re caught up right now. I don\'t see any GrowthAI opportunities that need attention.';
+      : 'You\'re caught up right now. I don\'t see any SLAI opportunities that need attention.';
+
+  const summaryChips = [
+    briefing.wins.length ? { label: 'Completed today', value: briefing.wins.length } : null,
+    { label: 'Needs attention', value: briefing.needsAttention.length },
+    { label: 'Open opportunities', value: activeOpportunities.length },
+    { label: 'Drafts needing review', value: recentDrafts.filter(draft => draft.status === 'needs_review').length },
+  ].filter(Boolean);
+
+  const openQuickAction = action => {
+    if (action.filter) onOpportunityFilterChange(action.filter);
+    openCapability(action.id, action.label);
+  };
 
   return (
     <div className="growth-ai-home">
-      <section className="growth-ai-welcome" aria-labelledby="growth-ai-home-title">
-        <p className="growth-ai-greeting">{greeting}</p>
-        <h2 id="growth-ai-home-title">How can I help grow {businessName} today?</h2>
-        <div className="growth-ai-suggested-actions" aria-label="Suggested GrowthAI actions">
-          {CAPABILITY_ACTIONS.map(action => (
+      <div className="growth-ai-home-main">
+        <section className="growth-ai-welcome" aria-labelledby="growth-ai-home-title">
+          <p className="growth-ai-greeting">{greeting}</p>
+          <h2 id="growth-ai-home-title">What does your business need today?</h2>
+          <div className="growth-ai-summary-chips" aria-label="Business summary">
+            {summaryChips.map(chip => <span key={chip.label}><strong>{chip.value}</strong>{chip.label}</span>)}
+          </div>
+          <div className="growth-ai-suggested-actions" aria-label="SLAI Assistant quick actions">
+            {QUICK_ACTIONS.map(action => (
             <button
-              key={action.id}
+              key={action.label}
               type="button"
-              aria-pressed={activeWorkflow?.capabilityType === action.id}
-              onClick={() => openCapability(action.id, action.label)}
+              aria-pressed={activeWorkflow?.capabilityType === action.id && (!action.filter || opportunityFilter === action.filter)}
+              onClick={() => openQuickAction(action)}
             >
               {action.label}
             </button>
           ))}
-        </div>
-        <div className="growth-ai-secondary-actions">
-          <button type="button" className="growth-ai-brand-link" onClick={() => openCapability('brand', 'Edit brand settings')}>
-            Using {businessName} brand profile · Edit
-          </button>
-          <button type="button" className="growth-ai-guide-link" onClick={reopenGuide}>
-            SLAI Assistant guide
-          </button>
-        </div>
-      </section>
+          </div>
+          <p className="growth-ai-human-control">SLAI prepared this. You review it. You decide what happens.</p>
+          <div className="growth-ai-secondary-actions">
+            <button type="button" className="growth-ai-brand-link" onClick={() => openCapability('brand', 'Edit brand settings')}>
+              Using {businessName} brand profile · Edit
+            </button>
+            <button type="button" className="growth-ai-guide-link" onClick={reopenGuide}>
+              SLAI Assistant guide
+            </button>
+          </div>
+        </section>
 
-      <section className="growth-ai-conversation" aria-labelledby="growth-ai-conversation-title">
-        <h2 id="growth-ai-conversation-title" className="growth-ai-visually-hidden">GrowthAI conversation</h2>
-        <div className="growth-ai-conversation-stream" role="log" aria-live="polite" aria-relevant="additions">
+        <section className="growth-ai-conversation" aria-labelledby="growth-ai-conversation-title">
+          <h2 id="growth-ai-conversation-title" className="growth-ai-visually-hidden">SLAI Assistant conversation</h2>
+          <div className="growth-ai-conversation-stream" role="log" aria-live="polite" aria-relevant="additions">
           {guideOpen ? (
             <GrowthAIOnboardingGuide
               businessName={businessName}
@@ -1107,11 +1291,11 @@ export default function GrowthAIHome({
           ))}
         </div>
 
-        <form className="growth-ai-composer" aria-label="Ask GrowthAI" onSubmit={submitComposer}>
-          <label htmlFor="growth-ai-composer-input" className="growth-ai-visually-hidden">Ask GrowthAI anything</label>
+          <form className="growth-ai-composer" aria-label="Ask SLAI Assistant" onSubmit={submitComposer}>
+            <label htmlFor="growth-ai-composer-input" className="growth-ai-visually-hidden">Ask SLAI Assistant anything</label>
           <textarea
             id="growth-ai-composer-input"
-            aria-label="Ask GrowthAI anything"
+            aria-label="Ask SLAI Assistant anything"
             rows="1"
             value={composerValue}
             onChange={event => setComposerValue(event.target.value)}
@@ -1121,12 +1305,24 @@ export default function GrowthAIHome({
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder="Ask GrowthAI anything..."
+            placeholder="Ask SLAI Assistant anything..."
           />
           <button type="submit" disabled={!composerValue.trim() || routing}>{routing ? 'Choosing...' : 'Send'}</button>
           <p>Deterministic routing is free. AI credits are used only when you explicitly choose an AI generation action.</p>
-        </form>
-      </section>
+          </form>
+        </section>
+      </div>
+      <SLAIContextRail
+        activeOpportunities={activeOpportunities}
+        context={currentContext}
+        creditPresentation={creditPresentation}
+        drafts={recentDrafts}
+        onOpenCapability={openCapability}
+        onOpenDrafts={onOpenDrafts}
+        onStartMarketingFromOpportunity={onStartMarketingFromOpportunity}
+        onStartRebookingFromOpportunity={onStartRebookingFromOpportunity}
+        onStartReviewRequestFromOpportunity={onStartReviewRequestFromOpportunity}
+      />
     </div>
   );
 }

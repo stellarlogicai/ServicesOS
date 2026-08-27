@@ -1,11 +1,11 @@
-export default function GrowthAICreditSummary({ presentation }) {
+export default function GrowthAICreditSummary({ ariaLabel = 'AI credit balance', presentation }) {
   const state = presentation || { status: 'unavailable', available: null, renewalLabel: '' };
 
   return (
     <section
       className="growth-ai-credit-summary"
       data-credit-state={state.status}
-      aria-label="AI credit balance"
+      aria-label={ariaLabel}
       aria-live="polite"
     >
       <span className="growth-ai-credit-mark" aria-hidden="true">✦</span>

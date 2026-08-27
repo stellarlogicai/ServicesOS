@@ -93,6 +93,8 @@ export default function GrowthAIPage({ onReviewJob }) {
   const { currentTenant, role, tenantId, user, userProfile } = useAuth();
   const authorized = role === 'admin' || role === 'super-admin';
   const [activeView, setActiveView] = useState('home');
+  const [homeSessionVersion, setHomeSessionVersion] = useState(0);
+  const [workingOn, setWorkingOn] = useState('');
   const [profile, setProfile] = useState(emptyProfile);
   const [drafts, setDrafts] = useState([]);
   const [audit, setAudit] = useState([]);
@@ -411,7 +413,7 @@ export default function GrowthAIPage({ onReviewJob }) {
       if (!isCurrentTenantRequest(requestedTenantId, requestVersion)) return result;
       if (!stayOnHome) setActiveView('drafts');
       setScopedMessage(actionType === 'estimate_assistance'
-        ? `GrowthAI recommendation saved for human review. ${result.creditsCharged} AI credit used. ServicesOS pricing was not changed.`
+        ? `SLAI recommendation saved for human review. ${result.creditsCharged} AI credit used. ServicesOS pricing was not changed.`
         : `AI-assisted draft saved for human review. ${result.creditsCharged} AI credit used. Nothing was sent or published.`);
       return result;
     } catch (err) {
@@ -529,7 +531,7 @@ export default function GrowthAIPage({ onReviewJob }) {
   const saveProfile = () => runAction(async () => {
     await saveGrowthAIBrandProfile(tenantId, profile);
     return { id: editor.id };
-  }, 'GrowthAI brand preferences saved.');
+  }, 'SLAI brand preferences saved.');
 
   const tenantOpportunityWorkspace = opportunityWorkspace.tenantId === tenantId
     ? opportunityWorkspace
@@ -729,8 +731,8 @@ export default function GrowthAIPage({ onReviewJob }) {
     }
   };
 
-  if (!authorized) return <div className="v1-page">GrowthAI is available only to tenant owners and administrators.</div>;
-  if (!tenantId) return <div className="v1-page">Select a tenant to use GrowthAI.</div>;
+  if (!authorized) return <div className="v1-page">SLAI Assistant is available only to tenant owners and administrators.</div>;
+  if (!tenantId) return <div className="v1-page">Select a tenant to use SLAI Assistant.</div>;
 
   return (
     <GrowthAIWorkspaceShell
@@ -739,12 +741,18 @@ export default function GrowthAIPage({ onReviewJob }) {
       draftCount={draftsForTenant.length}
       error={errorForTenant}
       message={messageForTenant}
+      onNewConversation={() => {
+        setActiveView('home');
+        setWorkingOn('');
+        setHomeSessionVersion(version => version + 1);
+      }}
       onViewChange={setActiveView}
+      workingOn={workingOn}
     >
-      {loadingForTenant ? <p className="growth-ai-empty" role="status">Loading tenant GrowthAI workspace...</p> : null}
+      {loadingForTenant ? <p className="growth-ai-empty" role="status">Loading tenant SLAI Assistant workspace...</p> : null}
       {activeView === 'home' ? (
         <GrowthAIHome
-          key={tenantId}
+          key={`${tenantId}-${homeSessionVersion}`}
           activeOpportunities={activeOpportunities}
           creditPresentation={creditPresentation}
           aiGenerating={aiGeneratingForTenant}
@@ -821,6 +829,9 @@ export default function GrowthAIPage({ onReviewJob }) {
           userDisplayName={userProfile?.displayName || user?.displayName || ''}
           userId={userProfile?.uid || user?.uid || ''}
           visibleOpportunities={visibleOpportunities}
+          recentDrafts={draftsForTenant.slice(0, 3)}
+          onOpenDrafts={() => setActiveView('drafts')}
+          onWorkingOnChange={setWorkingOn}
         />
       ) : null}
       {activeView === 'drafts' ? (

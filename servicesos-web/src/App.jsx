@@ -136,7 +136,7 @@ const NAV_ITEMS = [
   {
     id: "growth-ai",
     icon: "🚀",
-    label: "GrowthAI",
+    label: "SLAI Assistant",
     roles: ["admin", "super-admin"],
   },
   {
