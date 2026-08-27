@@ -17,6 +17,17 @@ function text(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+export function isValidBusinessTimeZone(value) {
+  const candidate = text(value);
+  if (!candidate) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate }).format(new Date(0));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function sanitizeBusinessSettings(settings = {}) {
   const requestedDays = settings.availability?.availableDays;
   const availableDays = Array.isArray(requestedDays)
@@ -32,6 +43,7 @@ export function sanitizeBusinessSettings(settings = {}) {
     websiteUrl: text(settings.websiteUrl),
     facebookUrl: text(settings.facebookUrl),
     defaultServiceNotes: text(settings.defaultServiceNotes),
+    timeZone: isValidBusinessTimeZone(settings.timeZone) ? text(settings.timeZone) : 'UTC',
     availability: { availableDays },
   };
 }
@@ -94,6 +106,7 @@ export async function getBusinessSettings(tenantId) {
       websiteUrl: tenant.businessSettings?.websiteUrl ?? tenant.websiteUrl,
       facebookUrl: tenant.businessSettings?.facebookUrl ?? tenant.facebookUrl,
       defaultServiceNotes: tenant.businessSettings?.defaultServiceNotes ?? tenant.defaultServiceNotes,
+      timeZone: tenant.businessSettings?.timeZone,
       availability: tenant.businessSettings?.availability,
     }),
     stripeConnection: getStripeConnectionStatus(tenant),
@@ -102,6 +115,9 @@ export async function getBusinessSettings(tenantId) {
 
 export async function saveBusinessSettings(tenantId, proposedSettings, options = {}) {
   if (!tenantId) throw new Error('Tenant ID is required.');
+  if (proposedSettings.timeZone !== undefined && !isValidBusinessTimeZone(proposedSettings.timeZone)) {
+    throw new Error('Enter a valid IANA business timezone.');
+  }
   const businessSettings = sanitizeBusinessSettings(proposedSettings);
   if (businessSettings.availability.availableDays.length === 0) {
     throw new Error('Select at least one available day.');

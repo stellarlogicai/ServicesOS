@@ -449,8 +449,13 @@ service cloud.firestore {
                'websiteUrl',
                'facebookUrl',
                'defaultServiceNotes',
+               'timeZone',
                'availability'
              ]) &&
+             (!('timeZone' in request.resource.data.businessSettings) ||
+              (request.resource.data.businessSettings.timeZone is string &&
+               request.resource.data.businessSettings.timeZone.size() > 0 &&
+               request.resource.data.businessSettings.timeZone.size() <= 100)) &&
              request.resource.data.businessSettings.availability.keys().hasOnly(['availableDays']) &&
              request.resource.data.businessSettings.availability.availableDays is list;
     }

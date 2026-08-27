@@ -13,6 +13,7 @@ vi.mock('../firebase', () => ({ db: 'db' }));
 import {
   DEFAULT_AVAILABLE_DAYS,
   getBusinessSettings,
+  isValidBusinessTimeZone,
   saveBusinessSettings,
 } from '../services/businessSettingsService';
 
@@ -49,6 +50,7 @@ describe('businessSettingsService', () => {
     expect(result.websiteUrl).toBe('https://example.com');
     expect(result.facebookUrl).toBe('https://facebook.com/auntb');
     expect(result.defaultServiceNotes).toBe('Bring entry code.');
+    expect(result.timeZone).toBe('UTC');
     expect(result.stripeConnection).toMatchObject({
       label: 'Connected',
       detail: 'Stripe is connected for booking payment links.',
@@ -69,6 +71,7 @@ describe('businessSettingsService', () => {
       websiteUrl: ' https://auntb.example ',
       facebookUrl: ' https://facebook.com/auntb ',
       defaultServiceNotes: ' Bring entry code. ',
+      timeZone: ' America/Chicago ',
       availability: { availableDays: ['monday', 'saturday', 'invalid'] },
       stripeSecret: 'forbidden',
     }, { updatedByUid: ' admin-test ' });
@@ -82,6 +85,7 @@ describe('businessSettingsService', () => {
         websiteUrl: 'https://auntb.example',
         facebookUrl: 'https://facebook.com/auntb',
         defaultServiceNotes: 'Bring entry code.',
+        timeZone: 'America/Chicago',
         availability: { availableDays: ['monday', 'saturday'] },
       },
       updatedAt: 'SERVER_TIMESTAMP',
@@ -116,6 +120,14 @@ describe('businessSettingsService', () => {
   it('rejects missing tenant and empty days without writing', async () => {
     await expect(saveBusinessSettings('', {})).rejects.toThrow('Tenant ID');
     await expect(saveBusinessSettings('tenant-a', { availability: { availableDays: [] } })).rejects.toThrow('at least one');
+    await expect(saveBusinessSettings('tenant-a', { timeZone: 'Central-ish' })).rejects.toThrow('valid IANA');
     expect(firestore.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('validates canonical IANA business timezones without a hand-written list', () => {
+    expect(isValidBusinessTimeZone('America/Chicago')).toBe(true);
+    expect(isValidBusinessTimeZone('America/New_York')).toBe(true);
+    expect(isValidBusinessTimeZone('UTC')).toBe(true);
+    expect(isValidBusinessTimeZone('Central-ish')).toBe(false);
   });
 });

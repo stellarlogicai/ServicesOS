@@ -2,10 +2,13 @@ const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 const {
   GrowthAIGatewayError,
+  createGrowthAICreditBalanceHandler,
   createGrowthAIGenerationHandler,
   generateGrowthAIContent,
+  getGrowthAICreditBalance,
   normalizeGenerationRequest,
 } = require('../growthAIGateway');
+const { growthAICreditPeriodForTenant } = require('../growthAICreditEntitlement');
 const { GrowthAIProviderError } = require('../growthAIProvider');
 
 function clone(value) {
@@ -229,6 +232,156 @@ function ledgerEntries(db) {
 }
 
 describe('GrowthAI server gateway', () => {
+  test('lazily provisions and returns the server-owned monthly entitlement', async () => {
+    const documents = seed();
+    documents['tenants/tenant-a'].businessSettings.timeZone = 'America/Chicago';
+    delete documents['tenants/tenant-a/growthAICreditBalances/current'];
+    const { admin, db } = fakeAdmin(documents);
+    const result = await getGrowthAICreditBalance({
+      admin,
+      tenantId: 'tenant-a',
+      uid: 'admin-a',
+      now: new Date('2026-08-20T12:00:00.000Z'),
+    });
+    assert.deepEqual(result, {
+      available: 100,
+      reserved: 0,
+      buckets: { monthly: 100, promotional: 0, purchased: 0 },
+      monthlyAllowance: 100,
+      periodStart: '2026-08-01T05:00:00.000Z',
+      nextResetAt: '2026-09-01T05:00:00.000Z',
+      timeZone: 'America/Chicago',
+    });
+    assert.equal(db.documents.get('tenants/tenant-a/growthAICreditBalances/current').periodKey, '2026-08');
+  });
+
+  test('concurrent first-time balance checks provision the monthly allowance once', async () => {
+    const documents = seed();
+    delete documents['tenants/tenant-a/growthAICreditBalances/current'];
+    const { admin, db } = fakeAdmin(documents);
+    const results = await Promise.all([
+      getGrowthAICreditBalance({ admin, tenantId: 'tenant-a', uid: 'admin-a', now: new Date('2026-08-20T12:00:00.000Z') }),
+      getGrowthAICreditBalance({ admin, tenantId: 'tenant-a', uid: 'admin-a', now: new Date('2026-08-20T12:00:00.000Z') }),
+      getGrowthAICreditBalance({ admin, tenantId: 'tenant-a', uid: 'admin-a', now: new Date('2026-08-20T12:00:00.000Z') }),
+    ]);
+    assert.deepEqual(results.map(result => result.available), [100, 100, 100]);
+    assert.equal(db.documents.get('tenants/tenant-a/growthAICreditBalances/current').buckets.monthly, 100);
+  });
+
+  test('renews before reservation and consumes monthly then promotional then purchased', async () => {
+    const documents = seed();
+    const period = growthAICreditPeriodForTenant(documents['tenants/tenant-a'], new Date('2026-08-20T12:00:00.000Z'));
+    documents['tenants/tenant-a/growthAICreditBalances/current'] = {
+      schemaVersion: 2,
+      tenantId: 'tenant-a',
+      buckets: { monthly: 0, promotional: 1, purchased: 1 },
+      reservedCredits: 0,
+      monthlyAllowance: 100,
+      ...period,
+    };
+    const { admin, db } = fakeAdmin(documents);
+    await generateGrowthAIContent({
+      admin,
+      provider: successProvider(),
+      requestBody: request({ idempotencyKey: 'bucket-order' }),
+      uid: 'admin-a',
+      now: new Date('2026-08-21T12:00:00.000Z'),
+    });
+    assert.deepEqual(db.documents.get('tenants/tenant-a/growthAICreditBalances/current').buckets, {
+      monthly: 0, promotional: 0, purchased: 1,
+    });
+
+    await generateGrowthAIContent({
+      admin,
+      provider: successProvider(),
+      requestBody: request({ idempotencyKey: 'bucket-order-purchased' }),
+      uid: 'admin-a',
+      now: new Date('2026-08-21T12:00:00.000Z'),
+    });
+    assert.deepEqual(db.documents.get('tenants/tenant-a/growthAICreditBalances/current').buckets, {
+      monthly: 0, promotional: 0, purchased: 0,
+    });
+  });
+
+  test('renews a new period exactly once before concurrent paid requests', async () => {
+    const documents = seed();
+    const period = growthAICreditPeriodForTenant(documents['tenants/tenant-a'], new Date('2026-08-20T12:00:00.000Z'));
+    documents['tenants/tenant-a/growthAICreditBalances/current'] = {
+      schemaVersion: 2,
+      tenantId: 'tenant-a',
+      buckets: { monthly: 80, promotional: 7, purchased: 20 },
+      reservedCredits: 0,
+      monthlyAllowance: 100,
+      ...period,
+    };
+    const { admin, db } = fakeAdmin(documents);
+    await Promise.all([
+      generateGrowthAIContent({ admin, provider: successProvider(), requestBody: request({ idempotencyKey: 'renew-a' }), uid: 'admin-a', now: new Date('2026-09-01T12:00:00.000Z') }),
+      generateGrowthAIContent({ admin, provider: successProvider(), requestBody: request({ idempotencyKey: 'renew-b' }), uid: 'admin-a', now: new Date('2026-09-01T12:00:00.000Z') }),
+    ]);
+    const balance = db.documents.get('tenants/tenant-a/growthAICreditBalances/current');
+    assert.deepEqual(balance.buckets, { monthly: 98, promotional: 7, purchased: 20 });
+    assert.equal(balance.periodKey, '2026-09');
+  });
+
+  test('credit balance handler rejects client-controlled entitlement fields', async () => {
+    const { admin } = fakeAdmin(seed());
+    const handler = createGrowthAICreditBalanceHandler({ admin });
+    const response = {
+      statusCode: null,
+      payload: null,
+      set() {},
+      status(code) { this.statusCode = code; return this; },
+      json(payload) { this.payload = payload; return this; },
+      send() { return this; },
+    };
+    await handler({
+      method: 'POST',
+      headers: { authorization: 'Bearer admin-a' },
+      body: { tenantId: 'tenant-a', monthlyAllowance: 999, timeZone: 'Pacific/Honolulu' },
+    }, response);
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.payload.code, 'invalid_request');
+  });
+
+  test('credit balance handler rejects anonymous provisioning attempts', async () => {
+    const { admin, db } = fakeAdmin(seed());
+    db.documents.delete('tenants/tenant-a/growthAICreditBalances/current');
+    const handler = createGrowthAICreditBalanceHandler({ admin });
+    const response = {
+      statusCode: null,
+      payload: null,
+      set() {},
+      status(code) { this.statusCode = code; return this; },
+      json(payload) { this.payload = payload; return this; },
+      send() { return this; },
+    };
+    await handler({ method: 'POST', headers: {}, body: { tenantId: 'tenant-a' } }, response);
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.payload.code, 'unauthenticated');
+    assert.equal(db.documents.has('tenants/tenant-a/growthAICreditBalances/current'), false);
+  });
+
+  test('credit balance read preserves tenant authorization', async () => {
+    for (const [uid, tenantId] of [['admin-b', 'tenant-a'], ['employee-a', 'tenant-a'], ['admin-a', 'tenant-b']]) {
+      const { admin } = fakeAdmin(seed());
+      await assert.rejects(
+        getGrowthAICreditBalance({ admin, tenantId, uid, now: new Date('2026-08-20T12:00:00.000Z') }),
+        error => error.code === 'forbidden',
+      );
+    }
+
+    const { admin } = fakeAdmin(seed());
+    await assert.doesNotReject(
+      getGrowthAICreditBalance({
+        admin,
+        tenantId: 'tenant-a',
+        uid: 'super-a',
+        now: new Date('2026-08-20T12:00:00.000Z'),
+      }),
+    );
+  });
+
   test('requires a strict allowlisted request shape', () => {
     assert.throws(
       () => normalizeGenerationRequest({ ...request(), provider: 'browser-choice' }),

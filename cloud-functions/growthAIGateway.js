@@ -1,5 +1,10 @@
 const crypto = require('node:crypto');
 const { FieldValue } = require('firebase-admin/firestore');
+const {
+  CREDIT_BUCKETS,
+  GrowthAICreditEntitlementError,
+  resolveGrowthAICreditBalanceState,
+} = require('./growthAICreditEntitlement');
 const { GrowthAIProviderError, validateProviderOutput } = require('./growthAIProvider');
 
 const ACTION_COSTS = Object.freeze({
@@ -8,7 +13,6 @@ const ACTION_COSTS = Object.freeze({
   estimate_followup: 1,
   marketing_post: 1,
 });
-const CREDIT_BUCKETS = Object.freeze(['monthly', 'promotional', 'purchased']);
 const ALLOWED_ORIGINS = new Set([
   'https://servicesos.netlify.app',
   'http://127.0.0.1:5173',
@@ -596,7 +600,49 @@ function ledgerRef(db, tenantId, ledgerId) {
   return db.collection('tenants').doc(tenantId).collection('growthAICreditLedger').doc(ledgerId);
 }
 
-async function reserveCredits({ admin, db, request, uid }) {
+function dateToIso(value) {
+  const date = value instanceof Date ? value : value?.toDate?.();
+  return date instanceof Date && !Number.isNaN(date.getTime()) ? date.toISOString() : null;
+}
+
+function creditBalanceResult(balance) {
+  const buckets = normalizeBuckets(balance.buckets);
+  return {
+    available: Object.values(buckets).reduce((total, value) => total + value, 0),
+    reserved: balance.reservedCredits,
+    buckets,
+    monthlyAllowance: balance.monthlyAllowance,
+    periodStart: dateToIso(balance.periodStart),
+    nextResetAt: dateToIso(balance.nextResetAt),
+    timeZone: balance.timeZone,
+  };
+}
+
+async function getGrowthAICreditBalance({ admin, tenantId, uid, now = new Date() }) {
+  const db = admin.firestore();
+  const { tenant } = await verifyGrowthAIActor({ db, uid, tenantId });
+  const balanceRef = creditBalanceRef(db, tenantId);
+  return db.runTransaction(async transaction => {
+    const balanceSnapshot = await transaction.get(balanceRef);
+    const resolved = resolveGrowthAICreditBalanceState({
+      existingBalance: balanceSnapshot.exists ? balanceSnapshot.data() || {} : null,
+      tenant,
+      tenantId,
+      now,
+    });
+    const balance = resolved.balance;
+    if (resolved.changed) {
+      transaction.set(balanceRef, {
+        ...balance,
+        updatedAt: serverTimestamp(admin),
+        updatedByUid: uid,
+      });
+    }
+    return creditBalanceResult(balance);
+  });
+}
+
+async function reserveCredits({ admin, db, request, tenant, uid, now = new Date() }) {
   const ledgerId = operationId({ tenantId: request.tenantId, uid, idempotencyKey: request.idempotencyKey });
   const fingerprint = requestHash(request);
   const cost = ACTION_COSTS[request.actionType];
@@ -617,7 +663,13 @@ async function reserveCredits({ admin, db, request, uid }) {
     }
 
     const balanceSnapshot = await transaction.get(balanceRef);
-    const balance = balanceSnapshot.exists ? balanceSnapshot.data() || {} : {};
+    const resolved = resolveGrowthAICreditBalanceState({
+      existingBalance: balanceSnapshot.exists ? balanceSnapshot.data() || {} : null,
+      tenant,
+      tenantId: request.tenantId,
+      now,
+    });
+    const balance = resolved.balance;
     const buckets = normalizeBuckets(balance.buckets);
     const allocation = allocateCredits(buckets, cost);
     if (!allocation) {
@@ -625,8 +677,7 @@ async function reserveCredits({ admin, db, request, uid }) {
     }
     const reservedCredits = Number.isInteger(balance.reservedCredits) && balance.reservedCredits >= 0 ? balance.reservedCredits : 0;
     transaction.set(balanceRef, {
-      schemaVersion: 1,
-      tenantId: request.tenantId,
+      ...balance,
       buckets: allocation.remaining,
       reservedCredits: reservedCredits + cost,
       updatedAt: serverTimestamp(admin),
@@ -859,7 +910,7 @@ async function restoreCredits({ admin, db, failureCode, ledgerId, request, uid }
   });
 }
 
-async function generateGrowthAIContent({ admin, provider, requestBody, uid }) {
+async function generateGrowthAIContent({ admin, provider, requestBody, uid, now = new Date() }) {
   const request = normalizeGenerationRequest(requestBody);
   const db = admin.firestore();
   const { tenant } = await verifyGrowthAIActor({ db, uid, tenantId: request.tenantId });
@@ -868,7 +919,7 @@ async function generateGrowthAIContent({ admin, provider, requestBody, uid }) {
     loadGrowthAIBrandProfile({ db, tenantId: request.tenantId }),
   ]);
   const prompt = buildPrompt({ request, tenant, sourceContext, brandProfile });
-  const reservation = await reserveCredits({ admin, db, request, uid });
+  const reservation = await reserveCredits({ admin, db, request, tenant, uid, now });
   if (reservation.kind === 'finalized') {
     return { success: true, reused: true, creditsCharged: reservation.ledger.credits, ...reservation.ledger.result };
   }
@@ -899,6 +950,45 @@ function applyCors(req, res) {
   }
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+}
+
+function normalizeCreditBalanceRequest(body = {}) {
+  if (!exactKeys(body, ['tenantId'], ['tenantId'])) {
+    throw new GrowthAIGatewayError('The GrowthAI credit balance request is invalid.', { code: 'invalid_request' });
+  }
+  const tenantId = cleanString(body.tenantId, 128);
+  if (!tenantId || tenantId === 'DEFAULT' || tenantId.includes('/')) {
+    throw new GrowthAIGatewayError('Select a valid tenant before using GrowthAI.', { code: 'invalid_request' });
+  }
+  return { tenantId };
+}
+
+function createGrowthAICreditBalanceHandler({ admin }) {
+  return async (req, res) => {
+    applyCors(req, res);
+    if (req.method === 'OPTIONS') return res.status(204).send('');
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed', code: 'method_not_allowed' });
+    const authHeader = req.headers?.authorization || req.headers?.Authorization || '';
+    if (!authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentication required', code: 'unauthenticated' });
+    }
+    let uid;
+    try {
+      uid = (await admin.auth().verifyIdToken(authHeader.slice('Bearer '.length).trim())).uid;
+    } catch {
+      return res.status(401).json({ error: 'Invalid authentication token', code: 'unauthenticated' });
+    }
+    try {
+      const { tenantId } = normalizeCreditBalanceRequest(req.body);
+      const balance = await getGrowthAICreditBalance({ admin, tenantId, uid });
+      return res.status(200).json({ success: true, ...balance });
+    } catch (error) {
+      const status = Number.isInteger(error?.status) ? error.status : 500;
+      const code = cleanString(error?.code, 64) || 'credit_balance_failed';
+      const safeMessage = status >= 500 ? 'AI credit balance is temporarily unavailable.' : error.message;
+      return res.status(status).json({ error: safeMessage, code });
+    }
+  };
 }
 
 function createGrowthAIGenerationHandler({ admin, provider }) {
@@ -935,9 +1025,12 @@ module.exports = {
   CREDIT_BUCKETS,
   GrowthAIGatewayError,
   buildPrompt,
+  createGrowthAICreditBalanceHandler,
   createGrowthAIGenerationHandler,
   generateGrowthAIContent,
+  getGrowthAICreditBalance,
   normalizeGenerationRequest,
   normalizeBrandProfile,
   verifyGrowthAIActor,
+  GrowthAICreditEntitlementError,
 };

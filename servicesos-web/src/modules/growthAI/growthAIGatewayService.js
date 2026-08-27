@@ -1,5 +1,4 @@
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../firebase';
+import { auth } from '../../firebase';
 
 export const GROWTH_AI_ACTION_COSTS = Object.freeze({
   customer_response: 1,
@@ -29,18 +28,56 @@ export function createGrowthAIIdempotencyKey() {
 
 export async function loadGrowthAICreditBalance(tenantId) {
   const resolvedTenantId = requireTenantId(tenantId);
-  const snapshot = await getDoc(doc(db, 'tenants', resolvedTenantId, 'growthAICreditBalances', 'current'));
-  if (!snapshot.exists()) return { available: 0, reserved: 0, buckets: { monthly: 0, promotional: 0, purchased: 0 } };
-  const data = snapshot.data() || {};
-  const buckets = data.buckets || {};
-  const normalizedBuckets = Object.fromEntries(['monthly', 'promotional', 'purchased'].map(key => [
-    key,
-    Number.isInteger(buckets[key]) && buckets[key] >= 0 ? buckets[key] : 0,
-  ]));
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in before loading AI credits.');
+  const token = await user.getIdToken();
+  const response = await fetch(functionUrl('getGrowthAICreditBalance'), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ tenantId: resolvedTenantId }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success !== true) {
+    const error = new Error(payload.error || 'AI credit balance is temporarily unavailable.');
+    error.code = payload.code || 'credit_balance_failed';
+    throw error;
+  }
+  const buckets = payload.buckets;
+  const validBuckets = buckets && typeof buckets === 'object' && !Array.isArray(buckets) &&
+    ['monthly', 'promotional', 'purchased'].every(key => Number.isInteger(buckets[key]) && buckets[key] >= 0);
+  const availableFromBuckets = validBuckets
+    ? ['monthly', 'promotional', 'purchased'].reduce((total, key) => total + buckets[key], 0)
+    : null;
+  const periodStart = new Date(payload.periodStart);
+  const nextResetAt = new Date(payload.nextResetAt);
+  let validTimeZone;
+  try {
+    validTimeZone = typeof payload.timeZone === 'string' && Boolean(payload.timeZone.trim()) &&
+      Boolean(new Intl.DateTimeFormat('en-US', { timeZone: payload.timeZone }).format(new Date(0)));
+  } catch {
+    validTimeZone = false;
+  }
+  if (!validBuckets || !Number.isInteger(payload.available) || payload.available < 0 ||
+      payload.available !== availableFromBuckets ||
+      !Number.isInteger(payload.reserved) || payload.reserved < 0 ||
+      !Number.isInteger(payload.monthlyAllowance) || payload.monthlyAllowance < 0 ||
+      Number.isNaN(periodStart.getTime()) || Number.isNaN(nextResetAt.getTime()) ||
+      nextResetAt <= periodStart || !validTimeZone) {
+    const error = new Error('AI credit balance is temporarily unavailable.');
+    error.code = 'credit_balance_invalid';
+    throw error;
+  }
   return {
-    available: Object.values(normalizedBuckets).reduce((total, value) => total + value, 0),
-    reserved: Number.isInteger(data.reservedCredits) && data.reservedCredits >= 0 ? data.reservedCredits : 0,
-    buckets: normalizedBuckets,
+    available: payload.available,
+    reserved: payload.reserved,
+    buckets: Object.fromEntries(['monthly', 'promotional', 'purchased'].map(key => [key, buckets[key]])),
+    monthlyAllowance: payload.monthlyAllowance,
+    periodStart: payload.periodStart,
+    nextResetAt: payload.nextResetAt,
+    timeZone: payload.timeZone,
   };
 }
 

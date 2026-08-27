@@ -15,7 +15,10 @@ const {
 const {
   createSendCustomerEmailHandler,
 } = require('./sendCustomerEmail');
-const { createGrowthAIGenerationHandler } = require('./growthAIGateway');
+const {
+  createGrowthAICreditBalanceHandler,
+  createGrowthAIGenerationHandler,
+} = require('./growthAIGateway');
 const { createGrowthAIConversationRouterHandler } = require('./growthAIConversationRouter');
 const { createGrowthAIProviderFromEnvironment } = require('./growthAIProvider');
 
@@ -25,6 +28,8 @@ exports.generateGrowthAIContent = functions.https.onRequest(createGrowthAIGenera
   admin,
   provider: createGrowthAIProviderFromEnvironment(),
 }));
+
+exports.getGrowthAICreditBalance = functions.https.onRequest(createGrowthAICreditBalanceHandler({ admin }));
 
 exports.routeGrowthAIConversation = functions.https.onRequest(createGrowthAIConversationRouterHandler({
   admin,

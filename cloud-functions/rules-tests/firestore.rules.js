@@ -1176,6 +1176,7 @@ describe('tenant-scoped customer intake Firestore rules', () => {
         websiteUrl: 'https://example.test',
         facebookUrl: '',
         defaultServiceNotes: 'Use side entrance.',
+        timeZone: 'America/Chicago',
         availability: { availableDays: ['monday', 'tuesday'] }
       },
       updatedAt: '2026-07-13T14:00:00.000Z',
@@ -1187,6 +1188,22 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     await assertFails(updateDoc(tenant, { stripeAccountId: 'acct_spoofed' }));
     await assertFails(updateDoc(tenant, { chargesEnabled: true }));
     await assertFails(updateDoc(tenant, { updatedByUid: 'admin-b' }));
+    await assertFails(updateDoc(tenant, {
+      businessSettings: {
+        businessName: 'Updated Tenant A Cleaning',
+        businessPhone: '555-0100',
+        businessEmail: 'owner@example.test',
+        serviceArea: 'Metro area',
+        businessAddress: '1 Main Street',
+        websiteUrl: 'https://example.test',
+        facebookUrl: '',
+        defaultServiceNotes: 'Use side entrance.',
+        timeZone: 123,
+        availability: { availableDays: ['monday', 'tuesday'] }
+      },
+      updatedAt: '2026-07-13T14:00:00.000Z',
+      updatedByUid: 'admin-a'
+    }));
     await assertFails(getDoc(doc(otherAdminDatabase, 'tenants', TENANT_A)));
   });
 
