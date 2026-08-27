@@ -32,13 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `b5286bac635a8766cbab498ad306680b61c2d92e` — `Add canonical GrowthAI credit periods`
+Latest validated product checkpoint: `6681656fdb13393638eeae7ac9a1f8a792191cde` — `Finish GrowthAI credits UX`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **Canonical server-owned credit entitlement foundation with 100 included monthly credits, tenant Business Settings timezone authority, UTC fallback, local-calendar renewal periods, no rollover, preserved promotional/purchased buckets, and transaction-safe reservation behavior**
+Just completed: **Credits UX V1 canonical balance/allowance/renewal presentation, explicit one-credit paid-action labeling, zero-credit deterministic fallbacks, accurate failure/restore messaging, and tenant-safe balance refresh behavior**
 
-Next planned GrowthAI slice: **Credits UX**
+Next planned GrowthAI slice: **First-run guide update for completed V1 capabilities**
 
 ---
 
@@ -252,7 +252,7 @@ Security and production verification still continue under Release Hardening.
 - [x] Existing approval semantics remain intact: Approved means owner-approved content, not sent/published/executed
 - [x] Existing immutable per-draft audit history remains authoritative for activity events
 
-## Credits UX
+## Credits UX — ✅ COMPLETE
 
 - [x] Credit ledger/foundation
 - [x] Canonical server-owned monthly entitlement foundation
@@ -268,11 +268,19 @@ Security and production verification still continue under Release Hardening.
 - [x] Active old-period reservations defer renewal rather than risking duplicate/lost credit accounting
 - [x] Explicit paid estimate-assistance action
 - [x] Zero-credit blocking where AI is required
-- [ ] Final customer-facing balance UX
-- [ ] Clear free-vs-paid actions
-- [ ] Included monthly allowance UX
-- [ ] Failure/restore UX
-- [ ] No-surprise-spending review
+- [x] Final customer-facing balance UX
+- [x] Clear free-vs-paid actions
+- [x] Included monthly allowance UX
+- [x] Failure/restore UX
+- [x] No-surprise-spending review
+- [x] Canonical remaining balance, monthly allowance, tenant-local renewal date, and timezone are consumed from server-owned state
+- [x] Loading, unavailable, malformed, zero, and normal balance states remain distinct
+- [x] Every provider-backed V1 action shows its one-credit cost before explicit owner initiation
+- [x] Zero credits block only provider-backed generation; deterministic/free alternatives remain available
+- [x] Provider failure messaging reflects backend-authored credit restoration behavior and refreshes canonical balance
+- [x] Successful generation refreshes canonical balance without optimistic subtraction
+- [x] Tenant A → B → A stale-balance protection is preserved
+- [x] Credits UX is reusable for the upcoming SLAI Assistant shell without duplicating entitlement logic
 
 ## GrowthAI finalization
 
