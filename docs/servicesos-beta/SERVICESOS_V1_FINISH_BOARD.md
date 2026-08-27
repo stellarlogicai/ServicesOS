@@ -32,11 +32,11 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `b735816b4ac8c1e49c010bdce6145ed8d35c2690` — `Finish GrowthAI drafts and activity UX`
+Latest validated product checkpoint: `b5286bac635a8766cbab498ad306680b61c2d92e` — `Add canonical GrowthAI credit periods`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **Drafts / Activity V1 owner-readable statuses and types, safe source context, human-vs-SLAI activity language, resilient legacy handling, and zero-credit deterministic presentation**
+Just completed: **Canonical server-owned credit entitlement foundation with 100 included monthly credits, tenant Business Settings timezone authority, UTC fallback, local-calendar renewal periods, no rollover, preserved promotional/purchased buckets, and transaction-safe reservation behavior**
 
 Next planned GrowthAI slice: **Credits UX**
 
@@ -255,6 +255,17 @@ Security and production verification still continue under Release Hardening.
 ## Credits UX
 
 - [x] Credit ledger/foundation
+- [x] Canonical server-owned monthly entitlement foundation
+- [x] 100 included AI credits per calendar month
+- [x] Canonical tenant timezone authority at `businessSettings.timeZone` using validated IANA identifiers
+- [x] Missing/invalid tenant timezone uses server-side UTC fallback
+- [x] Monthly period renewal uses tenant-local calendar boundaries rather than fixed durations
+- [x] Monthly allowance does not roll over; renewal resets the monthly bucket to exactly 100
+- [x] Promotional and purchased buckets survive monthly renewal
+- [x] Existing consumption order remains monthly → promotional → purchased
+- [x] First authenticated server interaction can lazily provision/advance the period atomically and idempotently
+- [x] Legacy canonical balances gain period metadata without overwriting existing bucket values
+- [x] Active old-period reservations defer renewal rather than risking duplicate/lost credit accounting
 - [x] Explicit paid estimate-assistance action
 - [x] Zero-credit blocking where AI is required
 - [ ] Final customer-facing balance UX
@@ -484,6 +495,7 @@ The old CleanOps onboarding is legacy/reference material, not the current produc
 - [ ] CORS production smoke
 - [ ] Loading/error/empty-state pass
 - [ ] Major viewport pass
+- [ ] GrowthAI abandoned/stuck credit-reservation reconciliation or expiry review so a stale reservation cannot defer monthly renewal indefinitely
 - [ ] Fix known stale fixed-date test
 - [ ] Update current-state/release documentation
 
