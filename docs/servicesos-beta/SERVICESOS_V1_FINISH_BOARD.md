@@ -32,13 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `55781cc81e5cc488024999a8a316c2014253b9d4` — `Update SLAI Assistant first-run guide`
+Latest validated product checkpoint: `a9e43d8420e37b3751b36e6417aa5c85c2995b2f` — `Refine SLAI Assistant operating surface`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **SLAI Assistant first-run guide updated to the finished V1 operating model with six concise steps, customer-facing SLAI naming, human-control guidance, accurate free-vs-paid credit education, and no autonomous/external-review overclaims**
+Just completed: **SLAI Assistant three-column operating surface with customer-facing SLAI naming, left navigation, center conversation/workspace, dynamic right context rail, quick actions, SLAI Noticed, Recent Drafts, canonical AI Credits, responsive mobile/tablet behavior, and regression/accessibility coverage**
 
-Next planned GrowthAI slice: **SLAI Assistant three-column UI refinement and customer-facing naming pass**
+Next planned GrowthAI slice: **Final QA / failure-state / accessibility hardening before wife beta**
 
 ---
 
@@ -285,10 +285,10 @@ Security and production verification still continue under Release Hardening.
 ## GrowthAI finalization
 
 - [x] Update first-run guide for completed V1
-- [ ] SLAI Assistant three-column UI refinement and customer-facing naming pass
-- [ ] Desktop QA
-- [ ] Tablet QA
-- [ ] Approximately 390 × 844 mobile QA
+- [x] SLAI Assistant three-column UI refinement and customer-facing naming pass
+- [x] Desktop QA
+- [x] Tablet QA
+- [x] Approximately 390 × 844 mobile QA
 - [ ] Empty-business states
 - [ ] No-opportunity states
 - [ ] No-estimate states
@@ -299,6 +299,7 @@ Security and production verification still continue under Release Hardening.
 - [ ] Long names/content
 - [ ] Accessibility
 - [ ] Loading/error states
+- [ ] Triage the pre-existing local smoke `false for 'list'` alert if it reproduces during final QA
 - [ ] Wife GrowthAI beta
 - [ ] Fix beta findings
 - [ ] GrowthAI V1 freeze
