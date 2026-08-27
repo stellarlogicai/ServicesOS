@@ -32,13 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `6681656fdb13393638eeae7ac9a1f8a792191cde` — `Finish GrowthAI credits UX`
+Latest validated product checkpoint: `55781cc81e5cc488024999a8a316c2014253b9d4` — `Update SLAI Assistant first-run guide`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **Credits UX V1 canonical balance/allowance/renewal presentation, explicit one-credit paid-action labeling, zero-credit deterministic fallbacks, accurate failure/restore messaging, and tenant-safe balance refresh behavior**
+Just completed: **SLAI Assistant first-run guide updated to the finished V1 operating model with six concise steps, customer-facing SLAI naming, human-control guidance, accurate free-vs-paid credit education, and no autonomous/external-review overclaims**
 
-Next planned GrowthAI slice: **First-run guide update for completed V1 capabilities**
+Next planned GrowthAI slice: **SLAI Assistant three-column UI refinement and customer-facing naming pass**
 
 ---
 
@@ -284,7 +284,8 @@ Security and production verification still continue under Release Hardening.
 
 ## GrowthAI finalization
 
-- [ ] Update first-run guide for completed V1
+- [x] Update first-run guide for completed V1
+- [ ] SLAI Assistant three-column UI refinement and customer-facing naming pass
 - [ ] Desktop QA
 - [ ] Tablet QA
 - [ ] Approximately 390 × 844 mobile QA
