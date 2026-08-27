@@ -49,26 +49,49 @@
 }
 
 .growth-ai-credit-summary {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 6px;
+  display: grid;
+  min-width: min(260px, 100%);
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
   color: #526278;
-  white-space: nowrap;
 }
 
-.growth-ai-credit-summary > span {
+.growth-ai-credit-mark {
   color: #0f766e;
   font-size: 16px;
+  line-height: 1.4;
+}
+
+.growth-ai-credit-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.growth-ai-credit-label {
+  color: #526278;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-transform: uppercase;
 }
 
 .growth-ai-credit-summary strong {
   color: #102a43;
   font-size: 17px;
+  line-height: 1.25;
 }
 
 .growth-ai-credit-summary small {
+  overflow-wrap: anywhere;
   font-size: 12px;
+  line-height: 1.35;
+}
+
+.growth-ai-credit-summary[data-credit-state="unavailable"] strong,
+.growth-ai-credit-zero-note {
+  color: #8a5a05;
 }
 
 .growth-ai-shell {
@@ -1079,12 +1102,18 @@
 
 @media (max-width: 600px) {
   .growth-ai-header {
+    flex-wrap: wrap;
     min-height: 64px;
     padding: 11px 14px 11px 64px;
   }
 
   .growth-ai-header p {
     display: none;
+  }
+
+  .growth-ai-credit-summary {
+    min-width: 0;
+    flex: 1 1 100%;
   }
 
   .growth-ai-credit-summary small {
@@ -1161,11 +1190,6 @@
 }
 
 @media (max-width: 390px) {
-  .growth-ai-credit-summary > span,
-  .growth-ai-credit-summary small {
-    display: none;
-  }
-
   .growth-ai-suggested-actions {
     grid-template-columns: 1fr;
   }

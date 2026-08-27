@@ -126,6 +126,19 @@ async function expectCreditBalance(value) {
   await waitFor(() => expect(creditSummary).toHaveTextContent(String(value)));
 }
 
+function canonicalCreditBalance(available, overrides = {}) {
+  return {
+    available,
+    reserved: 0,
+    buckets: { monthly: available, promotional: 0, purchased: 0 },
+    monthlyAllowance: 100,
+    periodStart: '2026-08-01T05:00:00.000Z',
+    nextResetAt: '2026-09-01T05:00:00.000Z',
+    timeZone: 'America/Chicago',
+    ...overrides,
+  };
+}
+
 describe('GrowthAI V1 tenant draft foundation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -146,11 +159,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     fieldPhotoService.loadFieldPhotoBlob.mockResolvedValue(new Blob(['photo'], { type: 'image/jpeg' }));
     gatewayService.createGrowthAIIdempotencyKey.mockReturnValue('idempotency-a');
     gatewayService.routeGrowthAIConversation.mockResolvedValue({ skillId: 'marketing', confidence: 0.9 });
-    gatewayService.loadGrowthAICreditBalance.mockImplementation(async () => ({
-      available: gatewayService.credits,
-      reserved: 0,
-      buckets: { monthly: gatewayService.credits, promotional: 0, purchased: 0 },
-    }));
+    gatewayService.loadGrowthAICreditBalance.mockImplementation(async () => canonicalCreditBalance(gatewayService.credits));
     gatewayService.generateGrowthAIContent.mockImplementation(async ({ actionType, sourceRefs }) => {
       gatewayService.credits -= 1;
       const draft = savedDraft({
@@ -301,6 +310,36 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(screen.getByLabelText('Full caption')).toHaveValue('AI-assisted draft for human review.');
   });
 
+  it('does not flash zero while the canonical credit balance is loading', async () => {
+    const creditLoad = deferred();
+    gatewayService.loadGrowthAICreditBalance.mockReturnValue(creditLoad.promise);
+    render(<GrowthAIPage />);
+
+    const summary = await screen.findByLabelText('AI credit balance');
+    expect(summary).toHaveTextContent('Loading balance');
+    expect(summary).not.toHaveTextContent('0 remaining');
+
+    await act(async () => creditLoad.resolve(canonicalCreditBalance(82)));
+    await waitFor(() => expect(summary).toHaveTextContent('82 remaining'));
+    expect(summary).toHaveTextContent('100 included each month');
+    expect(summary).toHaveTextContent('Renews Sep 1');
+  });
+
+  it('shows unavailable instead of zero and leaves deterministic work usable when balance loading fails', async () => {
+    gatewayService.loadGrowthAICreditBalance.mockRejectedValue(new Error('permission denied'));
+    render(<GrowthAIPage />);
+
+    const summary = await screen.findByLabelText('AI credit balance');
+    await waitFor(() => expect(summary).toHaveTextContent('Balance unavailable'));
+    expect(summary).not.toHaveTextContent('0 remaining');
+    openHomeCapability('Create marketing');
+    expect(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' })).toBeDisabled();
+    expect(screen.getByText(/AI credit balance is unavailable/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create deterministic draft' }));
+    expect(screen.getByLabelText('Full caption')).not.toHaveValue('');
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+  });
+
   it('keeps deterministic tools available with zero AI credits', async () => {
     gatewayService.credits = 0;
     render(<GrowthAIPage />);
@@ -323,6 +362,34 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('credit was restored');
     await expectCreditBalance(5);
+    expect(state.drafts).toHaveLength(0);
+  });
+
+  it('keeps a successful draft truthful when the post-generation balance refresh fails', async () => {
+    gatewayService.loadGrowthAICreditBalance
+      .mockResolvedValueOnce(canonicalCreditBalance(5))
+      .mockRejectedValueOnce(new Error('balance refresh unavailable'));
+    render(<GrowthAIPage />);
+    await expectCreditBalance(5);
+    openHomeCapability('Create marketing');
+    fireEvent.click(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' }));
+
+    expect(await screen.findByText(/AI-assisted draft saved for human review/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('AI credit balance')).toHaveTextContent('Balance unavailable'));
+    expect(screen.queryByText(/credit was restored/i)).not.toBeInTheDocument();
+    expect(state.drafts).toHaveLength(1);
+  });
+
+  it('does not claim restoration when a reservation never occurred', async () => {
+    gatewayService.generateGrowthAIContent.mockRejectedValueOnce(new Error('Not enough AI credits for this generation.'));
+    render(<GrowthAIPage />);
+    await expectCreditBalance(5);
+    openHomeCapability('Create marketing');
+    fireEvent.click(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Not enough AI credits');
+    expect(alert).not.toHaveTextContent('restored');
     expect(state.drafts).toHaveLength(0);
   });
 
@@ -1062,7 +1129,8 @@ describe('GrowthAI V1 tenant draft foundation', () => {
 
     expect(await screen.findByText('ServicesOS pricing')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Analyze with GrowthAI · 1 credit' })).toBeDisabled();
-    expect(screen.getByText(/Not enough AI credits. ServicesOS pricing remains available/)).toBeInTheDocument();
+    expect(screen.getByText(/No AI credits remaining. ServicesOS pricing remains available/)).toBeInTheDocument();
+    expect(screen.getByText(/included credits renew Sep 1/)).toBeInTheDocument();
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
   });
 
@@ -1242,10 +1310,47 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     view.rerender(<GrowthAIPage />);
     await waitFor(() => expect(gatewayService.loadGrowthAICreditBalance).toHaveBeenCalledWith('tenant-b'));
 
-    await act(async () => creditLoads['tenant-a'].resolve({ available: 99, reserved: 0 }));
+    await act(async () => creditLoads['tenant-a'].resolve(canonicalCreditBalance(99)));
     expect(screen.getByLabelText('AI credit balance')).not.toHaveTextContent('99');
-    await act(async () => creditLoads['tenant-b'].resolve({ available: 7, reserved: 0 }));
+    await act(async () => creditLoads['tenant-b'].resolve(canonicalCreditBalance(7, {
+      nextResetAt: '2026-09-01T04:00:00.000Z',
+      timeZone: 'America/New_York',
+    })));
     await expectCreditBalance(7);
+  });
+
+  it('reloads the correct canonical balance when switching Tenant A to B and back to A', async () => {
+    const loads = { 'tenant-a': [], 'tenant-b': [] };
+    gatewayService.loadGrowthAICreditBalance.mockImplementation(tenant => {
+      const request = deferred();
+      loads[tenant].push(request);
+      return request.promise;
+    });
+
+    const view = render(<GrowthAIPage />);
+    await waitFor(() => expect(loads['tenant-a']).toHaveLength(1));
+    await act(async () => loads['tenant-a'][0].resolve(canonicalCreditBalance(80)));
+    await expectCreditBalance(80);
+
+    state.auth = {
+      currentTenant: { id: 'tenant-b', businessName: 'Tenant B Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-b', userProfile: { displayName: 'Taylor Test' },
+    };
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(loads['tenant-b']).toHaveLength(1));
+    expect(screen.getByLabelText('AI credit balance')).not.toHaveTextContent('80 remaining');
+    await act(async () => loads['tenant-b'][0].resolve(canonicalCreditBalance(12)));
+    await expectCreditBalance(12);
+
+    state.auth = {
+      currentTenant: { id: 'tenant-a', businessName: 'Tenant A Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-a', userProfile: { displayName: 'Jamie Brown' },
+    };
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(loads['tenant-a']).toHaveLength(2));
+    expect(screen.getByLabelText('AI credit balance')).not.toHaveTextContent('12 remaining');
+    await act(async () => loads['tenant-a'][1].resolve(canonicalCreditBalance(79)));
+    await expectCreditBalance(79);
   });
 
   it('ignores stale Tenant A audit results after switching to Tenant B', async () => {

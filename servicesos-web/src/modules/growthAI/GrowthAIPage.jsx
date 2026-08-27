@@ -5,6 +5,7 @@ import GrowthAIActivityView from './components/GrowthAIActivityView';
 import GrowthAIDraftsView from './components/GrowthAIDraftsView';
 import GrowthAIHome from './components/GrowthAIHome';
 import GrowthAIWorkspaceShell from './components/GrowthAIWorkspaceShell';
+import { getGrowthAICreditPresentation } from './growthAICreditPresentation';
 import { BRANDS, CONTENT_IDEAS, PLATFORMS } from './brandProfiles';
 import { getApprovedGrowthAIBrandContext, normalizeGrowthAIBrandProfile } from './growthAIBrandContext';
 import {
@@ -108,12 +109,14 @@ export default function GrowthAIPage({ onReviewJob }) {
   const [opportunityWorkspace, setOpportunityWorkspace] = useState(emptyOpportunityWorkspace);
   const [opportunitiesLoading, setOpportunitiesLoading] = useState(true);
   const [opportunityFilter, setOpportunityFilter] = useState('all');
-  const [creditBalance, setCreditBalance] = useState({ available: 0, reserved: 0 });
+  const [creditBalance, setCreditBalance] = useState(null);
+  const [creditError, setCreditError] = useState('');
   const [creditsLoading, setCreditsLoading] = useState(true);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [workspaceTenantId, setWorkspaceTenantId] = useState(null);
   const [auditTenantId, setAuditTenantId] = useState(null);
   const [creditsTenantId, setCreditsTenantId] = useState(null);
+  const [creditErrorTenantId, setCreditErrorTenantId] = useState(null);
   const [editorTenantId, setEditorTenantId] = useState(null);
   const [messageTenantId, setMessageTenantId] = useState(null);
   const [errorTenantId, setErrorTenantId] = useState(null);
@@ -191,7 +194,13 @@ export default function GrowthAIPage({ onReviewJob }) {
   const businessName = brandContext.businessName || 'Your business';
   const draftsForTenant = tenantWorkspaceReady ? drafts : [];
   const auditForTenant = auditTenantId === tenantId ? audit : [];
-  const creditBalanceForTenant = creditsTenantId === tenantId ? creditBalance : { available: 0, reserved: 0 };
+  const creditBalanceForTenant = creditsTenantId === tenantId ? creditBalance : null;
+  const creditErrorForTenant = creditErrorTenantId === tenantId ? creditError : '';
+  const creditPresentation = getGrowthAICreditPresentation({
+    balance: creditBalanceForTenant,
+    error: creditErrorForTenant,
+    loading: creditsTenantId !== tenantId || creditsLoading,
+  });
   const editorForTenant = editorTenantId === tenantId ? editor : emptyEditor;
   const loadingForTenant = loading || workspaceTenantId !== tenantId;
   const messageForTenant = messageTenantId === tenantId ? message : '';
@@ -250,12 +259,22 @@ export default function GrowthAIPage({ onReviewJob }) {
     const requestedTenantId = tenantId;
     const { version: requestVersion } = requestContext();
     setCreditsLoading(true);
+    setCreditError('');
+    setCreditErrorTenantId(requestedTenantId);
     try {
       const balance = await loadGrowthAICreditBalance(requestedTenantId);
       if (isCurrentTenantRequest(requestedTenantId, requestVersion)) {
         setCreditBalance(balance);
         setCreditsTenantId(requestedTenantId);
       }
+    } catch (err) {
+      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) {
+        setCreditBalance(null);
+        setCreditsTenantId(requestedTenantId);
+        setCreditError(err.message || 'AI credit balance is temporarily unavailable.');
+        setCreditErrorTenantId(requestedTenantId);
+      }
+      throw err;
     } finally {
       if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setCreditsLoading(false);
     }
@@ -283,11 +302,8 @@ export default function GrowthAIPage({ onReviewJob }) {
 
   useEffect(() => {
     if (!authorized || !tenantId) return;
-    const { tenantId: requestedTenantId, version: requestVersion } = requestContext();
-    Promise.resolve().then(() => reloadCredits()).catch(err => {
-      if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setScopedError(err.message);
-    });
-  }, [authorized, isCurrentTenantRequest, reloadCredits, requestContext, setScopedError, tenantId]);
+    Promise.resolve().then(() => reloadCredits()).catch(() => {});
+  }, [authorized, reloadCredits, tenantId]);
 
   const loadAudit = useCallback(async draftId => {
     const requestSequence = ++auditRequestSequence.current;
@@ -390,7 +406,7 @@ export default function GrowthAIPage({ onReviewJob }) {
       });
       await reloadWorkspace(result.draftId);
       await loadAudit(result.draftId);
-      await reloadCredits();
+      await reloadCredits().catch(() => null);
       if (actionType === 'estimate_followup') await reloadOpportunities();
       if (!isCurrentTenantRequest(requestedTenantId, requestVersion)) return result;
       if (!stayOnHome) setActiveView('drafts');
@@ -719,8 +735,7 @@ export default function GrowthAIPage({ onReviewJob }) {
   return (
     <GrowthAIWorkspaceShell
       activeView={activeView}
-      creditBalance={creditBalanceForTenant}
-      creditsLoading={creditsTenantId !== tenantId || creditsLoading}
+      creditPresentation={creditPresentation}
       draftCount={draftsForTenant.length}
       error={errorForTenant}
       message={messageForTenant}
@@ -731,7 +746,7 @@ export default function GrowthAIPage({ onReviewJob }) {
         <GrowthAIHome
           key={tenantId}
           activeOpportunities={activeOpportunities}
-          aiCredits={creditBalanceForTenant.available}
+          creditPresentation={creditPresentation}
           aiGenerating={aiGeneratingForTenant}
           brand={brand}
           briefing={businessBriefing}

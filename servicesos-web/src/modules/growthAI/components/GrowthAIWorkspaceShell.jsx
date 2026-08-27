@@ -1,3 +1,5 @@
+import GrowthAICreditSummary from './GrowthAICreditSummary';
+
 const WORKSPACE_VIEWS = Object.freeze([
   { id: 'home', label: 'Home' },
   { id: 'drafts', label: 'Drafts' },
@@ -7,8 +9,7 @@ const WORKSPACE_VIEWS = Object.freeze([
 export default function GrowthAIWorkspaceShell({
   activeView,
   children,
-  creditBalance,
-  creditsLoading,
+  creditPresentation,
   draftCount,
   error,
   message,
@@ -42,11 +43,7 @@ export default function GrowthAIWorkspaceShell({
             <p>Business growth assistant</p>
           </div>
         </div>
-        <div className="growth-ai-credit-summary" aria-label="AI credit balance">
-          <span aria-hidden="true">✦</span>
-          <strong>{creditsLoading ? 'Loading...' : creditBalance.available}</strong>
-          <small>AI credits{creditBalance.reserved > 0 ? ` · ${creditBalance.reserved} reserved` : ''}</small>
-        </div>
+        <GrowthAICreditSummary presentation={creditPresentation} />
       </header>
 
       <div className="growth-ai-shell">

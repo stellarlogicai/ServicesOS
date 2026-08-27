@@ -88,20 +88,18 @@ function EstimateAssistanceResult({ recommendation }) {
   );
 }
 
-function EstimateAssistanceWorkflow({ aiCredits, aiGenerating, estimates, onAnalyze, saving }) {
+function EstimateAssistanceWorkflow({ aiGenerating, creditPresentation, estimates, onAnalyze, saving }) {
   const [selectedEstimateId, setSelectedEstimateId] = useState(null);
   const [recommendation, setRecommendation] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const selectedEstimate = estimates.find(item => item.id === selectedEstimateId) || null;
   const pricing = selectedEstimate?.pricing || null;
-  const aiDisabled = !selectedEstimate || !pricing || aiCredits < 1 || aiGenerating || saving || submitting;
+  const aiDisabled = !selectedEstimate || !pricing || aiCreditActionBlocked(creditPresentation) || aiGenerating || saving || submitting;
   const disabledReason = !selectedEstimate
     ? 'Choose an estimate before requesting GrowthAI analysis.'
     : !pricing
       ? 'This saved estimate needs a valid ServicesOS price range before it can be analyzed.'
-      : aiCredits < 1
-        ? 'Not enough AI credits. ServicesOS pricing remains available.'
-        : 'GrowthAI analysis uses 1 AI credit.';
+      : aiCreditActionMessage(creditPresentation, 'ServicesOS pricing remains available.');
 
   const selectEstimate = estimate => {
     setSelectedEstimateId(estimate.id);
@@ -182,6 +180,23 @@ function safeFirstName(displayName) {
   return value.split(/\s+/)[0];
 }
 
+function aiCreditActionBlocked(creditPresentation) {
+  return creditPresentation?.status !== 'ready' || creditPresentation.available < 1;
+}
+
+function aiCreditActionMessage(creditPresentation, freeAlternative) {
+  if (creditPresentation?.status === 'loading') {
+    return `AI credit balance is loading. ${freeAlternative}`;
+  }
+  if (creditPresentation?.status !== 'ready') {
+    return `AI credit balance is unavailable, so AI generation is paused. ${freeAlternative}`;
+  }
+  if (creditPresentation.available < 1) {
+    return `No AI credits remaining. ${freeAlternative} AI generation will be available again when included credits renew${creditPresentation.renewalLabel ? ` ${creditPresentation.renewalLabel}` : ''}.`;
+  }
+  return 'Uses 1 AI credit. Credits are used only after you choose this action.';
+}
+
 function opportunityTypeLabel(type) {
   if (type === 'estimate_followup') return 'Estimate Follow-Up';
   if (type === 'marketing_photo_review') return 'Marketing Opportunity';
@@ -191,8 +206,8 @@ function opportunityTypeLabel(type) {
 }
 
 function OpportunityCard({
-  aiCredits,
   aiGenerating,
+  creditPresentation,
   opportunity,
   subject,
   onAIFollowUp,
@@ -222,7 +237,7 @@ function OpportunityCard({
             <GrowthAIButton disabled={saving || acted} onClick={() => onDraftFollowUp(opportunity)}>
               {acted ? 'Follow-up drafted' : 'Draft Follow-Up'}
             </GrowthAIButton>
-            <GrowthAIButton disabled={saving || aiGenerating || acted || aiCredits < 1} onClick={() => onAIFollowUp(opportunity)}>
+            <GrowthAIButton disabled={saving || aiGenerating || acted || aiCreditActionBlocked(creditPresentation)} onClick={() => onAIFollowUp(opportunity)}>
               Generate follow-up with AI · 1 credit
             </GrowthAIButton>
           </>
@@ -245,16 +260,19 @@ function OpportunityCard({
         ) : null}
         <GrowthAIButton tone="secondary" disabled={saving} onClick={() => onDismiss(opportunity)}>Dismiss</GrowthAIButton>
       </div>
+      {opportunity.type === 'estimate_followup' && aiCreditActionBlocked(creditPresentation) ? (
+        <p className="growth-ai-credit-warning">{aiCreditActionMessage(creditPresentation, 'The deterministic follow-up draft remains available.')}</p>
+      ) : null}
     </article>
   );
 }
 
 function MarketingWorkflow({
-  aiCredits,
   aiGenerating,
   brand,
   contentPlan = [],
   contentIdeas,
+  creditPresentation,
   inputs,
   marketingAssets = { items: [], loading: false, error: '' },
   marketingOpportunity,
@@ -345,12 +363,13 @@ function MarketingWorkflow({
         <GrowthAIField label="Extra notes"><textarea aria-label="Extra notes" rows="2" value={inputs.extraNotes} onChange={event => onInputChange({ extraNotes: event.target.value })} /></GrowthAIField>
         <div className="growth-ai-actions">
           <GrowthAIButton disabled={Boolean(selectionError)} onClick={onGenerateDeterministic}>Create deterministic draft</GrowthAIButton>
-          <GrowthAIButton disabled={Boolean(selectionError) || saving || aiGenerating || aiCredits < 1} onClick={onGenerateMarketingAI}>
+          <GrowthAIButton disabled={Boolean(selectionError) || saving || aiGenerating || aiCreditActionBlocked(creditPresentation)} onClick={onGenerateMarketingAI}>
             Generate marketing with AI · 1 credit
           </GrowthAIButton>
         </div>
-        <p className="growth-ai-cost-note">AI generation uses 1 AI credit. Opening and configuring this workflow is free.</p>
-        {aiCredits < 1 ? <p className="growth-ai-credit-warning">Not enough AI credits. The deterministic draft option remains available.</p> : null}
+        <p className={aiCreditActionBlocked(creditPresentation) ? 'growth-ai-credit-warning' : 'growth-ai-cost-note'}>
+          {aiCreditActionMessage(creditPresentation, 'Opening, configuring, and creating a deterministic draft remain free.')}
+        </p>
       </div>
       <section className="growth-ai-marketing-plan" aria-labelledby="growth-ai-marketing-plan-title">
         <h4 id="growth-ai-marketing-plan-title">Content plan</h4>
@@ -372,10 +391,10 @@ function MarketingWorkflow({
 }
 
 function CustomerResponseWorkflow({
-  aiCredits,
   aiGenerating,
   bookings,
   businessName,
+  creditPresentation,
   leads,
   onGenerateAI,
   onSave,
@@ -519,10 +538,11 @@ function CustomerResponseWorkflow({
         <div className="growth-ai-actions">
           <GrowthAICopyButton label="Copy response" text={deterministicDraft.messageTemplate} />
           <GrowthAIButton tone="secondary" disabled={saving || Boolean(workflowError)} onClick={() => onSave(deterministicDraft)}>Save response draft</GrowthAIButton>
-          <GrowthAIButton disabled={saving || aiGenerating || aiCredits < 1 || Boolean(workflowError) || (!isReviewResponse && !customerMessage.trim())} onClick={generateAI}>Improve with GrowthAI · 1 credit</GrowthAIButton>
+          <GrowthAIButton disabled={saving || aiGenerating || aiCreditActionBlocked(creditPresentation) || Boolean(workflowError) || (!isReviewResponse && !customerMessage.trim())} onClick={generateAI}>Improve with GrowthAI · 1 credit</GrowthAIButton>
         </div>
-        <p className="growth-ai-cost-note">AI generation uses 1 AI credit. Templates, editing, and copying are free.</p>
-        {aiCredits < 1 ? <p className="growth-ai-credit-warning">Not enough AI credits. Deterministic response templates remain available.</p> : null}
+        <p className={aiCreditActionBlocked(creditPresentation) ? 'growth-ai-credit-warning' : 'growth-ai-cost-note'}>
+          {aiCreditActionMessage(creditPresentation, 'Templates, editing, copying, and deterministic drafts remain free.')}
+        </p>
         {!isReviewResponse ? <details className="growth-ai-preview">
           <summary>Existing quick response templates</summary>
           <div className="growth-ai-form-grid">
@@ -546,8 +566,8 @@ function CustomerResponseWorkflow({
 
 function OpportunitiesWorkflow({
   activeOpportunities,
-  aiCredits,
   aiGenerating,
+  creditPresentation,
   onAIEstimateFollowUp,
   onDismissOpportunity,
   onDraftEstimateFollowUp,
@@ -602,7 +622,7 @@ function OpportunitiesWorkflow({
               onDismiss={onDismissOpportunity}
               saving={saving}
               aiGenerating={aiGenerating}
-              aiCredits={aiCredits}
+              creditPresentation={creditPresentation}
             />
           </div>
         ))}
@@ -701,7 +721,6 @@ function BusinessBriefing({ briefing, headingId, loading, onOpenCapability }) {
 
 export default function GrowthAIHome({
   activeOpportunities,
-  aiCredits,
   aiGenerating,
   brand,
   brandContext,
@@ -710,6 +729,7 @@ export default function GrowthAIHome({
   businessName,
   contentPlan = [],
   contentIdeas,
+  creditPresentation,
   eligibleEstimateLeads,
   communicationBookings,
   communicationLeads,
@@ -972,21 +992,21 @@ export default function GrowthAIHome({
       return <BusinessBriefing briefing={briefing} headingId="growth-ai-business-briefing-workflow" loading={briefingLoading} onOpenCapability={openCapability} />;
     }
     if (capabilityType === 'estimate_assistance') {
-      return <EstimateAssistanceWorkflow aiCredits={aiCredits} aiGenerating={aiGenerating} estimates={eligibleEstimateLeads} onAnalyze={onAIEstimateAssistance} saving={saving} />;
+      return <EstimateAssistanceWorkflow creditPresentation={creditPresentation} aiGenerating={aiGenerating} estimates={eligibleEstimateLeads} onAnalyze={onAIEstimateAssistance} saving={saving} />;
     }
     if (capabilityType === 'marketing') {
       return <MarketingWorkflow {...{
-        aiCredits, aiGenerating, brand, contentIdeas, contentPlan, inputs, onGenerateDeterministic, onGenerateMarketingAI,
+        aiGenerating, brand, contentIdeas, contentPlan, creditPresentation, inputs, onGenerateDeterministic, onGenerateMarketingAI,
         marketingAssets, marketingOpportunity, marketingServices, onInputChange, onMarketingOpportunityChange, onPostTypeChange,
         onPrefillIdea, onStartMarketingPlan, onToggleMarketingAsset, platforms, postTypeId, saving,
       }} />;
     }
     if (capabilityType === 'customer_response') {
-      return <CustomerResponseWorkflow aiCredits={aiCredits} aiGenerating={aiGenerating} bookings={communicationBookings} businessName={businessName} leads={communicationLeads} onGenerateAI={onGenerateResponseAI} onSave={onSaveResponseDraft} customerCommunicationIntent={customerCommunicationIntent} saving={saving} />;
+      return <CustomerResponseWorkflow creditPresentation={creditPresentation} aiGenerating={aiGenerating} bookings={communicationBookings} businessName={businessName} leads={communicationLeads} onGenerateAI={onGenerateResponseAI} onSave={onSaveResponseDraft} customerCommunicationIntent={customerCommunicationIntent} saving={saving} />;
     }
     if (capabilityType === 'opportunities') {
       return <OpportunitiesWorkflow {...{
-        activeOpportunities, aiCredits, aiGenerating, onAIEstimateFollowUp, onDismissOpportunity,
+        activeOpportunities, creditPresentation, aiGenerating, onAIEstimateFollowUp, onDismissOpportunity,
         onDraftEstimateFollowUp, onOpportunityFilterChange, onRefreshOpportunities, onReviewOpportunityJob,
         onStartRebookingFromOpportunity: opportunity => {
           if (onStartRebookingFromOpportunity(opportunity) !== false) {
