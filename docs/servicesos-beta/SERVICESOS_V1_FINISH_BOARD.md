@@ -32,13 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `4a21f90073be63c4f04b27960534d08b8e89fe0c` — `Finish GrowthAI marketing V1`
+Latest validated product checkpoint: `2e87f67ead89c426c6a2ef3ba2338cfc7b7809fb` — `Harden GrowthAI contextual orchestration`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **Marketing V1 deterministic content planning, explicit trusted-management photo approval, canonical photo re-verification, privacy-safe provider context, and completed Brand Intelligence integration**
+Just completed: **Conversation Orchestration V1 allowlisted skill registry, deterministic fast paths, constrained zero-user-credit ambiguity routing, contextual follow-ups, tenant-safe workflow handoffs, and human-control boundaries**
 
-Next planned GrowthAI slice: **Conversation orchestration / hybrid skill router**
+Next planned GrowthAI slice: **Drafts / Activity UX**
 
 ---
 
@@ -211,17 +211,29 @@ Security and production verification still continue under Release Hardening.
 - [x] Workflow-specific factual and safety guardrails outrank brand styling
 - [x] Missing brand preferences fall back to neutral-safe behavior without AI inference or extra credit use
 
-## Conversation orchestration
+## Conversation orchestration — ✅ COMPLETE
 
 - [x] Intent-routing foundation
+- [x] Allowlisted V1 skill registry
+- [x] Deterministic fast paths for clear intents
+- [x] Constrained ambiguous-intent router with validated skill output
+- [x] Routing costs zero user GrowthAI credits
+- [x] Router provider input is limited to authenticated tenant context plus the owner's current message; no customer, payment, photo, draft, or Brand context is used for classification
+- [x] Router cannot send, publish, mutate records, or reserve credits
 - [x] Estimate-assistance conversational trigger
 - [x] Business-briefing questions
 - [x] Marketing routing polish for the implemented Marketing V1 content types
 - [x] Retention/rebooking detection routing
 - [x] Reputation routing
 - [x] Customer-communication routing
-- [ ] Contextual follow-ups
-- [ ] Natural transitions between controlled workflows
+- [x] Contextual follow-ups use only current bounded/visible tenant-scoped workflow context
+- [x] Natural transitions between controlled workflows
+- [x] Rebooking and review-request opportunities hand off to Customer Communication without automatic send or draft creation
+- [x] Marketing-photo opportunities hand off to Marketing
+- [x] Estimate follow-up remains in Opportunities for explicit owner action
+- [x] Active writing refinements remain in the current workflow while explicit new intents can change workflows
+- [x] Tenant-switch stale router/context results are ignored
+- [x] Malformed, unsupported, or ambiguous routing falls back to controlled clarification
 
 ## Drafts / Activity
 
