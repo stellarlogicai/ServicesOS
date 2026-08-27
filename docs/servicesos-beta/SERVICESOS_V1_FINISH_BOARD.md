@@ -32,13 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `2e87f67ead89c426c6a2ef3ba2338cfc7b7809fb` — `Harden GrowthAI contextual orchestration`
+Latest validated product checkpoint: `b735816b4ac8c1e49c010bdce6145ed8d35c2690` — `Finish GrowthAI drafts and activity UX`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **Conversation Orchestration V1 allowlisted skill registry, deterministic fast paths, constrained zero-user-credit ambiguity routing, contextual follow-ups, tenant-safe workflow handoffs, and human-control boundaries**
+Just completed: **Drafts / Activity V1 owner-readable statuses and types, safe source context, human-vs-SLAI activity language, resilient legacy handling, and zero-credit deterministic presentation**
 
-Next planned GrowthAI slice: **Drafts / Activity UX**
+Next planned GrowthAI slice: **Credits UX**
 
 ---
 
@@ -235,16 +235,22 @@ Security and production verification still continue under Release Hardening.
 - [x] Tenant-switch stale router/context results are ignored
 - [x] Malformed, unsupported, or ambiguous routing falls back to controlled clarification
 
-## Drafts / Activity
+## Drafts / Activity — ✅ COMPLETE
 
 - [x] Draft persistence foundation
 - [x] Audit foundation
-- [ ] Owner-friendly draft statuses
-- [ ] Needs Review state
-- [ ] Approved state
-- [ ] Clear source/context
-- [ ] Clear human-vs-AI action history
-- [ ] Activity reads like a business tool rather than a developer log
+- [x] Owner-friendly draft statuses
+- [x] Needs Review state
+- [x] Approved state
+- [x] Clear source/context with safe unavailable-source fallback
+- [x] Clear human-vs-AI action history
+- [x] Activity reads like a business tool rather than a developer log
+- [x] Human-friendly draft type labels replace internal implementation identifiers in owner-facing UI
+- [x] Legacy/malformed drafts degrade safely without leaking raw IDs or crashing
+- [x] Cross-tenant or missing source references do not resolve into owner-facing context
+- [x] Drafts/Activity rendering is deterministic, provider-free, and zero-credit
+- [x] Existing approval semantics remain intact: Approved means owner-approved content, not sent/published/executed
+- [x] Existing immutable per-draft audit history remains authoritative for activity events
 
 ## Credits UX
 
