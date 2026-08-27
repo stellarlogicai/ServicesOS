@@ -45,7 +45,9 @@ function createLocalMockGrowthAIProvider() {
       if (userPrompt.includes('[simulate-provider-failure]')) {
         throw new GrowthAIProviderError('The local mock provider failed. Your credit was restored.', 'provider_error');
       }
-      const text = actionType === 'estimate_assistance'
+      const text = actionType === 'conversation_router'
+        ? JSON.stringify({ skillId: 'opportunities', confidence: 0.4 })
+        : actionType === 'estimate_assistance'
         ? JSON.stringify({
             recommendedPrice: 205,
             reasoning: 'Local deterministic mock recommendation for human review.',

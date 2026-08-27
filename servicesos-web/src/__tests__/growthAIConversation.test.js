@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   appendBoundedGrowthAIMessages,
+  getGrowthAISkill,
   GROWTH_AI_CONVERSATION_LIMIT,
+  GROWTH_AI_SKILL_REGISTRY,
+  normalizeGrowthAIRouterResult,
+  routeGrowthAIConversation,
   routeGrowthAIIntent,
 } from '../modules/growthAI/growthAIConversation';
 
@@ -20,7 +24,7 @@ describe('GrowthAI conversation routing', () => {
     ['Make something from this completed job.', 'marketing'],
     ['Help me promote move-out cleaning.', 'marketing'],
     ['help me reply to a customer', 'customer_response'],
-    ['Follow up on this estimate.', 'customer_response'],
+    ['Follow up on this estimate.', 'estimate_assistance'],
     ['Write a scheduling message.', 'customer_response'],
     ['Help explain this quote.', 'customer_response'],
     ['Answer a question about deep cleaning.', 'customer_response'],
@@ -58,5 +62,48 @@ describe('GrowthAI conversation routing', () => {
     expect(next).toHaveLength(GROWTH_AI_CONVERSATION_LIMIT);
     expect(next[0]).toEqual({ id: 'message-2' });
     expect(next.at(-1)).toEqual({ id: 'new-b' });
+  });
+
+  it('keeps the real V1 skill registry declarative and non-authorizing', () => {
+    expect(GROWTH_AI_SKILL_REGISTRY.map(skill => skill.id)).toEqual([
+      'business_briefing', 'estimate_assistance', 'marketing', 'customer_response',
+      'retention', 'reputation', 'opportunities', 'brand',
+    ]);
+    expect(GROWTH_AI_SKILL_REGISTRY.every(skill => skill.externalAction === false)).toBe(true);
+    expect(getGrowthAISkill('marketing')).toMatchObject({ workflowId: 'marketing', creditBehavior: 'explicit_generation_only' });
+    expect(getGrowthAISkill('not-a-real-skill')).toBeNull();
+  });
+
+  it.each([
+    ['What needs my attention today?', 'business_briefing'],
+    ['Plan my posts this week.', 'marketing'],
+    ['Help me follow up on this estimate.', 'estimate_assistance'],
+    ['Who should I ask to book again?', 'retention'],
+    ['Help me reply to this review.', 'reputation'],
+    ['Create a Facebook post.', 'marketing'],
+    ['Help me reply to this customer.', 'customer_response'],
+  ])('returns a deterministic free fast-path for %s', (input, skillId) => {
+    expect(routeGrowthAIConversation(input)).toMatchObject({ kind: 'route', skillId, source: 'deterministic' });
+  });
+
+  it('keeps a writing refinement in the active marketing workflow', () => {
+    expect(routeGrowthAIConversation('Make it more professional.', { activeSkillId: 'marketing' }))
+      .toEqual({ kind: 'contextual', skillId: 'marketing', workflowId: 'marketing', context: 'writing_refinement' });
+  });
+
+  it('uses only bounded visible opportunity context for the first-item follow-up', () => {
+    expect(routeGrowthAIConversation('Help me with the first one.', { activeSkillId: 'business_briefing', hasVisibleOpportunity: true }))
+      .toEqual({ kind: 'contextual', skillId: 'opportunities', workflowId: 'opportunities', context: 'first_opportunity' });
+    expect(routeGrowthAIConversation('Help me with the first one.', { activeSkillId: 'business_briefing', hasVisibleOpportunity: false }))
+      .toEqual({ kind: 'ambiguous' });
+  });
+
+  it('requires a registered, high-confidence router result', () => {
+    expect(normalizeGrowthAIRouterResult({ skillId: 'marketing', confidence: 0.9 }))
+      .toMatchObject({ kind: 'route', skillId: 'marketing', workflowId: 'marketing', source: 'provider' });
+    expect(normalizeGrowthAIRouterResult({ skillId: 'delete_everything', confidence: 1 })).toBeNull();
+    expect(normalizeGrowthAIRouterResult({ skillId: 'marketing', confidence: 0.2 })).toBeNull();
+    expect(normalizeGrowthAIRouterResult({ skillId: 'marketing', confidence: 'high' })).toBeNull();
+    expect(normalizeGrowthAIRouterResult({ action: 'send', skillId: 'marketing', confidence: 1 })).toBeNull();
   });
 });

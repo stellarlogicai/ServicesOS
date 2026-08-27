@@ -40,6 +40,7 @@ const gatewayService = vi.hoisted(() => ({
   createGrowthAIIdempotencyKey: vi.fn(),
   generateGrowthAIContent: vi.fn(),
   loadGrowthAICreditBalance: vi.fn(),
+  routeGrowthAIConversation: vi.fn(),
 }));
 
 const fieldPhotoService = vi.hoisted(() => ({
@@ -142,6 +143,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     fieldPhotoService.listFieldPhotosForMarketing.mockResolvedValue([]);
     fieldPhotoService.loadFieldPhotoBlob.mockResolvedValue(new Blob(['photo'], { type: 'image/jpeg' }));
     gatewayService.createGrowthAIIdempotencyKey.mockReturnValue('idempotency-a');
+    gatewayService.routeGrowthAIConversation.mockResolvedValue({ skillId: 'marketing', confidence: 0.9 });
     gatewayService.loadGrowthAICreditBalance.mockImplementation(async () => ({
       available: gatewayService.credits,
       reserved: 0,
@@ -876,7 +878,45 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     submitComposer('What should I work on?');
     expect(await screen.findByRole('heading', { name: 'Business briefing' })).toBeInTheDocument();
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+    expect(gatewayService.routeGrowthAIConversation).not.toHaveBeenCalled();
     await expectCreditBalance(5);
+  });
+
+  it('uses the constrained router only for an ambiguous message and does not consume credits', async () => {
+    render(<GrowthAIPage />);
+
+    submitComposer('Help me grow the business in a new way');
+
+    await waitFor(() => expect(gatewayService.routeGrowthAIConversation).toHaveBeenCalledWith({
+      tenantId: 'tenant-a', message: 'Help me grow the business in a new way',
+    }));
+    expect(await screen.findByRole('heading', { name: 'Marketing draft' })).toBeInTheDocument();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+    await expectCreditBalance(5);
+  });
+
+  it('falls back to a controlled clarification when the router result is malformed or low confidence', async () => {
+    gatewayService.routeGrowthAIConversation.mockResolvedValueOnce({ skillId: 'publish_now', confidence: 1 });
+    render(<GrowthAIPage />);
+
+    submitComposer('Please take care of it');
+
+    expect(await screen.findByText(/Do you want help with marketing, a customer reply, or today's business/)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Marketing draft' })).not.toBeInTheDocument();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+  });
+
+  it('keeps a bounded follow-up in the current marketing workflow without provider routing', async () => {
+    render(<GrowthAIPage />);
+    submitComposer('Create a Facebook post about deep cleaning');
+    expect(await screen.findByRole('heading', { name: 'Marketing draft' })).toBeInTheDocument();
+
+    submitComposer('Make it more professional');
+
+    expect(await screen.findByText(/I'll keep this in your current marketing workflow/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Marketing draft' })).toBeInTheDocument();
+    expect(gatewayService.routeGrowthAIConversation).not.toHaveBeenCalled();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
   });
 
   it('shows the default briefing after first-run dismissal without calling the provider', async () => {
@@ -913,15 +953,16 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
   });
 
-  it('answers help and unknown requests without opening a workflow or spending credits', async () => {
+  it('answers help and uses controlled clarification for unknown requests without opening a workflow or spending credits', async () => {
     render(<GrowthAIPage />);
 
     submitComposer('What can you do?');
     expect(await screen.findByText(/review growth opportunities, create marketing drafts/)).toBeInTheDocument();
     expect(screen.queryByText('Marketing draft')).not.toBeInTheDocument();
 
+    gatewayService.routeGrowthAIConversation.mockResolvedValueOnce({ skillId: 'not-a-real-skill', confidence: 1 });
     submitComposer('Organize my filing cabinet');
-    expect(await screen.findByText(/currently help with an estimate, review growth opportunities/)).toBeInTheDocument();
+    expect(await screen.findByText(/Do you want help with marketing, a customer reply, or today's business/)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Create marketing' }).length).toBeGreaterThan(1);
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
     await expectCreditBalance(5);
@@ -1229,6 +1270,28 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(screen.queryByText('GrowthAI recommendation')).not.toBeInTheDocument();
     expect(screen.queryByText(/GrowthAI recommendation saved for human review/)).not.toBeInTheDocument();
     expect(screen.queryByText('Tenant A AI Customer')).not.toBeInTheDocument();
+  });
+
+  it('ignores a stale Tenant A conversation-router result after switching to Tenant B', async () => {
+    const routeA = deferred();
+    gatewayService.routeGrowthAIConversation.mockReturnValueOnce(routeA.promise);
+    const view = render(<GrowthAIPage />);
+
+    submitComposer('Please take care of it');
+    await waitFor(() => expect(gatewayService.routeGrowthAIConversation).toHaveBeenCalledWith({
+      tenantId: 'tenant-a', message: 'Please take care of it',
+    }));
+
+    state.auth = {
+      currentTenant: { id: 'tenant-b', businessName: 'Tenant B Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-b', userProfile: { displayName: 'Taylor Test' },
+    };
+    view.rerender(<GrowthAIPage />);
+    await act(async () => routeA.resolve({ skillId: 'marketing', confidence: 0.95 }));
+
+    expect(screen.getByRole('heading', { name: /How can I help grow Tenant B Cleaning today/ })).toBeInTheDocument();
+    expect(screen.queryByText('Please take care of it')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Marketing draft' })).not.toBeInTheDocument();
   });
 
   it('clears session-only conversation state when the tenant workspace remounts', async () => {

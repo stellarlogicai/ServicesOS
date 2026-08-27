@@ -1,8 +1,11 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MarketingPhotoAssetPicker } from '../../../components/FieldPhotoEvidence';
 import {
   appendBoundedGrowthAIMessages,
-  routeGrowthAIIntent,
+  getGrowthAISkill,
+  getGrowthAISkillForWorkflow,
+  normalizeGrowthAIRouterResult,
+  routeGrowthAIConversation,
 } from '../growthAIConversation';
 import {
   GROWTH_AI_ONBOARDING_LAST_STEP,
@@ -725,6 +728,7 @@ export default function GrowthAIHome({
   onPrefillIdea,
   onProfileChange,
   onRefreshOpportunities,
+  onResolveAmbiguousIntent,
   onReviewOpportunityJob,
   onStartMarketingFromOpportunity,
   onStartRebookingFromOpportunity,
@@ -749,11 +753,14 @@ export default function GrowthAIHome({
   const [composerValue, setComposerValue] = useState('');
   const [conversation, setConversation] = useState([]);
   const [activeWorkflow, setActiveWorkflow] = useState(null);
+  const [routing, setRouting] = useState(false);
   const [onboardingState, setOnboardingState] = useState(() => loadGrowthAIOnboardingState({ tenantId, userId }));
   const [guideOpen, setGuideOpen] = useState(() => onboardingState.status === 'not_started' || onboardingState.status === 'in_progress');
   const [guideMode, setGuideMode] = useState(() => onboardingState.status === 'not_started' ? 'welcome' : 'tour');
   const [guideStep, setGuideStep] = useState(() => onboardingState.step || 0);
   const messageSequence = useRef(0);
+  const routerRequestSequence = useRef(0);
+  const mountedRef = useRef(true);
   const firstName = safeFirstName(userDisplayName);
   const greeting = `${greetingForHour(new Date().getHours())}${firstName ? `, ${firstName}` : ''}.`;
 
@@ -768,7 +775,32 @@ export default function GrowthAIHome({
     return saved;
   };
 
-  const openCapability = (capabilityType, userText) => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      routerRequestSequence.current += 1;
+    };
+  }, []);
+
+  const appendClarification = userText => {
+    const messages = [
+      {
+        id: nextMessageId('assistant'),
+        role: 'assistant',
+        type: 'result',
+        content: 'Do you want help with marketing, a customer reply, or today\'s business?',
+        actions: ['marketing', 'customer_response', 'business_briefing'],
+      },
+    ];
+    if (userText) messages.unshift({ id: nextMessageId('user'), role: 'user', type: 'text', content: userText });
+    appendMessages(messages);
+    setActiveWorkflow(null);
+  };
+
+  const openCapability = (requestedCapabilityType, userText) => {
+    const skill = getGrowthAISkill(requestedCapabilityType) || getGrowthAISkillForWorkflow(requestedCapabilityType);
+    const capabilityType = skill?.workflowId || requestedCapabilityType;
     if (capabilityType === 'help' || capabilityType === 'unknown') {
       appendMessages([
         { id: nextMessageId('user'), role: 'user', type: 'text', content: userText },
@@ -786,6 +818,11 @@ export default function GrowthAIHome({
       return;
     }
 
+    if (!skill || !CAPABILITY_RESPONSES[capabilityType]) {
+      appendClarification(userText);
+      return;
+    }
+
     const capabilityMessage = {
       id: nextMessageId('assistant'),
       role: 'assistant',
@@ -798,7 +835,7 @@ export default function GrowthAIHome({
       { id: nextMessageId('user'), role: 'user', type: 'text', content: userText },
       capabilityMessage,
     ]);
-    setActiveWorkflow({ messageId: capabilityMessage.id, capabilityType });
+    setActiveWorkflow({ messageId: capabilityMessage.id, capabilityType, skillId: skill.id });
   };
 
   const firstRunGuidePending = onboardingState.status === 'not_started' || onboardingState.status === 'in_progress';
@@ -849,12 +886,72 @@ export default function GrowthAIHome({
     setGuideOpen(true);
   };
 
-  const submitComposer = event => {
+  const submitComposer = async event => {
     event.preventDefault();
     const input = composerValue.trim();
     if (!input) return;
-    openCapability(routeGrowthAIIntent(input), input);
     setComposerValue('');
+    const route = routeGrowthAIConversation(input, {
+      activeSkillId: activeWorkflow?.skillId || '',
+      hasVisibleOpportunity: activeOpportunities.length > 0,
+    });
+    if (route.kind === 'route') {
+      openCapability(route.skillId, input);
+      return;
+    }
+    if (route.kind === 'help') {
+      openCapability('help', input);
+      return;
+    }
+    if (route.kind === 'contextual') {
+      if (route.context === 'first_opportunity') {
+        openCapability('retention', input);
+        return;
+      }
+      appendMessages([
+        { id: nextMessageId('user'), role: 'user', type: 'text', content: input },
+        {
+          id: nextMessageId('assistant'),
+          role: 'assistant',
+          type: 'result',
+          content: route.context === 'writing_refinement'
+            ? 'I\'ll keep this in your current marketing workflow. Review the draft controls before creating or saving anything.'
+            : 'I\'ll keep the current tenant opportunities in view. Choose the first item you want to review before preparing a draft.',
+        },
+      ]);
+      return;
+    }
+
+    if (typeof onResolveAmbiguousIntent !== 'function') {
+      appendClarification(input);
+      return;
+    }
+    const requestId = ++routerRequestSequence.current;
+    setRouting(true);
+    appendMessages([{ id: nextMessageId('user'), role: 'user', type: 'text', content: input }]);
+    try {
+      const result = await onResolveAmbiguousIntent({ message: input });
+      if (!mountedRef.current || requestId !== routerRequestSequence.current) return;
+      const resolvedRoute = normalizeGrowthAIRouterResult(result);
+      if (resolvedRoute) {
+        const capabilityMessage = {
+          id: nextMessageId('assistant'),
+          role: 'assistant',
+          type: 'capability',
+          content: CAPABILITY_RESPONSES[resolvedRoute.workflowId],
+          capabilityType: resolvedRoute.workflowId,
+          resultRef: { type: 'growthai_capability', id: resolvedRoute.skillId },
+        };
+        appendMessages([capabilityMessage]);
+        setActiveWorkflow({ messageId: capabilityMessage.id, capabilityType: resolvedRoute.workflowId, skillId: resolvedRoute.skillId });
+      } else {
+        appendClarification('');
+      }
+    } catch {
+      if (mountedRef.current && requestId === routerRequestSequence.current) appendClarification('');
+    } finally {
+      if (mountedRef.current && requestId === routerRequestSequence.current) setRouting(false);
+    }
   };
 
   const renderWorkflow = capabilityType => {
@@ -966,7 +1063,9 @@ export default function GrowthAIHome({
                 <div className="growth-ai-inline-actions">
                   {message.actions.map(actionId => {
                     const action = CAPABILITY_ACTIONS.find(item => item.id === actionId);
-                    return action ? <button key={actionId} type="button" onClick={() => openCapability(actionId, action.label)}>{action.label}</button> : null;
+                    const skill = getGrowthAISkill(actionId);
+                    const label = action?.label || skill?.label;
+                    return label ? <button key={actionId} type="button" onClick={() => openCapability(actionId, label)}>{label}</button> : null;
                   })}
                 </div>
               ) : null}
@@ -991,7 +1090,7 @@ export default function GrowthAIHome({
             }}
             placeholder="Ask GrowthAI anything..."
           />
-          <button type="submit" disabled={!composerValue.trim()}>Send</button>
+          <button type="submit" disabled={!composerValue.trim() || routing}>{routing ? 'Choosing...' : 'Send'}</button>
           <p>Deterministic routing is free. AI credits are used only when you explicitly choose an AI generation action.</p>
         </form>
       </section>

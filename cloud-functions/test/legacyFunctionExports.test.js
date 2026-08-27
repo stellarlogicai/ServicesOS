@@ -28,6 +28,7 @@ const retiredExports = [
 
 const canonicalExports = [
   'generateGrowthAIContent',
+  'routeGrowthAIConversation',
   'createBookingCheckoutSession',
   'stripeWebhook',
   'subscriptionWebhook',

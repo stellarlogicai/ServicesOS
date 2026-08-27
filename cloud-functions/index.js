@@ -16,11 +16,17 @@ const {
   createSendCustomerEmailHandler,
 } = require('./sendCustomerEmail');
 const { createGrowthAIGenerationHandler } = require('./growthAIGateway');
+const { createGrowthAIConversationRouterHandler } = require('./growthAIConversationRouter');
 const { createGrowthAIProviderFromEnvironment } = require('./growthAIProvider');
 
 admin.initializeApp();
 
 exports.generateGrowthAIContent = functions.https.onRequest(createGrowthAIGenerationHandler({
+  admin,
+  provider: createGrowthAIProviderFromEnvironment(),
+}));
+
+exports.routeGrowthAIConversation = functions.https.onRequest(createGrowthAIConversationRouterHandler({
   admin,
   provider: createGrowthAIProviderFromEnvironment(),
 }));

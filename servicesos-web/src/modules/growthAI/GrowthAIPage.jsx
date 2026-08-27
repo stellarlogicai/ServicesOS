@@ -18,6 +18,7 @@ import {
   createGrowthAIIdempotencyKey,
   generateGrowthAIContent as requestGrowthAIGeneration,
   loadGrowthAICreditBalance,
+  routeGrowthAIConversation,
 } from './growthAIGatewayService';
 import {
   approveGrowthAIDraft,
@@ -744,6 +745,7 @@ export default function GrowthAIPage({ onReviewJob }) {
           }}
           onProfileChange={patch => setProfile(value => ({ ...value, ...patch }))}
           onRefreshOpportunities={() => reloadOpportunities().catch(err => setScopedError(err.message))}
+          onResolveAmbiguousIntent={({ message }) => routeGrowthAIConversation({ tenantId, message })}
           onReviewOpportunityJob={reviewOpportunityJob}
           onStartRebookingFromOpportunity={startRebookingFromOpportunity}
           onStartReviewRequestFromOpportunity={startReviewRequestFromOpportunity}

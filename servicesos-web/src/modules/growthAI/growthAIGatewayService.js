@@ -14,12 +14,12 @@ function requireTenantId(tenantId) {
   return value;
 }
 
-function functionUrl() {
+function functionUrl(functionName) {
   const configuredBaseUrl = import.meta.env.VITE_FUNCTIONS_URL?.replace(/\/+$/, '');
-  if (configuredBaseUrl) return `${configuredBaseUrl}/generateGrowthAIContent`;
+  if (configuredBaseUrl) return `${configuredBaseUrl}/${functionName}`;
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
   if (!projectId) throw new Error('GrowthAI server configuration is unavailable.');
-  return `https://us-central1-${projectId}.cloudfunctions.net/generateGrowthAIContent`;
+  return `https://us-central1-${projectId}.cloudfunctions.net/${functionName}`;
 }
 
 export function createGrowthAIIdempotencyKey() {
@@ -48,7 +48,7 @@ export async function generateGrowthAIContent({ tenantId, actionType, sourceRefs
   const user = auth.currentUser;
   if (!user) throw new Error('Sign in before using AI-assisted GrowthAI.');
   const token = await user.getIdToken();
-  const response = await fetch(functionUrl(), {
+  const response = await fetch(functionUrl('generateGrowthAIContent'), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -69,4 +69,28 @@ export async function generateGrowthAIContent({ tenantId, actionType, sourceRefs
     throw error;
   }
   return payload;
+}
+
+export async function routeGrowthAIConversation({ tenantId, message }) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in before using GrowthAI.');
+  const token = await user.getIdToken();
+  const response = await fetch(functionUrl('routeGrowthAIConversation'), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      tenantId: requireTenantId(tenantId),
+      message: typeof message === 'string' ? message.trim() : '',
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success !== true) {
+    const error = new Error(payload.error || 'GrowthAI routing is temporarily unavailable.');
+    error.code = payload.code || 'routing_failed';
+    throw error;
+  }
+  return { skillId: payload.skillId, confidence: payload.confidence };
 }

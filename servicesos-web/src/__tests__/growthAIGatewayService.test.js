@@ -16,6 +16,7 @@ import {
   createGrowthAIIdempotencyKey,
   generateGrowthAIContent,
   loadGrowthAICreditBalance,
+  routeGrowthAIConversation,
 } from '../modules/growthAI/growthAIGatewayService';
 
 describe('GrowthAI gateway client', () => {
@@ -76,6 +77,20 @@ describe('GrowthAI gateway client', () => {
 
     firebase.auth.currentUser = null;
     await expect(generateGrowthAIContent({ tenantId: 'tenant-a' })).rejects.toThrow(/Sign in/);
+  });
+
+  it('sends only an authenticated tenant and owner message to the constrained router', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, skillId: 'marketing', confidence: 0.88 }),
+    });
+
+    await expect(routeGrowthAIConversation({ tenantId: 'tenant-a', message: 'Help me grow this week' }))
+      .resolves.toEqual({ skillId: 'marketing', confidence: 0.88 });
+
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/routeGrowthAIConversation$/);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ tenantId: 'tenant-a', message: 'Help me grow this week' });
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer id-token');
   });
 
   it('creates opaque idempotency keys', () => {
