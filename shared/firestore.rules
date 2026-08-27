@@ -311,6 +311,43 @@ service cloud.firestore {
              validFieldPhotoObjectIdentity(tenantId, bookingId, photoId);
     }
 
+    function fieldPhotoMarketingReviewKeysOnly() {
+      return request.resource.data.keys().hasAll([
+               'schemaVersion', 'tenantId', 'bookingId', 'photoId', 'status',
+               'createdByUid', 'createdAt', 'updatedByUid', 'updatedAt'
+             ]) &&
+             request.resource.data.keys().hasOnly([
+               'schemaVersion', 'tenantId', 'bookingId', 'photoId', 'status',
+               'createdByUid', 'createdAt', 'updatedByUid', 'updatedAt'
+             ]);
+    }
+
+    function isValidFieldPhotoMarketingReviewData(tenantId, bookingId, photoId) {
+      let data = request.resource.data;
+      return exists(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)/fieldPhotos/$(photoId)) &&
+             fieldPhotoMarketingReviewKeysOnly() &&
+             data.schemaVersion == 1 &&
+             data.tenantId == tenantId &&
+             data.bookingId == bookingId &&
+             data.photoId == photoId &&
+             data.status in ['not_approved', 'approved'] &&
+             data.updatedByUid == request.auth.uid &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    function isValidFieldPhotoMarketingReviewCreate(tenantId, bookingId, photoId) {
+      return isValidFieldPhotoMarketingReviewData(tenantId, bookingId, photoId) &&
+             request.resource.data.createdByUid == request.auth.uid;
+    }
+
+    function isValidFieldPhotoMarketingReviewUpdate(tenantId, bookingId, photoId) {
+      let data = request.resource.data;
+      return isValidFieldPhotoMarketingReviewData(tenantId, bookingId, photoId) &&
+             data.createdByUid == resource.data.createdByUid &&
+             data.createdAt == resource.data.createdAt;
+    }
+
     function isOwnLinkedCustomer(tenantId, customerId) {
       return customerTenantMatches(tenantId) &&
              customerId is string &&
@@ -891,6 +928,17 @@ service cloud.firestore {
           allow read: if isBookingManager(tenantId) || isAssignedFieldPhotoUser(tenantId, bookingId);
           allow create: if isValidFieldPhotoMetadataCreate(tenantId, bookingId, photoId);
           allow update, delete: if false;
+
+          match /marketingReview/{reviewId} {
+            allow read: if isBookingManager(tenantId);
+            allow create: if reviewId == 'current' &&
+                             isBookingManager(tenantId) &&
+                             isValidFieldPhotoMarketingReviewCreate(tenantId, bookingId, photoId);
+            allow update: if reviewId == 'current' &&
+                             isBookingManager(tenantId) &&
+                             isValidFieldPhotoMarketingReviewUpdate(tenantId, bookingId, photoId);
+            allow delete: if false;
+          }
         }
       }
 

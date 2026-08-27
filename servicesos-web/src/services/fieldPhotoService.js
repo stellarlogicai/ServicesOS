@@ -24,6 +24,8 @@ export const FIELD_PHOTO_ALLOWED_TYPES = Object.freeze([
 export const FIELD_PHOTO_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 export const FIELD_PHOTO_ROOM_LABEL_MAX_LENGTH = 80;
 export const FIELD_PHOTO_NOTE_MAX_LENGTH = 500;
+export const FIELD_PHOTO_MARKETING_REVIEW_ID = 'current';
+export const FIELD_PHOTO_MARKETING_STATUSES = Object.freeze(['not_approved', 'approved']);
 
 const EXTENSION_BY_TYPE = Object.freeze({
   'image/jpeg': 'jpg',
@@ -149,6 +151,21 @@ function photoCollection(tenantId, bookingId) {
   );
 }
 
+function photoDocument(tenantId, bookingId, photoId) {
+  return doc(photoCollection(tenantId, bookingId), requiredSegment(photoId, 'Photo'));
+}
+
+function marketingReviewDocument(tenantId, bookingId, photoId) {
+  return doc(photoDocument(tenantId, bookingId, photoId), 'marketingReview', FIELD_PHOTO_MARKETING_REVIEW_ID);
+}
+
+function approvedMarketingReview(review, tenantId, bookingId, photoId) {
+  return review?.tenantId === tenantId &&
+    review?.bookingId === bookingId &&
+    review?.photoId === photoId &&
+    review?.status === 'approved';
+}
+
 export async function listFieldPhotos(tenantId, bookingId) {
   const snapshot = await getDocs(photoCollection(tenantId, bookingId));
   return snapshot.docs
@@ -159,6 +176,51 @@ export async function listFieldPhotos(tenantId, bookingId) {
       const rightTime = right.uploadedAt?.toMillis?.() || 0;
       return leftTime - rightTime;
     });
+}
+
+export async function listFieldPhotosForMarketing(tenantId, bookingId) {
+  const photos = await listFieldPhotos(tenantId, bookingId);
+  const reviews = await Promise.all(photos.map(async photo => {
+    const snapshot = await getDoc(marketingReviewDocument(tenantId, bookingId, photo.id));
+    return snapshot.exists() ? snapshot.data() || {} : null;
+  }));
+  return photos.map((photo, index) => ({
+    ...photo,
+    marketingApproved: approvedMarketingReview(reviews[index], tenantId, bookingId, photo.id),
+  }));
+}
+
+export async function setFieldPhotoMarketingApproval({ tenantId, bookingId, photoId, approved }) {
+  const safeTenantId = requiredSegment(tenantId, 'Tenant');
+  const safeBookingId = requiredSegment(bookingId, 'Booking');
+  const safePhotoId = requiredSegment(photoId, 'Photo');
+  const uploader = await resolveFieldPhotoUploader(safeTenantId);
+  if (!uploader.success || !['admin', 'super-admin'].includes(uploader.role)) {
+    return { success: false, message: 'Marketing approval is unavailable for this account.' };
+  }
+
+  const reviewReference = marketingReviewDocument(safeTenantId, safeBookingId, safePhotoId);
+  const existing = await getDoc(reviewReference);
+  const existingData = existing.exists() ? existing.data() || {} : null;
+  const status = approved === true ? 'approved' : 'not_approved';
+  const payload = {
+    schemaVersion: 1,
+    tenantId: safeTenantId,
+    bookingId: safeBookingId,
+    photoId: safePhotoId,
+    status,
+    createdByUid: existingData?.createdByUid || uploader.uploadedByUid,
+    createdAt: existingData?.createdAt || serverTimestamp(),
+    updatedByUid: uploader.uploadedByUid,
+    updatedAt: serverTimestamp(),
+  };
+  try {
+    await setDoc(reviewReference, payload);
+    return { success: true, data: payload };
+  } catch (error) {
+    console.error('[Field photos] Marketing approval update failed.', error);
+    return { success: false, message: 'Marketing approval could not be saved. Try again.' };
+  }
 }
 
 export async function loadFieldPhotoBlob(storagePath) {
@@ -183,7 +245,7 @@ async function resolveFieldPhotoUploader(tenantId) {
     if (!supportedRole || !active || !tenantMatches || tenantId === 'DEFAULT') {
       return { success: false, message: 'Photo upload is unavailable for this account.' };
     }
-    return { success: true, uploadedByUid };
+    return { success: true, uploadedByUid, role: profile.role };
   } catch (error) {
     console.error('[Field photos] Uploader authorization failed.', error);
     return { success: false, message: 'Photo upload could not be authorized. Try again.' };

@@ -65,8 +65,20 @@ function exactKeys(value, allowed, required = []) {
   return required.every(key => keys.includes(key)) && keys.every(key => allowed.includes(key));
 }
 
+function normalizePhotoIds(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 8) {
+    throw new GrowthAIGatewayError('The selected field-photo references are invalid.', { code: 'invalid_request' });
+  }
+  const photoIds = value.map(item => cleanString(item, 128));
+  if (photoIds.some(id => !id || id.includes('/')) || new Set(photoIds).size !== photoIds.length) {
+    throw new GrowthAIGatewayError('The selected field-photo references are invalid.', { code: 'invalid_request' });
+  }
+  return photoIds;
+}
+
 function normalizeSourceRefs(actionType, sourceRefs = {}) {
-  if (!exactKeys(sourceRefs, ['opportunityId', 'leadId', 'bookingId'])) {
+  if (!exactKeys(sourceRefs, ['opportunityId', 'leadId', 'bookingId', 'photoIds'])) {
     throw new GrowthAIGatewayError('The GrowthAI source references are invalid.', { code: 'invalid_request' });
   }
   if (!['estimate_assistance', 'estimate_followup', 'marketing_post', 'customer_response'].includes(actionType) && Object.keys(sourceRefs).length > 0) {
@@ -77,6 +89,7 @@ function normalizeSourceRefs(actionType, sourceRefs = {}) {
     const value = cleanString(sourceRefs[key], 128);
     if (value) normalized[key] = value;
   }
+  const photoIds = normalizePhotoIds(sourceRefs.photoIds);
   if (actionType === 'estimate_followup' && (!normalized.opportunityId || !normalized.leadId || normalized.bookingId || Object.keys(normalized).length !== 2)) {
     throw new GrowthAIGatewayError('Estimate follow-up requires a canonical opportunity and lead.', { code: 'invalid_request' });
   }
@@ -87,6 +100,12 @@ function normalizeSourceRefs(actionType, sourceRefs = {}) {
   if (actionType === 'marketing_post' && (normalized.leadId || normalized.bookingId ||
       (normalized.opportunityId && Object.keys(normalized).length !== 1))) {
     throw new GrowthAIGatewayError('Completed-job marketing requires exactly one canonical opportunity.', { code: 'invalid_request' });
+  }
+  if (photoIds.length) {
+    if (actionType !== 'marketing_post' || !normalized.opportunityId) {
+      throw new GrowthAIGatewayError('Selected field photos require a completed-job marketing opportunity.', { code: 'invalid_request' });
+    }
+    normalized.photoIds = photoIds;
   }
   if (actionType === 'customer_response' && (normalized.opportunityId ||
       (normalized.leadId && normalized.bookingId))) {
@@ -247,10 +266,25 @@ async function verifySourceContext({ db, request }) {
         booking.tenantId !== request.tenantId || !completed || booking.isArchived === true || booking.isDeleted === true || booking.status === 'cancelled') {
       throw new GrowthAIGatewayError('The completed-job marketing opportunity is no longer eligible.', { code: 'invalid_source', status: 403 });
     }
+    const marketingAssets = await Promise.all((request.sourceRefs.photoIds || []).map(async photoId => {
+      const photoRef = bookingRef.collection('fieldPhotos').doc(photoId);
+      const reviewRef = photoRef.collection('marketingReview').doc('current');
+      const [photoSnapshot, reviewSnapshot] = await Promise.all([photoRef.get(), reviewRef.get()]);
+      const photo = photoSnapshot.exists ? photoSnapshot.data() || {} : {};
+      const review = reviewSnapshot.exists ? reviewSnapshot.data() || {} : {};
+      if (!photoSnapshot.exists || !reviewSnapshot.exists ||
+          !['before', 'after'].includes(photo.phase) ||
+          review.tenantId !== request.tenantId || review.bookingId !== bookingId ||
+          review.photoId !== photoId || review.status !== 'approved') {
+        throw new GrowthAIGatewayError('A selected field photo is no longer approved for Marketing.', { code: 'invalid_source', status: 403 });
+      }
+      return { phase: photo.phase };
+    }));
     return {
       opportunity,
       opportunityRef,
       marketingServiceType: cleanString(booking.serviceType, 160),
+      marketingAssetCount: marketingAssets.length,
     };
   }
   if (request.actionType === 'customer_response') {
@@ -503,6 +537,7 @@ function buildPrompt({ request, tenant, sourceContext, brandProfile = {} }) {
       request.input.extraNotes ? `Owner notes: ${request.input.extraNotes}.` : '',
       business.defaultCTA ? `Use this approved default CTA when appropriate: ${business.defaultCTA}.` : '',
       business.platformPreferences.length ? `Owner-approved preferred platforms: ${business.platformPreferences.join(', ')}.` : '',
+      sourceContext.marketingAssetCount ? `The owner selected ${sourceContext.marketingAssetCount} approved field-photo asset${sourceContext.marketingAssetCount === 1 ? '' : 's'} for private draft context. Do not infer or describe visual details from them.` : '',
       request.input.postTypeId === 'before_after' ? 'Do not infer, describe, or claim visual details from photos.' : '',
       'Do not invent discounts, prices, coupons, guarantees, deadlines, customer quotes, ratings, sponsorships, events, awards, local facts, or availability times.',
       'Do not mention customer identities, addresses, job photos, photo permissions, medical details, internal notes, payment data, or Stripe data.',

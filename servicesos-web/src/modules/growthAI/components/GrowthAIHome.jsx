@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { MarketingPhotoAssetPicker } from '../../../components/FieldPhotoEvidence';
 import {
   appendBoundedGrowthAIMessages,
   routeGrowthAIIntent,
@@ -249,8 +250,10 @@ function MarketingWorkflow({
   aiCredits,
   aiGenerating,
   brand,
+  contentPlan = [],
   contentIdeas,
   inputs,
+  marketingAssets = { items: [], loading: false, error: '' },
   marketingOpportunity,
   marketingServices,
   onGenerateDeterministic,
@@ -259,6 +262,8 @@ function MarketingWorkflow({
   onMarketingOpportunityChange,
   onPostTypeChange,
   onPrefillIdea,
+  onStartMarketingPlan = () => {},
+  onToggleMarketingAsset = () => {},
   platforms,
   postTypeId,
   saving,
@@ -314,7 +319,24 @@ function MarketingWorkflow({
         {contentType.id === 'seasonal' ? <GrowthAIField label="Seasonal context"><select aria-label="Seasonal context" value={inputs.dateRange} onChange={event => onInputChange({ dateRange: event.target.value })}><option value="">Choose a season</option><option value="Spring">Spring</option><option value="Summer">Summer</option><option value="Back-to-school season">Back-to-school season</option><option value="Holiday season">Holiday season</option><option value="Winter">Winter</option></select></GrowthAIField> : null}
         {['educational_tip', 'humor_engagement'].includes(contentType.id) ? <GrowthAIField label="Topic"><input aria-label="Topic" value={inputs.cleaningTopic} onChange={event => onInputChange({ cleaningTopic: event.target.value })} /></GrowthAIField> : null}
         {requiresMarketingOpportunity(contentType.id) ? (
-          <p className="growth-ai-cost-note">{marketingOpportunity ? 'Using the selected eligible completed-job opportunity. No image analysis or customer details are included.' : 'Choose an eligible completed-job opportunity from GrowthAI opportunities first.'}</p>
+          <>
+            <p className="growth-ai-cost-note">{marketingOpportunity ? 'Using the selected eligible completed-job opportunity. No image analysis or customer details are included.' : 'Choose an eligible completed-job opportunity from GrowthAI opportunities first.'}</p>
+            {marketingOpportunity ? (
+              <section className="growth-ai-marketing-assets" aria-labelledby="growth-ai-marketing-assets-title">
+                <h4 id="growth-ai-marketing-assets-title">Owner-approved field photos</h4>
+                <p>Choose approved evidence for private draft context. The provider receives no image, URL, storage path, room label, or note.</p>
+                {marketingAssets.loading ? <p role="status">Loading approved field photos...</p> : null}
+                {marketingAssets.error ? <p className="growth-ai-credit-warning" role="alert">{marketingAssets.error}</p> : null}
+                {!marketingAssets.loading && !marketingAssets.error ? (
+                  <MarketingPhotoAssetPicker
+                    photos={marketingAssets.items}
+                    selectedPhotoIds={marketingOpportunity.selectedPhotoIds}
+                    onToggle={onToggleMarketingAsset}
+                  />
+                ) : null}
+              </section>
+            ) : null}
+          </>
         ) : null}
         {contentType.id === 'testimonial' ? <p className="growth-ai-credit-warning">A safe approved testimonial source is not available in ServicesOS yet, so this content type cannot generate a draft.</p> : null}
         <GrowthAIField label="Extra notes"><textarea aria-label="Extra notes" rows="2" value={inputs.extraNotes} onChange={event => onInputChange({ extraNotes: event.target.value })} /></GrowthAIField>
@@ -327,6 +349,18 @@ function MarketingWorkflow({
         <p className="growth-ai-cost-note">AI generation uses 1 AI credit. Opening and configuring this workflow is free.</p>
         {aiCredits < 1 ? <p className="growth-ai-credit-warning">Not enough AI credits. The deterministic draft option remains available.</p> : null}
       </div>
+      <section className="growth-ai-marketing-plan" aria-labelledby="growth-ai-marketing-plan-title">
+        <h4 id="growth-ai-marketing-plan-title">Content plan</h4>
+        <p>Free, deterministic suggestions. Nothing is scheduled, published, or sent.</p>
+        <div className="growth-ai-marketing-plan-list">
+          {contentPlan.map(plan => (
+            <button key={plan.id} type="button" onClick={() => onStartMarketingPlan(plan)}>
+              <strong>{plan.label}</strong>
+              <span>{plan.description}</span>
+            </button>
+          ))}
+        </div>
+      </section>
       <div className="growth-ai-idea-list" aria-label="Marketing draft ideas">
         {contentIdeas.slice(0, 4).map(idea => <GrowthAIButton key={idea.label} tone="secondary" onClick={() => onPrefillIdea(idea)}>{idea.label}</GrowthAIButton>)}
       </div>
@@ -668,6 +702,7 @@ export default function GrowthAIHome({
   briefing,
   briefingLoading,
   businessName,
+  contentPlan = [],
   contentIdeas,
   eligibleEstimateLeads,
   communicationBookings,
@@ -683,6 +718,8 @@ export default function GrowthAIHome({
   onGenerateResponseAI,
   onInputChange,
   onMarketingOpportunityChange,
+  onStartMarketingPlan = () => {},
+  onToggleMarketingAsset = () => {},
   onOpportunityFilterChange,
   onPostTypeChange,
   onPrefillIdea,
@@ -700,6 +737,7 @@ export default function GrowthAIHome({
   platforms,
   postTypeId,
   marketingOpportunity,
+  marketingAssets = { items: [], loading: false, error: '' },
   marketingServices,
   profile,
   saving,
@@ -828,9 +866,9 @@ export default function GrowthAIHome({
     }
     if (capabilityType === 'marketing') {
       return <MarketingWorkflow {...{
-        aiCredits, aiGenerating, brand, contentIdeas, inputs, onGenerateDeterministic, onGenerateMarketingAI,
-        marketingOpportunity, marketingServices, onInputChange, onMarketingOpportunityChange, onPostTypeChange,
-        onPrefillIdea, platforms, postTypeId, saving,
+        aiCredits, aiGenerating, brand, contentIdeas, contentPlan, inputs, onGenerateDeterministic, onGenerateMarketingAI,
+        marketingAssets, marketingOpportunity, marketingServices, onInputChange, onMarketingOpportunityChange, onPostTypeChange,
+        onPrefillIdea, onStartMarketingPlan, onToggleMarketingAsset, platforms, postTypeId, saving,
       }} />;
     }
     if (capabilityType === 'customer_response') {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BRANDS } from '../modules/growthAI/brandProfiles';
 import {
   buildMarketingSourceRefs,
+  buildMarketingContentPlan,
   deriveTenantMarketingServices,
   MARKETING_CONTENT_TYPE_IDS,
   requiresMarketingOpportunity,
@@ -76,5 +77,20 @@ describe('GrowthAI Marketing V1 contract', () => {
     const opportunity = { id: 'marketing_photo_review__booking-a', sourceRefs: { bookingId: 'booking-a', customerId: 'customer-a' } };
     expect(requiresMarketingOpportunity('before_after')).toBe(true);
     expect(buildMarketingSourceRefs(opportunity)).toEqual({ opportunityId: 'marketing_photo_review__booking-a' });
+    expect(buildMarketingSourceRefs(opportunity, ['photo-a', 'photo-a', 'photo-b'])).toEqual({
+      opportunityId: 'marketing_photo_review__booking-a', photoIds: ['photo-a', 'photo-b'],
+    });
+  });
+
+  it('builds a free deterministic plan and marks before-and-after work as owner-selected context', () => {
+    const plan = buildMarketingContentPlan({
+      marketingServices: [{ id: 'deep', label: 'Deep Cleaning' }],
+      opportunities: [{ id: 'opportunity-a', type: 'marketing_photo_review', status: 'open' }],
+    });
+    expect(plan).toEqual(expect.arrayContaining([
+      expect.objectContaining({ postTypeId: 'service_spotlight', serviceType: 'deep' }),
+      expect.objectContaining({ postTypeId: 'before_after', opportunityId: 'opportunity-a', requiresPhotoSelection: true }),
+    ]));
+    expect(plan.every(item => !Object.hasOwn(item, 'provider'))).toBe(true);
   });
 });

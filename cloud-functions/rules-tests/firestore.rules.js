@@ -273,6 +273,25 @@ const fieldPhotoMetadata = ({
   return { ...metadata, ...extra };
 };
 
+const fieldPhotoMarketingReview = ({
+  tenantId = TENANT_A,
+  bookingId = 'field-booking',
+  photoId = 'marketing-photo',
+  status = 'approved',
+  createdByUid = 'admin-a',
+  updatedByUid = createdByUid,
+} = {}) => ({
+  schemaVersion: 1,
+  tenantId,
+  bookingId,
+  photoId,
+  status,
+  createdByUid,
+  createdAt: serverTimestamp(),
+  updatedByUid,
+  updatedAt: serverTimestamp(),
+});
+
 const commercialProduct = ({
   id = 'product-pending',
   tenantId = TENANT_A,
@@ -1663,6 +1682,28 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       doc(draftReference, 'audit', 'growth-audit-4')
     ));
     assert.equal(invalidationAudit.data().action, 'approval_invalidated');
+  });
+
+  test('only booking managers can create and update a separate immutable-evidence marketing review', async () => {
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'marketing-photo'), {
+        ...fieldPhotoMetadata({ photoId: 'marketing-photo' }),
+        uploadedAt: new Date('2026-08-25T12:00:00.000Z'),
+      });
+    });
+    const reviewPath = ['tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'marketing-photo', 'marketingReview', 'current'];
+    const adminReview = doc(authenticatedDatabase('admin-a'), ...reviewPath);
+    await assertSucceeds(setDoc(adminReview, fieldPhotoMarketingReview()));
+    await assertSucceeds(getDoc(adminReview));
+    await assertSucceeds(updateDoc(doc(authenticatedDatabase('super-admin'), ...reviewPath), {
+      status: 'not_approved', updatedByUid: 'super-admin', updatedAt: serverTimestamp(),
+    }));
+
+    await assertFails(getDoc(doc(authenticatedDatabase('employee-a'), ...reviewPath)));
+    await assertFails(getDoc(doc(authenticatedDatabase('customer-a'), ...reviewPath)));
+    await assertFails(getDoc(doc(authenticatedDatabase('admin-b'), ...reviewPath)));
+    await assertFails(setDoc(doc(authenticatedDatabase('employee-a'), ...reviewPath), fieldPhotoMarketingReview({ updatedByUid: 'employee-a', createdByUid: 'employee-a' })));
+    await assertFails(setDoc(doc(authenticatedDatabase('admin-a'), 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'marketing-photo', 'marketingReview', 'other'), fieldPhotoMarketingReview()));
   });
 
   test('estimate recommendations are tenant-admin readable and server-write-only', async () => {

@@ -257,6 +257,10 @@ describe('GrowthAI server gateway', () => {
       })),
       error => error.code === 'invalid_request',
     );
+    assert.throws(
+      () => normalizeGenerationRequest(request({ sourceRefs: { photoIds: ['photo-a'] } })),
+      error => error.code === 'invalid_request',
+    );
   });
 
   test('validates completed-job marketing server-side and keeps provider context free of customer, photo, payment, and Stripe data', async () => {
@@ -278,6 +282,12 @@ describe('GrowthAI server gateway', () => {
       customerName: 'Must Not Reach Provider', serviceAddress: 'Private Address',
       paymentStatus: 'must-not-reach-provider', stripePaymentIntentId: 'must-not-reach-provider',
     };
+    documents['tenants/tenant-a/bookings/booking-a/fieldPhotos/photo-before'] = {
+      id: 'photo-before', phase: 'before', storagePath: 'private/photo-before.jpg', roomLabel: 'Kitchen', note: 'Private note',
+    };
+    documents['tenants/tenant-a/bookings/booking-a/fieldPhotos/photo-before/marketingReview/current'] = {
+      tenantId: 'tenant-a', bookingId: 'booking-a', photoId: 'photo-before', status: 'approved',
+    };
     const { admin, db } = fakeAdmin(documents);
     const calls = [];
     const result = await generateGrowthAIContent({
@@ -285,7 +295,7 @@ describe('GrowthAI server gateway', () => {
       provider: successProvider(calls),
       requestBody: request({
         idempotencyKey: 'completed-job-marketing',
-        sourceRefs: { opportunityId: 'photo-opportunity-a' },
+        sourceRefs: { opportunityId: 'photo-opportunity-a', photoIds: ['photo-before'] },
         input: { postTypeId: 'before_after', platform: 'instagram', serviceArea: 'Spoofed client area' },
       }),
       uid: 'admin-a',
@@ -298,10 +308,41 @@ describe('GrowthAI server gateway', () => {
     assert.match(prompt, /Tenant A Cleaning/);
     assert.match(prompt, /Test Area/);
     assert.doesNotMatch(prompt, /Spoofed profile business|Spoofed profile area|Spoofed client area/);
-    assert.doesNotMatch(prompt, /Must Not Reach Provider|Private Address|must-not-reach-provider|photo-before|photo-after|customer-a/);
-    assert.deepEqual(draft.sourceRefs, { opportunityId: 'photo-opportunity-a' });
+    assert.doesNotMatch(prompt, /Must Not Reach Provider|Private Address|must-not-reach-provider|photo-before|photo-after|customer-a|Private note|private\/photo-before/);
+    assert.deepEqual(draft.sourceRefs, { opportunityId: 'photo-opportunity-a', photoIds: ['photo-before'] });
     assert.equal(db.documents.get('tenants/tenant-a/growthAIOpportunities/photo-opportunity-a').status, 'acted');
     assert.equal(ledgerEntries(db).length, 1);
+  });
+
+  test('rejects an unapproved selected photo before reserving a marketing credit', async () => {
+    const documents = seed();
+    documents['tenants/tenant-a/growthAIOpportunities/photo-opportunity-a'] = {
+      tenantId: 'tenant-a', type: 'marketing_photo_review', status: 'open', sourceRefs: { bookingId: 'booking-a' },
+    };
+    documents['tenants/tenant-a/bookings/booking-a'] = { tenantId: 'tenant-a', status: 'completed', serviceType: 'deep clean' };
+    documents['tenants/tenant-a/bookings/booking-a/fieldPhotos/photo-unapproved'] = {
+      id: 'photo-unapproved', phase: 'before', storagePath: 'private/photo-unapproved.jpg',
+    };
+    documents['tenants/tenant-a/bookings/booking-a/fieldPhotos/photo-unapproved/marketingReview/current'] = {
+      tenantId: 'tenant-a', bookingId: 'booking-a', photoId: 'photo-unapproved', status: 'not_approved',
+    };
+    const { admin, db } = fakeAdmin(documents);
+    const calls = [];
+    await assert.rejects(
+      generateGrowthAIContent({
+        admin,
+        provider: successProvider(calls),
+        requestBody: request({
+          idempotencyKey: 'unapproved-photo',
+          sourceRefs: { opportunityId: 'photo-opportunity-a', photoIds: ['photo-unapproved'] },
+          input: { postTypeId: 'before_after' },
+        }),
+        uid: 'admin-a',
+      }),
+      error => error.code === 'invalid_source',
+    );
+    assert.equal(calls.length, 0);
+    assert.equal(ledgerEntries(db).length, 0);
   });
 
   test('rebuilds customer communication context from a verified tenant booking without exposing identity or private records', async () => {

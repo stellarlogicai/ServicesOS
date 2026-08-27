@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FIELD_PHOTO_PHASES,
   listFieldPhotos,
+  listFieldPhotosForMarketing,
   loadFieldPhotoBlob,
+  setFieldPhotoMarketingApproval,
   uploadFieldPhoto,
   validateFieldPhoto,
   validateFieldPhotoDetails,
@@ -81,6 +83,29 @@ function PhotoGrid({ phase, photos }) {
   return (
     <div className="field-photo-grid">
       {matchingPhotos.map(photo => <PersistedPhoto key={photo.id} photo={photo} />)}
+    </div>
+  );
+}
+
+export function MarketingPhotoAssetPicker({ photos, selectedPhotoIds = [], onToggle }) {
+  if (!photos.length) {
+    return <p className="field-photo-empty">No owner-approved field photos are available for this draft.</p>;
+  }
+
+  const selected = new Set(selectedPhotoIds);
+  return (
+    <div className="field-photo-marketing-picker" aria-label="Approved field photos for marketing">
+      {photos.map(photo => (
+        <label className="field-photo-marketing-option" key={photo.id}>
+          <input
+            type="checkbox"
+            checked={selected.has(photo.id)}
+            onChange={() => onToggle?.(photo.id)}
+          />
+          <PersistedPhoto photo={photo} />
+          <span>Use this approved photo in the draft context</span>
+        </label>
+      ))}
     </div>
   );
 }
@@ -270,10 +295,11 @@ export function FieldPhotoUploadPanel({ tenantId, bookingId, onEvidenceChange })
   );
 }
 
-export function BookingFieldPhotoReview({ tenantId, bookingId }) {
+export function BookingFieldPhotoReview({ tenantId, bookingId, canManageMarketing = false }) {
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [updatingPhotoId, setUpdatingPhotoId] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -283,7 +309,9 @@ export function BookingFieldPhotoReview({ tenantId, bookingId }) {
           setLoading(true);
           setError('');
         }
-        return listFieldPhotos(tenantId, bookingId);
+        return canManageMarketing
+          ? listFieldPhotosForMarketing(tenantId, bookingId)
+          : listFieldPhotos(tenantId, bookingId);
       })
       .then(items => {
         if (active) setPhotos(items);
@@ -295,7 +323,27 @@ export function BookingFieldPhotoReview({ tenantId, bookingId }) {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [bookingId, tenantId]);
+  }, [bookingId, canManageMarketing, tenantId]);
+
+  const toggleMarketingApproval = useCallback(async photo => {
+    if (!canManageMarketing || updatingPhotoId) return;
+    setUpdatingPhotoId(photo.id);
+    setError('');
+    const result = await setFieldPhotoMarketingApproval({
+      tenantId,
+      bookingId,
+      photoId: photo.id,
+      approved: !photo.marketingApproved,
+    });
+    if (!result.success) {
+      setError(result.message || 'Marketing approval could not be saved.');
+    } else {
+      setPhotos(current => current.map(item => item.id === photo.id
+        ? { ...item, marketingApproved: !photo.marketingApproved }
+        : item));
+    }
+    setUpdatingPhotoId('');
+  }, [bookingId, canManageMarketing, tenantId, updatingPhotoId]);
 
   const grouped = useMemo(() => ({
     before: photos.filter(photo => photo.phase === 'before'),
@@ -305,13 +353,40 @@ export function BookingFieldPhotoReview({ tenantId, bookingId }) {
   return (
     <section className="field-photo-review" aria-labelledby="booking-field-photo-title">
       <h3 id="booking-field-photo-title">Field photos</h3>
-      <p>Read-only photo evidence uploaded from Field Mode.</p>
+      <p>{canManageMarketing
+        ? 'Photo evidence remains read-only. Only explicitly approved photos can be used as private Marketing draft context.'
+        : 'Read-only photo evidence uploaded from Field Mode.'}</p>
       {loading && <p role="status">Loading field photos...</p>}
       {error && <div className="field-photo-load-error" role="alert">{error}</div>}
       {!loading && FIELD_PHOTO_PHASES.map(phase => (
         <section className="field-photo-phase" aria-labelledby={`booking-field-photo-${phase}`} key={phase}>
           <h4 id={`booking-field-photo-${phase}`}>{PHASE_COPY[phase].title}</h4>
-          <PhotoGrid phase={phase} photos={grouped[phase]} />
+          {grouped[phase].length ? (
+            <div className="field-photo-grid">
+              {grouped[phase].map(photo => (
+                <div className="field-photo-review-item" key={photo.id}>
+                  <PersistedPhoto photo={photo} />
+                  {canManageMarketing && (
+                    <div className="field-photo-marketing-review">
+                      <span>{photo.marketingApproved ? 'Approved for Marketing' : 'Not approved for Marketing'}</span>
+                      <button
+                        className="v1-button v1-button-secondary"
+                        type="button"
+                        onClick={() => toggleMarketingApproval(photo)}
+                        disabled={updatingPhotoId === photo.id}
+                      >
+                        {updatingPhotoId === photo.id
+                          ? 'Saving...'
+                          : photo.marketingApproved
+                            ? 'Remove Marketing approval'
+                            : 'Approve for Marketing'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : <p className="field-photo-empty">{PHASE_COPY[phase].empty}</p>}
         </section>
       ))}
     </section>

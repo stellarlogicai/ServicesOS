@@ -84,6 +84,46 @@ export function validateMarketingSelection({ contentTypeId, serviceType, sourceO
   return '';
 }
 
-export function buildMarketingSourceRefs(sourceOpportunity) {
-  return sourceOpportunity?.id ? { opportunityId: sourceOpportunity.id } : {};
+export function buildMarketingSourceRefs(sourceOpportunity, selectedPhotoIds = []) {
+  if (!sourceOpportunity?.id) return {};
+  const photoIds = Array.isArray(selectedPhotoIds)
+    ? [...new Set(selectedPhotoIds
+      .filter(value => typeof value === 'string')
+      .map(value => value.trim())
+      .filter(value => value && !value.includes('/')))]
+    : [];
+  return photoIds.length ? { opportunityId: sourceOpportunity.id, photoIds } : { opportunityId: sourceOpportunity.id };
+}
+
+export function buildMarketingContentPlan({ marketingServices = [], opportunities = [] } = {}) {
+  const plan = [
+    {
+      id: 'educational-tip',
+      label: 'Educational cleaning tip',
+      description: 'Free deterministic draft. Add a specific topic before generating.',
+      postTypeId: 'educational_tip',
+    },
+  ];
+  const service = marketingServices[0];
+  if (service?.id) {
+    plan.unshift({
+      id: `service-spotlight-${service.id}`,
+      label: `${service.label} spotlight`,
+      description: 'Free deterministic draft using a known tenant service.',
+      postTypeId: 'service_spotlight',
+      serviceType: service.id,
+    });
+  }
+  const opportunity = opportunities.find(item => item.type === 'marketing_photo_review' && item.status === 'open');
+  if (opportunity?.id) {
+    plan.push({
+      id: `before-after-${opportunity.id}`,
+      label: 'Completed-job before / after draft',
+      description: 'Needs owner-selected approved photo context. No image analysis is performed.',
+      postTypeId: 'before_after',
+      opportunityId: opportunity.id,
+      requiresPhotoSelection: true,
+    });
+  }
+  return plan;
 }

@@ -42,6 +42,11 @@ const gatewayService = vi.hoisted(() => ({
   loadGrowthAICreditBalance: vi.fn(),
 }));
 
+const fieldPhotoService = vi.hoisted(() => ({
+  listFieldPhotosForMarketing: vi.fn(),
+  loadFieldPhotoBlob: vi.fn(),
+}));
+
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => state.auth }));
 
 vi.mock('../modules/growthAI/growthAIFoundationService', () => ({
@@ -51,6 +56,11 @@ vi.mock('../modules/growthAI/growthAIFoundationService', () => ({
 
 vi.mock('../modules/growthAI/growthAIOpportunityService', () => opportunityService);
 vi.mock('../modules/growthAI/growthAIGatewayService', () => gatewayService);
+vi.mock('../services/fieldPhotoService', () => ({
+  FIELD_PHOTO_PHASES: ['before', 'after'],
+  listFieldPhotosForMarketing: fieldPhotoService.listFieldPhotosForMarketing,
+  loadFieldPhotoBlob: fieldPhotoService.loadFieldPhotoBlob,
+}));
 
 function timestamp() {
   return { toDate: () => new Date('2026-08-24T12:00:00.000Z') };
@@ -129,6 +139,8 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     state.opportunityWorkspace = { opportunities: [], leads: [], bookings: [], rebookingImplemented: false };
     state.version = 0;
     gatewayService.credits = 5;
+    fieldPhotoService.listFieldPhotosForMarketing.mockResolvedValue([]);
+    fieldPhotoService.loadFieldPhotoBlob.mockResolvedValue(new Blob(['photo'], { type: 'image/jpeg' }));
     gatewayService.createGrowthAIIdempotencyKey.mockReturnValue('idempotency-a');
     gatewayService.loadGrowthAICreditBalance.mockImplementation(async () => ({
       available: gatewayService.credits,
@@ -556,7 +568,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(opportunityService.markGrowthAIOpportunityActed).toHaveBeenCalledWith('tenant-a', 'marketing_photo_review__booking-a');
   });
 
-  it('hands an eligible completed-job opportunity to marketing without passing booking, customer, or photo references to the client gateway', async () => {
+  it('uses only owner-selected stable photo IDs for a completed-job Marketing draft', async () => {
     state.opportunityWorkspace = {
       opportunities: [{
         id: 'marketing_photo_review__booking-a', type: 'marketing_photo_review', pillar: 'attract', status: 'open',
@@ -567,6 +579,10 @@ describe('GrowthAI V1 tenant draft foundation', () => {
       bookings: [{ id: 'booking-a', serviceType: 'deep', customerName: 'Private customer' }],
       rebookingImplemented: false,
     };
+    fieldPhotoService.listFieldPhotosForMarketing.mockResolvedValue([
+      { id: 'photo-approved', phase: 'before', storagePath: 'private/photo-approved.jpg', marketingApproved: true },
+      { id: 'photo-pending', phase: 'after', storagePath: 'private/photo-pending.jpg', marketingApproved: false },
+    ]);
 
     render(<GrowthAIPage />);
     openHomeCapability('Review opportunities');
@@ -574,13 +590,50 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(await screen.findByRole('heading', { name: 'Marketing draft' })).toBeInTheDocument();
     expect(screen.getByLabelText('Content type')).toHaveValue('before_after');
     expect(screen.getByText(/No image analysis or customer details are included/)).toBeInTheDocument();
+    expect(await screen.findByText('Owner-approved field photos')).toBeInTheDocument();
+    await waitFor(() => expect(fieldPhotoService.listFieldPhotosForMarketing).toHaveBeenCalledWith('tenant-a', 'booking-a'));
+    await waitFor(() => expect(screen.getByLabelText('Approved field photos for marketing')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: 'Generate marketing with AI · 1 credit' }));
 
-    await waitFor(() => expect(gatewayService.generateGrowthAIContent).toHaveBeenCalledWith(expect.objectContaining({
+    const generateMarketing = gatewayService.generateGrowthAIContent;
+    await waitFor(() => expect(generateMarketing).toHaveBeenCalledWith(expect.objectContaining({
       actionType: 'marketing_post',
-      sourceRefs: { opportunityId: 'marketing_photo_review__booking-a' },
+      sourceRefs: { opportunityId: 'marketing_photo_review__booking-a', photoIds: ['photo-approved'] },
       input: expect.objectContaining({ postTypeId: 'before_after' }),
     })));
+    expect(JSON.stringify(gatewayService.generateGrowthAIContent.mock.calls[0][0])).not.toMatch(/customer-a|private\/photo/);
+  });
+
+  it('ignores stale approved-photo results when the active tenant changes', async () => {
+    const requests = { 'tenant-a': deferred(), 'tenant-b': deferred() };
+    fieldPhotoService.listFieldPhotosForMarketing.mockImplementation(tenantId => requests[tenantId].promise);
+    state.opportunityWorkspace = {
+      opportunities: [{ id: 'marketing-a', type: 'marketing_photo_review', pillar: 'attract', status: 'open', sourceRefs: { bookingId: 'booking-a' } }],
+      leads: [], bookings: [{ id: 'booking-a', serviceType: 'deep' }], rebookingImplemented: false,
+    };
+    const view = render(<GrowthAIPage />);
+    openHomeCapability('Review opportunities');
+    fireEvent.click(await screen.findByRole('button', { name: 'Create marketing draft' }));
+    await waitFor(() => expect(fieldPhotoService.listFieldPhotosForMarketing).toHaveBeenCalledWith('tenant-a', 'booking-a'));
+
+    state.auth = {
+      currentTenant: { id: 'tenant-b', businessName: 'Tenant B Cleaning', businessSettings: {} },
+      role: 'admin', tenantId: 'tenant-b', userProfile: { displayName: 'Taylor Test' },
+    };
+    state.opportunityWorkspace = {
+      opportunities: [{ id: 'marketing-b', type: 'marketing_photo_review', pillar: 'attract', status: 'open', sourceRefs: { bookingId: 'booking-b' } }],
+      leads: [], bookings: [{ id: 'booking-b', serviceType: 'standard' }], rebookingImplemented: false,
+    };
+    view.rerender(<GrowthAIPage />);
+    openHomeCapability('Review opportunities');
+    fireEvent.click(await screen.findByRole('button', { name: 'Create marketing draft' }));
+    await waitFor(() => expect(fieldPhotoService.listFieldPhotosForMarketing).toHaveBeenCalledWith('tenant-b', 'booking-b'));
+
+    await act(async () => requests['tenant-a'].resolve([{ id: 'photo-a', phase: 'before', roomLabel: 'Tenant A private room', storagePath: 'private/a.jpg', marketingApproved: true }]));
+    expect(screen.queryByText('Tenant A private room')).not.toBeInTheDocument();
+    await act(async () => requests['tenant-b'].resolve([{ id: 'photo-b', phase: 'after', roomLabel: 'Tenant B room', storagePath: 'private/b.jpg', marketingApproved: true }]));
+    expect(await screen.findByText('Tenant B room')).toBeInTheDocument();
   });
 
   it('uses a tenant booking service for a service spotlight and blocks testimonial generation', async () => {

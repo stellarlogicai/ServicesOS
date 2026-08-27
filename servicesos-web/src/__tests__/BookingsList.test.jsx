@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   updateBookingAdminFields: vi.fn(),
   updateBookingManualPaymentStatus: vi.fn(),
   listFieldPhotos: vi.fn(),
+  listFieldPhotosForMarketing: vi.fn(),
   loadFieldPhotoBlob: vi.fn(),
+  setFieldPhotoMarketingApproval: vi.fn(),
   getActiveTenantEmployeeProfiles: vi.fn(),
   tenantId: 'tenant-a',
   adminAccess: true,
@@ -68,7 +70,9 @@ vi.mock('../services/stripeService', () => ({
 vi.mock('../services/fieldPhotoService', () => ({
   FIELD_PHOTO_PHASES: ['before', 'after'],
   listFieldPhotos: mocks.listFieldPhotos,
+  listFieldPhotosForMarketing: mocks.listFieldPhotosForMarketing,
   loadFieldPhotoBlob: mocks.loadFieldPhotoBlob,
+  setFieldPhotoMarketingApproval: mocks.setFieldPhotoMarketingApproval,
   uploadFieldPhoto: vi.fn(),
   validateFieldPhoto: vi.fn(),
   validateFieldPhotoDetails: vi.fn(),
@@ -91,10 +95,14 @@ describe('read-only Bookings admin list', () => {
     mocks.updateBookingAdminFields.mockReset();
     mocks.updateBookingManualPaymentStatus.mockReset();
     mocks.listFieldPhotos.mockReset();
+    mocks.listFieldPhotosForMarketing.mockReset();
     mocks.loadFieldPhotoBlob.mockReset();
+    mocks.setFieldPhotoMarketingApproval.mockReset();
     mocks.getActiveTenantEmployeeProfiles.mockReset();
     mocks.getActiveTenantEmployeeProfiles.mockResolvedValue({ success: true, data: [] });
     mocks.listFieldPhotos.mockResolvedValue([]);
+    mocks.listFieldPhotosForMarketing.mockImplementation((...args) => mocks.listFieldPhotos(...args));
+    mocks.setFieldPhotoMarketingApproval.mockResolvedValue({ success: true });
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: {

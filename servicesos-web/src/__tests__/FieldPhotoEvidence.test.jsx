@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   listFieldPhotos: vi.fn(),
+  listFieldPhotosForMarketing: vi.fn(),
   loadFieldPhotoBlob: vi.fn(),
+  setFieldPhotoMarketingApproval: vi.fn(),
   uploadFieldPhoto: vi.fn(),
   validateFieldPhoto: vi.fn(),
   validateFieldPhotoDetails: vi.fn(),
@@ -13,7 +15,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../services/fieldPhotoService', () => ({
   FIELD_PHOTO_PHASES: ['before', 'after'],
   listFieldPhotos: mocks.listFieldPhotos,
+  listFieldPhotosForMarketing: mocks.listFieldPhotosForMarketing,
   loadFieldPhotoBlob: mocks.loadFieldPhotoBlob,
+  setFieldPhotoMarketingApproval: mocks.setFieldPhotoMarketingApproval,
   uploadFieldPhoto: mocks.uploadFieldPhoto,
   validateFieldPhoto: mocks.validateFieldPhoto,
   validateFieldPhotoDetails: mocks.validateFieldPhotoDetails,
@@ -29,6 +33,8 @@ describe('FieldPhotoEvidence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listFieldPhotos.mockResolvedValue([]);
+    mocks.listFieldPhotosForMarketing.mockResolvedValue([]);
+    mocks.setFieldPhotoMarketingApproval.mockResolvedValue({ success: true });
     mocks.validateFieldPhoto.mockReturnValue({ success: true });
     mocks.validateFieldPhotoDetails.mockImplementation(({ roomLabel, note }) => {
       const safeRoomLabel = roomLabel.trim();
@@ -164,6 +170,7 @@ describe('FieldPhotoEvidence', () => {
     expect(screen.getByText(/Uploaded Jul 13, 2026/)).toBeInTheDocument();
     expect(screen.getByText('No after photos added yet.')).toBeInTheDocument();
     expect(screen.queryByLabelText(/Add .* photo/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Marketing approval/i })).not.toBeInTheDocument();
     await waitFor(() => expect(mocks.loadFieldPhotoBlob).toHaveBeenCalledWith('safe/before-1.jpg'));
   });
 
@@ -180,5 +187,18 @@ describe('FieldPhotoEvidence', () => {
     expect(screen.getByText('Bathroom')).toBeInTheDocument();
     expect(screen.getByText('Grease buildup')).toBeInTheDocument();
     expect(await screen.findAllByRole('img')).toHaveLength(3);
+  });
+
+  it('keeps employee review read-only but gives owners an explicit separate marketing approval control', async () => {
+    mocks.listFieldPhotosForMarketing.mockResolvedValue([
+      { id: 'photo-a', phase: 'before', roomLabel: 'Kitchen', storagePath: 'safe/photo-a.jpg', marketingApproved: false },
+    ]);
+    render(<BookingFieldPhotoReview tenantId="tenant-a" bookingId="booking-a" canManageMarketing />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve for Marketing' }));
+    await waitFor(() => expect(mocks.setFieldPhotoMarketingApproval).toHaveBeenCalledWith({
+      tenantId: 'tenant-a', bookingId: 'booking-a', photoId: 'photo-a', approved: true,
+    }));
+    expect(await screen.findByText('Approved for Marketing')).toBeInTheDocument();
   });
 });

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   collection: vi.fn(() => ({ kind: 'collection' })),
   deleteObject: vi.fn(),
-  doc: vi.fn(() => ({ id: 'photo-generated-1' })),
+  doc: vi.fn((...args) => ({ id: args.at(-1)?.kind === 'collection' ? 'photo-generated-1' : args.at(-1) || 'photo-generated-1' })),
   getBlob: vi.fn(),
   getDoc: vi.fn(),
   getDocs: vi.fn(),
@@ -36,6 +36,8 @@ vi.mock('firebase/storage', () => ({
 import {
   buildFieldPhotoMetadata,
   buildFieldPhotoStoragePath,
+  listFieldPhotosForMarketing,
+  setFieldPhotoMarketingApproval,
   uploadFieldPhoto,
   validateFieldPhoto,
   validateFieldPhotoDetails,
@@ -155,6 +157,35 @@ describe('fieldPhotoService', () => {
       'uploadedAt',
       'uploadedByUid',
     ]);
+  });
+
+  it('decorates only matching approved marketing reviews without changing evidence metadata', async () => {
+    mocks.getDocs.mockResolvedValue({ docs: [
+      { id: 'photo-approved', data: () => ({ phase: 'before', storagePath: 'safe/a.jpg' }) },
+      { id: 'photo-unapproved', data: () => ({ phase: 'after', storagePath: 'safe/b.jpg' }) },
+    ] });
+    mocks.getDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ tenantId: 'tenant-a', bookingId: 'booking-a', photoId: 'photo-approved', status: 'approved' }) })
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ tenantId: 'tenant-a', bookingId: 'booking-a', photoId: 'photo-unapproved', status: 'not_approved' }) });
+
+    await expect(listFieldPhotosForMarketing('tenant-a', 'booking-a')).resolves.toEqual([
+      expect.objectContaining({ id: 'photo-approved', marketingApproved: true }),
+      expect.objectContaining({ id: 'photo-unapproved', marketingApproved: false }),
+    ]);
+  });
+
+  it('allows only an authenticated tenant admin to save a separate marketing review record', async () => {
+    auth.currentUser = { uid: 'admin-a' };
+    mocks.getDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ role: 'admin', status: 'active', tenantId: 'tenant-a' }) })
+      .mockResolvedValueOnce({ exists: () => false, data: () => ({}) });
+
+    await expect(setFieldPhotoMarketingApproval({ tenantId: 'tenant-a', bookingId: 'booking-a', photoId: 'photo-a', approved: true }))
+      .resolves.toMatchObject({ success: true });
+    expect(mocks.setDoc).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      tenantId: 'tenant-a', bookingId: 'booking-a', photoId: 'photo-a', status: 'approved',
+      createdByUid: 'admin-a', updatedByUid: 'admin-a',
+    }));
   });
 
   it('rejects missing room metadata before authorization or Storage writes', async () => {

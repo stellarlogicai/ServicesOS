@@ -130,6 +130,45 @@
   font-size: 12px;
 }
 
+.field-photo-review-item,
+.field-photo-marketing-option {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.field-photo-marketing-review {
+  display: grid;
+  gap: 7px;
+  padding: 0 2px;
+}
+
+.field-photo-marketing-review span,
+.field-photo-marketing-option > span {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.field-photo-marketing-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.field-photo-marketing-option {
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.field-photo-marketing-option:has(input:checked) {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
 .field-photo-placeholder {
   display: grid;
   min-height: 130px;
@@ -230,7 +269,8 @@
 
   .field-photo-file-label,
   .field-photo-pending-actions .v1-button,
-  .field-completion-warning-actions .v1-button {
+  .field-completion-warning-actions .v1-button,
+  .field-photo-marketing-review .v1-button {
     width: 100%;
     box-sizing: border-box;
     justify-content: center;

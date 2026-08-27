@@ -165,6 +165,65 @@
   margin: 0 auto;
 }
 
+.growth-ai-marketing-assets,
+.growth-ai-marketing-plan {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #dbe4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.growth-ai-marketing-assets h4,
+.growth-ai-marketing-plan h4,
+.growth-ai-marketing-assets p,
+.growth-ai-marketing-plan p {
+  margin: 0;
+}
+
+.growth-ai-marketing-assets h4,
+.growth-ai-marketing-plan h4 {
+  color: #102a43;
+  font-size: 14px;
+}
+
+.growth-ai-marketing-assets p,
+.growth-ai-marketing-plan p {
+  color: #526278;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.growth-ai-marketing-plan-list {
+  display: grid;
+  gap: 8px;
+}
+
+.growth-ai-marketing-plan-list button {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #bfd2e6;
+  border-radius: 7px;
+  background: #fff;
+  color: #174ea6;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.growth-ai-marketing-plan-list button strong {
+  font-size: 13px;
+}
+
+.growth-ai-marketing-plan-list button span {
+  color: #526278;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .growth-ai-welcome {
   padding: 34px 0 26px;
 }
