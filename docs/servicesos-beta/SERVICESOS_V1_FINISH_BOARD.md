@@ -32,13 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `70d75ec27d26272f3b64306f27fad503cc7f1379` — `Harden GrowthAI review-request lifecycle`
+Latest validated product checkpoint: `c6a93196d23b765734ecdaffc5a0fd47299c08d9` — `Harden GrowthAI brand precedence`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **Reputation V1 deterministic review-request opportunities, customer-scoped lifecycle/deduplication, review-response assistance, positive/neutral/sensitive draft handling, and human-review guardrails**
+Just completed: **Brand Intelligence V1 shared approved brand context, canonical Business Settings precedence, server-side provider reload/sanitization, tenant-safe preferences, and workflow safety precedence**
 
-Next planned GrowthAI slice: **Brand Intelligence**
+Next planned GrowthAI slice: **Conversation orchestration / hybrid skill router**
 
 ---
 
@@ -131,7 +131,7 @@ Security and production verification still continue under Release Hardening.
 - [x] Testimonial/review content is structurally blocked unless an approved source exists; no fabricated testimonials or ratings
 - [ ] Approved testimonial/review source integration — Reputation V1 intentionally does not create a canonical testimonial source; owner-pasted review text is temporary response context only
 - [x] Platform variants: General, Facebook, Instagram, LinkedIn, Website
-- [ ] Full canonical brand-aware generation integration
+- [x] Full canonical brand-aware generation integration through the shared approved Brand Intelligence context
 - [ ] Lightweight content planning already defined for V1
 - [x] Deterministic marketing setup costs zero credits
 - [x] Provider marketing generation preserves the existing one-credit contract
@@ -188,19 +188,23 @@ Security and production verification still continue under Release Hardening.
 - [x] No automatic send/post, external review integration, reputation scoring, or satisfaction prediction
 - [x] Owner-pasted review text is temporary response context and is not an approved Marketing testimonial source
 
-## Brand intelligence
+## Brand intelligence — ✅ COMPLETE
 
 - [x] Existing GrowthAI brand preferences foundation
-- [ ] Canonical tenant brand profile integration
-- [ ] Logo/profile integration
-- [ ] Brand colors
-- [ ] Tone
-- [ ] Preferred writing style
-- [ ] Default CTA
-- [ ] Words/topics to avoid
-- [ ] Service-area context
-- [ ] Platform preferences
-- [ ] GrowthAI automatically uses approved brand profile
+- [x] Canonical tenant brand profile integration through trusted tenant Business Settings plus tenant-scoped GrowthAI preferences
+- [x] Logo/profile integration reuses tenant-controlled logo metadata; logo remains display-only and is not sent to the text provider
+- [x] Brand colors
+- [x] Tone
+- [x] Preferred writing style
+- [x] Default CTA
+- [x] Words/topics to avoid
+- [x] Service-area context from canonical tenant Business Settings, with legacy tenant service-area fallback only
+- [x] Platform preferences
+- [x] GrowthAI automatically uses the approved brand context for Marketing, Customer Communication AI enhancement, and Reputation AI response enhancement
+- [x] Gateway reloads and sanitizes canonical tenant brand context server-side before provider use
+- [x] Client-supplied business name/service area cannot override canonical tenant facts
+- [x] Workflow-specific factual and safety guardrails outrank brand styling
+- [x] Missing brand preferences fall back to neutral-safe behavior without AI inference or extra credit use
 
 ## Conversation orchestration
 
