@@ -1,6 +1,6 @@
 # ServicesOS V1 Finish Board
 
-Last updated: 2026-08-26
+Last updated: 2026-08-27
 
 This document is the authoritative progress board for the defined customer-facing ServicesOS V1 finish line.
 
@@ -32,11 +32,11 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `c6a93196d23b765734ecdaffc5a0fd47299c08d9` — `Harden GrowthAI brand precedence`
+Latest validated product checkpoint: `4a21f90073be63c4f04b27960534d08b8e89fe0c` — `Finish GrowthAI marketing V1`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **Brand Intelligence V1 shared approved brand context, canonical Business Settings precedence, server-side provider reload/sanitization, tenant-safe preferences, and workflow safety precedence**
+Just completed: **Marketing V1 deterministic content planning, explicit trusted-management photo approval, canonical photo re-verification, privacy-safe provider context, and completed Brand Intelligence integration**
 
 Next planned GrowthAI slice: **Conversation orchestration / hybrid skill router**
 
@@ -114,7 +114,7 @@ Security and production verification still continue under Release Hardening.
 - [x] Empty/loading behavior
 - [x] Tenant A → B → A stale-result protection
 
-## Marketing — 🟡 MOSTLY COMPLETE
+## Marketing — ✅ COMPLETE
 
 - [x] Marketing workflow foundation
 - [x] Human-reviewed draft model
@@ -127,12 +127,17 @@ Security and production verification still continue under Release Hardening.
 - [x] Availability content
 - [x] Local/community content
 - [x] Before/after copy-only draft path without invented visual facts
-- [ ] Authorized photo/asset integration where supported by the approved canonical architecture
+- [x] Authorized photo/asset integration reuses canonical field-photo identity and separate Marketing review metadata
+- [x] Marketing photo approval follows the trusted tenant-management boundary: active tenant admin plus explicit-tenant super-admin
+- [x] Field-photo evidence remains immutable; approval/revocation changes only separate Marketing review state
+- [x] Gateway re-verifies selected stable photo IDs and current Marketing approval under the authenticated tenant's canonical booking path before credit reservation/provider use
+- [x] Provider receives only approved-asset count; no image binary, URL, storage path, room label, notes, or customer data
 - [x] Testimonial/review content is structurally blocked unless an approved source exists; no fabricated testimonials or ratings
-- [ ] Approved testimonial/review source integration — Reputation V1 intentionally does not create a canonical testimonial source; owner-pasted review text is temporary response context only
+- [x] Verified testimonial Marketing is intentionally unavailable in V1 because no approved canonical testimonial source exists; external review-platform ingestion is post-V1
 - [x] Platform variants: General, Facebook, Instagram, LinkedIn, Website
 - [x] Full canonical brand-aware generation integration through the shared approved Brand Intelligence context
-- [ ] Lightweight content planning already defined for V1
+- [x] Lightweight deterministic content planning
+- [x] Content planning uses zero provider calls and zero credits
 - [x] Deterministic marketing setup costs zero credits
 - [x] Provider marketing generation preserves the existing one-credit contract
 - [x] Completed-job provider payload excludes customer, address, photo, payment, Stripe, employee, and internal data
