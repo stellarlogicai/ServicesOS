@@ -880,7 +880,7 @@ export default function GrowthAIHome({
       id: nextMessageId('assistant'),
       role: 'assistant',
       type: 'result',
-      content: 'No problem. You can reopen the GrowthAI guide anytime. I am ready when you are.',
+      content: 'No problem. You can reopen the SLAI Assistant guide anytime. I am ready when you are.',
       actions: ['marketing', 'customer_response', 'opportunities'],
     }]);
   };
@@ -1059,7 +1059,7 @@ export default function GrowthAIHome({
             Using {businessName} brand profile · Edit
           </button>
           <button type="button" className="growth-ai-guide-link" onClick={reopenGuide}>
-            GrowthAI guide
+            SLAI Assistant guide
           </button>
         </div>
       </section>

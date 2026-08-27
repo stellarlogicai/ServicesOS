@@ -48,6 +48,10 @@ describe('GrowthAI first-run onboarding state', () => {
       step: 3,
     });
     expect(loadGrowthAIOnboardingState({ tenantId: 'tenant-b', userId: 'user-a', storage })).toEqual(defaultGrowthAIOnboardingState());
+    expect(loadGrowthAIOnboardingState({ tenantId: 'tenant-a', userId: 'user-a', storage })).toMatchObject({
+      status: 'in_progress',
+      step: 3,
+    });
   });
 
   it('persists completed or skipped state and clamps invalid step values', () => {
