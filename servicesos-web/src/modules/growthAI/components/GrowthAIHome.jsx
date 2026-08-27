@@ -199,7 +199,6 @@ function OpportunityCard({
   onDismiss,
   onDraftFollowUp,
   onStartMarketingFromOpportunity,
-  onStartFirstOpportunity,
   onStartRebookingFromOpportunity,
   onStartReviewRequestFromOpportunity,
   onReviewJob,

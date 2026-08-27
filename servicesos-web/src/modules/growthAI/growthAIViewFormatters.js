@@ -1,5 +1,5 @@
 export function growthAIStatusLabel(status) {
-  if (status === 'needs_review') return 'Needs review';
+  if (status === 'needs_review') return 'Needs Review';
   if (status === 'approved') return 'Approved';
   return 'Draft';
 }

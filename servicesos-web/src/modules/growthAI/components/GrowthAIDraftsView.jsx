@@ -5,6 +5,7 @@ import {
   GrowthAISurface,
 } from './GrowthAIPrimitives';
 import { formatGrowthAITimestamp, growthAIStatusLabel } from '../growthAIViewFormatters';
+import { describeGrowthAIDraft } from '../growthAIDraftPresentation';
 
 export default function GrowthAIDraftsView({
   drafts,
@@ -16,9 +17,12 @@ export default function GrowthAIDraftsView({
   onSelectDraft,
   onSubmitForReview,
   pillars,
+  presentationContext,
   saving,
 }) {
   const updateContent = patch => onEditorChange({ content: { ...editor.content, ...patch } });
+  const editorPresentation = describeGrowthAIDraft(editor, presentationContext);
+  const hasEditorContent = Boolean(editor.id || editor.title || editor.content.fullCaption);
 
   return (
     <div className="growth-ai-drafts-layout">
@@ -26,25 +30,31 @@ export default function GrowthAIDraftsView({
         <div className="growth-ai-section-heading">
           <div>
             <span className="growth-ai-section-kicker">Human review queue</span>
-            <h2>Tenant drafts</h2>
-            <p>AI-assisted and deterministic content saved for this tenant.</p>
+            <h2>Drafts to review</h2>
+            <p>Saved content stays here until an owner reviews and approves it.</p>
           </div>
           <strong className="growth-ai-count">{drafts.length}</strong>
         </div>
-        {drafts.length === 0 ? <p className="growth-ai-empty">No tenant drafts saved yet.</p> : null}
+        {drafts.length === 0 ? <p className="growth-ai-empty">No drafts need your attention yet.</p> : null}
         <div className="growth-ai-draft-list">
-          {drafts.map(draft => (
-            <button
+          {drafts.map(draft => {
+            const presentation = describeGrowthAIDraft(draft, presentationContext);
+            const draftTitle = draft.title || presentation.typeLabel;
+            const draftStatus = ['draft', 'needs_review', 'approved'].includes(draft.status) ? draft.status : 'draft';
+            return <button
               type="button"
-              key={draft.id}
+              key={draft.id || draftTitle}
               className="growth-ai-draft-item"
               aria-current={editor.id === draft.id ? 'true' : undefined}
+              aria-label={`Review ${presentation.typeLabel}: ${draftTitle}`}
               onClick={() => onSelectDraft(draft)}
             >
-              <strong>{draft.title}</strong>
-              <span>{growthAIStatusLabel(draft.status)} · {draft.pillar} · v{draft.version}</span>
+              <strong>{draftTitle}</strong>
+              <span className={`growth-ai-state growth-ai-state-${draftStatus}`}>{presentation.statusLabel}</span>
+              <span>{presentation.typeLabel} · {presentation.source.label}{presentation.source.detail ? ` · ${presentation.source.detail}` : ''}</span>
+              <span>Updated {formatGrowthAITimestamp(draft.updatedAt)}</span>
             </button>
-          ))}
+          })}
         </div>
       </GrowthAISurface>
 
@@ -52,10 +62,17 @@ export default function GrowthAIDraftsView({
         <div className="growth-ai-section-heading">
           <div>
             <span className="growth-ai-section-kicker">Draft workspace</span>
-            <h2>Draft editor</h2>
-            <p>Material edits to approved content clear approval and require review again.</p>
+            <h2>{hasEditorContent ? 'Review draft' : 'Choose a draft to review'}</h2>
+            <p>{hasEditorContent ? 'Material edits to approved content clear approval and require review again.' : 'Select a saved draft to review its content and current status.'}</p>
           </div>
-          <span className={`growth-ai-state growth-ai-state-${editor.status}`}>{growthAIStatusLabel(editor.status)}</span>
+          {hasEditorContent ? <span className={`growth-ai-state growth-ai-state-${editor.status}`}>{growthAIStatusLabel(editor.status)}</span> : null}
+        </div>
+        {!hasEditorContent ? <p className="growth-ai-empty">Draft details will appear here after you choose one from the review queue.</p> : null}
+        {hasEditorContent ? <><div className="growth-ai-draft-context" aria-label="Draft context">
+          <span>Source</span>
+          <strong>{editorPresentation.source.label}</strong>
+          {editorPresentation.source.detail ? <p>{editorPresentation.source.detail}</p> : null}
+          {editorPresentation.source.unavailable ? <p>The linked record is unavailable. This draft remains unchanged.</p> : null}
         </div>
         <div className="growth-ai-form-stack">
           <div className="growth-ai-form-grid">
@@ -64,7 +81,7 @@ export default function GrowthAIDraftsView({
                 {pillars.map(item => <option key={item} value={item}>{item}</option>)}
               </select>
             </GrowthAIField>
-            <GrowthAIField label="Action type"><input aria-label="Action type" value={editor.actionType} readOnly /></GrowthAIField>
+            <GrowthAIField label="Draft type"><input aria-label="Draft type" value={editorPresentation.typeLabel} readOnly /></GrowthAIField>
           </div>
           <GrowthAIField label="Title"><input aria-label="Draft title" value={editor.title} onChange={event => onEditorChange({ title: event.target.value })} /></GrowthAIField>
           <GrowthAIField label="Full caption"><textarea aria-label="Full caption" rows="9" value={editor.content.fullCaption} onChange={event => updateContent({ fullCaption: event.target.value })} /></GrowthAIField>
@@ -87,8 +104,9 @@ export default function GrowthAIDraftsView({
           {editor.id && ['needs_review', 'approved'].includes(editor.status) ? <GrowthAIButton tone="secondary" disabled={saving} onClick={onReturnToDraft}>Return to draft</GrowthAIButton> : null}
         </div>
         {editor.status === 'approved' ? (
-          <p className="growth-ai-approval-note">Approved by {editor.approvedByUid} at {formatGrowthAITimestamp(editor.approvedAt)}. This approval is internal only.</p>
+          <p className="growth-ai-approval-note">Approved {formatGrowthAITimestamp(editor.approvedAt)}. This approval is internal only; nothing was sent or published.</p>
         ) : null}
+        </> : null}
       </GrowthAISurface>
     </div>
   );

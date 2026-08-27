@@ -66,16 +66,18 @@ const emptyOpportunityWorkspace = { tenantId: null, opportunities: [], leads: []
 const emptyMarketingAssets = { tenantId: null, bookingId: null, items: [], loading: false, error: '' };
 
 function draftToEditor(draft) {
+  const content = draft?.content && typeof draft.content === 'object' ? draft.content : {};
+  const sourceRefs = draft?.sourceRefs && typeof draft.sourceRefs === 'object' ? draft.sourceRefs : {};
   return {
-    id: draft.id,
-    pillar: draft.pillar,
-    actionType: draft.actionType,
-    title: draft.title,
-    content: { ...emptyContent, ...draft.content },
-    sourceRefs: draft.sourceRefs || {},
-    status: draft.status,
-    approvedByUid: draft.approvedByUid,
-    approvedAt: draft.approvedAt,
+    id: typeof draft?.id === 'string' ? draft.id : null,
+    pillar: GROWTH_AI_PILLARS.includes(draft?.pillar) ? draft.pillar : 'attract',
+    actionType: typeof draft?.actionType === 'string' ? draft.actionType : 'marketing_post',
+    title: typeof draft?.title === 'string' ? draft.title : '',
+    content: { ...emptyContent, ...content },
+    sourceRefs,
+    status: ['draft', 'needs_review', 'approved'].includes(draft?.status) ? draft.status : 'draft',
+    approvedByUid: typeof draft?.approvedByUid === 'string' ? draft.approvedByUid : null,
+    approvedAt: draft?.approvedAt || null,
   };
 }
 
@@ -450,7 +452,10 @@ export default function GrowthAIPage({ onReviewJob }) {
           shortCaption: responseTemplate.subjectLine || responseTemplate.messageTemplate.slice(0, 140),
           callToAction: 'Review and send manually',
         },
-        sourceRefs: responseTemplate.sourceRefs || {},
+        sourceRefs: {
+          ...(responseTemplate.sourceRefs || {}),
+          ...(customerCommunicationIntent?.opportunityId ? { opportunityId: customerCommunicationIntent.opportunityId } : {}),
+        },
       }),
       'Customer response draft saved for this tenant. Nothing was sent.',
     );
@@ -529,6 +534,12 @@ export default function GrowthAIPage({ onReviewJob }) {
   const communicationLeads = listCommunicationLeads(tenantOpportunityWorkspace.leads, tenantId);
   const communicationBookings = listCommunicationBookings(tenantOpportunityWorkspace.bookings, tenantId);
   const marketingServices = deriveTenantMarketingServices(tenantOpportunityWorkspace.bookings);
+  const draftPresentationContext = useMemo(() => ({
+    tenantId,
+    opportunities: tenantOpportunityWorkspace.opportunities,
+    leads: tenantOpportunityWorkspace.leads,
+    bookings: tenantOpportunityWorkspace.bookings,
+  }), [tenantId, tenantOpportunityWorkspace.bookings, tenantOpportunityWorkspace.leads, tenantOpportunityWorkspace.opportunities]);
 
   const opportunitySubject = opportunity => {
     if (opportunity.type === 'estimate_followup') {
@@ -808,10 +819,16 @@ export default function GrowthAIPage({ onReviewJob }) {
           onSelectDraft={selectDraft}
           onSubmitForReview={() => transition(submitGrowthAIDraftForReview, 'Draft submitted for review.')}
           pillars={GROWTH_AI_PILLARS}
+          presentationContext={draftPresentationContext}
           saving={savingForTenant}
         />
       ) : null}
-      {activeView === 'activity' ? <GrowthAIActivityView audit={auditForTenant} editor={editorForTenant} /> : null}
+      {activeView === 'activity' ? <GrowthAIActivityView
+        audit={auditForTenant}
+        currentUserUid={user?.uid || userProfile?.uid || ''}
+        editor={editorForTenant}
+        presentationContext={draftPresentationContext}
+      /> : null}
     </GrowthAIWorkspaceShell>
   );
 }

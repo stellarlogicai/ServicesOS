@@ -942,6 +942,42 @@
   font-size: 12px;
 }
 
+.growth-ai-draft-item .growth-ai-state {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 7px;
+}
+
+.growth-ai-draft-context {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 14px;
+  padding: 11px 12px;
+  border: 1px solid #d7e0e9;
+  border-radius: 7px;
+  background: #f8fafc;
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-draft-context > span,
+.growth-ai-activity-actor {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.growth-ai-draft-context strong,
+.growth-ai-draft-context p {
+  margin: 0;
+}
+
+.growth-ai-draft-context p {
+  color: #526278;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .growth-ai-copy-actions,
 .growth-ai-review-actions {
   margin-top: 14px;
@@ -1013,6 +1049,11 @@
 .growth-ai-activity-list p,
 .growth-ai-activity-list time {
   overflow-wrap: anywhere;
+}
+
+.growth-ai-activity-list strong {
+  display: block;
+  margin-top: 3px;
 }
 
 .growth-ai-activity-list p {
