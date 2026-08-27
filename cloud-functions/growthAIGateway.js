@@ -497,7 +497,6 @@ function buildPrompt({ request, tenant, sourceContext, brandProfile = {} }) {
       `Draft a ${request.input.platform || 'general'} marketing post of type ${request.input.postTypeId}.`,
       sourceContext.marketingServiceType ? `Verified completed-job service context: ${sourceContext.marketingServiceType}.` : '',
       request.input.serviceType ? `Owner-selected tenant service: ${request.input.serviceType}.` : '',
-      request.input.serviceArea ? `Area: ${request.input.serviceArea}.` : '',
       request.input.offer ? `Offer: ${request.input.offer}.` : '',
       request.input.dateRange ? `Seasonal context: ${request.input.dateRange}.` : '',
       request.input.cleaningTopic ? `Cleaning topic: ${request.input.cleaningTopic}.` : '',

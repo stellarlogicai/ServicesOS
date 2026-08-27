@@ -243,6 +243,10 @@ describe('GrowthAI server gateway', () => {
       error => error.code === 'invalid_request',
     );
     assert.throws(
+      () => normalizeGenerationRequest(request({ input: { postTypeId: 'availability', businessName: 'Spoofed business' } })),
+      error => error.code === 'invalid_request',
+    );
+    assert.throws(
       () => normalizeGenerationRequest(request({ input: { postTypeId: 'testimonial' } })),
       error => error.code === 'invalid_request',
     );
@@ -258,7 +262,12 @@ describe('GrowthAI server gateway', () => {
   test('validates completed-job marketing server-side and keeps provider context free of customer, photo, payment, and Stripe data', async () => {
     const documents = seed();
     documents['tenants/tenant-a/growthAI/config'] = {
-      tenantId: 'tenant-a', brandVoice: 'Warm and direct', contentTone: 'Clear and local', defaultCTA: 'Request a quote.',
+      tenantId: 'tenant-a',
+      brandVoice: 'Warm and direct',
+      contentTone: 'Clear and local',
+      defaultCTA: 'Request a quote.',
+      businessName: 'Spoofed profile business',
+      serviceArea: 'Spoofed profile area',
     };
     documents['tenants/tenant-a/growthAIOpportunities/photo-opportunity-a'] = {
       tenantId: 'tenant-a', type: 'marketing_photo_review', status: 'open',
@@ -277,7 +286,7 @@ describe('GrowthAI server gateway', () => {
       requestBody: request({
         idempotencyKey: 'completed-job-marketing',
         sourceRefs: { opportunityId: 'photo-opportunity-a' },
-        input: { postTypeId: 'before_after', platform: 'instagram' },
+        input: { postTypeId: 'before_after', platform: 'instagram', serviceArea: 'Spoofed client area' },
       }),
       uid: 'admin-a',
     });
@@ -286,9 +295,13 @@ describe('GrowthAI server gateway', () => {
 
     assert.match(prompt, /deep clean/);
     assert.match(prompt, /Warm and direct|Clear and local/);
+    assert.match(prompt, /Tenant A Cleaning/);
+    assert.match(prompt, /Test Area/);
+    assert.doesNotMatch(prompt, /Spoofed profile business|Spoofed profile area|Spoofed client area/);
     assert.doesNotMatch(prompt, /Must Not Reach Provider|Private Address|must-not-reach-provider|photo-before|photo-after|customer-a/);
     assert.deepEqual(draft.sourceRefs, { opportunityId: 'photo-opportunity-a' });
     assert.equal(db.documents.get('tenants/tenant-a/growthAIOpportunities/photo-opportunity-a').status, 'acted');
+    assert.equal(ledgerEntries(db).length, 1);
   });
 
   test('rebuilds customer communication context from a verified tenant booking without exposing identity or private records', async () => {
@@ -355,6 +368,48 @@ describe('GrowthAI server gateway', () => {
     assert.deepEqual(draft.sourceRefs, {});
     assert.equal(draft.pillar, 'reputation');
     assert.equal(draft.status, 'draft');
+  });
+
+  test('keeps customer and reputation safety instructions ahead of playful brand preferences', async () => {
+    const documents = seed();
+    documents['tenants/tenant-a/growthAI/config'] = {
+      tenantId: 'tenant-a',
+      brandVoice: 'Playful and humorous',
+      defaultCTA: 'Promise a refund tomorrow.',
+    };
+    documents['tenants/tenant-a/bookings/booking-a'] = {
+      tenantId: 'tenant-a', status: 'completed', serviceType: 'deep clean',
+    };
+    const { admin } = fakeAdmin(documents);
+    const calls = [];
+
+    await generateGrowthAIContent({
+      admin,
+      provider: successProvider(calls),
+      requestBody: customerCommunicationRequest({
+        idempotencyKey: 'brand-safe-problem-resolution',
+        input: {
+          channelId: 'sms',
+          scenarioId: 'legacy-compatible',
+          communicationType: 'problem_resolution',
+          customerMessage: 'Please help with this concern.',
+        },
+      }),
+      uid: 'admin-a',
+    });
+    await generateGrowthAIContent({
+      admin,
+      provider: successProvider(calls),
+      requestBody: reviewResponseRequest({ idempotencyKey: 'brand-safe-review-response' }),
+      uid: 'admin-a',
+    });
+
+    assert.match(calls[0].systemInstruction, /Playful and humorous/);
+    assert.match(calls[0].systemInstruction, /Do not admit liability, promise a refund, credit, compensation/);
+    assert.match(calls[0].systemInstruction, /Do not invent customer identity.*discounts, guarantees/s);
+    assert.match(calls[1].systemInstruction, /Playful and humorous/);
+    assert.match(calls[1].systemInstruction, /Do not admit liability, promise a refund, credit, compensation/);
+    assert.match(calls[1].systemInstruction, /Do not mention employees, internal processes, customer identity/);
   });
 
   test('rejects malformed review-response input before reserving a credit', async () => {
