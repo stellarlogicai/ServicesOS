@@ -65,6 +65,7 @@ const emptyInputs = {
 };
 const emptyOpportunityWorkspace = { tenantId: null, opportunities: [], leads: [], bookings: [] };
 const emptyMarketingAssets = { tenantId: null, bookingId: null, items: [], loading: false, error: '' };
+const opportunityDataUnavailableMessage = "Some business data couldn't be loaded right now.";
 
 function draftToEditor(draft) {
   const content = draft?.content && typeof draft.content === 'object' ? draft.content : {};
@@ -229,6 +230,8 @@ export default function GrowthAIPage({ onReviewJob }) {
         setOpportunityWorkspace({ ...workspace, tenantId: requestedTenantId });
       }
       return workspace;
+    } catch (error) {
+      throw new Error(opportunityDataUnavailableMessage, { cause: error });
     } finally {
       if (requestSequence === opportunityRequestSequence.current && isCurrentTenantRequest(requestedTenantId, requestVersion)) {
         setOpportunitiesLoading(false);

@@ -954,6 +954,12 @@ service cloud.firestore {
                                         (isSuperAdmin() || isTenantAdmin(tenantId));
       }
 
+      match /recurring_services/{recurringServiceId} {
+        allow read: if tenantExists(tenantId) &&
+                       (isSuperAdmin() || isTenantAdmin(tenantId));
+        allow create, update, delete: if false;
+      }
+
       match /cleaningProductsMethods/{recordId} {
         allow read: if canReadCleaningProduct(tenantId);
         allow create: if isValidCleaningProductCreate(tenantId, recordId);

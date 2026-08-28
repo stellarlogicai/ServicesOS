@@ -354,6 +354,20 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
   });
 
+  it('does not expose raw Firestore diagnostics when opportunity data is unavailable', async () => {
+    opportunityService.refreshGrowthAIOpportunityFeed.mockRejectedValueOnce(
+      new Error("false for 'list' @ L1162, false for 'list' @ L1195")
+    );
+
+    render(<GrowthAIPage />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent("Some business data couldn't be loaded right now.");
+    expect(alert).not.toHaveTextContent("false for 'list'");
+    expect(alert).not.toHaveTextContent('L1162');
+    expect(screen.getByRole('button', { name: 'Create marketing post' })).toBeEnabled();
+  });
+
   it('keeps deterministic tools available with zero AI credits', async () => {
     gatewayService.credits = 0;
     render(<GrowthAIPage />);

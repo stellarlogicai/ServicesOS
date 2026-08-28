@@ -129,6 +129,23 @@ async function seedFirestore() {
       name: 'Other Tenant Customer'
     });
 
+    await setDoc(doc(database, 'tenants', TENANT_A, 'recurring_services', 'weekly-standard'), {
+      tenantId: TENANT_A,
+      customerId: 'customer-a',
+      customerName: 'Customer A',
+      serviceType: 'standard',
+      scheduleType: 'weekly',
+      status: 'active'
+    });
+    await setDoc(doc(database, 'tenants', TENANT_B, 'recurring_services', 'monthly-deep'), {
+      tenantId: TENANT_B,
+      customerId: 'customer-other',
+      customerName: 'Other Tenant Customer',
+      serviceType: 'deep clean',
+      scheduleType: 'monthly',
+      status: 'active'
+    });
+
     await setDoc(
       doc(database, 'tenants', TENANT_A, 'leads', 'request-a'),
       customerRequest()
@@ -706,6 +723,58 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       doc(anonymousDatabase, 'tenants', TENANT_A, 'leads', 'anonymous-request'),
       customerRequest()
     ));
+  });
+
+  test('tenant admin can list and read only own-tenant recurring services', async () => {
+    const adminA = authenticatedDatabase('admin-a');
+    const ownCollection = collection(adminA, 'tenants', TENANT_A, 'recurring_services');
+    const ownSnapshot = await assertSucceeds(getDocs(ownCollection));
+
+    assert.strictEqual(ownSnapshot.size, 1);
+    assert.strictEqual(ownSnapshot.docs[0].id, 'weekly-standard');
+    await assertSucceeds(getDoc(doc(adminA, 'tenants', TENANT_A, 'recurring_services', 'weekly-standard')));
+    await assertFails(getDocs(collection(adminA, 'tenants', TENANT_B, 'recurring_services')));
+    await assertFails(getDoc(doc(adminA, 'tenants', TENANT_B, 'recurring_services', 'monthly-deep')));
+  });
+
+  test('explicit-tenant super-admin reads recurring services without a DEFAULT fallback', async () => {
+    const superAdmin = authenticatedDatabase('super-admin');
+
+    await assertSucceeds(getDocs(collection(superAdmin, 'tenants', TENANT_A, 'recurring_services')));
+    await assertSucceeds(getDoc(doc(superAdmin, 'tenants', TENANT_B, 'recurring_services', 'monthly-deep')));
+    await assertFails(getDocs(collection(superAdmin, 'tenants', 'DEFAULT', 'recurring_services')));
+    await assertFails(getDoc(doc(superAdmin, 'tenants', 'DEFAULT', 'recurring_services', 'fallback-plan')));
+  });
+
+  test('employees, customers, and unauthenticated users cannot read recurring services', async () => {
+    const recurringPath = ['tenants', TENANT_A, 'recurring_services', 'weekly-standard'];
+    for (const database of [
+      authenticatedDatabase('employee-a'),
+      authenticatedDatabase('customer-a-auth'),
+      testEnvironment.unauthenticatedContext().firestore(),
+    ]) {
+      await assertFails(getDoc(doc(database, ...recurringPath)));
+      await assertFails(getDocs(collection(database, 'tenants', TENANT_A, 'recurring_services')));
+    }
+  });
+
+  test('all recurring-service client writes remain denied', async () => {
+    const ownAdmin = authenticatedDatabase('admin-a');
+    const crossTenantAdmin = authenticatedDatabase('admin-b');
+    const superAdmin = authenticatedDatabase('super-admin');
+    const ownPlan = doc(ownAdmin, 'tenants', TENANT_A, 'recurring_services', 'weekly-standard');
+
+    await assertFails(setDoc(doc(ownAdmin, 'tenants', TENANT_A, 'recurring_services', 'client-plan'), {
+      tenantId: TENANT_A, scheduleType: 'weekly', status: 'active'
+    }));
+    await assertFails(updateDoc(ownPlan, { status: 'paused' }));
+    await assertFails(deleteDoc(ownPlan));
+    await assertFails(setDoc(doc(crossTenantAdmin, 'tenants', TENANT_A, 'recurring_services', 'cross-plan'), {
+      tenantId: TENANT_A, scheduleType: 'monthly', status: 'active'
+    }));
+    await assertFails(updateDoc(doc(crossTenantAdmin, 'tenants', TENANT_A, 'recurring_services', 'weekly-standard'), { status: 'paused' }));
+    await assertFails(deleteDoc(doc(crossTenantAdmin, 'tenants', TENANT_A, 'recurring_services', 'weekly-standard')));
+    await assertFails(updateDoc(doc(superAdmin, 'tenants', TENANT_A, 'recurring_services', 'weekly-standard'), { status: 'paused' }));
   });
 
   test('user cannot change role, tenantId, or status but can update safe profile fields', async () => {
