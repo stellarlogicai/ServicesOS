@@ -20,25 +20,25 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 | --- | --- |
 | ServicesOS Core V1 | ✅ Complete |
 | Legacy security cleanup | ✅ Complete |
-| GrowthAI V1 | 🟡 Ready for wife beta |
+| GrowthAI V1 | 🟡 Wife beta candidate live |
 | Employee App V1 | 🟡 Started |
 | Owner/business onboarding | ⬜ Remaining |
 | Payments / Tap to Pay | 🟡 Foundation built |
 | Release hardening | 🟡 In progress |
-| Wife beta | 🟡 Next |
+| Wife beta | 🟡 Ready to begin |
 | Customer-ready release | ⬜ Final target |
 
 ## Current checkpoint
 
-Feature branch: `feature/growthai-ai-gateway`
+Production branch: `master`
 
-Latest validated product checkpoint: `0f574717619c001c634b5c667a5e2158b73eb630` — `Harden SLAI Assistant V1`
+Latest validated production checkpoint: `5e8554955293d3c32042967b70d3c2fc38e66936` — `Fix GrowthAI OpenAI provider compatibility`
 
-Current focus: **Wife beta for SLAI Assistant**
+Current focus: **Wife beta for live SLAI Assistant while Employee App planning/audit proceeds in parallel**
 
-Just completed: **Final SLAI Assistant V1 QA matrix passed with no P0, P1, or P2 findings and no code changes required. Empty/no-data states, zero-credit behavior, provider failure/slow/malformed handling, long-content behavior, tenant A → B → A isolation, and no-surprise-credit contracts all passed.**
+Just completed: **Controlled production promotion passed. The live SLAI Assistant is serving the validated web candidate; GrowthAI Functions and Firestore rules are deployed; a real provider-backed action succeeded with exactly one credit consumed (100 → 99); deterministic/free behavior remained zero-credit; retired unsafe legacy Functions were deleted; browser console remained clean.**
 
-Next planned GrowthAI slice: **Wife beta — no new SLAI Assistant feature work unless beta reveals a real defect**
+Next planned GrowthAI slice: **Wife beta — no new SLAI Assistant feature work unless beta reveals a real defect. Remaining release-hardening work includes the previously absent production `sendCustomerEmail` deployment and broader payment/security verification.**
 
 ---
 
@@ -74,6 +74,7 @@ Core V1 should not be redefined by legacy, disabled, prototype, internal-only, o
 - [x] Stripe Connect preserved
 - [x] Required webhooks preserved
 - [x] GrowthAI gateway preserved
+- [x] Retired legacy payment/subscription Functions removed from production after live candidate validation
 - [x] Functions/rules/build/test validation passed
 - [x] Canonical `recurring_services` tenant-admin read authorization added with client writes still denied
 - [x] Raw Firestore rules diagnostics no longer render in SLAI Assistant
@@ -306,7 +307,7 @@ Security and production verification still continue under Release Hardening.
 - [ ] Fix beta findings
 - [ ] GrowthAI V1 freeze
 
-Final pre-beta QA result: **READY FOR WIFE BETA**. No P0, P1, or P2 findings remained. Live provider/nonzero-credit browser behavior remains covered by deterministic tests rather than a real provider call in this pass and should be revisited during broader release hardening.
+Final pre-beta QA result: **READY FOR WIFE BETA**. No P0, P1, or P2 findings remained. Production provider verification is now complete: one real provider-backed action succeeded, consumed exactly one credit, persisted the new balance after refresh, created a review-required draft, and did not send or publish anything automatically.
 
 **GrowthAI V1 rule:** everything already designed and agreed gets completed. No more, no less.
 
@@ -495,17 +496,17 @@ The old CleanOps onboarding is legacy/reference material, not the current produc
 
 ## Firebase / production
 
-- [ ] Verify deployed Firestore rules
+- [x] Verify deployed Firestore rules
 - [ ] Verify deployed Storage rules
 - [ ] Capture final rules hashes
-- [ ] Production artifact review
-- [ ] Production deploy verification
-- [ ] Rollback readiness
+- [x] Production artifact review
+- [x] Production deploy verification
+- [x] Rollback readiness
 
 ## Customer experience
 
 - [ ] Decide/finalize Customer Portal persistence requirements
-- [ ] Email production smoke
+- [ ] Email production smoke — production `sendCustomerEmail` deployment is currently absent and remains a release-hardening item
 - [ ] CORS production smoke
 - [ ] Loading/error/empty-state pass
 - [ ] Major viewport pass
