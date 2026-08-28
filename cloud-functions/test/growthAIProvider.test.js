@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 const {
   createGrowthAIProviderFromEnvironment,
+  createGrowthAIProviderFromFirebaseParameters,
   createOpenAICompatibleGrowthAIProvider,
   validateProviderOutput,
 } = require('../growthAIProvider');
@@ -45,6 +46,58 @@ describe('GrowthAI provider adapter', () => {
       GROWTHAI_PROVIDER_MODE: 'mock',
     });
     assert.equal(nonEmulatedDemo.configured, false);
+  });
+
+  test('resolves Firebase provider parameters lazily at invocation time', () => {
+    const reads = [];
+    const param = (name, value) => ({
+      value() {
+        reads.push(name);
+        return value;
+      },
+    });
+    const provider = createGrowthAIProviderFromFirebaseParameters({
+      apiKeyParam: param('apiKey', 'server-secret'),
+      baseUrlParam: param('baseUrl', 'https://provider.example/v1'),
+      modelParam: param('model', 'controlled-model'),
+    });
+
+    assert.deepEqual(reads, []);
+    assert.equal(provider.configured, true);
+    assert.deepEqual(reads, ['apiKey', 'baseUrl', 'model']);
+  });
+
+  test('keeps missing Firebase provider configuration safely unavailable', async () => {
+    const emptyParam = { value: () => '' };
+    const provider = createGrowthAIProviderFromFirebaseParameters({
+      apiKeyParam: emptyParam,
+      baseUrlParam: emptyParam,
+      modelParam: emptyParam,
+    });
+
+    assert.equal(provider.configured, false);
+    await assert.rejects(provider.generateText({}), error => error.code === 'provider_unavailable');
+  });
+
+  test('preserves the exact local emulator mock without reading provider parameters', async () => {
+    const unavailableParam = {
+      value() {
+        throw new Error('Local mock must not read production provider configuration.');
+      },
+    };
+    const provider = createGrowthAIProviderFromFirebaseParameters({
+      apiKeyParam: unavailableParam,
+      baseUrlParam: unavailableParam,
+      env: {
+        FUNCTIONS_EMULATOR: 'true',
+        GCLOUD_PROJECT: 'demo-servicesos-v1-smoke-local',
+        GROWTHAI_PROVIDER_MODE: 'mock',
+      },
+      modelParam: unavailableParam,
+    });
+
+    assert.equal(provider.configured, true);
+    assert.match((await provider.generateText({ actionType: 'customer_response', userPrompt: '' })).text, /Local mock/);
   });
 
   test('sends fixed server-controlled model settings and validates successful output', async () => {

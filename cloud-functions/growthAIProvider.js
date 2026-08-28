@@ -126,7 +126,7 @@ function createOpenAICompatibleGrowthAIProvider({
   };
 }
 
-function createGrowthAIProviderFromEnvironment(env = process.env) {
+function isLocalMockGrowthAIEnvironment(env) {
   let firebaseProjectId = '';
   try {
     firebaseProjectId = JSON.parse(env.FIREBASE_CONFIG || '{}').projectId || '';
@@ -134,9 +134,13 @@ function createGrowthAIProviderFromEnvironment(env = process.env) {
     firebaseProjectId = '';
   }
   const projectId = firebaseProjectId || env.GCLOUD_PROJECT;
-  const isLocalSmokeEmulator = env.FUNCTIONS_EMULATOR === 'true' &&
+  return env.GROWTHAI_PROVIDER_MODE === 'mock' &&
+    env.FUNCTIONS_EMULATOR === 'true' &&
     projectId === 'demo-servicesos-v1-smoke-local';
-  if (env.GROWTHAI_PROVIDER_MODE === 'mock' && isLocalSmokeEmulator) {
+}
+
+function createGrowthAIProviderFromEnvironment(env = process.env) {
+  if (isLocalMockGrowthAIEnvironment(env)) {
     return createLocalMockGrowthAIProvider();
   }
   return createOpenAICompatibleGrowthAIProvider({
@@ -146,10 +150,37 @@ function createGrowthAIProviderFromEnvironment(env = process.env) {
   });
 }
 
+function createGrowthAIProviderFromFirebaseParameters({
+  apiKeyParam,
+  baseUrlParam,
+  env = process.env,
+  modelParam,
+} = {}) {
+  if (isLocalMockGrowthAIEnvironment(env)) {
+    return createLocalMockGrowthAIProvider();
+  }
+
+  const resolveProvider = () => createOpenAICompatibleGrowthAIProvider({
+    apiKey: apiKeyParam?.value?.(),
+    baseUrl: baseUrlParam?.value?.(),
+    model: modelParam?.value?.(),
+  });
+
+  return {
+    get configured() {
+      return resolveProvider().configured;
+    },
+    async generateText(request) {
+      return resolveProvider().generateText(request);
+    },
+  };
+}
+
 module.exports = {
   DEFAULT_MAX_OUTPUT_LENGTH,
   GrowthAIProviderError,
   createGrowthAIProviderFromEnvironment,
+  createGrowthAIProviderFromFirebaseParameters,
   createLocalMockGrowthAIProvider,
   createOpenAICompatibleGrowthAIProvider,
   createUnavailableGrowthAIProvider,

@@ -1,4 +1,5 @@
 const functions = require('firebase-functions');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors')({ origin: true });
@@ -20,20 +21,36 @@ const {
   createGrowthAIGenerationHandler,
 } = require('./growthAIGateway');
 const { createGrowthAIConversationRouterHandler } = require('./growthAIConversationRouter');
-const { createGrowthAIProviderFromEnvironment } = require('./growthAIProvider');
+const { createGrowthAIProviderFromFirebaseParameters } = require('./growthAIProvider');
+
+const growthAIProviderApiKey = defineSecret('GROWTHAI_PROVIDER_API_KEY');
+const growthAIProviderBaseUrl = defineString('GROWTHAI_PROVIDER_BASE_URL');
+const growthAIProviderModel = defineString('GROWTHAI_PROVIDER_MODEL');
+
+function createConfiguredGrowthAIProvider() {
+  return createGrowthAIProviderFromFirebaseParameters({
+    apiKeyParam: growthAIProviderApiKey,
+    baseUrlParam: growthAIProviderBaseUrl,
+    modelParam: growthAIProviderModel,
+  });
+}
 
 admin.initializeApp();
 
-exports.generateGrowthAIContent = functions.https.onRequest(createGrowthAIGenerationHandler({
+exports.generateGrowthAIContent = functions.runWith({
+  secrets: [growthAIProviderApiKey],
+}).https.onRequest(createGrowthAIGenerationHandler({
   admin,
-  provider: createGrowthAIProviderFromEnvironment(),
+  provider: createConfiguredGrowthAIProvider(),
 }));
 
 exports.getGrowthAICreditBalance = functions.https.onRequest(createGrowthAICreditBalanceHandler({ admin }));
 
-exports.routeGrowthAIConversation = functions.https.onRequest(createGrowthAIConversationRouterHandler({
+exports.routeGrowthAIConversation = functions.runWith({
+  secrets: [growthAIProviderApiKey],
+}).https.onRequest(createGrowthAIConversationRouterHandler({
   admin,
-  provider: createGrowthAIProviderFromEnvironment(),
+  provider: createConfiguredGrowthAIProvider(),
 }));
 
 // Platform fee percentage by subscription tier
