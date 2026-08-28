@@ -129,6 +129,7 @@ import { getStripeBookingCheckoutResult } from '../services/stripeCheckoutResult
 describe('App onboarding router context', () => {
   beforeEach(() => {
     window.history.pushState({}, '', '/');
+    window.localStorage.removeItem('servicesos.sidebar.compact');
     authState.logout.mockReset();
     authState.logout.mockResolvedValue({ success: true });
     authState.role = 'admin';
@@ -258,6 +259,42 @@ describe('App onboarding router context', () => {
     expect(screen.queryByText('Payment links')).not.toBeInTheDocument();
 
     unmount();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
+  });
+
+  it('lets an owner compact, reopen, and restore the desktop navigation presentation', () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
+    authState.userProfile = { uid: 'admin-test', onboardingCompleted: true };
+
+    const { unmount } = render(<App />);
+    const navigation = screen.getByRole('navigation', { name: 'ServicesOS primary navigation' });
+
+    expect(navigation).toHaveAttribute('data-sidebar-compact', 'false');
+    expect(screen.getByRole('button', { name: 'Collapse ServicesOS navigation' })).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse ServicesOS navigation' }));
+
+    expect(navigation).toHaveClass('v1-sidebar--compact');
+    expect(navigation).toHaveAttribute('data-sidebar-compact', 'true');
+    expect(screen.getByRole('button', { name: 'Expand ServicesOS navigation' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'SLAI Assistant' })).toBeInTheDocument();
+    expect(screen.getByText('SLAI Assistant')).toHaveClass('v1-nav-item-label');
+    expect(window.localStorage.getItem('servicesos.sidebar.compact')).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'SLAI Assistant' }));
+    expect(screen.getByRole('button', { name: 'SLAI Assistant' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('heading', { name: 'GrowthAI Draft Workspace' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand ServicesOS navigation' }));
+    expect(navigation).not.toHaveClass('v1-sidebar--compact');
+    expect(window.localStorage.getItem('servicesos.sidebar.compact')).toBe('false');
+
+    unmount();
+    window.localStorage.setItem('servicesos.sidebar.compact', 'true');
+    render(<App />);
+    expect(screen.getByRole('navigation', { name: 'ServicesOS primary navigation' })).toHaveClass('v1-sidebar--compact');
+
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
   });
 

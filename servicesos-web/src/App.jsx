@@ -154,6 +154,24 @@ const NAV_ITEMS = [
   },
 ];
 
+const SIDEBAR_COMPACT_STORAGE_KEY = "servicesos.sidebar.compact";
+
+function getStoredSidebarCompactPreference() {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COMPACT_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function storeSidebarCompactPreference(isCompact) {
+  try {
+    window.localStorage.setItem(SIDEBAR_COMPACT_STORAGE_KEY, String(isCompact));
+  } catch {
+    // A presentation preference should not block navigation when storage is unavailable.
+  }
+}
+
 const TENANT_SCOPED_PAGES = new Set([
   'dashboard',
   'intake',
@@ -249,9 +267,28 @@ function StripeBookingCheckoutResult({ result }) {
 }
 
 // ─── Tenant switcher (super-admin only) ──────────────────────────────────────
-function TenantSwitcher() {
+function TenantSwitcher({ compact = false }) {
   const { isSuperAdmin, currentTenant, switchTenant, tenantLoading } = useAuth();
   if (!isSuperAdmin()) return null;
+
+  const tenantLabel = tenantLoading
+    ? "Loading tenant"
+    : currentTenant
+      ? currentTenant.businessName
+      : "All tenants (global)";
+
+  if (compact) {
+    return (
+      <div
+        className="v1-sidebar-tenant-compact"
+        title={`Viewing tenant: ${tenantLabel}`}
+        aria-label={`Viewing tenant: ${tenantLabel}`}
+      >
+        <span aria-hidden="true">T</span>
+        <span className="v1-sidebar-visually-hidden">Viewing tenant: {tenantLabel}</span>
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -263,7 +300,7 @@ function TenantSwitcher() {
         Viewing tenant
       </div>
       <div style={{ fontSize: 12, color: currentTenant ? "#38bdf8" : "#64748b", fontWeight: 500 }}>
-        {tenantLoading ? "Loading tenant..." : currentTenant ? currentTenant.businessName : "All tenants (global)"}
+        {tenantLabel}
       </div>
       {currentTenant && (
         <button
@@ -292,6 +329,7 @@ function AuthenticatedApp() {
   });
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [desktopSidebarCompact, setDesktopSidebarCompact] = useState(getStoredSidebarCompactPreference);
   const [estimateCustomerContext, setEstimateCustomerContext] = useState(null);
   const [estimateContextTenantId, setEstimateContextTenantId] = useState(tenantId);
 
@@ -304,6 +342,15 @@ function AuthenticatedApp() {
   const activeEstimateCustomerContext = (
     tenantId && estimateCustomerContext?.tenantId === tenantId
   ) ? estimateCustomerContext : null;
+  const sidebarCompact = !isMobile && desktopSidebarCompact;
+
+  const toggleDesktopSidebar = () => {
+    setDesktopSidebarCompact(currentValue => {
+      const nextValue = !currentValue;
+      storeSidebarCompactPreference(nextValue);
+      return nextValue;
+    });
+  };
 
   // Redirect if current page becomes inaccessible
   useEffect(() => {
@@ -358,7 +405,12 @@ function AuthenticatedApp() {
 
   // ── Sidebar ──────────────────────────────────────────────────────────────
   const sidebar = (
-    <nav className="v1-sidebar" style={{
+    <nav
+      id="servicesos-primary-navigation"
+      className={`v1-sidebar${sidebarCompact ? " v1-sidebar--compact" : ""}`}
+      aria-label="ServicesOS primary navigation"
+      data-sidebar-compact={sidebarCompact}
+      style={{
       width: 220,
       background: "#0f172a",
       color: "#fff",
@@ -374,12 +426,34 @@ function AuthenticatedApp() {
       zIndex: isMobile ? 130 : 50,
       transform: isMobile ? (mobileMenuOpen ? "translateX(0)" : "translateX(-100%)") : "none",
       transition: isMobile ? "transform 0.3s ease" : "none",
-    }}>
+      }}
+    >
+      {!isMobile && (
+        <button
+          type="button"
+          className="v1-sidebar-toggle"
+          aria-controls="servicesos-primary-navigation"
+          aria-expanded={!sidebarCompact}
+          aria-label={sidebarCompact ? "Expand ServicesOS navigation" : "Collapse ServicesOS navigation"}
+          title={sidebarCompact ? "Expand ServicesOS navigation" : "Collapse ServicesOS navigation"}
+          onClick={toggleDesktopSidebar}
+        >
+          <span aria-hidden="true">{sidebarCompact ? ">" : "<"}</span>
+          <span className="v1-sidebar-toggle-label">{sidebarCompact ? "Expand" : "Collapse"}</span>
+        </button>
+      )}
+
       {/* Logo */}
       <div className="v1-brand" style={{ padding: "0 20px 24px", borderBottom: "1px solid #1e293b", marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div className="v1-brand-mark">{(currentTenant?.businessName || "ServicesOS").trim().charAt(0).toUpperCase()}</div>
-          <div>
+          <div
+            className="v1-brand-mark"
+            title={currentTenant?.businessName ?? "ServicesOS"}
+            aria-label={currentTenant?.businessName ?? "ServicesOS"}
+          >
+            {(currentTenant?.businessName || "ServicesOS").trim().charAt(0).toUpperCase()}
+          </div>
+          <div className="v1-brand-copy">
             <div style={{ fontSize: 15, fontWeight: 700, background: "linear-gradient(135deg, #3b82f6, #1d4ed8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
               {currentTenant?.businessName ?? "ServicesOS"}
             </div>
@@ -390,7 +464,7 @@ function AuthenticatedApp() {
         </div>
       </div>
 
-      <TenantSwitcher />
+      <TenantSwitcher compact={sidebarCompact} />
 
       {/* Filtered nav links */}
       {visibleNav.map(n => (
@@ -398,6 +472,9 @@ function AuthenticatedApp() {
           className={page === n.id ? "v1-nav-item v1-nav-item-active" : "v1-nav-item"}
           key={n.id}
           onClick={() => navigate(n.id)}
+          aria-current={page === n.id ? "page" : undefined}
+          aria-label={sidebarCompact ? n.label : undefined}
+          title={sidebarCompact ? n.label : undefined}
           style={{
             display: "flex",
             alignItems: "center",
@@ -415,33 +492,34 @@ function AuthenticatedApp() {
             transition: "all 0.15s",
           }}
         >
-          <span style={{ fontSize: 18 }}>{n.icon}</span>
-          {n.label}
+          <span className="v1-nav-item-icon" aria-hidden="true" style={{ fontSize: 18 }}>{n.icon}</span>
+          <span className="v1-nav-item-label">{n.label}</span>
         </button>
       ))}
 
       {/* Role badge */}
-      <div style={{ padding: "16px 20px 0" }}>
+      <div className="v1-sidebar-role" style={{ padding: "16px 20px 0" }} title={`Role: ${role}`}>
         <span style={{
           fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5,
           padding: "3px 10px", borderRadius: 20,
           background: role === "super-admin" ? "rgba(168,85,247,0.2)" : role === "admin" ? "rgba(59,130,246,0.2)" : "rgba(100,116,139,0.2)",
           color:      role === "super-admin" ? "#c084fc"              : role === "admin" ? "#60a5fa"              : "#94a3b8",
         }}>
-          {role}
+          <span className="v1-sidebar-role-label">{role}</span>
         </span>
       </div>
 
       {/* Footer */}
-      <div style={{ marginTop: "auto", padding: "16px 20px", borderTop: "1px solid #1e293b" }}>
-        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>{user?.email}</div>
+      <div className="v1-sidebar-footer" style={{ marginTop: "auto", padding: "16px 20px", borderTop: "1px solid #1e293b" }}>
+        <div className="v1-sidebar-email" style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>{user?.email}</div>
         <button
+          className="v1-sidebar-signout"
           onClick={async () => {
             await logout();
           }}
           style={{ width: "100%", padding: "8px", background: "transparent", border: "1px solid #334155", color: "#94a3b8", borderRadius: 6, fontSize: 12, cursor: "pointer" }}
         >
-          Sign out
+          <span className="v1-sidebar-signout-label">Sign out</span>
         </button>
       </div>
     </nav>

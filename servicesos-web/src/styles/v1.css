@@ -13,13 +13,34 @@
 
 .v1-app-shell { color: var(--v1-text); background: var(--v1-bg) !important; }
 .servicesos-main { background: var(--v1-bg) !important; }
-.v1-sidebar { width: 236px !important; background: var(--v1-navy) !important; }
+.v1-sidebar { width: 236px !important; background: var(--v1-navy) !important; transition: width .15s ease !important; }
+.v1-sidebar--compact { width: 68px !important; }
+.v1-sidebar-toggle { display: inline-flex; align-items: center; align-self: flex-end; min-height: 34px; margin: -12px 14px 12px 0; border: 1px solid #334155; border-radius: 7px; padding: 6px 9px; background: transparent; color: #c6d3e3; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; gap: 6px; }
+.v1-sidebar-toggle:hover { border-color: #60a5fa; color: #fff; }
+.v1-sidebar-toggle:focus-visible,
+.v1-nav-item:focus-visible,
+.v1-sidebar-signout:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.v1-sidebar-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
 .v1-brand { padding-top: 2px !important; }
 .v1-brand-mark { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 10px; background: var(--v1-accent); color: #fff; font-size: 17px; font-weight: 800; }
 .v1-brand div[style*="WebkitTextFillColor"] { background: none !important; color: #fff !important; -webkit-text-fill-color: currentColor !important; }
 .v1-nav-item { margin: 3px 12px !important; padding: 11px 13px !important; border-radius: 9px !important; color: #c6d3e3 !important; }
 .v1-nav-item:hover { background: rgba(255,255,255,.07) !important; color: #fff !important; }
 .v1-nav-item-active { background: var(--v1-accent) !important; color: #fff !important; }
+.v1-sidebar--compact .v1-sidebar-toggle { align-self: center; width: 40px; margin: -12px auto 12px; justify-content: center; padding-inline: 0; }
+.v1-sidebar--compact .v1-sidebar-toggle-label,
+.v1-sidebar--compact .v1-nav-item-label,
+.v1-sidebar--compact .v1-sidebar-role-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.v1-sidebar--compact .v1-brand { padding: 0 15px 20px !important; }
+.v1-sidebar--compact .v1-brand > div { justify-content: center; }
+.v1-sidebar--compact .v1-brand-copy { display: none; }
+.v1-sidebar-tenant-compact { display: grid; width: 32px; height: 32px; margin: 0 auto 10px; place-items: center; border: 1px solid #334155; border-radius: 50%; color: #93c5fd; font-size: 12px; font-weight: 800; }
+.v1-sidebar--compact .v1-nav-item { justify-content: center; gap: 0 !important; min-height: 44px; margin: 3px 10px !important; padding: 11px 0 !important; }
+.v1-sidebar--compact .v1-nav-item-icon { display: inline-flex; align-items: center; justify-content: center; }
+.v1-sidebar--compact .v1-sidebar-role { padding: 16px 0 0 !important; text-align: center; }
+.v1-sidebar--compact .v1-sidebar-footer { padding: 16px 10px !important; }
+.v1-sidebar--compact .v1-sidebar-email { display: none; }
+.v1-sidebar--compact .v1-sidebar-signout { min-height: 34px; padding: 6px 2px !important; font-size: 11px !important; }
 
 .v1-page { width: min(1160px, 100%); margin: 0 auto; padding: 32px 0; }
 .v1-page-header { margin-bottom: 24px; }
@@ -135,6 +156,7 @@ body:has(.booking-detail-modal) { overflow: hidden; }
 .servicesos-main textarea:focus { outline: 3px solid rgba(37,99,235,.16); border-color: var(--v1-accent) !important; }
 
 @media (max-width: 767px) {
+  .v1-sidebar { transition: transform .3s ease !important; }
   .servicesos-main { padding: 72px 16px 28px !important; }
   .v1-page { padding: 16px 0; }
   .v1-page-title { font-size: 26px; }
