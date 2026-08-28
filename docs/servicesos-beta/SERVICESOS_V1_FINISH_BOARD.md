@@ -1,6 +1,6 @@
 # ServicesOS V1 Finish Board
 
-Last updated: 2026-08-27
+Last updated: 2026-08-28
 
 This document is the authoritative progress board for the defined customer-facing ServicesOS V1 finish line.
 
@@ -20,12 +20,12 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 | --- | --- |
 | ServicesOS Core V1 | ✅ Complete |
 | Legacy security cleanup | ✅ Complete |
-| GrowthAI V1 | 🟡 Active priority |
+| GrowthAI V1 | 🟡 Ready for wife beta |
 | Employee App V1 | 🟡 Started |
 | Owner/business onboarding | ⬜ Remaining |
 | Payments / Tap to Pay | 🟡 Foundation built |
 | Release hardening | 🟡 In progress |
-| Wife beta | ⬜ Upcoming |
+| Wife beta | 🟡 Next |
 | Customer-ready release | ⬜ Final target |
 
 ## Current checkpoint
@@ -34,11 +34,11 @@ Feature branch: `feature/growthai-ai-gateway`
 
 Latest validated product checkpoint: `0f574717619c001c634b5c667a5e2158b73eb630` — `Harden SLAI Assistant V1`
 
-Current focus: **Finish GrowthAI V1**
+Current focus: **Wife beta for SLAI Assistant**
 
-Just completed: **Recurring-service authorization blocker fixed with tenant-isolated read-only rules, raw Firestore diagnostics removed from owner-facing SLAI UI, and the global ServicesOS sidebar made user-collapsible to give SLAI Assistant more workspace while preserving desktop/tablet/mobile accessibility**
+Just completed: **Final SLAI Assistant V1 QA matrix passed with no P0, P1, or P2 findings and no code changes required. Empty/no-data states, zero-credit behavior, provider failure/slow/malformed handling, long-content behavior, tenant A → B → A isolation, and no-surprise-credit contracts all passed.**
 
-Next planned GrowthAI slice: **Complete the remaining final QA / failure-state matrix before wife beta**
+Next planned GrowthAI slice: **Wife beta — no new SLAI Assistant feature work unless beta reveals a real defect**
 
 ---
 
@@ -291,20 +291,22 @@ Security and production verification still continue under Release Hardening.
 - [x] Desktop QA
 - [x] Tablet QA
 - [x] Approximately 390 × 844 mobile QA
-- [ ] Empty-business states
-- [ ] No-opportunity states
-- [ ] No-estimate states
-- [ ] Zero-credit states
-- [ ] Provider failure
-- [ ] Slow provider
-- [ ] Malformed AI response
-- [ ] Long names/content
+- [x] Empty-business states
+- [x] No-opportunity states
+- [x] No-estimate states
+- [x] Zero-credit states
+- [x] Provider failure
+- [x] Slow provider
+- [x] Malformed AI response
+- [x] Long names/content
 - [x] Accessibility
-- [ ] Loading/error states
+- [x] Loading/error states
 - [x] Triage the pre-existing local smoke `false for 'list'` alert if it reproduces during final QA
 - [ ] Wife GrowthAI beta
 - [ ] Fix beta findings
 - [ ] GrowthAI V1 freeze
+
+Final pre-beta QA result: **READY FOR WIFE BETA**. No P0, P1, or P2 findings remained. Live provider/nonzero-credit browser behavior remains covered by deterministic tests rather than a real provider call in this pass and should be revisited during broader release hardening.
 
 **GrowthAI V1 rule:** everything already designed and agreed gets completed. No more, no less.
 
