@@ -111,16 +111,28 @@ describe('GrowthAI provider adapter', () => {
         return {
           ok: true,
           headers: { get: () => 'request-1' },
-          json: async () => ({ id: 'response-1', model: 'controlled-model', choices: [{ message: { content: 'Generated text' } }] }),
+          json: async () => ({
+            id: 'response-1',
+            model: 'controlled-model',
+            output: [{
+              type: 'message',
+              content: [{ type: 'output_text', text: 'Generated text' }],
+            }],
+          }),
         };
       },
     });
     const output = await provider.generateText({ systemInstruction: 'System', userPrompt: 'User' });
     assert.equal(output.text, 'Generated text');
     assert.equal(output.providerRequestId, 'request-1');
+    assert.equal(calls[0].url, 'https://provider.example/v1/responses');
     const body = JSON.parse(calls[0].options.body);
     assert.equal(body.model, 'controlled-model');
-    assert.equal(body.temperature, 0.4);
+    assert.equal(body.instructions, 'System');
+    assert.equal(body.input, 'User');
+    assert.equal(body.store, false);
+    assert.equal('temperature' in body, false);
+    assert.equal('messages' in body, false);
     assert.equal(calls[0].options.headers.Authorization, 'Bearer server-secret');
   });
 

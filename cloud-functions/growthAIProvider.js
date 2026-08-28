@@ -87,7 +87,7 @@ function createOpenAICompatibleGrowthAIProvider({
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       let response;
       try {
-        response = await fetchImpl(`${resolvedBaseUrl}/chat/completions`, {
+        response = await fetchImpl(`${resolvedBaseUrl}/responses`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${resolvedApiKey}`,
@@ -95,11 +95,9 @@ function createOpenAICompatibleGrowthAIProvider({
           },
           body: JSON.stringify({
             model: resolvedModel,
-            messages: [
-              { role: 'system', content: systemInstruction },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: 0.4,
+            instructions: systemInstruction,
+            input: userPrompt,
+            store: false,
           }),
           signal: controller.signal,
         });
@@ -117,8 +115,17 @@ function createOpenAICompatibleGrowthAIProvider({
       }
 
       const payload = await response.json();
+      const responseText = Array.isArray(payload?.output)
+        ? payload.output
+          .filter(item => item?.type === 'message' && Array.isArray(item.content))
+          .flatMap(item => item.content)
+          .filter(item => item?.type === 'output_text')
+          .map(item => item.text)
+          .filter(text => typeof text === 'string')
+          .join('\n')
+        : '';
       return validateProviderOutput({
-        text: payload?.choices?.[0]?.message?.content,
+        text: responseText,
         providerRequestId: response.headers?.get?.('x-request-id') || payload?.id,
         modelId: payload?.model || resolvedModel,
       });
