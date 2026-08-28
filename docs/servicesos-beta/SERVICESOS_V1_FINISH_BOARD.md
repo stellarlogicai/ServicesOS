@@ -32,13 +32,13 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 
 Feature branch: `feature/growthai-ai-gateway`
 
-Latest validated product checkpoint: `a9e43d8420e37b3751b36e6417aa5c85c2995b2f` — `Refine SLAI Assistant operating surface`
+Latest validated product checkpoint: `0f574717619c001c634b5c667a5e2158b73eb630` — `Harden SLAI Assistant V1`
 
 Current focus: **Finish GrowthAI V1**
 
-Just completed: **SLAI Assistant three-column operating surface with customer-facing SLAI naming, left navigation, center conversation/workspace, dynamic right context rail, quick actions, SLAI Noticed, Recent Drafts, canonical AI Credits, responsive mobile/tablet behavior, and regression/accessibility coverage**
+Just completed: **Recurring-service authorization blocker fixed with tenant-isolated read-only rules, raw Firestore diagnostics removed from owner-facing SLAI UI, and the global ServicesOS sidebar made user-collapsible to give SLAI Assistant more workspace while preserving desktop/tablet/mobile accessibility**
 
-Next planned GrowthAI slice: **Final QA / failure-state / accessibility hardening before wife beta**
+Next planned GrowthAI slice: **Complete the remaining final QA / failure-state matrix before wife beta**
 
 ---
 
@@ -75,6 +75,8 @@ Core V1 should not be redefined by legacy, disabled, prototype, internal-only, o
 - [x] Required webhooks preserved
 - [x] GrowthAI gateway preserved
 - [x] Functions/rules/build/test validation passed
+- [x] Canonical `recurring_services` tenant-admin read authorization added with client writes still denied
+- [x] Raw Firestore rules diagnostics no longer render in SLAI Assistant
 
 Security and production verification still continue under Release Hardening.
 
@@ -297,9 +299,9 @@ Security and production verification still continue under Release Hardening.
 - [ ] Slow provider
 - [ ] Malformed AI response
 - [ ] Long names/content
-- [ ] Accessibility
+- [x] Accessibility
 - [ ] Loading/error states
-- [ ] Triage the pre-existing local smoke `false for 'list'` alert if it reproduces during final QA
+- [x] Triage the pre-existing local smoke `false for 'list'` alert if it reproduces during final QA
 - [ ] Wife GrowthAI beta
 - [ ] Fix beta findings
 - [ ] GrowthAI V1 freeze
