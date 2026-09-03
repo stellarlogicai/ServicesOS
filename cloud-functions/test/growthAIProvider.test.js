@@ -21,7 +21,15 @@ describe('GrowthAI provider adapter', () => {
       GROWTHAI_PROVIDER_MODE: 'mock',
     });
     assert.equal(mock.configured, true);
-    assert.match((await mock.generateText({ actionType: 'marketing_post', userPrompt: '' })).text, /Local mock/);
+    assert.deepEqual(
+      JSON.parse((await mock.generateText({ actionType: 'marketing_post', userPrompt: '' })).text),
+      {
+        fullCaption: 'Local mock marketing draft for human review. Nothing was published.',
+        shortCaption: 'Local mock marketing draft.',
+        callToAction: 'Request a quote.',
+        hashtags: '#LocalCleaning',
+      },
+    );
     assert.deepEqual(
       JSON.parse((await mock.generateText({ actionType: 'estimate_assistance', userPrompt: '' })).text),
       {

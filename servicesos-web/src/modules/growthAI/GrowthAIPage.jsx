@@ -66,6 +66,7 @@ const emptyInputs = {
 const emptyOpportunityWorkspace = { tenantId: null, opportunities: [], leads: [], bookings: [] };
 const emptyMarketingAssets = { tenantId: null, bookingId: null, items: [], loading: false, error: '' };
 const opportunityDataUnavailableMessage = "Some business data couldn't be loaded right now.";
+const successNoticeDurationMs = 5_000;
 
 function draftToEditor(draft) {
   const content = draft?.content && typeof draft.content === 'object' ? draft.content : {};
@@ -108,6 +109,7 @@ export default function GrowthAIPage({ onReviewJob }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageRevision, setMessageRevision] = useState(0);
   const [error, setError] = useState('');
   const [opportunityWorkspace, setOpportunityWorkspace] = useState(emptyOpportunityWorkspace);
   const [opportunitiesLoading, setOpportunitiesLoading] = useState(true);
@@ -143,6 +145,10 @@ export default function GrowthAIPage({ onReviewJob }) {
       setMarketingOpportunity(null);
       setMarketingAssets(emptyMarketingAssets);
       setCustomerCommunicationIntent(null);
+      setMessage('');
+      setMessageTenantId(null);
+      setError('');
+      setErrorTenantId(null);
     }
   }, [tenantId]);
 
@@ -184,6 +190,7 @@ export default function GrowthAIPage({ onReviewJob }) {
   const setScopedMessage = useCallback(value => {
     setMessage(value);
     setMessageTenantId(tenantId);
+    setMessageRevision(current => current + 1);
   }, [tenantId]);
 
   const setScopedError = useCallback(value => {
@@ -217,6 +224,15 @@ export default function GrowthAIPage({ onReviewJob }) {
     defaultCTA: brandContext.defaultCTA || 'Contact us to learn more.',
   }), [brandContext, businessName]);
   const postType = brand.postTypes.find(item => item.id === postTypeId) || brand.postTypes[0];
+
+  useEffect(() => {
+    if (!message || messageTenantId !== tenantId) return undefined;
+    const timeout = window.setTimeout(() => {
+      setMessage(current => current === message ? '' : current);
+      setMessageTenantId(current => current === messageTenantId ? null : current);
+    }, successNoticeDurationMs);
+    return () => window.clearTimeout(timeout);
+  }, [message, messageRevision, messageTenantId, tenantId]);
 
   const reloadOpportunities = useCallback(async () => {
     if (!tenantId) return null;
@@ -361,7 +377,7 @@ export default function GrowthAIPage({ onReviewJob }) {
     }
   }, [editor.id, isCurrentTenantRequest, loadAudit, reloadWorkspace, requestContext, setScopedError, setScopedMessage, tenantId]);
 
-  const generate = () => {
+  const generate = async () => {
     const validationError = validateMarketingSelection({
       contentTypeId: postTypeId,
       serviceType: inputs.serviceType,
@@ -372,26 +388,21 @@ export default function GrowthAIPage({ onReviewJob }) {
       return;
     }
     const { generated } = generateDraft(brand, postType, inputs);
-    setEditor(previous => ({
-      ...previous,
-      id: null,
+    const draftInput = {
       pillar: 'attract',
       actionType: 'marketing_post',
       title: generated.title,
       content: { ...emptyContent, ...generated },
       sourceRefs: buildMarketingSourceRefs(marketingOpportunity, marketingOpportunity?.selectedPhotoIds),
-      status: 'draft',
-      approvedByUid: null,
-      approvedAt: null,
-    }));
-    setEditorTenantId(tenantId);
-    void loadAudit(null);
-    setActiveView('drafts');
-    setScopedMessage('Deterministic draft created locally. Save it to persist it for this tenant.');
-    setScopedError('');
+    };
+    const draft = await runAction(
+      () => createGrowthAIDraft(tenantId, draftInput),
+      'Marketing draft saved.',
+    );
+    return draft ? { draftId: draft.id, draft, creditsCharged: 0 } : null;
   };
 
-  const generateWithAI = useCallback(async ({ actionType, input, sourceRefs = {}, stayOnHome = false }) => {
+  const generateWithAI = useCallback(async ({ actionType, input, sourceRefs = {} }) => {
     const requestedTenantId = tenantId;
     const { version: requestVersion } = requestContext();
     if (aiRequestInFlight.current) return null;
@@ -409,16 +420,18 @@ export default function GrowthAIPage({ onReviewJob }) {
         sourceRefs,
         idempotencyKey: createGrowthAIIdempotencyKey(),
       });
-      await reloadWorkspace(result.draftId);
+      const savedDrafts = await reloadWorkspace(result.draftId);
       await loadAudit(result.draftId);
       await reloadCredits().catch(() => null);
       if (actionType === 'estimate_followup') await reloadOpportunities();
-      if (!isCurrentTenantRequest(requestedTenantId, requestVersion)) return result;
-      if (!stayOnHome) setActiveView('drafts');
+      if (!isCurrentTenantRequest(requestedTenantId, requestVersion)) return null;
       setScopedMessage(actionType === 'estimate_assistance'
-        ? `SLAI recommendation saved for human review. ${result.creditsCharged} AI credit used. ServicesOS pricing was not changed.`
-        : `AI-assisted draft saved for human review. ${result.creditsCharged} AI credit used. Nothing was sent or published.`);
-      return result;
+        ? `SLAI recommendation saved. ${result.creditsCharged} AI credit used. ServicesOS pricing was not changed.`
+        : `AI-assisted draft saved. ${result.creditsCharged} AI credit used.`);
+      return {
+        ...result,
+        draft: savedDrafts?.find(draft => draft.id === result.draftId) || null,
+      };
     } catch (err) {
       await reloadCredits().catch(() => {});
       if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setScopedError(err.message);
@@ -466,7 +479,7 @@ export default function GrowthAIPage({ onReviewJob }) {
       () => createGrowthAIDraft(tenantId, {
         pillar: responseTemplate.pillar || 'convert',
         actionType: 'customer_response',
-        title: `[Deterministic customer communication] ${responseTemplate.title}`,
+        title: responseTemplate.title,
         content: {
           ...emptyContent,
           fullCaption: responseTemplate.messageTemplate,
@@ -478,7 +491,7 @@ export default function GrowthAIPage({ onReviewJob }) {
           ...(customerCommunicationIntent?.opportunityId ? { opportunityId: customerCommunicationIntent.opportunityId } : {}),
         },
       }),
-      'Customer response draft saved for this tenant. Nothing was sent.',
+      'Customer response draft saved.',
     );
     if (result && ['rebooking', 'review_request'].includes(responseTemplate.communicationType) &&
       customerCommunicationIntent?.bookingId === responseTemplate.sourceRefs?.bookingId &&
@@ -487,7 +500,6 @@ export default function GrowthAIPage({ onReviewJob }) {
       await reloadOpportunities();
       if (isCurrentTenantRequest(requestedTenantId, requestVersion)) setCustomerCommunicationIntent(null);
     }
-    if (result) setActiveView('drafts');
     return result;
   };
 
@@ -621,8 +633,7 @@ export default function GrowthAIPage({ onReviewJob }) {
       await markGrowthAIOpportunityActed(tenantId, opportunity.id);
       await reloadOpportunities();
       return draft;
-    }, 'Follow-up draft saved for human review. Nothing was sent.');
-    if (result) setActiveView('drafts');
+    }, 'Follow-up draft saved.');
     return result;
   };
 
@@ -744,6 +755,8 @@ export default function GrowthAIPage({ onReviewJob }) {
       draftCount={draftsForTenant.length}
       error={errorForTenant}
       message={messageForTenant}
+      onDismissError={() => setScopedError('')}
+      onDismissMessage={() => setScopedMessage('')}
       onNewConversation={() => {
         setActiveView('home');
         setWorkingOn('');
@@ -775,7 +788,6 @@ export default function GrowthAIPage({ onReviewJob }) {
             actionType: 'estimate_assistance',
             input: {},
             sourceRefs: { leadId },
-            stayOnHome: true,
           })}
           onAIEstimateFollowUp={aiEstimateFollowUp}
           onDismissOpportunity={dismissOpportunity}
@@ -833,6 +845,10 @@ export default function GrowthAIPage({ onReviewJob }) {
           userId={userProfile?.uid || user?.uid || ''}
           visibleOpportunities={visibleOpportunities}
           recentDrafts={draftsForTenant.slice(0, 3)}
+          onOpenDraft={draft => {
+            void selectDraft(draft);
+            setActiveView('drafts');
+          }}
           onOpenDrafts={() => setActiveView('drafts')}
           onWorkingOnChange={setWorkingOn}
         />
@@ -841,7 +857,7 @@ export default function GrowthAIPage({ onReviewJob }) {
         <GrowthAIDraftsView
           drafts={draftsForTenant}
           editor={editorForTenant}
-          onApprove={() => transition(approveGrowthAIDraft, 'Approved inside ServicesOS. Nothing was sent or published.')}
+          onApprove={() => transition(approveGrowthAIDraft, 'Draft approved in ServicesOS.')}
           onEditorChange={patch => setEditor(value => ({ ...value, ...patch }))}
           onReturnToDraft={() => transition(returnGrowthAIDraftToDraft, 'Content returned to draft status.')}
           onSaveDraft={saveDraft}

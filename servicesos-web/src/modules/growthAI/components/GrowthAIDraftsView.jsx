@@ -23,6 +23,7 @@ export default function GrowthAIDraftsView({
   const updateContent = patch => onEditorChange({ content: { ...editor.content, ...patch } });
   const editorPresentation = describeGrowthAIDraft(editor, presentationContext);
   const hasEditorContent = Boolean(editor.id || editor.title || editor.content.fullCaption);
+  const marketingDraft = editor.actionType === 'marketing_post';
 
   return (
     <div className="growth-ai-drafts-layout">
@@ -88,14 +89,14 @@ export default function GrowthAIDraftsView({
           <GrowthAIField label="Short caption"><textarea aria-label="Short caption" rows="3" value={editor.content.shortCaption} onChange={event => updateContent({ shortCaption: event.target.value })} /></GrowthAIField>
           <GrowthAIField label="Call to action"><input aria-label="Call to action" value={editor.content.callToAction} onChange={event => updateContent({ callToAction: event.target.value })} /></GrowthAIField>
           <GrowthAIField label="Hashtags"><input aria-label="Hashtags" value={editor.content.hashtags} onChange={event => updateContent({ hashtags: event.target.value })} /></GrowthAIField>
-          <GrowthAIField label="Image prompt"><textarea aria-label="Image prompt" rows="3" value={editor.content.imagePrompt} onChange={event => updateContent({ imagePrompt: event.target.value })} /></GrowthAIField>
+          {!marketingDraft ? <GrowthAIField label="Image prompt"><textarea aria-label="Image prompt" rows="3" value={editor.content.imagePrompt} onChange={event => updateContent({ imagePrompt: event.target.value })} /></GrowthAIField> : null}
         </div>
         <div className="growth-ai-actions growth-ai-copy-actions">
           <GrowthAICopyButton label="Copy full caption" text={editor.content.fullCaption} />
           <GrowthAICopyButton label="Copy short caption" text={editor.content.shortCaption} />
           <GrowthAICopyButton label="Copy call to action" text={editor.content.callToAction} />
           <GrowthAICopyButton label="Copy hashtags" text={editor.content.hashtags} />
-          <GrowthAICopyButton label="Copy image prompt" text={editor.content.imagePrompt} />
+          {!marketingDraft ? <GrowthAICopyButton label="Copy image prompt" text={editor.content.imagePrompt} /> : null}
         </div>
         <div className="growth-ai-actions growth-ai-review-actions">
           <GrowthAIButton onClick={onSaveDraft} disabled={saving || !editor.content.fullCaption}>Save {editor.id ? 'changes' : 'as new draft'}</GrowthAIButton>

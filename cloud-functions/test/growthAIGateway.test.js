@@ -160,7 +160,19 @@ function successProvider(calls = []) {
   return {
     async generateText(payload) {
       calls.push(payload);
-      return { text: 'AI draft for human review.', providerRequestId: 'provider-1', modelId: 'model-1' };
+      const websiteMarketing = payload.actionType === 'marketing_post' && /website marketing post/.test(payload.userPrompt);
+      return {
+        text: payload.actionType === 'marketing_post'
+          ? JSON.stringify({
+              fullCaption: 'A polished cleaning service post prepared for owner review and customer engagement.',
+              shortCaption: 'A polished cleaning service post.',
+              callToAction: 'Request your cleaning quote today.',
+              hashtags: websiteMarketing ? '' : '#ProfessionalCleaning #CleanHome',
+            })
+          : 'AI draft for human review.',
+        providerRequestId: 'provider-1',
+        modelId: 'model-1',
+      };
     },
   };
 }
@@ -728,6 +740,87 @@ describe('GrowthAI server gateway', () => {
     assert.equal(ledger.actorUid, 'admin-a');
     assert.equal(draft.status, 'draft');
     assert.equal(draft.approvedByUid, null);
+    assert.equal(draft.content.shortCaption, 'A polished cleaning service post.');
+    assert.equal(draft.content.callToAction, 'Request your cleaning quote today.');
+    assert.equal(draft.content.hashtags, '#ProfessionalCleaning #CleanHome');
+    assert.equal(draft.content.imagePrompt, '');
+  });
+
+  test('accepts intentionally empty Website hashtags and preserves the complete Marketing text package', async () => {
+    const { admin, db } = fakeAdmin(seed());
+    const result = await generateGrowthAIContent({
+      admin,
+      provider: successProvider(),
+      requestBody: request({
+        idempotencyKey: 'website-marketing',
+        input: { postTypeId: 'availability', platform: 'website', serviceType: 'standard clean' },
+      }),
+      uid: 'admin-a',
+    });
+    const draft = db.documents.get(`tenants/tenant-a/growthAIDrafts/${result.draftId}`);
+    assert.equal(draft.content.hashtags, '');
+    assert.ok(draft.content.fullCaption);
+    assert.ok(draft.content.shortCaption);
+    assert.ok(draft.content.callToAction);
+    assert.equal(draft.content.imagePrompt, '');
+  });
+
+  test('accepts an optional legacy imagePrompt without exposing it in the new Marketing draft', async () => {
+    const { admin, db } = fakeAdmin(seed());
+    const result = await generateGrowthAIContent({
+      admin,
+      provider: {
+        generateText: async () => ({
+          text: JSON.stringify({
+            fullCaption: 'A complete cleaning service caption for owner review.',
+            shortCaption: 'A concise cleaning caption.',
+            callToAction: 'Request your quote today.',
+            hashtags: '#ProfessionalCleaning',
+            imagePrompt: 'Legacy provider visual instruction.',
+          }),
+          providerRequestId: 'legacy-image-prompt',
+          modelId: 'model-1',
+        }),
+      },
+      requestBody: request({ idempotencyKey: 'legacy-image-prompt' }),
+      uid: 'admin-a',
+    });
+    const draft = db.documents.get(`tenants/tenant-a/growthAIDrafts/${result.draftId}`);
+    assert.equal(draft.content.imagePrompt, '');
+  });
+
+  test('rejects malformed or incomplete Marketing output, restores one credit, and persists no partial draft', async () => {
+    for (const [idempotencyKey, text] of [
+      ['malformed-marketing', '```json\n{"fullCaption":"partial"}\n```'],
+      ['missing-marketing-field', JSON.stringify({
+        fullCaption: 'Long complete caption for a cleaning service.',
+        shortCaption: 'Short caption.',
+        hashtags: '#Cleaning',
+      })],
+      ['unsafe-marketing-cta', JSON.stringify({
+        fullCaption: 'Long complete caption for a cleaning service.',
+        shortCaption: 'Short caption.',
+        callToAction: 'Review before publishing.',
+        hashtags: '#Cleaning',
+      })],
+    ]) {
+      const { admin, db } = fakeAdmin(seed());
+      await assert.rejects(
+        generateGrowthAIContent({
+          admin,
+          provider: { generateText: async () => ({ text, providerRequestId: 'invalid', modelId: 'model-1' }) },
+          requestBody: request({ idempotencyKey }),
+          uid: 'admin-a',
+        }),
+        error => error.code === 'invalid_provider_output',
+      );
+      const balance = db.documents.get('tenants/tenant-a/growthAICreditBalances/current');
+      const [[, ledger]] = ledgerEntries(db);
+      assert.deepEqual(balance.buckets, { monthly: 5, promotional: 0, purchased: 0 });
+      assert.equal(balance.reservedCredits, 0);
+      assert.equal(ledger.status, 'restored');
+      assert.equal([...db.documents.keys()].some(path => path.includes('/growthAIDrafts/ai-')), false);
+    }
   });
 
   test('uses the modular Admin SDK timestamp when the legacy namespace is unavailable', async () => {
@@ -794,7 +887,16 @@ describe('GrowthAI server gateway', () => {
     const provider = {
       generateText: payload => {
         calls.push(payload);
-        return new Promise(resolve => { releaseProvider = () => resolve({ text: 'One logical result.' }); });
+        return new Promise(resolve => {
+          releaseProvider = () => resolve({
+            text: JSON.stringify({
+              fullCaption: 'One complete logical marketing result for owner review.',
+              shortCaption: 'One logical marketing result.',
+              callToAction: 'Request a quote.',
+              hashtags: '#Cleaning',
+            }),
+          });
+        });
       },
     };
     const first = generateGrowthAIContent({ admin, provider, requestBody: request(), uid: 'admin-a' });
