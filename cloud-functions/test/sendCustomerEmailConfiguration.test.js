@@ -18,7 +18,7 @@ describe('sendCustomerEmail Function configuration', () => {
     assert.deepEqual(spec, { name: 'CUSTOMER_EMAIL_PROVIDER_ENABLED', type: 'boolean', default: false });
   });
 
-  test('caps only the email endpoint at three instances with no warm instances', () => {
+  test('caps the email endpoint at three instances with no warm instances', () => {
     assert.equal(functionsEntry.sendCustomerEmail.__endpoint.maxInstances, 3);
     assert.equal(functionsEntry.sendCustomerEmail.__endpoint.minInstances, 0);
   });
