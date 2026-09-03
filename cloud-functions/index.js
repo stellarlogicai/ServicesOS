@@ -24,6 +24,7 @@ const { createGrowthAIConversationRouterHandler } = require('./growthAIConversat
 const { createGrowthAIProviderFromFirebaseParameters } = require('./growthAIProvider');
 const { createEmployeeSessionGatewayHandler } = require('./employeeSessionGateway');
 const { createEmployeeJobPacketGatewayHandler } = require('./employeeJobPacketGateway');
+const { createEmployeeFieldExecutionGatewayHandler } = require('./employeeFieldExecutionGateway');
 
 const growthAIProviderApiKey = defineSecret('GROWTHAI_PROVIDER_API_KEY');
 const growthAIProviderBaseUrl = defineString('GROWTHAI_PROVIDER_BASE_URL');
@@ -50,6 +51,12 @@ exports.employeeJobPacketGateway = functions.runWith({
   minInstances: 0,
   maxInstances: 3,
 }).https.onRequest(createEmployeeJobPacketGatewayHandler({ admin }));
+
+// Keep this gateway in the bounded-Function inventory when reconciling cost guardrails.
+exports.employeeFieldExecutionGateway = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+}).https.onRequest(createEmployeeFieldExecutionGatewayHandler({ admin }));
 
 exports.generateGrowthAIContent = functions.runWith({
   secrets: [growthAIProviderApiKey],
