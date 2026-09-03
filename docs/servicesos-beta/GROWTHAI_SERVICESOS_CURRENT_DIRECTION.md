@@ -152,10 +152,13 @@ weekly plans, and an eventual human-approved publishing path.
 A completed job or job photo is not required to create marketing content.
 
 Current Marketing text generation produces captions, a call to action, and
-hashtags for one AI credit. A future `Generate post + image` action may produce
-the same text package plus a finished image for five credits total. Its internal
-visual instruction is not an owner-facing draft field. Image generation,
-storage, charging, retries, and attachments are outside the current V1 scope.
+hashtags for one AI credit. ServicesOS V1 also includes a separate
+`Generate post + image` implementation slice that produces the same text package
+plus a finished AI-generated image for five credits total. Its internal visual
+instruction is not an owner-facing draft field. Image generation, storage,
+5-credit reservation/finalization and restoration, retries, attachments, safety,
+and cleanup must be implemented and validated as their own controlled V1 slice;
+they are not part of the completed beta-UX repair.
 
 Tenant brand context should derive business identity from canonical Business
 Settings and store only GrowthAI-specific preferences or missing brand assets.
