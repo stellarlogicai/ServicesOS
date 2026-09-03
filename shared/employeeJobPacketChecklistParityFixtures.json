@@ -1,0 +1,65 @@
+[
+  {
+    "name": "structured booking scope",
+    "booking": {
+      "id": "booking-structured",
+      "serviceType": "standard",
+      "address": "100 Test Street",
+      "sourceEstimateId": "estimate-a",
+      "propertySnapshot": {
+        "propertyType": "house",
+        "roomCounts": {
+          "bedrooms": 3,
+          "bathrooms": 2,
+          "kitchens": 1,
+          "livingRooms": 1,
+          "diningRooms": 0,
+          "offices": 1,
+          "laundryRooms": 1,
+          "closets": 4
+        },
+        "household": {
+          "petCount": 2,
+          "petHairLevel": "High"
+        }
+      },
+      "requestSnapshot": {
+        "cleaningType": "standard",
+        "frequency": "bi-weekly",
+        "surfaceNotes": "Stone counters",
+        "hazards": ["Loose stair rail"],
+        "accessInstructions": "Use side entry",
+        "specialRequests": "Focus on entryway",
+        "serviceScope": {
+          "oven": true,
+          "fridge": false,
+          "baseboards": true
+        }
+      }
+    },
+    "expectedSignature": "{\"accessInstructions\":\"Use side entry\",\"customerInstructions\":\"Focus on entryway\",\"frequency\":\"bi-weekly\",\"hazards\":[\"Loose stair rail\"],\"petCount\":2,\"petHairLevel\":\"high\",\"propertyType\":\"house\",\"roomCounts\":{\"bathroom\":2,\"bedroom\":3,\"closet\":4,\"diningRoom\":0,\"kitchen\":1,\"laundryRoom\":1,\"livingRoom\":1,\"office\":1},\"serviceAddressPresent\":true,\"serviceScope\":{\"baseboards\":true,\"fridge\":false,\"oven\":true},\"serviceType\":\"standard\",\"sourceEstimateId\":\"estimate-a\",\"surfaceNotes\":\"Stone counters\"}"
+  },
+  {
+    "name": "legacy form scope",
+    "booking": {
+      "id": "booking-legacy",
+      "estimateId": "estimate-legacy",
+      "formData": {
+        "_cleaningType": "deep",
+        "frequency": "one-time",
+        "address": "200 Example Avenue",
+        "propertyType": "apartment",
+        "bedrooms": "2",
+        "bathrooms": "1",
+        "petCount": "1",
+        "petHairLevel": "low",
+        "specialRequests": "Call at gate",
+        "extras": {
+          "insideOven": true,
+          "cabinetsInside": true
+        }
+      }
+    },
+    "expectedSignature": "{\"accessInstructions\":null,\"customerInstructions\":\"Call at gate\",\"frequency\":\"one-time\",\"hazards\":[],\"petCount\":1,\"petHairLevel\":\"low\",\"propertyType\":\"apartment\",\"roomCounts\":{\"bathroom\":1,\"bedroom\":2,\"closet\":null,\"diningRoom\":null,\"kitchen\":null,\"laundryRoom\":null,\"livingRoom\":null,\"office\":null},\"serviceAddressPresent\":true,\"serviceScope\":{\"insideCabinets\":true,\"oven\":true},\"serviceType\":\"deep\",\"sourceEstimateId\":\"estimate-legacy\",\"surfaceNotes\":null}"
+  }
+]

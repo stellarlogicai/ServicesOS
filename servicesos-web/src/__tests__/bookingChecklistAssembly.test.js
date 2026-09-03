@@ -9,6 +9,7 @@ import {
   findRecurringChecklistReuseCandidate,
 } from '../core/checklists/bookingChecklistAssembly';
 import { getChecklistTemplate, listChecklistTemplates } from '../core/checklists/checklistTemplateRegistry';
+import checklistParityFixtures from '../../../shared/employeeJobPacketChecklistParityFixtures.json';
 
 const baseBooking = (overrides = {}) => ({
   id: 'booking-1',
@@ -47,6 +48,9 @@ const itemRepresentsSourceLine = (item, label) => item.label === label ||
 const resultRepresentsSourceLine = (result, label) => result.items.some(item => itemRepresentsSourceLine(item, label));
 
 describe('booking checklist assembly', () => {
+  it.each(checklistParityFixtures)('keeps checklist scope parity for $name', ({ booking, expectedSignature }) => {
+    expect(assembleBookingChecklist(booking).sourceScopeSignature).toBe(expectedSignature);
+  });
   it('selects Standard One-Time Clean for a standard one-time booking', () => {
     const result = assembleBookingChecklist(baseBooking());
     expect(result.success).toBe(true);

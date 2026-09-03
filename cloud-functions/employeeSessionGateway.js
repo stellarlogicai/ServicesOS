@@ -6,6 +6,12 @@ const EMPLOYEE_SESSION_ALLOWED_ORIGINS = new Set([
   'http://localhost:5174',
 ]);
 
+const {
+  EmployeeAuthorizationError,
+  tenantMembershipIncludes,
+  verifyCanonicalEmployee,
+} = require('./employeeAuthorization');
+
 class EmployeeSessionGatewayError extends Error {
   constructor(message, { code, status }) {
     super(message);
@@ -23,16 +29,6 @@ function applyEmployeeSessionCors(req, res) {
   }
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-}
-
-function tenantMembershipIncludes(membership, uid) {
-  if (Array.isArray(membership)) return membership.includes(uid);
-  return Boolean(
-    membership &&
-    typeof membership === 'object' &&
-    Object.hasOwn(membership, uid) &&
-    membership[uid]
-  );
 }
 
 function optionalProfileText(value) {
@@ -60,28 +56,17 @@ function denyEmployeeAccess() {
 }
 
 async function resolveEmployeeSession({ admin, uid }) {
-  if (typeof uid !== 'string' || !uid.trim()) denyEmployeeAccess();
-
-  const db = admin.firestore();
-  const profileSnapshot = await db.collection('users').doc(uid).get();
-  if (!profileSnapshot.exists) denyEmployeeAccess();
-
-  const profile = profileSnapshot.data() || {};
-  const tenantId = typeof profile.tenantId === 'string' ? profile.tenantId.trim() : '';
-  if (
-    profile.role !== 'employee' ||
-    profile.status !== 'active' ||
-    !tenantId ||
-    tenantId === 'DEFAULT'
-  ) {
+  let context;
+  try {
+    context = await verifyCanonicalEmployee({ admin, uid });
+  } catch (error) {
+    if (error instanceof EmployeeAuthorizationError) denyEmployeeAccess();
+    throw error;
+  }
+  const { profile, tenantId } = context;
+  if (!profile || !tenantId) {
     denyEmployeeAccess();
   }
-
-  const tenantSnapshot = await db.collection('tenants').doc(tenantId).get();
-  if (!tenantSnapshot.exists) denyEmployeeAccess();
-
-  const tenant = tenantSnapshot.data() || {};
-  if (!tenantMembershipIncludes(tenant.users, uid)) denyEmployeeAccess();
 
   return buildSafeEmployeeSession({ profile, tenantId, uid });
 }
