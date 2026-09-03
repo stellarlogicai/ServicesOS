@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const firestore = vi.hoisted(() => ({
   getDocs: vi.fn(),
   runTransaction: vi.fn(),
+  sets: [],
+  transactionTargetIds: [],
   updates: [],
 }));
 
@@ -34,6 +36,7 @@ import {
   dismissGrowthAIOpportunity,
   markGrowthAIOpportunityActed,
   planGrowthAIOpportunityReconciliation,
+  reconcileGrowthAIOpportunities,
 } from '../modules/growthAI/growthAIOpportunityService';
 
 function quotedLead(overrides = {}) {
@@ -60,6 +63,38 @@ function opportunity(overrides = {}) {
     detectionVersion: 'estimate-followup-v1',
     firstDetectedAt: { preserved: true },
     ...overrides,
+  };
+}
+
+function detection(index, overrides = {}) {
+  return {
+    id: `opportunity-${index}`,
+    type: 'estimate_followup',
+    pillar: 'convert',
+    sourceRefs: { leadId: `lead-${index}` },
+    detectionReason: `Detection ${index}`,
+    detectionVersion: 'estimate-followup-v1',
+    ...overrides,
+  };
+}
+
+function opportunitySnapshot(items = []) {
+  return {
+    docs: items.map(item => ({ id: item.id, data: () => ({ ...item }) })),
+  };
+}
+
+function transactionRecorder(currentById = new Map()) {
+  const targetIds = [];
+  firestore.transactionTargetIds.push(targetIds);
+  return {
+    get: vi.fn(async reference => {
+      targetIds.push(reference.id);
+      const current = currentById.get(reference.id);
+      return { exists: () => Boolean(current), id: reference.id, data: () => current };
+    }),
+    set: vi.fn((reference, payload) => firestore.sets.push({ id: reference.id, payload })),
+    update: vi.fn((reference, patch) => firestore.updates.push({ id: reference.id, patch })),
   };
 }
 
@@ -499,5 +534,180 @@ describe('GrowthAI deterministic opportunity detection', () => {
     expect(firestore.updates[1].patch).toMatchObject({
       status: 'dismissed', dismissedByUid: 'admin-a', updatedByUid: 'admin-a',
     });
+  });
+});
+
+describe('GrowthAI opportunity reconciliation transaction bounds', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    firestore.sets = [];
+    firestore.transactionTargetIds = [];
+    firestore.updates = [];
+    firebase.auth.currentUser = { uid: 'admin-a' };
+  });
+
+  function useRecordedTransactions(current = []) {
+    const currentById = new Map(current.map(item => [item.id, item]));
+    firestore.runTransaction.mockImplementation(async (_db, callback) => callback(transactionRecorder(currentById)));
+  }
+
+  it('returns the canonical list without opening a transaction when there are no targets', async () => {
+    const finalList = [opportunity({ id: 'dismissed-a', status: 'dismissed' })];
+    firestore.getDocs
+      .mockResolvedValueOnce(opportunitySnapshot([]))
+      .mockResolvedValueOnce(opportunitySnapshot(finalList));
+
+    const result = await reconcileGrowthAIOpportunities('tenant-a', []);
+
+    expect(firestore.runTransaction).not.toHaveBeenCalled();
+    expect(result).toEqual(finalList);
+  });
+
+  it('uses one transaction for no more than 20 targets', async () => {
+    const detections = Array.from({ length: 20 }, (_, index) => detection(index));
+    firestore.getDocs.mockResolvedValue(opportunitySnapshot([]));
+    useRecordedTransactions();
+
+    await reconcileGrowthAIOpportunities('tenant-a', detections);
+
+    expect(firestore.runTransaction).toHaveBeenCalledTimes(1);
+    expect(firestore.transactionTargetIds.map(ids => ids.length)).toEqual([20]);
+  });
+
+  it('splits 21 targets into two sequentially awaited transactions', async () => {
+    const detections = Array.from({ length: 21 }, (_, index) => detection(index));
+    firestore.getDocs.mockResolvedValue(opportunitySnapshot([]));
+    let releaseFirst;
+    let signalFirstStarted;
+    const firstStarted = new Promise(resolve => { signalFirstStarted = resolve; });
+    const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+    let transactionNumber = 0;
+    firestore.runTransaction.mockImplementation(async (_db, callback) => {
+      transactionNumber += 1;
+      if (transactionNumber === 1) {
+        signalFirstStarted();
+        await firstGate;
+      }
+      return callback(transactionRecorder());
+    });
+
+    const reconciliation = reconcileGrowthAIOpportunities('tenant-a', detections);
+    await firstStarted;
+    expect(firestore.runTransaction).toHaveBeenCalledTimes(1);
+    releaseFirst();
+    await reconciliation;
+
+    expect(firestore.runTransaction).toHaveBeenCalledTimes(2);
+    expect(firestore.transactionTargetIds.map(ids => ids.length)).toEqual([20, 1]);
+  });
+
+  it('splits 45 targets into transactions of 20, 20, and 5', async () => {
+    const detections = Array.from({ length: 45 }, (_, index) => detection(index));
+    firestore.getDocs.mockResolvedValue(opportunitySnapshot([]));
+    useRecordedTransactions();
+
+    await reconcileGrowthAIOpportunities('tenant-a', detections);
+
+    expect(firestore.runTransaction).toHaveBeenCalledTimes(3);
+    expect(firestore.transactionTargetIds.map(ids => ids.length)).toEqual([20, 20, 5]);
+    expect(Math.max(...firestore.transactionTargetIds.map(ids => ids.length))).toBeLessThanOrEqual(20);
+  });
+
+  it('preserves creates, refreshes, and resolves across chunk boundaries', async () => {
+    const creates = Array.from({ length: 9 }, (_, index) => detection(index));
+    const refreshes = Array.from({ length: 8 }, (_, index) => opportunity({
+      id: `refresh-${index}`,
+      sourceRefs: { leadId: `refresh-lead-${index}` },
+    }));
+    const resolves = Array.from({ length: 8 }, (_, index) => opportunity({
+      id: `resolve-${index}`,
+      status: index % 2 === 0 ? 'open' : 'acted',
+    }));
+    const refreshDetections = refreshes.map((item, index) => detection(`refresh-${index}`, {
+      id: item.id,
+      detectionReason: `Refreshed ${index}`,
+    }));
+    const existing = [...refreshes, ...resolves];
+    firestore.getDocs.mockResolvedValueOnce(opportunitySnapshot(existing)).mockResolvedValueOnce(opportunitySnapshot(existing));
+    useRecordedTransactions(existing);
+
+    await reconcileGrowthAIOpportunities('tenant-a', [...creates, ...refreshDetections]);
+
+    expect(firestore.transactionTargetIds.map(ids => ids.length)).toEqual([20, 5]);
+    expect(firestore.sets).toHaveLength(9);
+    expect(firestore.sets.every(item => item.payload.status === 'open' && item.payload.tenantId === 'tenant-a')).toBe(true);
+    expect(firestore.sets.every(item => item.payload.createdByUid === 'admin-a' && item.payload.updatedByUid === 'admin-a')).toBe(true);
+    const refreshUpdates = firestore.updates.filter(item => item.id.startsWith('refresh-'));
+    expect(refreshUpdates).toHaveLength(8);
+    expect(refreshUpdates.every(item => item.patch.updatedByUid === 'admin-a' && !('status' in item.patch))).toBe(true);
+    expect(refreshUpdates.every(item => !('sourceRefs' in item.patch))).toBe(true);
+    expect(firestore.updates.filter(item => item.id.startsWith('resolve-'))).toHaveLength(8);
+    expect(firestore.updates.filter(item => item.id.startsWith('resolve-')).every(item => item.patch.status === 'resolved')).toBe(true);
+  });
+
+  it('deduplicates repeated detection and existing IDs before counting transaction targets', async () => {
+    const repeatedDetection = detection('duplicate', { id: 'duplicate-id' });
+    const repeatedExisting = opportunity({ id: 'existing-id', status: 'open' });
+    firestore.getDocs
+      .mockResolvedValueOnce(opportunitySnapshot([repeatedExisting, repeatedExisting]))
+      .mockResolvedValueOnce(opportunitySnapshot([]));
+    useRecordedTransactions([repeatedExisting]);
+
+    await reconcileGrowthAIOpportunities('tenant-a', [repeatedDetection, repeatedDetection]);
+
+    expect(firestore.transactionTargetIds).toEqual([['duplicate-id', 'existing-id']]);
+    expect(new Set(firestore.transactionTargetIds.flat()).size).toBe(2);
+  });
+
+  it('keeps review-request source reference refresh behavior unchanged', async () => {
+    const current = opportunity({
+      id: 'review_request__customer-a',
+      type: 'review_request',
+      pillar: 'reputation',
+      sourceRefs: { bookingId: 'booking-old', customerId: 'customer-a' },
+    });
+    const refreshed = detection('review', {
+      id: current.id,
+      type: 'review_request',
+      pillar: 'reputation',
+      sourceRefs: { bookingId: 'booking-new', customerId: 'customer-a' },
+    });
+    firestore.getDocs.mockResolvedValueOnce(opportunitySnapshot([current])).mockResolvedValueOnce(opportunitySnapshot([current]));
+    useRecordedTransactions([current]);
+
+    await reconcileGrowthAIOpportunities('tenant-a', [refreshed]);
+
+    expect(firestore.updates).toHaveLength(1);
+    expect(firestore.updates[0].patch.sourceRefs).toEqual(refreshed.sourceRefs);
+  });
+
+  it('continues to leave dismissed and resolved opportunities unchanged', async () => {
+    const dismissed = opportunity({ id: 'dismissed-a', status: 'dismissed' });
+    const resolved = opportunity({ id: 'resolved-a', status: 'resolved' });
+    firestore.getDocs.mockResolvedValue(opportunitySnapshot([dismissed, resolved]));
+
+    await reconcileGrowthAIOpportunities('tenant-a', [detection('dismissed', { id: dismissed.id })]);
+
+    expect(firestore.runTransaction).not.toHaveBeenCalled();
+    expect(firestore.sets).toEqual([]);
+    expect(firestore.updates).toEqual([]);
+  });
+
+  it('propagates a middle-chunk failure without starting later chunks', async () => {
+    const detections = Array.from({ length: 45 }, (_, index) => detection(index));
+    firestore.getDocs.mockResolvedValue(opportunitySnapshot([]));
+    let transactionNumber = 0;
+    firestore.runTransaction.mockImplementation(async (_db, callback) => {
+      transactionNumber += 1;
+      if (transactionNumber === 2) throw new Error('middle chunk failed');
+      return callback(transactionRecorder());
+    });
+
+    await expect(reconcileGrowthAIOpportunities('tenant-a', detections)).rejects.toThrow('middle chunk failed');
+
+    expect(firestore.runTransaction).toHaveBeenCalledTimes(2);
+    expect(firestore.transactionTargetIds.map(ids => ids.length)).toEqual([20]);
+    expect(firestore.sets).toHaveLength(20);
+    expect(firestore.getDocs).toHaveBeenCalledTimes(1);
   });
 });

@@ -34,6 +34,7 @@ const ESTIMATE_DETECTION_VERSION = 'estimate-followup-v1';
 const MARKETING_DETECTION_VERSION = 'marketing-photo-review-v1';
 const REBOOKING_DETECTION_VERSION = 'rebooking-gap-v1';
 const REVIEW_REQUEST_DETECTION_VERSION = 'review-request-v1';
+const RECONCILIATION_TRANSACTION_TARGET_LIMIT = 20;
 const CLOSED_ESTIMATE_STATUSES = new Set([
   'accepted',
   'approved',
@@ -427,13 +428,14 @@ export async function reconcileGrowthAIOpportunities(tenantId, detections) {
     ...plan.resolve.map(item => item.id),
   ])];
 
-  if (ids.length > 0) {
+  const detectedById = new Map(detections.map(item => [item.id, item]));
+  for (let start = 0; start < ids.length; start += RECONCILIATION_TRANSACTION_TARGET_LIMIT) {
+    const chunkIds = ids.slice(start, start + RECONCILIATION_TRANSACTION_TARGET_LIMIT);
     await runTransaction(db, async transaction => {
-      const references = ids.map(id => opportunityDocument(resolvedTenantId, id));
+      const references = chunkIds.map(id => opportunityDocument(resolvedTenantId, id));
       const snapshots = [];
       for (const reference of references) snapshots.push(await transaction.get(reference));
       const currentById = new Map(snapshots.filter(item => item.exists()).map(item => [item.id, item.data()]));
-      const detectedById = new Map(detections.map(item => [item.id, item]));
 
       for (const reference of references) {
         const current = currentById.get(reference.id);
