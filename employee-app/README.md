@@ -43,9 +43,9 @@ employee-app/
 npm install
 ```
 
-2. Configure Firebase:
-   - Update `src/api/firebase.js` with your Firebase configuration
-   - Ensure Firebase Authentication and Firestore are enabled
+2. Create an ignored `.env.local` from `.env.example` and set an explicit mode:
+   - `local-emulator` for emulator-only development
+   - `production` only when intentionally configuring the production client
 
 3. Run the app:
 ```bash
@@ -54,18 +54,22 @@ npm start
 
 ## Firebase Configuration
 
-Replace the placeholder values in `src/api/firebase.js` with your actual Firebase project credentials:
+Firebase client configuration is supplied through the `EXPO_PUBLIC_*` variables listed in
+`.env.example`. These values identify a Firebase client app; never place Admin SDK credentials,
+private keys, payment keys, email-provider keys, AI-provider keys, or webhook secrets in them.
 
-```javascript
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
-};
-```
+The mode is required and fails closed when missing or unknown. Production mode requires all six
+client values and rejects the emulator-only demo project. Local emulator mode requires the exact
+`demo-servicesos-v1-smoke-local` project and an explicit emulator host reachable from the device.
+
+Choose that host for the runtime being tested:
+
+- Android emulator: commonly `10.0.2.2` when the emulator can reach the development computer there.
+- Physical Expo device: the development computer's LAN address reachable from the phone.
+- iOS simulator: the development host reachable from that simulator environment.
+
+No host works universally. Physical-device testing may also require the Firebase emulators to
+listen on a non-loopback interface; this app does not alter emulator server bindings.
 
 ## Security
 
