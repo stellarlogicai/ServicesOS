@@ -87,6 +87,11 @@ describe('Create Estimate wife-beta flow', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Estimate saved successfully. Customer notification sent.'
     );
+    expect(mocks.sendQuoteEmail).toHaveBeenCalledWith(
+      'tenant-test',
+      expect.objectContaining({ id: 'lead-manual', email: 'manual@example.com' }),
+      expect.objectContaining({ priceLow: expect.any(Number), priceHigh: expect.any(Number) }),
+    );
   });
 
   it('keeps the native Preferred Date control accessible and preserves broad time windows', () => {

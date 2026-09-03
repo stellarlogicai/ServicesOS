@@ -2088,6 +2088,32 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     }
   });
 
+  test('email ledgers and usage counters are server-only for every client role', async () => {
+    const paths = [
+      ['tenants', TENANT_A, 'emailSendLedger', 'operation-a'],
+      ['tenants', TENANT_A, 'emailSendUsage', '2026-09-03'],
+      ['tenants', TENANT_A, 'emailSendActorUsage', '2026-09-03-12-actor'],
+      ['platformEmailUsage', '2026-09-03'],
+    ];
+    const databases = [
+      authenticatedDatabase('admin-a'),
+      authenticatedDatabase('super-admin'),
+      authenticatedDatabase('employee-a'),
+      authenticatedDatabase('customer-a-auth'),
+      testEnvironment.unauthenticatedContext().firestore(),
+    ];
+
+    for (const database of databases) {
+      for (const pathParts of paths) {
+        const reference = doc(database, ...pathParts);
+        await assertFails(getDoc(reference));
+        await assertFails(setDoc(reference, { count: 1, status: 'reserved' }));
+        await assertFails(updateDoc(reference, { count: 2 }));
+        await assertFails(deleteDoc(reference));
+      }
+    }
+  });
+
   test('only super-admin can use mounted compatibility and global administration paths', async () => {
     const superAdmin = authenticatedDatabase('super-admin');
     const admin = authenticatedDatabase('admin-a');

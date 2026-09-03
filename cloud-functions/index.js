@@ -1,5 +1,5 @@
 const functions = require('firebase-functions');
-const { defineSecret, defineString } = require('firebase-functions/params');
+const { defineBoolean, defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors')({ origin: true });
@@ -28,10 +28,15 @@ const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
   minInstances: 0,
 });
+const CUSTOMER_EMAIL_RUNTIME_OPTIONS = Object.freeze({
+  maxInstances: 3,
+  minInstances: 0,
+});
 
 const growthAIProviderApiKey = defineSecret('GROWTHAI_PROVIDER_API_KEY');
 const growthAIProviderBaseUrl = defineString('GROWTHAI_PROVIDER_BASE_URL');
 const growthAIProviderModel = defineString('GROWTHAI_PROVIDER_MODEL');
+const customerEmailProviderEnabled = defineBoolean('CUSTOMER_EMAIL_PROVIDER_ENABLED', { default: false });
 
 function createConfiguredGrowthAIProvider() {
   return createGrowthAIProviderFromFirebaseParameters({
@@ -847,8 +852,14 @@ exports.getConnectedAccountStatus = functions.https.onRequest((req, res) => {
  * Send customer email via Resend
  * POST /sendCustomerEmail
  */
-exports.sendCustomerEmail = functions.https.onRequest(
-  createSendCustomerEmailHandler({ admin, cors })
+exports.sendCustomerEmail = functions.runWith(CUSTOMER_EMAIL_RUNTIME_OPTIONS).https.onRequest(
+  createSendCustomerEmailHandler({
+    admin,
+    cors,
+    providerEnabled: () => customerEmailProviderEnabled.value(),
+    senderEmail: functions.config().email?.sender_email || 'notifications@servicesos.com',
+    senderName: functions.config().email?.sender_name || 'ServicesOS',
+  })
 );
 
 /**
