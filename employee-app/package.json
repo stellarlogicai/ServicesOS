@@ -9,7 +9,7 @@
     "web": "expo start --web",
     "doctor": "npx expo-doctor",
     "test": "npm run test:unit && npm run test:auth",
-    "test:unit": "node --test src/api/__tests__/firebaseConfig.test.cjs src/api/__tests__/employeeSessionClient.test.cjs",
+    "test:unit": "node --test src/api/__tests__/firebaseConfig.test.cjs src/api/__tests__/employeeSessionClient.test.cjs src/api/__tests__/employeeJobsClient.test.cjs",
     "test:auth": "jest --runInBand"
   },
   "dependencies": {

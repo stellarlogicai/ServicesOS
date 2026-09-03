@@ -33,7 +33,6 @@ jest.mock("@react-navigation/native-stack", () => ({
 
 jest.mock("../../screens/TodayScreen", () => () => null);
 jest.mock("../../screens/JobDetailsScreen", () => () => null);
-jest.mock("../../screens/ChecklistScreen", () => () => null);
 jest.mock("../../screens/TrainingScreen", () => () => null);
 jest.mock("../../screens/MessagesScreen", () => () => null);
 jest.mock("../../screens/ProfileScreen", () => () => null);
@@ -95,4 +94,14 @@ test("safe access error is visible on the login screen", () => {
   expect(screen.getByText(
     "Your employee account is not available. Contact your business administrator."
   )).toBeTruthy();
+});
+
+test("jobs stack keeps Today and Job Details while retiring the obsolete Checklist route", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const source = fs.readFileSync(path.resolve(__dirname, "..", "AppNavigator.jsx"), "utf8");
+  expect(source).toMatch(/name="Today"/);
+  expect(source).toMatch(/name="JobDetails"/);
+  expect(source).not.toMatch(/name="Checklist"/);
+  expect(source).not.toMatch(/import ChecklistScreen/);
 });

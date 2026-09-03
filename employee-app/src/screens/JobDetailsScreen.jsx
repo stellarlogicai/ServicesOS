@@ -1,168 +1,171 @@
-// src/screens/JobDetailsScreen.jsx
-/**
- * Job Details Screen
- * 
- * This screen displays detailed information about a specific job.
- * Shows customer info, service details, checklist, and allows job status updates.
- */
+import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AuthContext } from "../context/AuthContext";
+import { getEmployeeJob, isEmployeeJobAccessLossError } from "../api/employeeJobs";
 
-import React, { useEffect, useState } from "react";
-import { View, Text, Button, StyleSheet, ScrollView, ActivityIndicator, Alert, Image } from "react-native";
-import { pickAndUploadJobPhoto } from "../api/photos";
+const DETAIL_ERROR = "This job could not be loaded. Try again.";
+const UNAVAILABLE_ERROR = "This job is no longer available.";
 
-export default function JobDetailsScreen({ route }) {
-  const { jobId } = route.params;
-  const [job, setJob] = useState(null);
-  const [loading, setLoading] = useState(true);
+function humanize(value) {
+  return typeof value === "string"
+    ? value.replace(/_/g, " ").replace(/\b\w/g, character => character.toUpperCase())
+    : "";
+}
 
-  async function loadJob() {
-    try {
-      setLoading(true);
-      // TODO: Implement actual job loading from Firestore
-      // For now, using placeholder data
-      setJob({
-        id: jobId,
-        serviceType: "Deep Clean",
-        address: "123 Main St",
-        city: "Springfield",
-        state: "IL",
-        zip: "62701",
-        status: "scheduled",
-        scheduledTime: "09:00",
-        customerName: "John Doe",
-        customerPhone: "(555) 123-4567",
-        specialInstructions: "Please use back door",
-        pets: "Dog - friendly",
-        accessNotes: "Key under mat",
-        estimatedDuration: "2 hours",
-      });
-    } catch (error) {
-      console.error("Error loading job:", error);
-    } finally {
-      setLoading(false);
+function timeRange(schedule) {
+  if (schedule.startTime && schedule.endTime) return `${schedule.startTime} - ${schedule.endTime}`;
+  return schedule.startTime || schedule.endTime || "Time not provided";
+}
+
+function DetailSection({ title, children }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
+
+export default function JobDetailsScreen({ route, navigation }) {
+  const bookingId = route?.params?.bookingId || "";
+  const { employee } = useContext(AuthContext);
+  const employeeUid = employee?.uid || "";
+  const requestId = useRef(0);
+  const [state, setState] = useState({ key: "", job: null, loading: true, error: "", unavailable: false });
+  const requestKey = `${employeeUid}:${bookingId}`;
+
+  const loadJob = useCallback(async () => {
+    if (!employeeUid || !bookingId) {
+      setState({ key: requestKey, job: null, loading: false, error: DETAIL_ERROR, unavailable: false });
+      return;
     }
-  }
-
-  async function startJob() {
-    // TODO: Implement job status update
-    console.log("Starting job:", jobId);
-  }
-
-  async function completeJob() {
-    // TODO: Implement job status update
-    console.log("Completing job:", jobId);
-  }
+    const currentRequest = ++requestId.current;
+    setState({ key: requestKey, job: null, loading: true, error: "", unavailable: false });
+    try {
+      const job = await getEmployeeJob(bookingId);
+      if (currentRequest !== requestId.current) return;
+      setState({ key: requestKey, job, loading: false, error: "", unavailable: false });
+    } catch (error) {
+      if (currentRequest !== requestId.current) return;
+      const unavailable = isEmployeeJobAccessLossError(error);
+      setState({
+        key: requestKey,
+        job: null,
+        loading: false,
+        error: unavailable ? UNAVAILABLE_ERROR : DETAIL_ERROR,
+        unavailable,
+      });
+    }
+  }, [bookingId, employeeUid, requestKey]);
 
   useEffect(() => {
     loadJob();
-  }, [jobId]);
+    return () => {
+      requestId.current += 1;
+    };
+  }, [loadJob]);
 
-  if (loading) {
+  const visibleState = state.key === requestKey
+    ? state
+    : { key: requestKey, job: null, loading: true, error: "", unavailable: false };
+
+  if (visibleState.loading) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#0000ff" />
-        <Text>Loading job...</Text>
+      <View style={styles.centered} accessibilityRole="progressbar">
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={styles.loadingText}>Loading job details...</Text>
       </View>
     );
   }
 
-  if (!job) {
+  if (!visibleState.job) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>Job not found</Text>
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>{visibleState.error}</Text>
+        {visibleState.unavailable ? (
+          <Button title="Back to My Day" onPress={() => navigation.goBack()} />
+        ) : (
+          <Button title="Retry" onPress={loadJob} />
+        )}
       </View>
     );
   }
 
+  const { job } = visibleState;
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>{job.serviceType}</Text>
-      
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Customer Information</Text>
-        <Text style={styles.text}>{job.customerName}</Text>
-        <Text style={styles.text}>{job.customerPhone}</Text>
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Address</Text>
-        <Text style={styles.text}>{job.address}</Text>
-        <Text style={styles.text}>{job.city}, {job.state} {job.zip}</Text>
-      </View>
+      <DetailSection title="Job">
+        <Text style={styles.text}>Booking status: {humanize(job.status)}</Text>
+        <Text style={styles.text}>Field status: {humanize(job.fieldStatus)}</Text>
+      </DetailSection>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Job Details</Text>
-        <Text style={styles.text}>Scheduled: {job.scheduledTime}</Text>
-        <Text style={styles.text}>Duration: {job.estimatedDuration}</Text>
-        <Text style={styles.text}>Status: {job.status}</Text>
-      </View>
+      <DetailSection title="Schedule">
+        <Text style={styles.text}>{job.schedule.date || "Date not provided"}</Text>
+        <Text style={styles.text}>{timeRange(job.schedule)}</Text>
+      </DetailSection>
 
-      {job.specialInstructions && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Special Instructions</Text>
-          <Text style={styles.text}>{job.specialInstructions}</Text>
-        </View>
-      )}
+      <DetailSection title="Customer">
+        <Text style={styles.text}>{job.customer.name}</Text>
+        {job.customer.phone ? <Text style={styles.text}>{job.customer.phone}</Text> : null}
+      </DetailSection>
 
-      {job.pets && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pets</Text>
-          <Text style={styles.text}>{job.pets}</Text>
-        </View>
-      )}
+      <DetailSection title="Location">
+        <Text style={styles.text}>{job.location.address}</Text>
+      </DetailSection>
 
-      {job.accessNotes && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Access Notes</Text>
-          <Text style={styles.text}>{job.accessNotes}</Text>
-        </View>
-      )}
+      <DetailSection title="Instructions">
+        <Text style={styles.text}>{job.instructions}</Text>
+      </DetailSection>
 
-      <View style={styles.buttonContainer}>
-        <Button title="Start Job" onPress={startJob} />
-        <Button title="Upload Photos" onPress={() => console.log("Upload photos")} />
-        <Button title="View Checklist" onPress={() => navigation.navigate("Checklist", { jobId })} />
-        <Button title="Complete Job" onPress={completeJob} />
-      </View>
+      <DetailSection title="Checklist Summary">
+        {job.checklist.ready ? (
+          <>
+            <Text style={styles.readyText}>Checklist ready</Text>
+            <Text style={styles.text}>{job.checklist.completed} of {job.checklist.total} complete</Text>
+          </>
+        ) : (
+          <Text style={styles.reviewText}>Owner review required</Text>
+        )}
+      </DetailSection>
+
+      {job.fieldNotes ? (
+        <DetailSection title="Field Notes">
+          <Text style={styles.text}>{job.fieldNotes}</Text>
+        </DetailSection>
+      ) : null}
+
+      {job.fieldIssue ? (
+        <DetailSection title="Reported Issue">
+          <Text style={styles.text}>{job.fieldIssue}</Text>
+        </DetailSection>
+      ) : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  container: { flex: 1, backgroundColor: "#f8fafc" },
+  content: { padding: 16, paddingBottom: 32 },
+  centered: {
     flex: 1,
-    padding: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
     backgroundColor: "#fff",
   },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 20,
-  },
+  loadingText: { marginTop: 12, color: "#475569" },
+  errorText: { color: "#b91c1c", textAlign: "center", marginBottom: 16 },
+  title: { fontSize: 26, fontWeight: "700", color: "#0f172a", marginBottom: 20 },
   section: {
-    marginBottom: 20,
-    paddingBottom: 15,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: "#e2e8f0",
+    paddingBottom: 14,
+    marginBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 10,
-    color: "#333",
-  },
-  text: {
-    fontSize: 16,
-    color: "#666",
-    marginBottom: 5,
-  },
-  errorText: {
-    fontSize: 18,
-    color: "red",
-    textAlign: "center",
-  },
-  buttonContainer: {
-    marginTop: 20,
-    gap: 10,
-  },
+  sectionTitle: { fontSize: 17, fontWeight: "700", color: "#1e293b", marginBottom: 8 },
+  text: { fontSize: 16, lineHeight: 23, color: "#475569", marginBottom: 3 },
+  readyText: { fontSize: 16, fontWeight: "600", color: "#166534", marginBottom: 4 },
+  reviewText: { fontSize: 16, fontWeight: "600", color: "#92400e" },
 });

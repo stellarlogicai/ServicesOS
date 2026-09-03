@@ -15,7 +15,6 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import LoginScreen from "../screens/LoginScreen";
 import TodayScreen from "../screens/TodayScreen";
 import JobDetailsScreen from "../screens/JobDetailsScreen";
-import ChecklistScreen from "../screens/ChecklistScreen";
 import TrainingScreen from "../screens/TrainingScreen";
 import MessagesScreen from "../screens/MessagesScreen";
 import ProfileScreen from "../screens/ProfileScreen";
@@ -28,7 +27,6 @@ function JobsStack() {
     <Stack.Navigator>
       <Stack.Screen name="Today" component={TodayScreen} options={{ title: "Today's Jobs" }} />
       <Stack.Screen name="JobDetails" component={JobDetailsScreen} options={{ title: "Job Details" }} />
-      <Stack.Screen name="Checklist" component={ChecklistScreen} options={{ title: "Checklist" }} />
     </Stack.Navigator>
   );
 }

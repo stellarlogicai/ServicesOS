@@ -16,11 +16,12 @@ function exactKeys(value, allowedKeys, requiredKeys) {
     keys.every((key) => allowedKeys.includes(key));
 }
 
-function buildEmployeeSessionGatewayUrl(runtimeConfig) {
+function buildEmployeeFunctionUrl(runtimeConfig, functionName) {
   const projectId = typeof runtimeConfig?.projectId === "string"
     ? runtimeConfig.projectId.trim()
     : "";
-  if (!projectId || projectId === "DEFAULT") {
+  const normalizedFunctionName = typeof functionName === "string" ? functionName.trim() : "";
+  if (!projectId || projectId === "DEFAULT" || !/^[A-Za-z][A-Za-z0-9]+$/.test(normalizedFunctionName)) {
     throw new EmployeeSessionClientError(
       "ServicesOS could not verify your employee account. Try again.",
       "employee_verification_failed"
@@ -36,17 +37,21 @@ function buildEmployeeSessionGatewayUrl(runtimeConfig) {
         "employee_verification_failed"
       );
     }
-    return `http://${host}:${port}/${projectId}/${EMPLOYEE_SESSION_REGION}/${EMPLOYEE_SESSION_FUNCTION_NAME}`;
+    return `http://${host}:${port}/${projectId}/${EMPLOYEE_SESSION_REGION}/${normalizedFunctionName}`;
   }
 
   if (runtimeConfig.mode === "production") {
-    return `https://${EMPLOYEE_SESSION_REGION}-${projectId}.cloudfunctions.net/${EMPLOYEE_SESSION_FUNCTION_NAME}`;
+    return `https://${EMPLOYEE_SESSION_REGION}-${projectId}.cloudfunctions.net/${normalizedFunctionName}`;
   }
 
   throw new EmployeeSessionClientError(
     "ServicesOS could not verify your employee account. Try again.",
     "employee_verification_failed"
   );
+}
+
+function buildEmployeeSessionGatewayUrl(runtimeConfig) {
+  return buildEmployeeFunctionUrl(runtimeConfig, EMPLOYEE_SESSION_FUNCTION_NAME);
 }
 
 function validateEmployeeSessionPayload(payload, expectedUid) {
@@ -138,6 +143,7 @@ function createEmployeeSessionClient({ auth, runtimeConfig, fetchImpl }) {
 
 module.exports = {
   EmployeeSessionClientError,
+  buildEmployeeFunctionUrl,
   buildEmployeeSessionGatewayUrl,
   createEmployeeSessionClient,
   validateEmployeeSessionPayload,
