@@ -14,6 +14,26 @@ describe('GrowthAI provider adapter', () => {
     await assert.rejects(provider.generateText({}), error => error.code === 'provider_unavailable');
   });
 
+  test('requires the exact external-provider environment enablement value', async () => {
+    const configuredEnvironment = {
+      GROWTHAI_PROVIDER_API_KEY: 'server-secret',
+      GROWTHAI_PROVIDER_BASE_URL: 'https://provider.example/v1',
+      GROWTHAI_PROVIDER_MODEL: 'controlled-model',
+    };
+    for (const enabledValue of [undefined, '', 'false', 'TRUE', '1']) {
+      const provider = createGrowthAIProviderFromEnvironment({
+        ...configuredEnvironment,
+        GROWTHAI_PROVIDER_ENABLED: enabledValue,
+      });
+      assert.equal(provider.configured, false);
+      await assert.rejects(provider.generateText({}), error => error.code === 'provider_unavailable');
+    }
+    assert.equal(createGrowthAIProviderFromEnvironment({
+      ...configuredEnvironment,
+      GROWTHAI_PROVIDER_ENABLED: 'true',
+    }).configured, true);
+  });
+
   test('uses a local mock only for the exact demo project', async () => {
     const mock = createGrowthAIProviderFromEnvironment({
       FUNCTIONS_EMULATOR: 'true',
@@ -67,24 +87,48 @@ describe('GrowthAI provider adapter', () => {
     const provider = createGrowthAIProviderFromFirebaseParameters({
       apiKeyParam: param('apiKey', 'server-secret'),
       baseUrlParam: param('baseUrl', 'https://provider.example/v1'),
+      enabledParam: param('enabled', true),
       modelParam: param('model', 'controlled-model'),
     });
 
     assert.deepEqual(reads, []);
     assert.equal(provider.configured, true);
-    assert.deepEqual(reads, ['apiKey', 'baseUrl', 'model']);
+    assert.deepEqual(reads, ['enabled', 'apiKey', 'baseUrl', 'model']);
   });
 
-  test('keeps missing Firebase provider configuration safely unavailable', async () => {
-    const emptyParam = { value: () => '' };
-    const provider = createGrowthAIProviderFromFirebaseParameters({
-      apiKeyParam: emptyParam,
-      baseUrlParam: emptyParam,
-      modelParam: emptyParam,
-    });
+  test('keeps disabled, malformed, and missing Firebase enablement safely unavailable with zero fetch calls', async () => {
+    let fetchCalls = 0;
+    const configuredParam = { value: () => 'configured' };
+    for (const enabledParam of [undefined, { value: () => false }, { value: () => 'true' }, { value: () => 1 }]) {
+      const provider = createGrowthAIProviderFromFirebaseParameters({
+        apiKeyParam: configuredParam,
+        baseUrlParam: configuredParam,
+        enabledParam,
+        fetchImpl: async () => { fetchCalls += 1; },
+        modelParam: configuredParam,
+      });
+      assert.equal(provider.configured, false);
+      await assert.rejects(provider.generateText({}), error => error.code === 'provider_unavailable');
+    }
+    assert.equal(fetchCalls, 0);
+  });
 
-    assert.equal(provider.configured, false);
-    await assert.rejects(provider.generateText({}), error => error.code === 'provider_unavailable');
+  test('keeps incomplete enabled Firebase provider configuration safely unavailable', async () => {
+    const emptyParam = { value: () => '' };
+    const populatedParam = { value: () => 'configured' };
+    const configurations = [
+      { apiKeyParam: emptyParam, baseUrlParam: populatedParam, modelParam: populatedParam },
+      { apiKeyParam: populatedParam, baseUrlParam: emptyParam, modelParam: populatedParam },
+      { apiKeyParam: populatedParam, baseUrlParam: populatedParam, modelParam: emptyParam },
+    ];
+    for (const configuration of configurations) {
+      const provider = createGrowthAIProviderFromFirebaseParameters({
+        ...configuration,
+        enabledParam: { value: () => true },
+      });
+      assert.equal(provider.configured, false);
+      await assert.rejects(provider.generateText({}), error => error.code === 'provider_unavailable');
+    }
   });
 
   test('preserves the exact local emulator mock without reading provider parameters', async () => {
@@ -96,6 +140,7 @@ describe('GrowthAI provider adapter', () => {
     const provider = createGrowthAIProviderFromFirebaseParameters({
       apiKeyParam: unavailableParam,
       baseUrlParam: unavailableParam,
+      enabledParam: unavailableParam,
       env: {
         FUNCTIONS_EMULATOR: 'true',
         GCLOUD_PROJECT: 'demo-servicesos-v1-smoke-local',
@@ -106,6 +151,33 @@ describe('GrowthAI provider adapter', () => {
 
     assert.equal(provider.configured, true);
     assert.match((await provider.generateText({ actionType: 'customer_response', userPrompt: '' })).text, /Local mock/);
+  });
+
+  test('explicitly enabled Firebase configuration preserves the Responses API request', async () => {
+    const calls = [];
+    const provider = createGrowthAIProviderFromFirebaseParameters({
+      apiKeyParam: { value: () => 'server-secret' },
+      baseUrlParam: { value: () => 'https://provider.example/v1' },
+      enabledParam: { value: () => true },
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return {
+          ok: true,
+          headers: { get: () => 'request-1' },
+          json: async () => ({
+            id: 'response-1',
+            model: 'controlled-model',
+            output: [{ type: 'message', content: [{ type: 'output_text', text: 'Generated text' }] }],
+          }),
+        };
+      },
+      modelParam: { value: () => 'controlled-model' },
+    });
+    const result = await provider.generateText({ systemInstruction: 'System', userPrompt: 'User' });
+    assert.equal(result.text, 'Generated text');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://provider.example/v1/responses');
+    assert.equal(JSON.parse(calls[0].options.body).model, 'controlled-model');
   });
 
   test('sends fixed server-controlled model settings and validates successful output', async () => {

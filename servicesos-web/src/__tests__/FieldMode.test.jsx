@@ -65,6 +65,8 @@ vi.mock('../contexts/AuthContext', () => ({
 }));
 
 vi.mock('../services/fieldPhotoService', () => ({
+  createFieldPhotoClientUploadId: vi.fn(() => 'client-upload-field-mode'),
+  FIELD_PHOTO_MAX_PER_BOOKING: 20,
   FIELD_PHOTO_PHASES: ['before', 'after'],
   listFieldPhotos: mocks.listFieldPhotos,
   loadFieldPhotoBlob: mocks.loadFieldPhotoBlob,
