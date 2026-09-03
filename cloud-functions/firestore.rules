@@ -931,7 +931,7 @@ service cloud.firestore {
 
         match /fieldPhotos/{photoId} {
           allow read: if isBookingManager(tenantId) || isAssignedFieldPhotoUser(tenantId, bookingId);
-          allow create: if isValidFieldPhotoMetadataCreate(tenantId, bookingId, photoId);
+          allow create: if false;
           allow update, delete: if false;
 
           match /marketingReview/{reviewId} {
@@ -944,6 +944,14 @@ service cloud.firestore {
                              isValidFieldPhotoMarketingReviewUpdate(tenantId, bookingId, photoId);
             allow delete: if false;
           }
+        }
+
+        match /fieldPhotoUploadControl/{controlId} {
+          allow read, write: if false;
+        }
+
+        match /fieldPhotoUploadSlots/{slotId} {
+          allow read, write: if false;
         }
       }
 

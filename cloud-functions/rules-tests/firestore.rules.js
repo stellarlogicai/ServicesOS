@@ -908,19 +908,26 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     await assertFails(updateDoc(profile, { status: 'inactive' }));
   });
 
-  test('active matching employee can create and read valid field photo metadata for a scheduled booking', async () => {
+  test('active matching employee can read server-created field photo metadata but cannot create it directly', async () => {
     const database = authenticatedDatabase('employee-a');
     const photo = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'photo-valid');
-
-    await assertSucceeds(setDoc(photo, fieldPhotoMetadata()));
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'photo-valid'), {
+        ...fieldPhotoMetadata(), uploadedAt: new Date('2026-07-13T12:00:00.000Z'),
+      });
+    });
     await assertSucceeds(getDoc(photo));
+    await assertFails(setDoc(
+      doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'photo-new'),
+      fieldPhotoMetadata({ photoId: 'photo-new' })
+    ));
   });
 
-  test('new field photo metadata requires a trimmed room label and validates an optional note', async () => {
+  test('direct field photo metadata creation is denied regardless of metadata shape', async () => {
     const database = authenticatedDatabase('employee-a');
     const collectionPath = ['tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos'];
 
-    await assertSucceeds(setDoc(
+    await assertFails(setDoc(
       doc(database, ...collectionPath, 'photo-with-note'),
       fieldPhotoMetadata({
         photoId: 'photo-with-note',
@@ -966,15 +973,21 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     )));
   });
 
-  test('active matching employee can create and read valid field photo metadata for a completed booking', async () => {
+  test('active matching employee can read server-created metadata for a completed booking but cannot create it', async () => {
     const database = authenticatedDatabase('employee-a');
     const photo = doc(database, 'tenants', TENANT_A, 'bookings', 'completed-field-booking', 'fieldPhotos', 'completed-photo');
 
-    await assertSucceeds(setDoc(photo, fieldPhotoMetadata({
-      bookingId: 'completed-field-booking',
-      photoId: 'completed-photo',
-    })));
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), 'tenants', TENANT_A, 'bookings', 'completed-field-booking', 'fieldPhotos', 'completed-photo'), {
+        ...fieldPhotoMetadata({ bookingId: 'completed-field-booking', photoId: 'completed-photo' }),
+        uploadedAt: new Date('2026-07-13T12:00:00.000Z'),
+      });
+    });
     await assertSucceeds(getDoc(photo));
+    await assertFails(setDoc(
+      doc(database, 'tenants', TENANT_A, 'bookings', 'completed-field-booking', 'fieldPhotos', 'completed-new'),
+      fieldPhotoMetadata({ bookingId: 'completed-field-booking', photoId: 'completed-new' })
+    ));
   });
 
   test('employee field photo metadata access rejects inactive or unsupported booking states', async () => {
@@ -1009,19 +1022,17 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     }
   });
 
-  test('tenant admin can create valid photo metadata without assignment and parent booking stays unchanged', async () => {
+  test('tenant admin cannot directly create photo metadata and parent booking stays unchanged', async () => {
     const database = authenticatedDatabase('admin-a');
     const booking = doc(database, 'tenants', TENANT_A, 'bookings', 'unassigned-booking');
     const before = (await getDoc(booking)).data();
     const photo = doc(database, 'tenants', TENANT_A, 'bookings', 'unassigned-booking', 'fieldPhotos', 'admin-photo');
 
-    await assertSucceeds(setDoc(photo, fieldPhotoMetadata({
+    await assertFails(setDoc(photo, fieldPhotoMetadata({
       bookingId: 'unassigned-booking',
       photoId: 'admin-photo',
       uploadedByUid: 'admin-a',
     })));
-    await assertSucceeds(getDoc(photo));
-
     const after = (await getDoc(booking)).data();
     assert.deepEqual(after, before);
     assert.equal(after.assignedEmployeeAuthUid, undefined);
@@ -1058,10 +1069,10 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     }
   });
 
-  test('active super-admin can create valid photo metadata within an explicit tenant path', async () => {
+  test('active super-admin cannot bypass the server gateway for photo metadata', async () => {
     const database = authenticatedDatabase('super-admin');
     const photo = doc(database, 'tenants', TENANT_A, 'bookings', 'unassigned-booking', 'fieldPhotos', 'super-photo');
-    await assertSucceeds(setDoc(photo, fieldPhotoMetadata({
+    await assertFails(setDoc(photo, fieldPhotoMetadata({
       bookingId: 'unassigned-booking',
       photoId: 'super-photo',
       uploadedByUid: 'super-admin',
@@ -1087,7 +1098,7 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       doc(authenticatedDatabase('employee-a'), 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'former-photo'),
       fieldPhotoMetadata({ photoId: 'former-photo' })
     ));
-    await assertSucceeds(setDoc(
+    await assertFails(setDoc(
       doc(authenticatedDatabase('employee-a-2'), 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'new-photo'),
       fieldPhotoMetadata({ photoId: 'new-photo', uploadedByUid: 'employee-a-2' })
     ));
@@ -1126,7 +1137,7 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     await assertFails(deleteDoc(photo));
   });
 
-  test('field photo metadata reads and creates remain tenant and role scoped', async () => {
+  test('field photo metadata reads remain tenant and role scoped while direct creates are denied', async () => {
     await testEnvironment.withSecurityRulesDisabled(async context => {
       const database = context.firestore();
       await setDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', 'fieldPhotos', 'photo-a'), {
@@ -1163,6 +1174,23 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     await assertSucceeds(getDoc(doc(adminA, ...photoAPath)));
     await assertFails(getDoc(doc(adminB, ...photoAPath)));
     await assertSucceeds(getDoc(doc(superAdmin, ...photoAPath)));
+  });
+
+  test('field photo quota control and slot records are server-only for every client role', async () => {
+    const paths = [
+      ['fieldPhotoUploadControl', 'current'],
+      ['fieldPhotoUploadSlots', 'slot-a'],
+    ];
+    for (const uid of ['employee-a', 'admin-a', 'super-admin', 'customer-a-auth']) {
+      const database = authenticatedDatabase(uid);
+      for (const [collectionName, documentId] of paths) {
+        const target = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', collectionName, documentId);
+        await assertFails(getDoc(target));
+        await assertFails(setDoc(target, { tenantId: TENANT_A, bookingId: 'field-booking', status: 'reserved' }));
+        await assertFails(updateDoc(target, { status: 'finalized' }));
+        await assertFails(deleteDoc(target));
+      }
+    }
   });
 
   test('customer cannot use employee Field Mode reads or writes', async () => {
