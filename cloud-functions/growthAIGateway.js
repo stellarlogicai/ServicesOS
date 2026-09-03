@@ -408,7 +408,9 @@ function buildPrompt({ request, tenant, sourceContext, brandProfile = {} }) {
   const business = businessContext(tenant, brandProfile);
   const systemInstruction = [
     'You draft private business content for ServicesOS.',
-    'Return only the requested draft text, with no analysis or metadata.',
+    request.actionType === 'marketing_post'
+      ? 'Return only one valid JSON object with exactly these keys: fullCaption, shortCaption, callToAction, hashtags. Do not use markdown fences or include analysis or metadata.'
+      : 'Return only the requested draft text, with no analysis or metadata.',
     'Do not claim that anything was sent, booked, paid, approved, or published.',
     'Do not include payment details, Stripe data, hidden notes, or unrelated customer information.',
     `Write for ${business.businessName}${business.serviceArea ? ` serving ${business.serviceArea}` : ''}.`,
@@ -530,7 +532,14 @@ function buildPrompt({ request, tenant, sourceContext, brandProfile = {} }) {
   }
 
   return {
-    systemInstruction,
+    systemInstruction: [
+      systemInstruction,
+      'fullCaption, shortCaption, callToAction, and hashtags must all be JSON strings.',
+      'fullCaption must be complete platform-appropriate copy. shortCaption must be meaningfully shorter. callToAction must be a real customer-facing action, never "Review before publishing."',
+      request.input.platform === 'website'
+        ? 'Hashtags may be an empty string for Website content.'
+        : 'Provide platform-appropriate hashtags.',
+    ].join(' '),
     userPrompt: [
       `Draft a ${request.input.platform || 'general'} marketing post of type ${request.input.postTypeId}.`,
       sourceContext.marketingServiceType ? `Verified completed-job service context: ${sourceContext.marketingServiceType}.` : '',
@@ -719,6 +728,35 @@ function draftContent(actionType, text) {
   };
 }
 
+function parseMarketingContent(providerText, requestInput) {
+  const trimmed = cleanString(providerText, 12_000);
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new GrowthAIGatewayError('The AI marketing draft was not valid structured output.', { code: 'invalid_provider_output', status: 502 });
+  }
+  const requiredKeys = ['fullCaption', 'shortCaption', 'callToAction', 'hashtags'];
+  if (!exactKeys(parsed, [...requiredKeys, 'imagePrompt'], requiredKeys)) {
+    throw new GrowthAIGatewayError('The AI marketing draft shape is invalid.', { code: 'invalid_provider_output', status: 502 });
+  }
+  const content = {
+    fullCaption: cleanString(parsed.fullCaption, 5_000),
+    shortCaption: cleanString(parsed.shortCaption, 1_000),
+    callToAction: cleanString(parsed.callToAction, 500),
+    hashtags: cleanString(parsed.hashtags, 1_000),
+    imagePrompt: '',
+  };
+  const hashtagsRequired = requestInput.platform !== 'website';
+  if (!content.fullCaption || !content.shortCaption || !content.callToAction ||
+      content.shortCaption.length >= content.fullCaption.length ||
+      /^review before publishing\.?$/i.test(content.callToAction) ||
+      (hashtagsRequired && !content.hashtags)) {
+    throw new GrowthAIGatewayError('The AI marketing draft values are incomplete or unsafe.', { code: 'invalid_provider_output', status: 502 });
+  }
+  return content;
+}
+
 function normalizeRecommendationList(value, fieldName) {
   if (!Array.isArray(value) || value.length > 8) {
     throw new GrowthAIGatewayError(`The AI estimate ${fieldName} are invalid.`, { code: 'invalid_provider_output', status: 502 });
@@ -790,7 +828,9 @@ async function finalizeGeneration({ admin, db, ledgerId, prompt, providerResult,
     : null;
   const content = estimateAssistance
     ? estimateAssistanceContent(estimateAssistance)
-    : draftContent(request.actionType, providerResult.text);
+    : request.actionType === 'marketing_post'
+      ? parseMarketingContent(providerResult.text, request.input)
+      : draftContent(request.actionType, providerResult.text);
   const recommendationRef = estimateAssistance
     ? db.collection('tenants').doc(request.tenantId).collection('growthAIEstimateRecommendations').doc(draftRef.id)
     : null;

@@ -56,6 +56,13 @@ function createLocalMockGrowthAIProvider() {
             possibleAddOns: [],
             complexityFlags: [],
           })
+        : actionType === 'marketing_post'
+        ? JSON.stringify({
+            fullCaption: 'Local mock marketing draft for human review. Nothing was published.',
+            shortCaption: 'Local mock marketing draft.',
+            callToAction: 'Request a quote.',
+            hashtags: '#LocalCleaning',
+          })
         : `Local mock ${actionType} draft for human review. Nothing was sent or published.`;
       return validateProviderOutput({
         text,

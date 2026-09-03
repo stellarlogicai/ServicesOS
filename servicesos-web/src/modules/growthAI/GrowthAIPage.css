@@ -1,11 +1,13 @@
 .growth-ai-page {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
   background: #f7f9fc;
   color: #172033;
 }
 
 .growth-ai-header {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
@@ -101,12 +103,14 @@
 
 .growth-ai-shell {
   display: grid;
-  width: min(1480px, 100%);
+  width: min(1680px, 100%);
+  height: 100%;
+  min-height: 0;
   box-sizing: border-box;
-  grid-template-columns: minmax(208px, 232px) minmax(0, 1fr);
-  gap: clamp(22px, 3vw, 42px);
+  grid-template-columns: minmax(190px, 212px) minmax(0, 1fr);
+  gap: clamp(18px, 2vw, 28px);
   margin: 0 auto;
-  padding: 24px clamp(18px, 3vw, 36px) 44px;
+  padding: 18px clamp(10px, 1.5vw, 24px) 24px;
 }
 
 .growth-ai-left-rail {
@@ -114,6 +118,8 @@
   align-content: start;
   gap: 16px;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .growth-ai-left-rail-brand {
@@ -221,7 +227,10 @@
 }
 
 .growth-ai-workspace-content {
+  display: flex;
   min-width: 0;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .growth-ai-section-nav button:focus-visible,
@@ -236,6 +245,7 @@
 .growth-ai-brand-link:focus-visible,
 .growth-ai-inline-action:focus-visible,
 .growth-ai-inline-actions button:focus-visible,
+.growth-ai-notice > button:focus-visible,
 .growth-ai-composer textarea:focus-visible,
 .growth-ai-composer button:focus-visible {
   outline: 3px solid #93c5fd;
@@ -243,17 +253,42 @@
 }
 
 .growth-ai-view {
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   outline: none;
 }
 
 .growth-ai-notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 14px;
   padding: 10px 13px;
   border: 1px solid;
   border-radius: 7px;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.growth-ai-notice > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-notice > button {
+  min-height: 28px;
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .growth-ai-notice-error {
@@ -270,14 +305,19 @@
 
 .growth-ai-home {
   display: grid;
+  height: 100%;
+  min-height: 0;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
-  gap: clamp(24px, 3vw, 38px);
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 280px);
+  gap: clamp(18px, 2vw, 28px);
+  align-items: stretch;
 }
 
 .growth-ai-home-main {
+  display: flex;
   min-width: 0;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .growth-ai-marketing-assets,
@@ -340,7 +380,8 @@
 }
 
 .growth-ai-welcome {
-  padding: 34px 0 26px;
+  flex: 0 0 auto;
+  padding: 18px 0 18px;
 }
 
 .growth-ai-greeting {
@@ -441,6 +482,8 @@
   position: sticky;
   top: 18px;
   min-width: 0;
+  max-height: calc(100vh - 42px);
+  overflow-y: auto;
 }
 
 .growth-ai-context-rail details {
@@ -547,14 +590,23 @@
 
 .growth-ai-conversation {
   position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
   padding-bottom: 10px;
 }
 
 .growth-ai-conversation-stream {
   display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   gap: 18px;
   padding: 22px 0 18px;
   border-top: 1px solid #dbe4ee;
+  scrollbar-gutter: stable;
 }
 
 .growth-ai-message {
@@ -615,6 +667,66 @@
 
 .growth-ai-inline-action {
   margin-top: 10px;
+}
+
+.growth-ai-saved-result {
+  display: grid;
+  gap: 13px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid #bfd2e6;
+  border-left: 4px solid #2563eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.growth-ai-saved-result-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.growth-ai-saved-result-heading > div {
+  min-width: 0;
+}
+
+.growth-ai-saved-result-heading h4 {
+  margin: 4px 0 0;
+  color: #172033;
+  font-size: 17px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.growth-ai-saved-result-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.growth-ai-saved-result-fields section {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.growth-ai-saved-result-fields strong {
+  color: #526278;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.growth-ai-saved-result-fields p {
+  margin: 6px 0 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .growth-ai-briefing {
@@ -734,9 +846,9 @@
 }
 
 .growth-ai-composer {
-  position: sticky;
-  bottom: 10px;
+  position: static;
   z-index: 4;
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
@@ -1325,7 +1437,14 @@
 }
 
 @media (max-width: 1080px) {
+  .growth-ai-page {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
   .growth-ai-shell {
+    height: auto;
     grid-template-columns: 1fr;
   }
 
@@ -1335,6 +1454,7 @@
     gap: 14px;
     padding-bottom: 16px;
     border-bottom: 1px solid #dbe4ee;
+    overflow: visible;
   }
 
   .growth-ai-left-rail-brand,
@@ -1353,11 +1473,26 @@
   }
 
   .growth-ai-home {
+    height: auto;
     grid-template-columns: 1fr;
+  }
+
+  .growth-ai-home-main {
+    display: block;
+  }
+
+  .growth-ai-conversation {
+    display: block;
+  }
+
+  .growth-ai-conversation-stream {
+    max-height: min(58vh, 620px);
   }
 
   .growth-ai-context-rail {
     position: static;
+    max-height: none;
+    overflow: visible;
   }
 
   .growth-ai-context-rail-content {
@@ -1382,6 +1517,7 @@
 
 @media (max-width: 600px) {
   .growth-ai-header {
+    display: flex;
     min-height: 64px;
     padding: 11px 14px;
   }
@@ -1529,6 +1665,21 @@
     max-width: 92%;
   }
 
+  .growth-ai-conversation-stream {
+    max-height: none;
+    overflow: visible;
+    overscroll-behavior: auto;
+    scrollbar-gutter: auto;
+  }
+
+  .growth-ai-saved-result-heading {
+    flex-direction: column;
+  }
+
+  .growth-ai-saved-result-fields {
+    grid-template-columns: 1fr;
+  }
+
   .growth-ai-workflow {
     padding: 14px;
   }
@@ -1555,6 +1706,7 @@
   }
 
   .growth-ai-composer {
+    position: sticky;
     bottom: 6px;
   }
 }

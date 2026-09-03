@@ -15,6 +15,8 @@ export default function GrowthAIWorkspaceShell({
   error,
   message,
   onNewConversation,
+  onDismissError,
+  onDismissMessage,
   onViewChange,
   workingOn,
 }) {
@@ -40,7 +42,7 @@ export default function GrowthAIWorkspaceShell({
 
   return (
     <main className="growth-ai-page">
-      <header className="growth-ai-header">
+      <header className="growth-ai-header" data-mobile-only="true">
         <div className="growth-ai-header-copy">
           <span className="growth-ai-header-mark" aria-hidden="true">✦</span>
           <div>
@@ -111,8 +113,14 @@ export default function GrowthAIWorkspaceShell({
         </aside>
 
         <div className="growth-ai-workspace-content">
-          {error ? <div className="growth-ai-notice growth-ai-notice-error" role="alert">{error}</div> : null}
-          {message ? <div className="growth-ai-notice growth-ai-notice-success" role="status">{message}</div> : null}
+          {error ? <div className="growth-ai-notice growth-ai-notice-error" role="alert">
+            <span>{error}</span>
+            <button type="button" aria-label="Dismiss error" onClick={onDismissError}>Close</button>
+          </div> : null}
+          {message ? <div className="growth-ai-notice growth-ai-notice-success" role="status">
+            <span>{message}</span>
+            <button type="button" aria-label="Dismiss success message" onClick={onDismissMessage}>Close</button>
+          </div> : null}
 
           <section
             id={`growth-ai-panel-${activeView}`}

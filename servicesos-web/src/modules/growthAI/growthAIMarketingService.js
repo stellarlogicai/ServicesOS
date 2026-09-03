@@ -100,7 +100,7 @@ export function buildMarketingContentPlan({ marketingServices = [], opportunitie
     {
       id: 'educational-tip',
       label: 'Educational cleaning tip',
-      description: 'Free deterministic draft. Add a specific topic before generating.',
+      description: 'Add a specific topic before generating.',
       postTypeId: 'educational_tip',
     },
   ];
@@ -109,7 +109,7 @@ export function buildMarketingContentPlan({ marketingServices = [], opportunitie
     plan.unshift({
       id: `service-spotlight-${service.id}`,
       label: `${service.label} spotlight`,
-      description: 'Free deterministic draft using a known tenant service.',
+      description: 'Uses a known tenant service.',
       postTypeId: 'service_spotlight',
       serviceType: service.id,
     });
