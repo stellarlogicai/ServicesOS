@@ -6,6 +6,13 @@ import { assembleBookingChecklist } from '../core/checklists/bookingChecklistAss
 const mocks = vi.hoisted(() => ({
   getJobs: vi.fn(),
   updateBookingFieldExecution: vi.fn(),
+  listEmployeeJobs: vi.fn(),
+  loadEmployeeJobPacket: vi.fn(),
+  startEmployeeJob: vi.fn(),
+  saveEmployeeChecklist: vi.fn(),
+  saveEmployeeNotes: vi.fn(),
+  completeEmployeeJob: vi.fn(),
+  isEmployeeFieldAccessLossError: vi.fn(),
   listFieldPhotos: vi.fn(),
   loadFieldPhotoBlob: vi.fn(),
   uploadFieldPhoto: vi.fn(),
@@ -15,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   tenantId: 'tenant-a',
   user: { uid: 'field-user-1' },
   role: 'admin',
+  employeeJobs: [],
 }));
 
 vi.mock('../core/scheduling/schedulingService', () => ({
@@ -25,13 +33,6 @@ vi.mock('../core/scheduling/schedulingService', () => ({
   },
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS: { not_paid: 'Not paid', paid_cash: 'Paid cash' },
   getJobs: mocks.getJobs,
-  getAssignedFieldJobs: (...args) => mocks.getJobs(...args),
-  bookingMatchesEmployeeFieldVisibility: (booking, employeeAuthUid) => (
-    booking?.assignedEmployeeAuthUid === employeeAuthUid &&
-    ['scheduled', 'completed'].includes(booking?.status) &&
-    booking?.isDeleted !== true &&
-    booking?.isArchived !== true
-  ),
   getRequiredChecklistCompletion: items => {
     const requiredItems = items.filter(item => item.required === true);
     const incompleteRequiredItems = requiredItems
@@ -47,6 +48,16 @@ vi.mock('../core/scheduling/schedulingService', () => ({
     };
   },
   updateBookingFieldExecution: mocks.updateBookingFieldExecution,
+}));
+
+vi.mock('../services/employeeFieldGatewayService', () => ({
+  listEmployeeJobs: mocks.listEmployeeJobs,
+  loadEmployeeJobPacket: mocks.loadEmployeeJobPacket,
+  startEmployeeJob: mocks.startEmployeeJob,
+  saveEmployeeChecklist: mocks.saveEmployeeChecklist,
+  saveEmployeeNotes: mocks.saveEmployeeNotes,
+  completeEmployeeJob: mocks.completeEmployeeJob,
+  isEmployeeFieldAccessLossError: mocks.isEmployeeFieldAccessLossError,
 }));
 
 vi.mock('../contexts/AuthContext', () => ({
@@ -130,6 +141,72 @@ function approvedChecklistWithRequiredOutcomes(requiredCount, completedCount = 0
   };
 }
 
+function employeeSummary(job) {
+  return {
+    id: job.id,
+    schedule: {
+      date: job.date || null,
+      startTime: job.startTime || null,
+      endTime: job.endTime || null,
+      scheduledAt: job.scheduledAt || null,
+    },
+    serviceType: job.serviceType || 'Service not specified',
+    customerName: job.customerName || 'Unknown customer',
+    address: job.address || 'Address not provided',
+    status: job.status || 'scheduled',
+    fieldStatus: job.fieldStatus || 'not_started',
+  };
+}
+
+function employeeDetail(job) {
+  const sourceItems = job.jobChecklistSnapshot?.ownerApproved === true
+    ? (job.fieldChecklist || job.jobChecklistSnapshot.items || [])
+    : [];
+  const items = sourceItems.map(item => ({
+    area: 'General',
+    fixtureOrSurface: '',
+    completionCriteria: '',
+    jobAidSteps: [],
+    warnings: [],
+    note: '',
+    condition: '',
+    required: false,
+    completed: false,
+    approvedMethodIds: [],
+    preferredMethodId: null,
+    ...item,
+  }));
+  return {
+    id: job.id,
+    schedule: employeeSummary(job).schedule,
+    serviceType: job.serviceType || 'Service not specified',
+    customer: {
+      name: job.customerName || 'Unknown customer',
+      phone: job.customerPhone || 'Phone not provided',
+    },
+    location: { address: job.address || 'Address not provided' },
+    status: job.status || 'scheduled',
+    fieldStatus: job.fieldStatus || 'not_started',
+    instructions: job.fieldInstructions || job.requestSnapshot?.accessInstructions || 'No field instructions provided',
+    checklist: {
+      ready: job.jobChecklistSnapshot?.ownerApproved === true,
+      items,
+      completed: items.filter(item => item.completed).length,
+      total: items.length,
+      notes: job.jobChecklistSnapshot?.notes || '',
+      warnings: job.jobChecklistSnapshot?.warnings || [],
+    },
+    fieldNotes: job.fieldNotes || '',
+    fieldIssue: job.fieldIssue || '',
+  };
+}
+
+function setEmployeeJobs(jobs) {
+  mocks.employeeJobs = jobs.map(employeeDetail);
+  mocks.listEmployeeJobs.mockResolvedValue(jobs.map(employeeSummary));
+  mocks.loadEmployeeJobPacket.mockImplementation(async bookingId => mocks.employeeJobs.find(job => job.id === bookingId));
+}
+
 function selectJobPacketTab(name, container = screen) {
   fireEvent.click(container.getByRole('tab', { name }));
 }
@@ -174,8 +251,16 @@ describe('FieldMode read-only field surface', () => {
     mocks.tenantId = 'tenant-a';
     mocks.user = { uid: 'field-user-1' };
     mocks.role = 'admin';
+    mocks.employeeJobs = [];
     mocks.getJobs.mockReset();
     mocks.updateBookingFieldExecution.mockReset();
+    mocks.listEmployeeJobs.mockReset();
+    mocks.loadEmployeeJobPacket.mockReset();
+    mocks.startEmployeeJob.mockReset();
+    mocks.saveEmployeeChecklist.mockReset();
+    mocks.saveEmployeeNotes.mockReset();
+    mocks.completeEmployeeJob.mockReset();
+    mocks.isEmployeeFieldAccessLossError.mockReset();
     mocks.listFieldPhotos.mockReset();
     mocks.loadFieldPhotoBlob.mockReset();
     mocks.uploadFieldPhoto.mockReset();
@@ -189,6 +274,43 @@ describe('FieldMode read-only field surface', () => {
     mocks.updateBookingFieldExecution.mockImplementation(async (_tenantId, bookingId, patch) => ({
       success: true,
       data: { id: bookingId, ...patch },
+    }));
+    setEmployeeJobs([]);
+    mocks.isEmployeeFieldAccessLossError.mockReturnValue(false);
+    mocks.startEmployeeJob.mockImplementation(async bookingId => ({
+      ...mocks.employeeJobs.find(job => job.id === bookingId),
+      fieldStatus: 'in_progress',
+    }));
+    mocks.saveEmployeeChecklist.mockImplementation(async (bookingId, checklist) => {
+      const job = mocks.employeeJobs.find(item => item.id === bookingId);
+      return {
+        ...job,
+        checklist: {
+          ...job.checklist,
+          items: job.checklist.items.map(item => ({
+            ...item,
+            completed: checklist.find(state => state.id === item.id)?.completed === true,
+          })),
+        },
+      };
+    });
+    mocks.saveEmployeeNotes.mockImplementation(async (bookingId, fieldNotes, fieldIssue) => ({
+      ...mocks.employeeJobs.find(job => job.id === bookingId),
+      fieldNotes,
+      fieldIssue,
+    }));
+    mocks.completeEmployeeJob.mockImplementation(async (bookingId, checklist, fieldNotes, fieldIssue) => ({
+      ...mocks.employeeJobs.find(job => job.id === bookingId),
+      fieldStatus: 'completed',
+      fieldNotes,
+      fieldIssue,
+      checklist: {
+        ...mocks.employeeJobs.find(job => job.id === bookingId).checklist,
+        items: mocks.employeeJobs.find(job => job.id === bookingId).checklist.items.map(item => ({
+          ...item,
+          completed: checklist.find(state => state.id === item.id)?.completed === true,
+        })),
+      },
     }));
     delete window.__SERVICESOS_ALLOW_MAPS_AUTO_OPEN__;
   });
@@ -364,7 +486,7 @@ describe('FieldMode read-only field surface', () => {
 
   it('hides payment and private owner notes while showing approved instructions to an employee', async () => {
     mocks.role = 'employee';
-    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+    setEmployeeJobs([{
       id: 'employee-job',
       assignedEmployeeAuthUid: 'field-user-1',
       status: 'scheduled',
@@ -379,7 +501,7 @@ describe('FieldMode read-only field surface', () => {
         accessInstructions: 'Use the side gate and lock it when leaving.',
         specialRequests: 'Use unscented products.',
       },
-    }] });
+    }]);
 
     render(<FieldMode />);
     await screen.findByText('Employee Field Customer');
@@ -387,7 +509,7 @@ describe('FieldMode read-only field surface', () => {
     expect(screen.queryByText('Not paid')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Employee Field Customer' });
+    const dialog = await screen.findByRole('dialog', { name: 'Employee Field Customer' });
     selectJobPacketTab('Info', within(dialog));
     expect(dialog).toHaveTextContent('Use the side gate and lock it when leaving.');
     expect(dialog).not.toHaveTextContent('Private owner safety review.');
@@ -401,22 +523,122 @@ describe('FieldMode read-only field surface', () => {
 
   it('shows employees only active jobs assigned by canonical Auth UID', async () => {
     mocks.role = 'employee';
-    mocks.getJobs.mockResolvedValue({ success: true, data: [
-      { id: 'assigned', customerName: 'Assigned Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1' },
-      { id: 'unassigned', customerName: 'Unassigned Customer', date: dateKey(today), status: 'scheduled' },
-      { id: 'cancelled', customerName: 'Cancelled Customer', date: dateKey(tomorrow), status: 'cancelled', assignedEmployeeAuthUid: 'field-user-1' },
-      { id: 'other', customerName: 'Other Employee Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeAuthUid: 'field-user-2' },
-      { id: 'legacy', customerName: 'Legacy Assignment Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeId: 'field-user-1' },
-    ] });
+    setEmployeeJobs([
+      { id: 'assigned', customerName: 'Assigned Customer', date: dateKey(today), status: 'scheduled' },
+    ]);
 
     render(<FieldMode />);
 
     expect(await screen.findByText('Assigned Customer')).toBeInTheDocument();
-    expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a', 'field-user-1');
+    expect(mocks.listEmployeeJobs).toHaveBeenCalledWith();
+    expect(mocks.getJobs).not.toHaveBeenCalled();
     expect(screen.queryByText('Unassigned Customer')).not.toBeInTheDocument();
     expect(screen.queryByText('Cancelled Customer')).not.toBeInTheDocument();
     expect(screen.queryByText('Other Employee Customer')).not.toBeInTheDocument();
     expect(screen.queryByText('Legacy Assignment Customer')).not.toBeInTheDocument();
+  });
+
+  it('loads safe detail before opening an employee job packet', async () => {
+    mocks.role = 'employee';
+    const job = { id: 'detail-job', customerName: 'Detail Customer', date: dateKey(today), status: 'scheduled' };
+    setEmployeeJobs([job]);
+    let resolveDetail;
+    mocks.loadEmployeeJobPacket.mockReturnValue(new Promise(resolve => { resolveDetail = resolve; }));
+
+    render(<FieldMode />);
+    await screen.findByText('Detail Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading job packet');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await act(async () => resolveDetail(employeeDetail(job)));
+    expect(await screen.findByRole('dialog', { name: 'Detail Customer' })).toBeInTheDocument();
+    expect(mocks.loadEmployeeJobPacket).toHaveBeenCalledWith('detail-job');
+  });
+
+  it('uses the safe checklist and employee execution gateways without sending structure', async () => {
+    mocks.role = 'employee';
+    setEmployeeJobs([{
+      id: 'safe-execution-job', customerName: 'Safe Execution Customer', date: dateKey(today), status: 'scheduled',
+      ...approvedChecklist,
+    }]);
+
+    render(<FieldMode />);
+    await screen.findByText('Safe Execution Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    const dialog = await screen.findByRole('dialog');
+    expandChecklistRoom('Service Areas', within(dialog));
+    expandChecklistRoom('Final Walkthrough', within(dialog));
+    expandChecklistRoom('Kitchen', within(dialog));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Review job scope before starting/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save checklist' }));
+
+    await waitFor(() => expect(mocks.saveEmployeeChecklist).toHaveBeenCalled());
+    expect(mocks.saveEmployeeChecklist.mock.calls[0]).toEqual([
+      'safe-execution-job',
+      expect.arrayContaining([expect.objectContaining({ id: 'walkthrough', completed: true })]),
+    ]);
+    expect(mocks.saveEmployeeChecklist.mock.calls[0][1].every(
+      item => Object.keys(item).sort().join(',') === 'completed,id',
+    )).toBe(true);
+    expect(mocks.updateBookingFieldExecution).not.toHaveBeenCalled();
+  });
+
+  it('routes employee start and notes through execution gateways while admin writes stay direct', async () => {
+    mocks.role = 'employee';
+    setEmployeeJobs([{
+      id: 'employee-actions', customerName: 'Employee Actions Customer', date: dateKey(today), status: 'scheduled',
+      ...approvedChecklist,
+    }]);
+
+    render(<FieldMode />);
+    await screen.findByText('Employee Actions Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Start Job' }));
+    await waitFor(() => expect(mocks.startEmployeeJob).toHaveBeenCalledWith('employee-actions'));
+
+    selectJobPacketTab('Info', within(dialog));
+    fireEvent.change(within(dialog).getByLabelText('Employee notes'), { target: { value: 'Finished entry.' } });
+    fireEvent.change(within(dialog).getByLabelText('Issue/problem to flag'), { target: { value: 'Loose latch.' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save notes' }));
+    await waitFor(() => expect(mocks.saveEmployeeNotes).toHaveBeenCalledWith(
+      'employee-actions', 'Finished entry.', 'Loose latch.',
+    ));
+    expect(mocks.updateBookingFieldExecution).not.toHaveBeenCalled();
+  });
+
+  it('keeps an unready employee checklist closed and blocks completion', async () => {
+    mocks.role = 'employee';
+    setEmployeeJobs([{
+      id: 'unready-job', customerName: 'Owner Review Customer', date: dateKey(today), status: 'scheduled',
+    }]);
+
+    render(<FieldMode />);
+    await screen.findByText('Owner Review Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Owner review is required before this checklist can be used.');
+    expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Mark Complete' })).toBeDisabled();
+  });
+
+  it('refuses an inaccessible employee packet and refreshes the safe list', async () => {
+    mocks.role = 'employee';
+    const job = { id: 'lost-job', customerName: 'Lost Access Customer', date: dateKey(today), status: 'scheduled' };
+    mocks.listEmployeeJobs
+      .mockResolvedValueOnce([employeeSummary(job)])
+      .mockResolvedValue([]);
+    mocks.loadEmployeeJobPacket.mockRejectedValue(new Error('job-unavailable'));
+    mocks.isEmployeeFieldAccessLossError.mockReturnValue(true);
+
+    render(<FieldMode />);
+    await screen.findByText('Lost Access Customer');
+    fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('no longer available');
+    await waitFor(() => expect(mocks.listEmployeeJobs).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('shows the shared photo upload controls to a tenant admin without assigning the booking', async () => {
@@ -437,13 +659,14 @@ describe('FieldMode read-only field surface', () => {
 
   it('keeps assigned employee photo controls and hides them from a direct customer render', async () => {
     mocks.role = 'employee';
-    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+    setEmployeeJobs([{
       id: 'employee-photo-job', customerName: 'Assigned Photo Customer', date: dateKey(today),
       status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1',
-    }] });
+    }]);
     const { unmount } = render(<FieldMode />);
     await screen.findByText('Assigned Photo Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    await screen.findByRole('dialog');
     selectJobPacketTab('Photos');
     expect(await screen.findByLabelText('Add before photo')).toBeInTheDocument();
     unmount();
@@ -861,12 +1084,15 @@ describe('FieldMode read-only field surface', () => {
 
   it('warns an employee before completion when no uploaded after evidence exists', async () => {
     mocks.role = 'employee';
-    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+    setEmployeeJobs([{
       id: 'complete-without-photo', customerName: 'Warning Customer', date: dateKey(today), paymentStatus: 'not_paid', status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1',
-    }] });
+      ...approvedChecklist,
+      fieldChecklist: approvedChecklist.jobChecklistSnapshot.items.map(item => ({ ...item, completed: true })),
+    }]);
     render(<FieldMode />);
     await screen.findByText('Warning Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    await screen.findByRole('dialog');
     selectJobPacketTab('Photos');
     await screen.findByText('No after photos added yet.');
     selectJobPacketTab('Checklist');
@@ -874,10 +1100,12 @@ describe('FieldMode read-only field surface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
 
     expect(screen.getByRole('alertdialog')).toHaveTextContent('No after photos have been uploaded. Complete the job anyway?');
-    expect(mocks.updateBookingFieldExecution).not.toHaveBeenCalled();
+    expect(mocks.completeEmployeeJob).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Complete anyway' }));
-    await waitFor(() => expect(mocks.updateBookingFieldExecution).toHaveBeenCalled());
-    expect(mocks.updateBookingFieldExecution.mock.calls[0][2]).not.toHaveProperty('paymentStatus');
+    await waitFor(() => expect(mocks.completeEmployeeJob).toHaveBeenCalled());
+    expect(mocks.completeEmployeeJob.mock.calls[0][1]).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'walkthrough', completed: true })]),
+    );
   });
 
   it('does not warn when persisted after evidence has loaded', async () => {
@@ -888,21 +1116,24 @@ describe('FieldMode read-only field surface', () => {
     mocks.loadFieldPhotoBlob.mockResolvedValue(new Blob(['photo'], { type: 'image/jpeg' }));
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:after-photo') });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
-    mocks.getJobs.mockResolvedValue({ success: true, data: [{
+    setEmployeeJobs([{
       id: 'complete-with-photo', customerName: 'Evidence Customer', date: dateKey(today), paymentStatus: 'not_paid', status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1',
-    }] });
+      ...approvedChecklist,
+      fieldChecklist: approvedChecklist.jobChecklistSnapshot.items.map(item => ({ ...item, completed: true })),
+    }]);
     render(<FieldMode />);
     await screen.findByText('Evidence Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    await screen.findByRole('dialog');
     selectJobPacketTab('Photos');
     await screen.findByAltText('after job evidence');
     selectJobPacketTab('Checklist');
 
     fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
 
-    await waitFor(() => expect(mocks.updateBookingFieldExecution).toHaveBeenCalled());
+    await waitFor(() => expect(mocks.completeEmployeeJob).toHaveBeenCalled());
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(mocks.updateBookingFieldExecution.mock.calls[0][2]).not.toHaveProperty('paymentStatus');
+    expect(mocks.updateBookingFieldExecution).not.toHaveBeenCalled();
   });
 
   it('requires an active tenant and performs no booking read without one', async () => {
@@ -929,28 +1160,26 @@ describe('FieldMode read-only field surface', () => {
   it('clears Tenant A field records and ignores its late response after switching to Tenant B', async () => {
     mocks.role = 'employee';
     let resolveTenantA;
-    mocks.getJobs.mockImplementation(tenantId => {
-      if (tenantId === 'tenant-a') {
+    mocks.listEmployeeJobs.mockImplementation(() => {
+      if (mocks.tenantId === 'tenant-a') {
         return new Promise(resolve => { resolveTenantA = resolve; });
       }
-      return Promise.resolve({
-        success: true,
-        data: [{ id: 'job-b', customerName: 'Tenant B Field Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1' }],
-      });
+      return Promise.resolve([employeeSummary({
+        id: 'job-b', customerName: 'Tenant B Field Customer', date: dateKey(today), status: 'scheduled',
+      })]);
     });
 
     const { rerender } = render(<FieldMode />);
-    await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledWith('tenant-a', 'field-user-1'));
+    await waitFor(() => expect(mocks.listEmployeeJobs).toHaveBeenCalledTimes(1));
 
     mocks.tenantId = 'tenant-b';
     rerender(<FieldMode />);
     expect(await screen.findByText('Tenant B Field Customer')).toBeInTheDocument();
 
     await act(async () => {
-      resolveTenantA({
-        success: true,
-        data: [{ id: 'job-a', customerName: 'Tenant A Field Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1' }],
-      });
+      resolveTenantA([employeeSummary({
+        id: 'job-a', customerName: 'Tenant A Field Customer', date: dateKey(today), status: 'scheduled',
+      })]);
     });
 
     expect(screen.queryByText('Tenant A Field Customer')).not.toBeInTheDocument();
@@ -959,19 +1188,24 @@ describe('FieldMode read-only field surface', () => {
 
   it('closes the selected employee job and reloads after assignment access is lost', async () => {
     mocks.role = 'employee';
-    mocks.getJobs
-      .mockResolvedValueOnce({ success: true, data: [{
-        id: 'reassigned-job', customerName: 'Reassigned Customer', date: dateKey(today), status: 'scheduled', assignedEmployeeAuthUid: 'field-user-1',
-      }] })
-      .mockResolvedValue({ success: true, data: [] });
-    mocks.updateBookingFieldExecution.mockResolvedValue({ success: false, message: 'permission-denied' });
+    const reassignedJob = {
+      id: 'reassigned-job', customerName: 'Reassigned Customer', date: dateKey(today), status: 'scheduled',
+    };
+    mocks.employeeJobs = [employeeDetail(reassignedJob)];
+    mocks.listEmployeeJobs
+      .mockResolvedValueOnce([employeeSummary(reassignedJob)])
+      .mockResolvedValue([]);
+    mocks.loadEmployeeJobPacket.mockResolvedValue(employeeDetail(reassignedJob));
+    mocks.startEmployeeJob.mockRejectedValue(new Error('job-unavailable'));
+    mocks.isEmployeeFieldAccessLossError.mockReturnValue(true);
 
     render(<FieldMode />);
     await screen.findByText('Reassigned Customer');
     fireEvent.click(screen.getByRole('button', { name: 'Open job packet' }));
+    await screen.findByRole('dialog');
     fireEvent.click(screen.getByRole('button', { name: 'Start Job' }));
 
-    await waitFor(() => expect(mocks.getJobs).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.listEmployeeJobs).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryByText('Reassigned Customer')).not.toBeInTheDocument();
   });

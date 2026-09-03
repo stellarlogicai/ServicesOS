@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BOOKING_FIELD_STATUS_LABELS,
-  bookingMatchesEmployeeFieldVisibility,
   getRequiredChecklistCompletion,
-  getAssignedFieldJobs,
   getJobs,
   updateBookingFieldExecution,
 } from '../core/scheduling/schedulingService';
@@ -12,6 +10,15 @@ import { FieldPhotoUploadPanel } from './FieldPhotoEvidence';
 import { FieldChecklistMethodGuidance } from './ChecklistMethodGuidance';
 import { isApprovedChecklistCurrent } from '../core/checklists/bookingChecklistAssembly';
 import { getEmployeeUsableCleaningRecordsByIds } from '../modules/cleaning/products/cleaningProductService';
+import {
+  completeEmployeeJob,
+  loadEmployeeJobPacket,
+  isEmployeeFieldAccessLossError,
+  listEmployeeJobs,
+  saveEmployeeChecklist,
+  saveEmployeeNotes,
+  startEmployeeJob,
+} from '../services/employeeFieldGatewayService';
 import {
   bookingAddress,
   bookingCustomerName,
@@ -33,18 +40,46 @@ function localDateKey(date) {
 }
 
 function bookingDateKey(booking = {}) {
-  if (booking.scheduledAt) {
-    const scheduled = typeof booking.scheduledAt?.toDate === 'function'
-      ? booking.scheduledAt.toDate()
-      : new Date(booking.scheduledAt);
+  const scheduledAt = booking.schedule?.scheduledAt ?? booking.scheduledAt;
+  if (scheduledAt) {
+    const scheduled = typeof scheduledAt?.toDate === 'function'
+      ? scheduledAt.toDate()
+      : new Date(scheduledAt);
     if (!Number.isNaN(scheduled.getTime())) return localDateKey(scheduled);
   }
-  const stored = booking.date || booking.appointmentDate;
+  const stored = booking.schedule?.date || booking.date || booking.appointmentDate;
   return typeof stored === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(stored) ? stored : '';
 }
 
 function sortValue(booking) {
-  return `${bookingDateKey(booking)}T${booking.startTime || booking.time || booking.appointmentTime || '23:59'}`;
+  return `${bookingDateKey(booking)}T${booking.schedule?.startTime || booking.startTime || booking.time || booking.appointmentTime || '23:59'}`;
+}
+
+function employeeSchedule(schedule = {}) {
+  if (schedule.scheduledAt) {
+    const value = new Date(schedule.scheduledAt);
+    if (!Number.isNaN(value.getTime())) {
+      return value.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+    }
+  }
+  if (!schedule.date) return 'Not scheduled';
+  const value = new Date(`${schedule.date}T00:00:00`);
+  const date = Number.isNaN(value.getTime())
+    ? schedule.date
+    : value.toLocaleDateString('en-US', { dateStyle: 'medium' });
+  return schedule.startTime ? `${date} at ${schedule.startTime}` : date;
+}
+
+function employeeSummaryFromPacket(job) {
+  return {
+    id: job.id,
+    schedule: job.schedule,
+    serviceType: job.serviceType,
+    customerName: job.customer.name,
+    address: job.location.address,
+    status: job.status,
+    fieldStatus: job.fieldStatus,
+  };
 }
 
 function shouldUseMapsFallback() {
@@ -117,19 +152,6 @@ function checklistRoom(area = '') {
   return String(area).split('/')[0].trim() || 'General';
 }
 
-function fieldSafeInstructions(booking = {}) {
-  const candidates = [
-    booking.fieldInstructions,
-    booking.technicianNotes,
-    booking.accessInstructions,
-    booking.requestSnapshot?.accessInstructions,
-    booking.requestSnapshot?.rawInput?.accessInstructions,
-    booking.requestSnapshot?.specialRequests,
-    booking.formData?.specialRequests,
-  ];
-  return candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'No field instructions provided';
-}
-
 const JOB_PACKET_TABS = Object.freeze([
   { id: 'info', label: 'Info' },
   { id: 'checklist', label: 'Checklist' },
@@ -152,16 +174,21 @@ function fieldModeDisplayLabel(value) {
 }
 
 function JobCard({ booking, employeeView, onOpen }) {
+  const schedule = employeeView ? employeeSchedule(booking.schedule) : bookingSchedule(booking);
+  const customerName = employeeView ? booking.customerName : bookingCustomerName(booking);
+  const serviceType = employeeView ? booking.serviceType : bookingServiceType(booking);
+  const address = employeeView ? booking.address : bookingAddress(booking);
+  const status = employeeView ? booking.status : bookingStatus(booking);
   return (
     <article className="v1-card field-job-card">
-      <div className="field-job-time">{bookingSchedule(booking)}</div>
+      <div className="field-job-time">{schedule}</div>
       <div className="field-job-summary">
-        <h2>{bookingCustomerName(booking)}</h2>
-        <p>{fieldModeDisplayLabel(bookingServiceType(booking))}</p>
+        <h2>{customerName}</h2>
+        <p>{fieldModeDisplayLabel(serviceType)}</p>
       </div>
-      <div className="field-job-address">{bookingAddress(booking)}</div>
+      <div className="field-job-address">{address}</div>
       <div className="field-job-badges">
-        <span className="v1-pill">{fieldModeDisplayLabel(bookingStatus(booking))}</span>
+        <span className="v1-pill">{fieldModeDisplayLabel(status)}</span>
         <span className="v1-pill">{fieldModeDisplayLabel(fieldStatusLabel(booking))}</span>
         {!employeeView && <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>}
       </div>
@@ -177,10 +204,12 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
   const [executionError, setExecutionError] = useState('');
   const [savingAction, setSavingAction] = useState('');
   const [fieldStatus, setFieldStatus] = useState(fieldStatusValue(booking));
-  const approvedChecklistCurrent = isApprovedChecklistCurrent(booking);
+  const approvedChecklistCurrent = employeeView
+    ? booking.checklist?.ready === true
+    : isApprovedChecklistCurrent(booking);
   const [checklist, setChecklist] = useState(() => normalizeChecklist(
-    approvedChecklistCurrent ? booking.fieldChecklist : [],
-    approvedChecklistCurrent ? booking.jobChecklistSnapshot : null
+    approvedChecklistCurrent ? (employeeView ? booking.checklist.items : booking.fieldChecklist) : [],
+    approvedChecklistCurrent && !employeeView ? booking.jobChecklistSnapshot : null
   ));
   const [expandedChecklistRooms, setExpandedChecklistRooms] = useState(() => {
     const firstRoom = checklist.length > 0 ? checklistRoom(checklist[0].area) : '';
@@ -191,8 +220,8 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
   const [photoEvidence, setPhotoEvidence] = useState({ loading: true, photos: [] });
   const [methodRecords, setMethodRecords] = useState([]);
   const [showCompletionWarning, setShowCompletionWarning] = useState(false);
-  const phone = bookingCustomerPhone(booking);
-  const address = bookingAddress(booking);
+  const phone = employeeView ? booking.customer.phone : bookingCustomerPhone(booking);
+  const address = employeeView ? booking.location.address : bookingAddress(booking);
   const hasPhone = phone !== 'Phone not provided';
   const hasAddress = address !== 'Address not provided';
   const mapsUrl = hasAddress ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : '';
@@ -225,11 +254,12 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
     return groups;
   }, []), [checklist]);
   const hasApprovedChecklist = approvedChecklistCurrent;
-  const approvedPacketNotes = typeof booking.jobChecklistSnapshot?.notes === 'string'
-    ? booking.jobChecklistSnapshot.notes.trim()
+  const approvedPacketNotes = typeof (employeeView ? booking.checklist?.notes : booking.jobChecklistSnapshot?.notes) === 'string'
+    ? (employeeView ? booking.checklist.notes : booking.jobChecklistSnapshot.notes).trim()
     : '';
-  const approvedPacketWarnings = Array.isArray(booking.jobChecklistSnapshot?.warnings)
-    ? booking.jobChecklistSnapshot.warnings.filter(warning => typeof warning === 'string' && warning.trim())
+  const packetWarnings = employeeView ? booking.checklist?.warnings : booking.jobChecklistSnapshot?.warnings;
+  const approvedPacketWarnings = Array.isArray(packetWarnings)
+    ? packetWarnings.filter(warning => typeof warning === 'string' && warning.trim())
     : [];
   const saving = Boolean(savingAction);
 
@@ -311,20 +341,28 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
 
     setSavingAction(actionName);
     try {
-      const result = await updateBookingFieldExecution(tenantId, booking.id, patch, { updatedBy: userId });
-      if (!result?.success) {
-        throw new Error(result?.message || 'field-update-failed');
+      let updatedBooking;
+      if (employeeView) {
+        const completionState = checklist.map(item => ({ id: item.id, completed: item.completed }));
+        if (actionName === 'start') updatedBooking = await startEmployeeJob(booking.id);
+        else if (actionName === 'checklist') updatedBooking = await saveEmployeeChecklist(booking.id, completionState);
+        else if (actionName === 'notes') updatedBooking = await saveEmployeeNotes(booking.id, fieldNotes, fieldIssue);
+        else updatedBooking = await completeEmployeeJob(booking.id, completionState, fieldNotes, fieldIssue);
+      } else {
+        const result = await updateBookingFieldExecution(tenantId, booking.id, patch, { updatedBy: userId });
+        if (!result?.success) throw new Error(result?.message || 'field-update-failed');
+        updatedBooking = { ...booking, ...result.data };
       }
-      const updatedBooking = { ...booking, ...result.data };
       onBookingPatch(updatedBooking);
-      if (result.data?.fieldStatus) setFieldStatus(result.data.fieldStatus);
-      if (Array.isArray(result.data?.fieldChecklist)) setChecklist(result.data.fieldChecklist);
-      if (Object.hasOwn(result.data || {}, 'fieldNotes')) setFieldNotes(result.data.fieldNotes);
-      if (Object.hasOwn(result.data || {}, 'fieldIssue')) setFieldIssue(result.data.fieldIssue);
+      if (updatedBooking.fieldStatus) setFieldStatus(updatedBooking.fieldStatus);
+      const updatedChecklist = employeeView ? updatedBooking.checklist?.items : updatedBooking.fieldChecklist;
+      if (Array.isArray(updatedChecklist)) setChecklist(updatedChecklist);
+      if (Object.hasOwn(updatedBooking, 'fieldNotes')) setFieldNotes(updatedBooking.fieldNotes);
+      if (Object.hasOwn(updatedBooking, 'fieldIssue')) setFieldIssue(updatedBooking.fieldIssue);
       setExecutionMessage(successMessage);
-    } catch {
+    } catch (error) {
       setExecutionError('Job update could not be saved. Please try again.');
-      if (employeeView) onAccessLost?.();
+      if (employeeView && isEmployeeFieldAccessLossError(error)) onAccessLost?.();
     } finally {
       setSavingAction('');
     }
@@ -364,7 +402,7 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
         <header className="field-job-packet-header">
           <div>
             <p>Field job packet</p>
-            <h2 id="field-job-title">{bookingCustomerName(booking)}</h2>
+            <h2 id="field-job-title">{employeeView ? booking.customer.name : bookingCustomerName(booking)}</h2>
           </div>
           <button className="v1-button v1-button-secondary" type="button" onClick={onClose}>Close</button>
         </header>
@@ -395,15 +433,15 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
           hidden={activeTab !== 'info'}
         >
           <div className="field-job-badges">
-            <span className="v1-pill">{fieldModeDisplayLabel(bookingStatus(booking))}</span>
+            <span className="v1-pill">{fieldModeDisplayLabel(employeeView ? booking.status : bookingStatus(booking))}</span>
             <span className="v1-pill">{fieldModeDisplayLabel(BOOKING_FIELD_STATUS_LABELS[fieldStatus] || BOOKING_FIELD_STATUS_LABELS.not_started)}</span>
             {!employeeView && <span className="v1-pill v1-pill-payment">{bookingPaymentStatus(booking)}</span>}
           </div>
           <dl className="field-job-details">
-            <dt>Schedule</dt><dd>{bookingSchedule(booking)}</dd>
-            <dt>Service</dt><dd>{fieldModeDisplayLabel(bookingServiceType(booking))}</dd>
+            <dt>Schedule</dt><dd>{employeeView ? employeeSchedule(booking.schedule) : bookingSchedule(booking)}</dd>
+            <dt>Service</dt><dd>{fieldModeDisplayLabel(employeeView ? booking.serviceType : bookingServiceType(booking))}</dd>
             <dt>Address</dt><dd>{address}</dd>
-            <dt>Notes</dt><dd>{employeeView ? fieldSafeInstructions(booking) : bookingNotes(booking)}</dd>
+            <dt>Notes</dt><dd>{employeeView ? booking.instructions : bookingNotes(booking)}</dd>
             <dt>Phone</dt><dd>{phone}</dd>
           </dl>
           <section className="field-job-actions" aria-labelledby="field-job-actions-title">
@@ -476,7 +514,7 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
               className="v1-button v1-button-secondary"
               type="button"
               onClick={markComplete}
-              disabled={saving || fieldStatus === 'completed' || incompleteRequiredItems.length > 0}
+              disabled={saving || fieldStatus === 'completed' || incompleteRequiredItems.length > 0 || (employeeView && !hasApprovedChecklist)}
             >
               {savingAction === 'complete' ? 'Completing...' : 'Mark Complete'}
             </button>
@@ -517,7 +555,9 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
           <div className="field-job-checklist">
             <h4>Checklist</h4>
             {!hasApprovedChecklist || checklist.length === 0 ? (
-              <p className="field-job-checklist-empty">No checklist assigned to this job.</p>
+              <p className="field-job-checklist-empty">
+                {employeeView ? 'Owner review is required before this checklist can be used.' : 'No checklist assigned to this job.'}
+              </p>
             ) : (
               <>
                 {(approvedPacketNotes || approvedPacketWarnings.length > 0) && (
@@ -651,6 +691,7 @@ function JobPacket({ booking, employeeView, fieldPhotoAccess, tenantId, userId, 
 export default function FieldMode() {
   const { isEmployee, isSuperAdmin, tenantId, user, userProfile } = useAuth();
   const loadRequestRef = useRef(0);
+  const openRequestRef = useRef(0);
   const employeeView = isEmployee?.() === true;
   const authenticatedUserId = user?.uid || '';
   const employeePhotoAccess = employeeView &&
@@ -672,11 +713,15 @@ export default function FieldMode() {
   const [bookingsTenantId, setBookingsTenantId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [packetMessage, setPacketMessage] = useState('');
+  const [openingBookingId, setOpeningBookingId] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
   const patchSelectedBooking = (updatedBooking) => {
     setSelectedBooking(updatedBooking);
     setBookings(current => current.map(booking => (
-      booking.id === updatedBooking.id ? { ...booking, ...updatedBooking } : booking
+      booking.id === updatedBooking.id
+        ? (employeeView ? employeeSummaryFromPacket(updatedBooking) : { ...booking, ...updatedBooking })
+        : booking
     )));
   };
 
@@ -694,12 +739,12 @@ export default function FieldMode() {
       return;
     }
     try {
-      const result = employeeView
-        ? await getAssignedFieldJobs(requestedTenantId, authenticatedUserId)
-        : await getJobs(requestedTenantId);
+      const result = employeeView ? await listEmployeeJobs() : await getJobs(requestedTenantId);
       if (!isCurrentRequest()) return;
-      if (!result.success) throw new Error('load-failed');
-      const nextBookings = Array.isArray(result.data) ? result.data : [];
+      if (!employeeView && !result.success) throw new Error('load-failed');
+      const nextBookings = employeeView
+        ? (Array.isArray(result) ? result : [])
+        : (Array.isArray(result.data) ? result.data : []);
       setBookings(nextBookings);
       setBookingsTenantId(requestedTenantId);
       if (employeeView) {
@@ -714,16 +759,19 @@ export default function FieldMode() {
     } finally {
       if (isCurrentRequest()) setLoading(false);
     }
-  }, [authenticatedUserId, employeeView, tenantId]);
+  }, [employeeView, tenantId]);
 
   useEffect(() => {
     let active = true;
     loadRequestRef.current += 1;
+    openRequestRef.current += 1;
     Promise.resolve().then(() => {
       if (!active) return;
       setBookings([]);
       setBookingsTenantId(null);
       setSelectedBooking(null);
+      setOpeningBookingId('');
+      setPacketMessage('');
       setError('');
       setLoading(true);
       load();
@@ -731,21 +779,46 @@ export default function FieldMode() {
     return () => {
       active = false;
       loadRequestRef.current += 1;
+      openRequestRef.current += 1;
     };
   }, [load]);
+
+  const openBooking = useCallback(async booking => {
+    setPacketMessage('');
+    if (!employeeView) {
+      setSelectedBooking(booking);
+      return;
+    }
+    const requestId = ++openRequestRef.current;
+    setSelectedBooking(null);
+    setOpeningBookingId(booking.id);
+    try {
+      const job = await loadEmployeeJobPacket(booking.id);
+      if (requestId !== openRequestRef.current) return;
+      setSelectedBooking(job);
+    } catch (error) {
+      if (requestId !== openRequestRef.current) return;
+      setSelectedBooking(null);
+      if (isEmployeeFieldAccessLossError(error)) {
+        setPacketMessage('That job is no longer available. Field Mode has been refreshed.');
+        load();
+      } else {
+        setPacketMessage('The job packet could not be loaded. Please try again.');
+      }
+    } finally {
+      if (requestId === openRequestRef.current) setOpeningBookingId('');
+    }
+  }, [employeeView, load]);
 
   const grouped = useMemo(() => {
     const today = localDateKey(new Date());
     const tenantBookings = bookingsTenantId === tenantId ? bookings : [];
-    const activeBookings = employeeView
-      ? tenantBookings.filter(booking => bookingMatchesEmployeeFieldVisibility(booking, authenticatedUserId))
-      : tenantBookings;
-    const ordered = [...activeBookings].filter(booking => bookingDateKey(booking) >= today).sort((a, b) => sortValue(a).localeCompare(sortValue(b)));
+    const ordered = [...tenantBookings].filter(booking => bookingDateKey(booking) >= today).sort((a, b) => sortValue(a).localeCompare(sortValue(b)));
     return {
       today: ordered.filter(booking => bookingDateKey(booking) === today),
       upcoming: ordered.filter(booking => bookingDateKey(booking) > today),
     };
-  }, [authenticatedUserId, bookings, bookingsTenantId, employeeView, tenantId]);
+  }, [bookings, bookingsTenantId, tenantId]);
 
   return (
     <section className="v1-page field-mode-page" aria-labelledby="field-mode-title">
@@ -754,16 +827,18 @@ export default function FieldMode() {
         <p className="v1-page-subtitle">Job packets for today and upcoming work. Use Bookings to change schedules or payment details.</p>
       </div>
       {loading && <p role="status">Loading Field Mode…</p>}
+      {openingBookingId && <p role="status">Loading job packet…</p>}
+      {packetMessage && <div className="v1-empty-state" role="alert">{packetMessage}</div>}
       {!loading && error && <div className="v1-empty-state" role="alert">{error}{tenantId && <><br /><button className="v1-button v1-button-secondary" type="button" onClick={load}>Try again</button></>}</div>}
       {!loading && !error && (
         <div className="field-mode-sections" style={{ display: 'grid', gap: 32 }}>
           <section aria-labelledby="today-jobs-title">
             <h2 id="today-jobs-title" style={{ fontSize: 16, fontWeight: 600, color: '#374151', marginBottom: 16 }}>Today</h2>
-            {grouped.today.length ? grouped.today.map((booking, index) => <JobCard booking={booking} employeeView={employeeView} onOpen={setSelectedBooking} key={booking.id || `today-${index}`} />) : <div className="v1-empty-state" style={{ padding: 48, textAlign: 'center', color: '#64748b' }}><div style={{ fontSize: 48, marginBottom: 16 }}>📅</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No jobs scheduled for today</div><div style={{ fontSize: 14 }}>Upcoming job packets will appear below.</div></div>}
+            {grouped.today.length ? grouped.today.map((booking, index) => <JobCard booking={booking} employeeView={employeeView} onOpen={openBooking} key={booking.id || `today-${index}`} />) : <div className="v1-empty-state" style={{ padding: 48, textAlign: 'center', color: '#64748b' }}><div style={{ fontSize: 48, marginBottom: 16 }}>📅</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No jobs scheduled for today</div><div style={{ fontSize: 14 }}>Upcoming job packets will appear below.</div></div>}
           </section>
           <section aria-labelledby="upcoming-jobs-title">
             <h2 id="upcoming-jobs-title" style={{ fontSize: 16, fontWeight: 600, color: '#374151', marginBottom: 16 }}>Upcoming</h2>
-            {grouped.upcoming.length ? grouped.upcoming.map((booking, index) => <JobCard booking={booking} employeeView={employeeView} onOpen={setSelectedBooking} key={booking.id || `upcoming-${index}`} />) : <div className="v1-empty-state" style={{ padding: 48, textAlign: 'center', color: '#64748b' }}><div style={{ fontSize: 48, marginBottom: 16 }}>📅</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No upcoming jobs scheduled</div><div style={{ fontSize: 14 }}>Approved bookings will show here for field reference.</div></div>}
+            {grouped.upcoming.length ? grouped.upcoming.map((booking, index) => <JobCard booking={booking} employeeView={employeeView} onOpen={openBooking} key={booking.id || `upcoming-${index}`} />) : <div className="v1-empty-state" style={{ padding: 48, textAlign: 'center', color: '#64748b' }}><div style={{ fontSize: 48, marginBottom: 16 }}>📅</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: '#475569' }}>No upcoming jobs scheduled</div><div style={{ fontSize: 14 }}>Approved bookings will show here for field reference.</div></div>}
           </section>
         </div>
       )}
@@ -778,6 +853,7 @@ export default function FieldMode() {
           onBookingPatch={patchSelectedBooking}
           onAccessLost={() => {
             setSelectedBooking(null);
+            setPacketMessage('That job is no longer available. Field Mode has been refreshed.');
             load();
           }}
           onClose={() => setSelectedBooking(null)}

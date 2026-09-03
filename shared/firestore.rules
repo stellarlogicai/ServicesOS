@@ -53,11 +53,6 @@ service cloud.firestore {
              employeeAuthUid in get(/databases/$(database)/documents/tenants/$(tenantId)).data.users;
     }
 
-    function isAssignedTenantFieldUser(tenantId) {
-      return isTenantFieldUser(tenantId) &&
-             resource.data.assignedEmployeeAuthUid == request.auth.uid;
-    }
-
     function isAssignedFieldPhotoUser(tenantId, bookingId) {
       return isTenantFieldUser(tenantId) &&
              exists(/databases/$(database)/documents/tenants/$(tenantId)/bookings/$(bookingId)) &&
@@ -83,26 +78,6 @@ service cloud.firestore {
     function isBookingManager(tenantId) {
       return tenantExists(tenantId) &&
              (isSuperAdmin() || isTenantAdmin(tenantId));
-    }
-
-    function fieldModeBookingUpdateKeysOnly() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        'fieldStatus',
-        'fieldStatusUpdatedAt',
-        'fieldStartedAt',
-        'fieldStartedByUid',
-        'fieldChecklist',
-        'fieldChecklistSummary',
-        'fieldNotes',
-        'fieldIssue',
-        'completedAt',
-        'completedByUid',
-        'updatedAt'
-      ]);
-    }
-
-    function isFieldModeBookingUpdate(tenantId) {
-      return isAssignedTenantFieldUser(tenantId) && fieldModeBookingUpdateKeysOnly();
     }
 
     function bookingManagerUpdateKeysOnly() {
@@ -922,10 +897,9 @@ service cloud.firestore {
       }
 
       match /bookings/{bookingId} {
-        allow read: if isBookingManager(tenantId) || isAssignedTenantFieldUser(tenantId);
+        allow read: if isBookingManager(tenantId);
         allow create: if isSafeBookingCreate(tenantId);
         allow update: if isSafeBookingManagerUpdate(tenantId) ||
-                         isFieldModeBookingUpdate(tenantId) ||
                          isSafeSuperAdminRouteUpdate(tenantId);
         allow delete: if isBookingManager(tenantId);
 

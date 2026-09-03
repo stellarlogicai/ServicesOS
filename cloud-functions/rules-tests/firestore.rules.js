@@ -791,21 +791,25 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     }));
   });
 
-  test('assigned active employee can read booking and use every approved execution field', async () => {
+  test('assigned active employee cannot directly read, query, or mutate full booking documents', async () => {
     const database = authenticatedDatabase('employee-a');
     const booking = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking');
 
-    await assertSucceeds(getDoc(booking));
-    await assertSucceeds(updateDoc(booking, {
-      fieldStatus: 'in_progress',
-      fieldStatusUpdatedAt: '2026-07-13T13:00:00.000Z',
-      fieldStartedAt: '2026-07-13T13:00:00.000Z',
-      fieldStartedByUid: 'employee-a',
-      fieldChecklist: [{ id: 'kitchen', label: 'Kitchen', completed: true }],
+    await assertFails(getDoc(booking));
+    await assertFails(getDocs(query(
+      collection(database, 'tenants', TENANT_A, 'bookings'),
+      where('assignedEmployeeAuthUid', '==', 'employee-a')
+    )));
+    await assertFails(updateDoc(booking, { fieldStatus: 'in_progress' }));
+    await assertFails(updateDoc(booking, {
+      fieldChecklist: [{ id: 'kitchen', completed: true }],
       fieldChecklistSummary: { completed: 1, total: 1 },
-      fieldNotes: 'Kitchen completed.',
-      fieldIssue: 'Back door lock sticks.',
-      updatedAt: '2026-07-13T13:00:00.000Z'
+    }));
+    await assertFails(updateDoc(booking, { fieldNotes: 'Kitchen completed.', fieldIssue: 'Loose latch.' }));
+    await assertFails(updateDoc(booking, {
+      fieldStatus: 'completed',
+      completedAt: '2026-07-13T13:00:00.000Z',
+      completedByUid: 'employee-a',
     }));
   });
 
@@ -815,13 +819,13 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     await assertFails(getDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'other-assigned-booking')));
   });
 
-  test('reassignment revokes the former employee and grants the new employee', async () => {
+  test('booking reassignment never grants either employee direct booking access', async () => {
     const admin = authenticatedDatabase('admin-a');
     const booking = doc(admin, 'tenants', TENANT_A, 'bookings', 'field-booking');
     await assertSucceeds(updateDoc(booking, { assignedEmployeeAuthUid: 'employee-a-2' }));
 
     await assertFails(getDoc(doc(authenticatedDatabase('employee-a'), 'tenants', TENANT_A, 'bookings', 'field-booking')));
-    await assertSucceeds(getDoc(doc(authenticatedDatabase('employee-a-2'), 'tenants', TENANT_A, 'bookings', 'field-booking')));
+    await assertFails(getDoc(doc(authenticatedDatabase('employee-a-2'), 'tenants', TENANT_A, 'bookings', 'field-booking')));
   });
 
   test('invalid, tenantless, cross-tenant, unknown-role, and missing employee profiles cannot read Field Mode bookings', async () => {
