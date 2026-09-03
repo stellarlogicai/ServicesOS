@@ -22,6 +22,12 @@ const {
 const EMULATOR_CONNECTION_KEY = "__SERVICESOS_EMPLOYEE_FIREBASE_EMULATORS_CONNECTED__";
 const runtimeConfig = resolveEmployeeFirebaseConfig(readExpoPublicFirebaseEnvironment());
 
+export const employeeFirebaseRuntime = Object.freeze({
+  mode: runtimeConfig.mode,
+  projectId: runtimeConfig.firebaseConfig.projectId,
+  emulator: runtimeConfig.emulator ? Object.freeze({ ...runtimeConfig.emulator }) : null,
+});
+
 // Reuse the default app during Expo Fast Refresh.
 const app = getApps().length > 0 ? getApp() : initializeApp(runtimeConfig.firebaseConfig);
 

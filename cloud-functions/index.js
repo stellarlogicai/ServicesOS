@@ -22,6 +22,7 @@ const {
 } = require('./growthAIGateway');
 const { createGrowthAIConversationRouterHandler } = require('./growthAIConversationRouter');
 const { createGrowthAIProviderFromFirebaseParameters } = require('./growthAIProvider');
+const { createEmployeeSessionGatewayHandler } = require('./employeeSessionGateway');
 
 const growthAIProviderApiKey = defineSecret('GROWTHAI_PROVIDER_API_KEY');
 const growthAIProviderBaseUrl = defineString('GROWTHAI_PROVIDER_BASE_URL');
@@ -36,6 +37,12 @@ function createConfiguredGrowthAIProvider() {
 }
 
 admin.initializeApp();
+
+// Keep this gateway in the bounded-Function inventory when reconciling cost guardrails.
+exports.employeeSessionGateway = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+}).https.onRequest(createEmployeeSessionGatewayHandler({ admin }));
 
 exports.generateGrowthAIContent = functions.runWith({
   secrets: [growthAIProviderApiKey],

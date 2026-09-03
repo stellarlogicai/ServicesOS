@@ -7,6 +7,7 @@
  */
 
 import React, { useContext } from "react";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { AuthContext } from "../context/AuthContext";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -44,7 +45,30 @@ function EmployeeTabs() {
 }
 
 export default function AppNavigator() {
-  const { user } = useContext(AuthContext);
+  const { employee, loading } = useContext(AuthContext);
 
-  return user ? <EmployeeTabs /> : <LoginScreen />;
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer} accessibilityRole="progressbar">
+        <ActivityIndicator size="large" />
+        <Text style={styles.loadingText}>Verifying employee account...</Text>
+      </View>
+    );
+  }
+
+  return employee ? <EmployeeTabs /> : <LoginScreen />;
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: "#334155",
+  },
+});

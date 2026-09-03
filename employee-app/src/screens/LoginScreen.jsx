@@ -7,11 +7,11 @@
  */
 
 import React, { useContext, useState } from "react";
-import { View, TextInput, Button, Text, StyleSheet, Alert } from "react-native";
+import { View, TextInput, Button, Text, StyleSheet } from "react-native";
 import { AuthContext } from "../context/AuthContext";
 
 export default function LoginScreen() {
-  const { login } = useContext(AuthContext);
+  const { accessError, login, loading: authLoading } = useContext(AuthContext);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -26,9 +26,10 @@ export default function LoginScreen() {
     try {
       setError("");
       setLoading(true);
-      await login(email.trim(), password);
-    } catch (err) {
-      setError("Invalid login. Please try again.");
+      const result = await login(email.trim(), password);
+      if (!result.success) setError(result.error);
+    } catch {
+      setError("ServicesOS could not sign you in. Try again.");
     } finally {
       setLoading(false);
     }
@@ -55,12 +56,14 @@ export default function LoginScreen() {
         style={styles.input}
       />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error || accessError ? (
+        <Text style={styles.error}>{error || accessError}</Text>
+      ) : null}
 
       <Button 
         title={loading ? "Logging in..." : "Login"} 
         onPress={handleLogin}
-        disabled={loading}
+        disabled={loading || authLoading}
       />
     </View>
   );
