@@ -199,7 +199,122 @@ If a real commercial job is available, use it as a controlled beta validation ca
 
 ---
 
-# 5. V1 / V2 boundary locked by this decision
+
+# 5. Locked Job Scope + Add-On Request is approved for V1
+
+## Problem this solves
+
+A real wife/business workflow exposed a common service-business problem: a customer may change expectations after the job begins, request work that was not part of the confirmed booking, or keep adding tasks without accounting for price or the scheduled service window.
+
+V1 should protect the employee, business, and customer with a simple locked-scope workflow instead of relying on memory or verbal disagreement.
+
+## Locked scope
+
+When a booking is confirmed for field execution, ServicesOS should preserve the agreed job scope using the existing canonical booking/checklist/pricing structures wherever possible.
+
+The employee must be able to see what is included in today's work.
+
+The original confirmed scope must not silently expand because a customer asks for something extra after work begins.
+
+Do not create a second service catalog, add-on catalog, pricing table, or duplicate source of truth.
+
+## Existing add-ons remain the source of truth
+
+When the customer requests extra work and that work already exists in the business's canonical service/add-on catalog:
+
+- the employee selects the existing add-on;
+- ServicesOS reads the existing configured add-on name and price;
+- use existing configured duration/time data if the canonical add-on model already stores it;
+- the employee does not invent or re-enter a duplicate price;
+- the employee does not create a duplicate add-on record.
+
+If the requested work does not exist in the catalog, record it as a custom/other request and route it to the owner or another authorized pricing role rather than guessing a price.
+
+## Optional last-minute scope-change fee
+
+V1 may include one simple business-configurable surcharge for customer-requested work added after the agreed scope is locked.
+
+Business Settings should support the equivalent of:
+
+```text
+Last-Minute Scope Change / Add-On Fee
+
+Enabled: Yes / No
+Fee: configured flat amount
+
+Applies when:
+customer requests additional work after the job has started
+```
+
+This is intentionally a small V1 setting, not the generalized V2 policy/fee engine.
+
+Rules:
+
+- use the canonical add-on price from the existing service/add-on catalog;
+- add the configured last-minute scope-change fee only when the business has enabled it;
+- show the customer the add-on price, the surcharge, and the additional total before the extra work begins;
+- record customer approval;
+- do not hide or silently apply the surcharge;
+- do not create a duplicate add-on or pricing record to hold the surcharge.
+
+## Scheduled-window protection
+
+Approval of an additional charge does not automatically mean there is enough time to perform the work during the current visit.
+
+ServicesOS should compare the requested add-on's known/estimated duration, where available, with the current scheduled window / remaining job time.
+
+The V1 workflow should support a clear decision:
+
+- complete during the current visit if the authorized user determines it fits;
+- extend the current appointment only when permitted/approved;
+- schedule the add-on for a future visit;
+- decline the add-on.
+
+If it cannot reasonably be completed in the allotted window, the employee must have a clear **Future Visit Required** path instead of being pressured to overrun the job.
+
+## Approval and audit trail
+
+The original booking scope remains preserved.
+
+An approved extra-work record should reference the existing canonical add-on where one exists and record only the job-specific event, such as:
+
+- booking/job reference;
+- canonical add-on/service reference;
+- request time;
+- requested-by context;
+- applicable configured price;
+- applicable last-minute fee;
+- customer approval;
+- owner/authorized approval where required;
+- same-day vs future-visit disposition;
+- completion/scheduling outcome.
+
+Reuse any existing canonical booking-price snapshot mechanism rather than inventing a parallel historical pricing system.
+
+## Employee-facing V1 rule
+
+A simple employee-facing principle should guide the workflow:
+
+> Not on today's scope? Submit it as an extra-work request instead of silently adding it to the job.
+
+## V1 boundaries
+
+Do not turn this slice into:
+
+- a second add-on catalog;
+- duplicate pricing configuration;
+- AI-generated pricing;
+- automatic negotiation;
+- a generalized policy engine;
+- percentage/capped/grace-period surcharge rules;
+- advanced change-order contract automation;
+- autonomous schedule extension.
+
+Those remain V2 where applicable.
+
+---
+
+# 6. V1 / V2 boundary locked by this decision
 
 ## V1
 
@@ -208,6 +323,11 @@ If a real commercial job is available, use it as a controlled beta validation ca
 - Customer-visible cancellation/deposit policy before agreement/booking.
 - Basic Residential / Commercial Create Booking split.
 - Bounded Commercial intake normalized into the existing ServicesOS core.
+- Locked Job Scope + Add-On Request workflow.
+- Existing canonical add-on pricing reused as the single source of truth.
+- Optional simple flat last-minute scope-change/add-on fee in Business Settings.
+- Customer approval before extra work begins.
+- Same-day vs Future Visit Required handling based on the scheduled window.
 
 ## V2
 
@@ -219,10 +339,11 @@ If a real commercial job is available, use it as a controlled beta validation ca
 - Advanced commercial contract terms.
 - Custom commercial invoice/payment-term automation.
 - Broader policy automation.
+- Advanced/percentage/capped last-minute scope-change fee rules.
 
 ---
 
-# 6. Priority protection
+# 7. Priority protection
 
 These additions do not change the immediate build priority.
 
@@ -236,6 +357,8 @@ Owner / Business Onboarding
 SaaS agreement update + enforcement
         ↓
 Create Booking Residential / Commercial bounded V1 slice
+        ↓
+Locked Job Scope + Add-On Request bounded V1 slice
         ↓
 Payments / Stripe stabilization
         ↓
