@@ -26,6 +26,8 @@ This addendum should be folded into `SERVICESOS_V1_FINISH_BOARD.md` at the next 
 - [ ] Require successful agreement/signature persistence before full tenant onboarding completes.
 - [ ] Test interrupted onboarding/resume behavior around agreement step.
 - [ ] Test that a later agreement update does not alter an already-signed historical record.
+- [ ] Add/review service-agreement wording that defines included scope, excluded/unincluded work, add-on/change requests, added price/time, and possible future-visit handling.
+- [ ] Ensure the agreement and locked booking scope can be correlated so the business can show what the customer accepted.
 
 ## Customer policy disclosure
 
@@ -101,6 +103,10 @@ If those are required, stop and move the advanced requirement to V2.
 
 ## Scope lock
 
+- [ ] Treat the V1 capability as **Job Scope Control** with an **Add-On / Change Request** workflow.
+- [ ] Customer-facing service agreement/booking acceptance clearly lists the purchased scope before field work begins.
+- [ ] Show service type, included tasks, excluded/not-included-unless-added tasks, agreed price, estimated duration, scheduled window, payment terms, cancellation policy, and add-on/extra-work policy where supported by canonical data.
+- [ ] Preserve/reference the applicable signed/accepted service-agreement version and customer acceptance timestamp.
 - [ ] Preserve the confirmed job scope using the existing canonical booking/checklist/pricing structures.
 - [ ] Employee can clearly see what is included in today's job.
 - [ ] Customer-requested extra work does not silently alter the original agreed scope.
@@ -158,6 +164,9 @@ If those are required, stop and move the advanced requirement to V2.
 
 ## Acceptance
 
+- [ ] Signed/accepted service scope establishes what the customer purchased before the job starts.
+- [ ] Customer-facing agreement includes clear extra-work/scope-change language and same-day availability limitation.
+- [ ] Historical signed scope is not silently rewritten by later template/catalog changes.
 - [ ] Existing add-on catalog remains the only catalog/pricing source.
 - [ ] No parallel pricing system is introduced.
 - [ ] No extra work is silently folded into the original scope.
