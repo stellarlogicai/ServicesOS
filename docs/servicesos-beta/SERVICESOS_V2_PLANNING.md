@@ -39,6 +39,8 @@ V1 may keep the existing simple disclosed cancellation/deposit rule.
 
 The generalized policy engine belongs to V2.
 
+V1 is separately allowed one bounded flat last-minute scope-change/add-on surcharge in Business Settings for extra work requested after a job has started. That V1 setting must reuse the canonical add-on catalog, be disclosed before approval, and must not grow into the generalized fee engine described here.
+
 ## V2 customer-policy configuration
 
 Business Settings may eventually expose a customer-policy configuration surface such as:
@@ -155,7 +157,8 @@ Examples:
 - no-show policy;
 - payment terms;
 - late-payment policy;
-- commercial-specific defaults.
+- commercial-specific defaults;
+- advanced last-minute scope-change/add-on surcharge rules beyond the bounded V1 flat-fee setting.
 
 Configuration should be:
 
@@ -181,7 +184,8 @@ The following must not move the ServicesOS V1 finish line:
 - policy caps/grace-period automation;
 - advanced commercial contract management;
 - custom commercial invoice-term automation;
-- proposal automation beyond the bounded V1 booking workflow.
+- proposal automation beyond the bounded V1 booking workflow;
+- percentage/capped/grace-period last-minute scope-change fee logic beyond the simple V1 flat surcharge.
 
 They are preserved here specifically so they can be built later without distracting from ServicesOS V1.
 
