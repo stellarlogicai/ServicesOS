@@ -106,8 +106,15 @@ describe('employeeFieldGatewayService', () => {
   });
 
   it('lists safe summaries with an authenticated exact request', async () => {
-    mockResponse({ success: true, jobs: [{ ...safeSummary, agreedPrice: 300, assignedEmployeeAuthUid: 'uid' }] });
-    await expect(listEmployeeJobs()).resolves.toEqual([safeSummary]);
+    mockResponse({
+      success: true,
+      todayDate: '2026-09-03',
+      jobs: [{ ...safeSummary, agreedPrice: 300, assignedEmployeeAuthUid: 'uid' }],
+    });
+    await expect(listEmployeeJobs()).resolves.toEqual({
+      todayDate: '2026-09-03',
+      jobs: [safeSummary],
+    });
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringMatching(/employeeJobPacketGateway$/),
       expect.objectContaining({
@@ -116,6 +123,14 @@ describe('employeeFieldGatewayService', () => {
       }),
     );
     expect(lastRequestBody()).toEqual({ action: 'list' });
+  });
+
+  it('fails closed when the authoritative tenant date is missing or malformed', async () => {
+    mockResponse({ success: true, jobs: [safeSummary] });
+    await expect(listEmployeeJobs()).rejects.toThrow('invalid employee job response');
+
+    mockResponse({ success: true, todayDate: 'September 3', jobs: [safeSummary] });
+    await expect(listEmployeeJobs()).rejects.toThrow('invalid employee job response');
   });
 
   it('gets and recursively allowlists the employee packet', async () => {

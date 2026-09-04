@@ -710,6 +710,7 @@ export default function FieldMode() {
     authenticatedUserId === userProfile?.uid;
   const fieldPhotoAccess = employeePhotoAccess || tenantAdminPhotoAccess || superAdminPhotoAccess;
   const [bookings, setBookings] = useState([]);
+  const [employeeTodayDate, setEmployeeTodayDate] = useState('');
   const [bookingsTenantId, setBookingsTenantId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -734,6 +735,7 @@ export default function FieldMode() {
     setError('');
     if (!tenantId) {
       setBookings([]);
+      setEmployeeTodayDate('');
       setError('Field Mode could not be loaded. Your tenant is unavailable.');
       setLoading(false);
       return;
@@ -743,9 +745,10 @@ export default function FieldMode() {
       if (!isCurrentRequest()) return;
       if (!employeeView && !result.success) throw new Error('load-failed');
       const nextBookings = employeeView
-        ? (Array.isArray(result) ? result : [])
+        ? (Array.isArray(result.jobs) ? result.jobs : [])
         : (Array.isArray(result.data) ? result.data : []);
       setBookings(nextBookings);
+      setEmployeeTodayDate(employeeView ? result.todayDate : '');
       setBookingsTenantId(requestedTenantId);
       if (employeeView) {
         setSelectedBooking(current => current && nextBookings.some(booking => booking.id === current.id)
@@ -755,6 +758,7 @@ export default function FieldMode() {
     } catch {
       if (!isCurrentRequest()) return;
       setBookings([]);
+      setEmployeeTodayDate('');
       setError('Field Mode could not be loaded. Please try again.');
     } finally {
       if (isCurrentRequest()) setLoading(false);
@@ -768,6 +772,7 @@ export default function FieldMode() {
     Promise.resolve().then(() => {
       if (!active) return;
       setBookings([]);
+      setEmployeeTodayDate('');
       setBookingsTenantId(null);
       setSelectedBooking(null);
       setOpeningBookingId('');
@@ -811,14 +816,15 @@ export default function FieldMode() {
   }, [employeeView, load]);
 
   const grouped = useMemo(() => {
-    const today = localDateKey(new Date());
+    const today = employeeView ? employeeTodayDate : localDateKey(new Date());
     const tenantBookings = bookingsTenantId === tenantId ? bookings : [];
+    if (!today) return { today: [], upcoming: [] };
     const ordered = [...tenantBookings].filter(booking => bookingDateKey(booking) >= today).sort((a, b) => sortValue(a).localeCompare(sortValue(b)));
     return {
       today: ordered.filter(booking => bookingDateKey(booking) === today),
       upcoming: ordered.filter(booking => bookingDateKey(booking) > today),
     };
-  }, [bookings, bookingsTenantId, tenantId]);
+  }, [bookings, bookingsTenantId, employeeTodayDate, employeeView, tenantId]);
 
   return (
     <section className="v1-page field-mode-page" aria-labelledby="field-mode-title">

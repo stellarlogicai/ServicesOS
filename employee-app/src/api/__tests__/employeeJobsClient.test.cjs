@@ -104,11 +104,11 @@ test("LIST sends a Bearer token and only action:list", async () => {
   const client = createClient({
     fetchImpl: async (...args) => {
       calls.push(args);
-      return response({ success: true, schemaVersion: 1, jobs: [summary()] });
+      return response({ success: true, schemaVersion: 1, todayDate: "2026-09-03", jobs: [summary()] });
     },
   });
 
-  assert.deepEqual(await client.listEmployeeJobs(), [summary()]);
+  assert.deepEqual(await client.listEmployeeJobs(), { todayDate: "2026-09-03", jobs: [summary()] });
   assert.equal(calls[0][0], "https://us-central1-example-servicesos.cloudfunctions.net/employeeJobPacketGateway");
   assert.equal(calls[0][1].headers.Authorization, "Bearer firebase-token");
   assert.deepEqual(JSON.parse(calls[0][1].body), { action: "list" });
@@ -140,7 +140,7 @@ test("emulator URL derives from validated runtime configuration", async () => {
     },
     fetchImpl: async url => {
       urls.push(url);
-      return response({ success: true, schemaVersion: 1, jobs: [] });
+      return response({ success: true, schemaVersion: 1, todayDate: "2026-09-03", jobs: [] });
     },
   });
   await client.listEmployeeJobs();
@@ -194,17 +194,18 @@ test("unready checklist cannot place stale task content in mobile state", () => 
 
 test("malformed and oversized payloads fail safely", () => {
   assert.throws(
-    () => validateEmployeeJobListPayload({ success: true, schemaVersion: 1, jobs: [summary({ id: "" })] }),
+    () => validateEmployeeJobListPayload({ success: true, schemaVersion: 1, todayDate: "2026-09-03", jobs: [summary({ id: "" })] }),
     error => error.code === "invalid_request"
   );
   assert.throws(
-    () => validateEmployeeJobListPayload({ success: true, schemaVersion: 1, jobs: "not-an-array" }),
+    () => validateEmployeeJobListPayload({ success: true, schemaVersion: 1, todayDate: "2026-09-03", jobs: "not-an-array" }),
     error => error.code === "job_service_unavailable"
   );
   assert.throws(
     () => validateEmployeeJobListPayload({
       success: true,
       schemaVersion: 1,
+      todayDate: "2026-09-03",
       jobs: Array.from({ length: 51 }, (_, index) => summary({ id: `booking-${index}` })),
     }),
     error => error.code === "job_service_unavailable"

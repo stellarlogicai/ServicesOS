@@ -15,13 +15,6 @@ import { listEmployeeJobs } from "../api/employeeJobs";
 
 const JOBS_ERROR = "Your jobs could not be loaded. Try again.";
 
-function localDateKey(value = new Date()) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function humanize(value) {
   return typeof value === "string"
     ? value.replace(/_/g, " ").replace(/\b\w/g, character => character.toUpperCase())
@@ -33,10 +26,10 @@ function timeRange(schedule) {
   return schedule.startTime || schedule.endTime || "Time not provided";
 }
 
-export function groupEmployeeJobs(jobs, today = localDateKey()) {
+export function groupEmployeeJobs(jobs, todayDate) {
   return {
-    today: jobs.filter(job => job.schedule.date === today),
-    upcoming: jobs.filter(job => job.schedule.date && job.schedule.date > today),
+    today: jobs.filter(job => job.schedule.date === todayDate),
+    upcoming: jobs.filter(job => job.schedule.date && job.schedule.date > todayDate),
   };
 }
 
@@ -68,6 +61,7 @@ export default function TodayScreen({ navigation }) {
   const [state, setState] = useState({
     employeeUid: "",
     jobs: [],
+    todayDate: "",
     loading: true,
     refreshing: false,
     error: "",
@@ -79,20 +73,28 @@ export default function TodayScreen({ navigation }) {
     setState(previous => ({
       employeeUid,
       jobs: previous.employeeUid === employeeUid ? previous.jobs : [],
+      todayDate: previous.employeeUid === employeeUid ? previous.todayDate : "",
       loading: !refresh,
       refreshing: refresh,
       error: "",
     }));
 
     try {
-      const jobs = await listEmployeeJobs();
+      const result = await listEmployeeJobs();
       if (currentRequest !== requestId.current) return;
       loadedEmployeeUid.current = employeeUid;
-      setState({ employeeUid, jobs, loading: false, refreshing: false, error: "" });
+      setState({
+        employeeUid,
+        jobs: result.jobs,
+        todayDate: result.todayDate,
+        loading: false,
+        refreshing: false,
+        error: "",
+      });
     } catch {
       if (currentRequest !== requestId.current) return;
       loadedEmployeeUid.current = employeeUid;
-      setState({ employeeUid, jobs: [], loading: false, refreshing: false, error: JOBS_ERROR });
+      setState({ employeeUid, jobs: [], todayDate: "", loading: false, refreshing: false, error: JOBS_ERROR });
     }
   }, [employeeUid]);
 
@@ -100,7 +102,7 @@ export default function TodayScreen({ navigation }) {
     if (!employeeUid) {
       requestId.current += 1;
       loadedEmployeeUid.current = "";
-      setState({ employeeUid: "", jobs: [], loading: false, refreshing: false, error: "" });
+      setState({ employeeUid: "", jobs: [], todayDate: "", loading: false, refreshing: false, error: "" });
       return undefined;
     }
     loadJobs({ refresh: loadedEmployeeUid.current === employeeUid });
@@ -111,8 +113,8 @@ export default function TodayScreen({ navigation }) {
 
   const visibleState = state.employeeUid === employeeUid
     ? state
-    : { employeeUid, jobs: [], loading: true, refreshing: false, error: "" };
-  const groups = groupEmployeeJobs(visibleState.jobs);
+    : { employeeUid, jobs: [], todayDate: "", loading: true, refreshing: false, error: "" };
+  const groups = groupEmployeeJobs(visibleState.jobs, visibleState.todayDate);
   const sections = [
     { title: "Today", data: groups.today, empty: "No jobs scheduled for today." },
     { title: "Upcoming", data: groups.upcoming, empty: "No upcoming jobs scheduled." },
@@ -152,7 +154,7 @@ export default function TodayScreen({ navigation }) {
       ListHeaderComponent={(
         <View style={styles.screenHeader}>
           <Text style={styles.title}>My Day</Text>
-          <Text style={styles.date}>{localDateKey()}</Text>
+          <Text style={styles.date}>{visibleState.todayDate}</Text>
         </View>
       )}
       renderSectionHeader={({ section }) => (

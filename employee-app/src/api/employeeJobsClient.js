@@ -38,6 +38,11 @@ function nonnegativeInteger(value) {
   return value;
 }
 
+function dateKey(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) malformedPayload();
+  return value;
+}
+
 function stringArray(value, limit) {
   if (!Array.isArray(value) || value.length > limit || value.some(item => typeof item !== "string")) {
     malformedPayload();
@@ -149,7 +154,10 @@ function validateEnvelope(payload) {
 function validateEmployeeJobListPayload(payload) {
   const response = validateEnvelope(payload);
   if (!Array.isArray(response.jobs) || response.jobs.length > JOB_LIST_LIMIT) malformedPayload();
-  return response.jobs.map(sanitizeEmployeeJobSummary);
+  return {
+    todayDate: dateKey(response.todayDate),
+    jobs: response.jobs.map(sanitizeEmployeeJobSummary),
+  };
 }
 
 function validateEmployeeJobPayload(payload) {

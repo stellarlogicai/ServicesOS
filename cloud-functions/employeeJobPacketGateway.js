@@ -91,7 +91,12 @@ async function listEmployeeJobs({ admin, employee, now = new Date() }) {
     .sort((left, right) => employeeJobSortValue(left).localeCompare(employeeJobSortValue(right)))
     .slice(0, JOB_LIST_LIMIT);
 
-  return { success: true, schemaVersion: JOB_PACKET_SCHEMA_VERSION, jobs };
+  return {
+    success: true,
+    schemaVersion: JOB_PACKET_SCHEMA_VERSION,
+    todayDate: today,
+    jobs,
+  };
 }
 
 async function getEmployeeJob({ admin, employee, bookingId, now = new Date() }) {

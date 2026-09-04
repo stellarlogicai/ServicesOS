@@ -276,6 +276,7 @@ describe('employee job list', () => {
     };
     const fixture = createAdmin({ bookings });
     const result = await listEmployeeJobs({ admin: fixture.admin, employee: employeeContext(), now: NOW });
+    assert.equal(result.todayDate, '2026-09-03');
     assert.deepEqual(result.jobs.map(job => job.id), ['today', 'future']);
   });
 
@@ -306,7 +307,10 @@ describe('employee job list', () => {
       employee: { ...employeeContext(), tenantTimeZone: 'Pacific/Honolulu' },
       now: new Date('2026-09-03T05:00:00.000Z'),
     });
+    assert.equal(result.todayDate, '2026-09-02');
     assert.deepEqual(result.jobs.map(job => job.id), ['localToday']);
+    assert.equal(Object.hasOwn(result, 'tenantTimeZone'), false);
+    assert.equal(Object.hasOwn(result, 'tenant'), false);
     assert.ok(fixture.queryOperations.some(operation => operation[1] === 'date' && operation[3] === '2026-09-02'));
   });
 

@@ -18,7 +18,7 @@ jest.mock("../../context/AuthContext", () => {
 });
 
 import { AuthContext } from "../../context/AuthContext";
-import TodayScreen from "../TodayScreen";
+import TodayScreen, { groupEmployeeJobs } from "../TodayScreen";
 
 function job(id, date, overrides = {}) {
   return {
@@ -43,6 +43,10 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+function jobList(jobs, todayDate = "2026-09-03") {
+  return { todayDate, jobs };
+}
+
 function renderToday({ employee = { uid: "employee-a" }, navigation = { navigate: jest.fn() } } = {}) {
   const result = render(
     <AuthContext.Provider value={{ employee }}>
@@ -55,11 +59,18 @@ function renderToday({ employee = { uid: "employee-a" }, navigation = { navigate
 beforeEach(() => {
   jest.clearAllMocks();
   jest.useFakeTimers();
-  jest.setSystemTime(new Date(2026, 8, 3, 9, 0, 0));
+  jest.setSystemTime(new Date(2026, 8, 4, 9, 0, 0));
 });
 
 afterEach(() => {
   jest.useRealTimers();
+});
+
+test("tenant todayDate overrides a mismatched device-local date for grouping", () => {
+  const jobs = [job("tenant-today", "2026-09-03"), job("future", "2026-09-04")];
+  const grouped = groupEmployeeJobs(jobs, "2026-09-03");
+  expect(grouped.today.map(item => item.id)).toEqual(["tenant-today"]);
+  expect(grouped.upcoming.map(item => item.id)).toEqual(["future"]);
 });
 
 test("shows loading, then renders real today and upcoming safe summaries", async () => {
@@ -70,19 +81,20 @@ test("shows loading, then renders real today and upcoming safe summaries", async
   expect(screen.getByText("Loading your jobs...")).toBeTruthy();
   expect(screen.queryByText("123 Main St")).toBeNull();
 
-  await act(async () => pending.resolve([
+  await act(async () => pending.resolve(jobList([
     job("today", "2026-09-03"),
     job("future", "2026-09-04", { serviceType: "Deep Cleaning" }),
-  ]));
+  ])));
 
   expect(screen.getByText("Today")).toBeTruthy();
   expect(screen.getByText("Upcoming")).toBeTruthy();
   expect(screen.getByText("Customer today")).toBeTruthy();
   expect(screen.getByText("Deep Cleaning")).toBeTruthy();
+  expect(screen.getByText("2026-09-03")).toBeTruthy();
 });
 
 test("shows intentional empty states for both groups", async () => {
-  mockListEmployeeJobs.mockResolvedValue([]);
+  mockListEmployeeJobs.mockResolvedValue(jobList([]));
   renderToday();
 
   expect(await screen.findByText("No jobs scheduled for today.")).toBeTruthy();
@@ -90,7 +102,7 @@ test("shows intentional empty states for both groups", async () => {
 });
 
 test("generic error and retry issue one bounded reload", async () => {
-  mockListEmployeeJobs.mockRejectedValueOnce(new Error("private detail")).mockResolvedValueOnce([]);
+  mockListEmployeeJobs.mockRejectedValueOnce(new Error("private detail")).mockResolvedValueOnce(jobList([]));
   renderToday();
 
   expect(await screen.findByText("Your jobs could not be loaded. Try again.")).toBeTruthy();
@@ -100,7 +112,7 @@ test("generic error and retry issue one bounded reload", async () => {
 });
 
 test("pull-to-refresh performs one list reload", async () => {
-  mockListEmployeeJobs.mockResolvedValue([]);
+  mockListEmployeeJobs.mockResolvedValue(jobList([]));
   renderToday();
   await screen.findByText("No jobs scheduled for today.");
 
@@ -111,7 +123,7 @@ test("pull-to-refresh performs one list reload", async () => {
 
 test("job card navigation passes bookingId only", async () => {
   const navigation = { navigate: jest.fn() };
-  mockListEmployeeJobs.mockResolvedValue([job("booking-a", "2026-09-03")]);
+  mockListEmployeeJobs.mockResolvedValue(jobList([job("booking-a", "2026-09-03")]));
   renderToday({ navigation });
 
   fireEvent.press(await screen.findByLabelText("Open Standard Cleaning job for Customer booking-a"));
@@ -122,7 +134,7 @@ test("late prior-employee list response cannot restore stale jobs", async () => 
   const employeeARequest = deferred();
   mockListEmployeeJobs
     .mockReturnValueOnce(employeeARequest.promise)
-    .mockResolvedValueOnce([job("employee-b-job", "2026-09-03")]);
+    .mockResolvedValueOnce(jobList([job("employee-b-job", "2026-09-03")]));
   const navigation = { navigate: jest.fn() };
   const view = render(
     <AuthContext.Provider value={{ employee: { uid: "employee-a" } }}>
@@ -137,7 +149,7 @@ test("late prior-employee list response cannot restore stale jobs", async () => 
   );
   expect(await screen.findByText("Customer employee-b-job")).toBeTruthy();
 
-  await act(async () => employeeARequest.resolve([job("employee-a-job", "2026-09-03")]));
+  await act(async () => employeeARequest.resolve(jobList([job("employee-a-job", "2026-09-03")])));
   expect(screen.queryByText("Customer employee-a-job")).toBeNull();
   expect(screen.getByText("Customer employee-b-job")).toBeTruthy();
 });

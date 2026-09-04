@@ -203,7 +203,10 @@ function employeeDetail(job) {
 
 function setEmployeeJobs(jobs) {
   mocks.employeeJobs = jobs.map(employeeDetail);
-  mocks.listEmployeeJobs.mockResolvedValue(jobs.map(employeeSummary));
+  mocks.listEmployeeJobs.mockResolvedValue({
+    todayDate: dateKey(today),
+    jobs: jobs.map(employeeSummary),
+  });
   mocks.loadEmployeeJobPacket.mockImplementation(async bookingId => mocks.employeeJobs.find(job => job.id === bookingId));
 }
 
@@ -538,6 +541,24 @@ describe('FieldMode read-only field surface', () => {
     expect(screen.queryByText('Legacy Assignment Customer')).not.toBeInTheDocument();
   });
 
+  it('uses the server tenant date for employee Today grouping despite browser date mismatch', async () => {
+    mocks.role = 'employee';
+    mocks.listEmployeeJobs.mockResolvedValue({
+      todayDate: '2000-01-01',
+      jobs: [
+        employeeSummary({ id: 'tenant-today', customerName: 'Tenant Today', date: '2000-01-01' }),
+        employeeSummary({ id: 'tenant-upcoming', customerName: 'Tenant Upcoming', date: '2000-01-02' }),
+      ],
+    });
+
+    render(<FieldMode />);
+
+    const todayRegion = await screen.findByRole('region', { name: 'Today' });
+    const upcomingRegion = screen.getByRole('region', { name: 'Upcoming' });
+    expect(within(todayRegion).getByText('Tenant Today')).toBeInTheDocument();
+    expect(within(upcomingRegion).getByText('Tenant Upcoming')).toBeInTheDocument();
+  });
+
   it('loads safe detail before opening an employee job packet', async () => {
     mocks.role = 'employee';
     const job = { id: 'detail-job', customerName: 'Detail Customer', date: dateKey(today), status: 'scheduled' };
@@ -627,8 +648,8 @@ describe('FieldMode read-only field surface', () => {
     mocks.role = 'employee';
     const job = { id: 'lost-job', customerName: 'Lost Access Customer', date: dateKey(today), status: 'scheduled' };
     mocks.listEmployeeJobs
-      .mockResolvedValueOnce([employeeSummary(job)])
-      .mockResolvedValue([]);
+      .mockResolvedValueOnce({ todayDate: dateKey(today), jobs: [employeeSummary(job)] })
+      .mockResolvedValue({ todayDate: dateKey(today), jobs: [] });
     mocks.loadEmployeeJobPacket.mockRejectedValue(new Error('job-unavailable'));
     mocks.isEmployeeFieldAccessLossError.mockReturnValue(true);
 
@@ -1164,9 +1185,9 @@ describe('FieldMode read-only field surface', () => {
       if (mocks.tenantId === 'tenant-a') {
         return new Promise(resolve => { resolveTenantA = resolve; });
       }
-      return Promise.resolve([employeeSummary({
+      return Promise.resolve({ todayDate: dateKey(today), jobs: [employeeSummary({
         id: 'job-b', customerName: 'Tenant B Field Customer', date: dateKey(today), status: 'scheduled',
-      })]);
+      })] });
     });
 
     const { rerender } = render(<FieldMode />);
@@ -1177,9 +1198,9 @@ describe('FieldMode read-only field surface', () => {
     expect(await screen.findByText('Tenant B Field Customer')).toBeInTheDocument();
 
     await act(async () => {
-      resolveTenantA([employeeSummary({
+      resolveTenantA({ todayDate: dateKey(today), jobs: [employeeSummary({
         id: 'job-a', customerName: 'Tenant A Field Customer', date: dateKey(today), status: 'scheduled',
-      })]);
+      })] });
     });
 
     expect(screen.queryByText('Tenant A Field Customer')).not.toBeInTheDocument();
@@ -1193,8 +1214,8 @@ describe('FieldMode read-only field surface', () => {
     };
     mocks.employeeJobs = [employeeDetail(reassignedJob)];
     mocks.listEmployeeJobs
-      .mockResolvedValueOnce([employeeSummary(reassignedJob)])
-      .mockResolvedValue([]);
+      .mockResolvedValueOnce({ todayDate: dateKey(today), jobs: [employeeSummary(reassignedJob)] })
+      .mockResolvedValue({ todayDate: dateKey(today), jobs: [] });
     mocks.loadEmployeeJobPacket.mockResolvedValue(employeeDetail(reassignedJob));
     mocks.startEmployeeJob.mockRejectedValue(new Error('job-unavailable'));
     mocks.isEmployeeFieldAccessLossError.mockReturnValue(true);

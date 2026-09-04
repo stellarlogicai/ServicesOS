@@ -1,10 +1,30 @@
 import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Button,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { AuthContext } from "../context/AuthContext";
 import { getEmployeeJob, isEmployeeJobAccessLossError } from "../api/employeeJobs";
+import {
+  completeEmployeeJob,
+  saveEmployeeChecklist,
+  saveEmployeeNotes,
+  startEmployeeJob,
+} from "../api/employeeFieldExecution";
 
 const DETAIL_ERROR = "This job could not be loaded. Try again.";
+const UPDATE_ERROR = "Your job update could not be saved. Try again.";
 const UNAVAILABLE_ERROR = "This job is no longer available.";
+const CHECKLIST_UNAVAILABLE = "Owner review is required before this checklist can be used.";
+const INCOMPLETE_CHECKLIST = "Complete all required checklist items before finishing the job.";
+const FIELD_NOTES_MAX_LENGTH = 1000;
+const FIELD_ISSUE_MAX_LENGTH = 750;
 
 function humanize(value) {
   return typeof value === "string"
@@ -17,6 +37,10 @@ function timeRange(schedule) {
   return schedule.startTime || schedule.endTime || "Time not provided";
 }
 
+function completionState(checklist) {
+  return checklist.map(item => ({ id: item.id, completed: item.completed }));
+}
+
 function DetailSection({ title, children }) {
   return (
     <View style={styles.section}>
@@ -26,48 +50,174 @@ function DetailSection({ title, children }) {
   );
 }
 
+function ChecklistItem({ item, disabled, onChange }) {
+  return (
+    <View style={styles.checklistItem}>
+      <View style={styles.checklistHeading}>
+        <View style={styles.checklistTitleGroup}>
+          <Text style={styles.checklistArea}>
+            {[item.area, item.fixtureOrSurface].filter(Boolean).join(" / ")}
+          </Text>
+          <Text style={styles.checklistLabel}>{item.label}</Text>
+          <Text style={styles.requirement}>{item.required ? "Required" : "Optional"}</Text>
+        </View>
+        <Switch
+          testID={`checklist-toggle-${item.id}`}
+          accessibilityLabel={`${item.completed ? "Mark incomplete" : "Mark complete"}: ${item.label}`}
+          value={item.completed}
+          disabled={disabled}
+          onValueChange={completed => onChange(item.id, completed)}
+        />
+      </View>
+      {item.condition ? <Text style={styles.supportingText}>Condition: {item.condition}</Text> : null}
+      {item.note ? <Text style={styles.supportingText}>Note: {item.note}</Text> : null}
+      {item.completionCriteria ? (
+        <Text style={styles.supportingText}>Complete when: {item.completionCriteria}</Text>
+      ) : null}
+      {item.warnings.map((warning, index) => (
+        <Text style={styles.warningText} key={`${item.id}-warning-${index}`}>Warning: {warning}</Text>
+      ))}
+      {item.jobAidSteps.map((step, index) => (
+        <Text style={styles.supportingText} key={`${item.id}-step-${index}`}>
+          {index + 1}. {step.label}{step.note ? ` - ${step.note}` : ""}{step.condition ? ` (${step.condition})` : ""}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 export default function JobDetailsScreen({ route, navigation }) {
   const bookingId = route?.params?.bookingId || "";
   const { employee } = useContext(AuthContext);
   const employeeUid = employee?.uid || "";
-  const requestId = useRef(0);
-  const [state, setState] = useState({ key: "", job: null, loading: true, error: "", unavailable: false });
   const requestKey = `${employeeUid}:${bookingId}`;
+  const currentKey = useRef(requestKey);
+  const detailRequestId = useRef(0);
+  const mutationRequestId = useRef(0);
+  const mutationInFlight = useRef(false);
+  const [state, setState] = useState({ key: "", job: null, loading: true, error: "", unavailable: false });
+  const [checklist, setChecklist] = useState([]);
+  const [fieldNotes, setFieldNotes] = useState("");
+  const [fieldIssue, setFieldIssue] = useState("");
+  const [savingAction, setSavingAction] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
+  const [actionError, setActionError] = useState("");
+  currentKey.current = requestKey;
+
+  const replaceWithPacket = useCallback((job, key, message = "") => {
+    setState({ key, job, loading: false, error: "", unavailable: false });
+    setChecklist(job.checklist.ready ? job.checklist.items.map(item => ({ ...item })) : []);
+    setFieldNotes(job.fieldNotes);
+    setFieldIssue(job.fieldIssue);
+    setActionMessage(message);
+    setActionError("");
+  }, []);
+
+  const clearUnavailable = useCallback(key => {
+    setState({ key, job: null, loading: false, error: UNAVAILABLE_ERROR, unavailable: true });
+    setChecklist([]);
+    setFieldNotes("");
+    setFieldIssue("");
+    setActionMessage("");
+    setActionError("");
+  }, []);
 
   const loadJob = useCallback(async () => {
     if (!employeeUid || !bookingId) {
       setState({ key: requestKey, job: null, loading: false, error: DETAIL_ERROR, unavailable: false });
       return;
     }
-    const currentRequest = ++requestId.current;
+    const request = ++detailRequestId.current;
     setState({ key: requestKey, job: null, loading: true, error: "", unavailable: false });
+    setChecklist([]);
+    setFieldNotes("");
+    setFieldIssue("");
+    setActionMessage("");
+    setActionError("");
     try {
       const job = await getEmployeeJob(bookingId);
-      if (currentRequest !== requestId.current) return;
-      setState({ key: requestKey, job, loading: false, error: "", unavailable: false });
+      if (request !== detailRequestId.current || currentKey.current !== requestKey) return;
+      replaceWithPacket(job, requestKey);
     } catch (error) {
-      if (currentRequest !== requestId.current) return;
-      const unavailable = isEmployeeJobAccessLossError(error);
-      setState({
-        key: requestKey,
-        job: null,
-        loading: false,
-        error: unavailable ? UNAVAILABLE_ERROR : DETAIL_ERROR,
-        unavailable,
-      });
+      if (request !== detailRequestId.current || currentKey.current !== requestKey) return;
+      if (isEmployeeJobAccessLossError(error)) clearUnavailable(requestKey);
+      else setState({ key: requestKey, job: null, loading: false, error: DETAIL_ERROR, unavailable: false });
     }
-  }, [bookingId, employeeUid, requestKey]);
+  }, [bookingId, clearUnavailable, employeeUid, replaceWithPacket, requestKey]);
 
   useEffect(() => {
+    detailRequestId.current += 1;
+    mutationRequestId.current += 1;
+    mutationInFlight.current = false;
+    setSavingAction("");
     loadJob();
     return () => {
-      requestId.current += 1;
+      detailRequestId.current += 1;
+      mutationRequestId.current += 1;
+      mutationInFlight.current = false;
     };
   }, [loadJob]);
+
+  const mutate = useCallback(async (action, operation, successMessage) => {
+    if (mutationInFlight.current) return;
+    mutationInFlight.current = true;
+    const request = ++mutationRequestId.current;
+    const key = requestKey;
+    setSavingAction(action);
+    setActionMessage("");
+    setActionError("");
+    try {
+      const job = await operation();
+      if (request !== mutationRequestId.current || currentKey.current !== key) return;
+      replaceWithPacket(job, key, successMessage);
+    } catch (error) {
+      if (request !== mutationRequestId.current || currentKey.current !== key) return;
+      if (isEmployeeJobAccessLossError(error)) {
+        clearUnavailable(key);
+      } else if (error?.code === "checklist_unavailable") {
+        setActionError(CHECKLIST_UNAVAILABLE);
+      } else if (error?.code === "incomplete_required_checklist") {
+        setActionError(INCOMPLETE_CHECKLIST);
+      } else {
+        setActionError(UPDATE_ERROR);
+      }
+    } finally {
+      if (request === mutationRequestId.current && currentKey.current === key) {
+        mutationInFlight.current = false;
+        setSavingAction("");
+      }
+    }
+  }, [clearUnavailable, replaceWithPacket, requestKey]);
 
   const visibleState = state.key === requestKey
     ? state
     : { key: requestKey, job: null, loading: true, error: "", unavailable: false };
+  const job = visibleState.job;
+  const incompleteRequired = checklist.filter(item => item.required && !item.completed);
+  const mutationBusy = Boolean(savingAction);
+
+  const toggleChecklistItem = (id, completed) => {
+    if (mutationInFlight.current) return;
+    setChecklist(current => current.map(item => item.id === id ? { ...item, completed } : item));
+    setActionMessage("");
+    setActionError("");
+  };
+
+  const completeJob = () => {
+    if (!job?.checklist.ready) {
+      setActionError(CHECKLIST_UNAVAILABLE);
+      return;
+    }
+    if (incompleteRequired.length > 0) {
+      setActionError(INCOMPLETE_CHECKLIST);
+      return;
+    }
+    mutate(
+      "complete",
+      () => completeEmployeeJob(bookingId, completionState(checklist), fieldNotes, fieldIssue),
+      "Job completed."
+    );
+  };
 
   if (visibleState.loading) {
     return (
@@ -78,7 +228,7 @@ export default function JobDetailsScreen({ route, navigation }) {
     );
   }
 
-  if (!visibleState.job) {
+  if (!job) {
     return (
       <View style={styles.centered}>
         <Text style={styles.errorText}>{visibleState.error}</Text>
@@ -91,7 +241,6 @@ export default function JobDetailsScreen({ route, navigation }) {
     );
   }
 
-  const { job } = visibleState;
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>{job.serviceType}</Text>
@@ -99,6 +248,15 @@ export default function JobDetailsScreen({ route, navigation }) {
       <DetailSection title="Job">
         <Text style={styles.text}>Booking status: {humanize(job.status)}</Text>
         <Text style={styles.text}>Field status: {humanize(job.fieldStatus)}</Text>
+        {job.fieldStatus === "not_started" ? (
+          <View style={styles.actionButton}>
+            <Button
+              title={savingAction === "start" ? "Starting..." : "Start Job"}
+              disabled={mutationBusy}
+              onPress={() => mutate("start", () => startEmployeeJob(bookingId), "Job started.")}
+            />
+          </View>
+        ) : null}
       </DetailSection>
 
       <DetailSection title="Schedule">
@@ -119,35 +277,107 @@ export default function JobDetailsScreen({ route, navigation }) {
         <Text style={styles.text}>{job.instructions}</Text>
       </DetailSection>
 
-      <DetailSection title="Checklist Summary">
-        {job.checklist.ready ? (
+      <DetailSection title="Checklist">
+        {!job.checklist.ready ? (
+          <Text style={styles.reviewText}>{CHECKLIST_UNAVAILABLE}</Text>
+        ) : (
           <>
             <Text style={styles.readyText}>Checklist ready</Text>
-            <Text style={styles.text}>{job.checklist.completed} of {job.checklist.total} complete</Text>
+            <Text style={styles.text}>
+              {checklist.filter(item => item.completed).length} of {checklist.length} complete
+            </Text>
+            {job.checklist.notes ? <Text style={styles.packetNote}>{job.checklist.notes}</Text> : null}
+            {job.checklist.warnings.map((warning, index) => (
+              <Text style={styles.warningText} key={`packet-warning-${index}`}>Warning: {warning}</Text>
+            ))}
+            {checklist.map(item => (
+              <ChecklistItem
+                key={item.id}
+                item={item}
+                disabled={mutationBusy}
+                onChange={toggleChecklistItem}
+              />
+            ))}
+            <View style={styles.actionButton}>
+              <Button
+                title={savingAction === "checklist" ? "Saving..." : "Save Checklist"}
+                disabled={mutationBusy}
+                onPress={() => mutate(
+                  "checklist",
+                  () => saveEmployeeChecklist(bookingId, completionState(checklist)),
+                  "Checklist saved."
+                )}
+              />
+            </View>
           </>
-        ) : (
-          <Text style={styles.reviewText}>Owner review required</Text>
         )}
       </DetailSection>
 
-      {job.fieldNotes ? (
-        <DetailSection title="Field Notes">
-          <Text style={styles.text}>{job.fieldNotes}</Text>
-        </DetailSection>
-      ) : null}
+      <DetailSection title="Field Notes">
+        <TextInput
+          accessibilityLabel="Field Notes"
+          multiline
+          maxLength={FIELD_NOTES_MAX_LENGTH}
+          editable={!mutationBusy}
+          value={fieldNotes}
+          onChangeText={value => setFieldNotes(value.slice(0, FIELD_NOTES_MAX_LENGTH))}
+          placeholder="Add employee field notes"
+          style={styles.textArea}
+        />
+        <Text style={styles.characterCount}>{fieldNotes.length} / {FIELD_NOTES_MAX_LENGTH}</Text>
+      </DetailSection>
 
-      {job.fieldIssue ? (
-        <DetailSection title="Reported Issue">
-          <Text style={styles.text}>{job.fieldIssue}</Text>
-        </DetailSection>
+      <DetailSection title="Reported Issue">
+        <TextInput
+          accessibilityLabel="Reported Issue"
+          multiline
+          maxLength={FIELD_ISSUE_MAX_LENGTH}
+          editable={!mutationBusy}
+          value={fieldIssue}
+          onChangeText={value => setFieldIssue(value.slice(0, FIELD_ISSUE_MAX_LENGTH))}
+          placeholder="Optional issue for the business owner"
+          style={styles.textArea}
+        />
+        <Text style={styles.characterCount}>{fieldIssue.length} / {FIELD_ISSUE_MAX_LENGTH}</Text>
+        <View style={styles.actionButton}>
+          <Button
+            title={savingAction === "notes" ? "Saving..." : "Save Notes"}
+            disabled={mutationBusy}
+            onPress={() => mutate(
+              "notes",
+              () => saveEmployeeNotes(bookingId, fieldNotes, fieldIssue),
+              "Notes saved."
+            )}
+          />
+        </View>
+      </DetailSection>
+
+      {actionMessage ? <Text style={styles.successText} accessibilityRole="alert">{actionMessage}</Text> : null}
+      {actionError ? <Text style={styles.errorText} accessibilityRole="alert">{actionError}</Text> : null}
+      {job.checklist.ready && incompleteRequired.length > 0 ? (
+        <Text style={styles.requiredText}>
+          {incompleteRequired.length} required checklist item{incompleteRequired.length === 1 ? "" : "s"} must be completed first.
+        </Text>
       ) : null}
+      <View style={styles.completeButton}>
+        <Button
+          title={job.fieldStatus === "completed" ? "Completed" : savingAction === "complete" ? "Completing..." : "Complete Job"}
+          disabled={
+            mutationBusy ||
+            job.fieldStatus === "completed" ||
+            !job.checklist.ready ||
+            incompleteRequired.length > 0
+          }
+          onPress={completeJob}
+        />
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8fafc" },
-  content: { padding: 16, paddingBottom: 32 },
+  content: { padding: 16, paddingBottom: 40 },
   centered: {
     flex: 1,
     alignItems: "center",
@@ -156,16 +386,47 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   loadingText: { marginTop: 12, color: "#475569" },
-  errorText: { color: "#b91c1c", textAlign: "center", marginBottom: 16 },
+  errorText: { color: "#b91c1c", textAlign: "center", marginBottom: 14 },
+  successText: { color: "#166534", textAlign: "center", fontWeight: "600", marginBottom: 14 },
   title: { fontSize: 26, fontWeight: "700", color: "#0f172a", marginBottom: 20 },
   section: {
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
-    paddingBottom: 14,
-    marginBottom: 16,
+    paddingBottom: 16,
+    marginBottom: 18,
   },
-  sectionTitle: { fontSize: 17, fontWeight: "700", color: "#1e293b", marginBottom: 8 },
+  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b", marginBottom: 10 },
   text: { fontSize: 16, lineHeight: 23, color: "#475569", marginBottom: 3 },
   readyText: { fontSize: 16, fontWeight: "600", color: "#166534", marginBottom: 4 },
   reviewText: { fontSize: 16, fontWeight: "600", color: "#92400e" },
+  packetNote: { color: "#475569", marginTop: 8, marginBottom: 4 },
+  checklistItem: {
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+    backgroundColor: "#fff",
+  },
+  checklistHeading: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
+  checklistTitleGroup: { flex: 1 },
+  checklistArea: { color: "#64748b", fontSize: 13, marginBottom: 3 },
+  checklistLabel: { color: "#0f172a", fontSize: 16, fontWeight: "600" },
+  requirement: { color: "#475569", fontSize: 12, marginTop: 3 },
+  supportingText: { color: "#475569", lineHeight: 20, marginTop: 7 },
+  warningText: { color: "#9a3412", lineHeight: 20, marginTop: 7 },
+  textArea: {
+    minHeight: 96,
+    borderWidth: 1,
+    borderColor: "#94a3b8",
+    borderRadius: 6,
+    padding: 10,
+    textAlignVertical: "top",
+    backgroundColor: "#fff",
+    color: "#0f172a",
+  },
+  characterCount: { color: "#64748b", fontSize: 12, textAlign: "right", marginTop: 5 },
+  actionButton: { marginTop: 12, alignSelf: "flex-start", minWidth: 150 },
+  requiredText: { color: "#92400e", marginBottom: 12, textAlign: "center" },
+  completeButton: { marginTop: 4 },
 });

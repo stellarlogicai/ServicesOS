@@ -214,7 +214,16 @@ export function isEmployeeFieldAccessLossError(error) {
 
 export async function listEmployeeJobs() {
   const payload = await employeeGatewayRequest(EMPLOYEE_JOB_FUNCTION, { action: 'list' });
-  return Array.isArray(payload.jobs) ? payload.jobs.map(sanitizeEmployeeJobSummary).filter(job => job.id) : [];
+  const todayDate = typeof payload.todayDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(payload.todayDate)
+    ? payload.todayDate
+    : '';
+  if (!todayDate || !Array.isArray(payload.jobs)) {
+    throw new EmployeeFieldGatewayError('Field Mode received an invalid employee job response.');
+  }
+  return {
+    todayDate,
+    jobs: payload.jobs.map(sanitizeEmployeeJobSummary).filter(job => job.id),
+  };
 }
 
 export async function loadEmployeeJobPacket(bookingId) {
