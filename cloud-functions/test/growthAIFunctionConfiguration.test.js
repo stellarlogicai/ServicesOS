@@ -42,4 +42,10 @@ describe('GrowthAI Function provider configuration', () => {
     assert.deepEqual(endpointSecretNames(functionsEntry.routeGrowthAIConversation), [providerSecretName]);
     assert.deepEqual(endpointSecretNames(functionsEntry.getGrowthAICreditBalance), []);
   });
+
+  test('caps the field-photo gateway without granting provider secret access', () => {
+    assert.equal(functionsEntry.fieldPhotoUploadGateway.__endpoint.minInstances, 0);
+    assert.equal(functionsEntry.fieldPhotoUploadGateway.__endpoint.maxInstances, 3);
+    assert.deepEqual(endpointSecretNames(functionsEntry.fieldPhotoUploadGateway), []);
+  });
 });

@@ -7,7 +7,6 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import {
-  deleteObject,
   getBlob,
   ref,
   uploadBytes,
@@ -22,6 +21,7 @@ export const FIELD_PHOTO_ALLOWED_TYPES = Object.freeze([
   'image/webp',
 ]);
 export const FIELD_PHOTO_MAX_SIZE_BYTES = 10 * 1024 * 1024;
+export const FIELD_PHOTO_MAX_PER_BOOKING = 20;
 export const FIELD_PHOTO_ROOM_LABEL_MAX_LENGTH = 80;
 export const FIELD_PHOTO_NOTE_MAX_LENGTH = 500;
 export const FIELD_PHOTO_MARKETING_REVIEW_ID = 'current';
@@ -32,6 +32,47 @@ const EXTENSION_BY_TYPE = Object.freeze({
   'image/png': 'png',
   'image/webp': 'webp',
 });
+
+function fieldPhotoGatewayUrl() {
+  const configuredBaseUrl = import.meta.env.VITE_FUNCTIONS_URL?.replace(/\/+$/, '');
+  if (configuredBaseUrl) return `${configuredBaseUrl}/fieldPhotoUploadGateway`;
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  if (!projectId) throw new Error('Photo upload server configuration is unavailable.');
+  if (import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === 'true') {
+    return `http://127.0.0.1:5001/${projectId}/us-central1/fieldPhotoUploadGateway`;
+  }
+  return `https://us-central1-${projectId}.cloudfunctions.net/fieldPhotoUploadGateway`;
+}
+
+export function createFieldPhotoClientUploadId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `photo-upload-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+}
+
+async function callFieldPhotoGateway(body) {
+  const user = auth.currentUser;
+  if (!user) {
+    const error = new Error('Sign in again before uploading a photo.');
+    error.code = 'unauthenticated';
+    throw error;
+  }
+  const token = await user.getIdToken();
+  const response = await fetch(fieldPhotoGatewayUrl(), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success !== true) {
+    const error = new Error(payload.error || 'Photo upload is temporarily unavailable.');
+    error.code = payload.code || 'field_photo_upload_failed';
+    throw error;
+  }
+  return payload;
+}
 
 function requiredSegment(value, label) {
   const normalized = typeof value === 'string' ? value.trim() : '';
@@ -252,67 +293,90 @@ async function resolveFieldPhotoUploader(tenantId) {
   }
 }
 
-export async function uploadFieldPhoto({ tenantId, bookingId, phase, roomLabel, note, file }) {
+export async function uploadFieldPhoto({
+  tenantId,
+  bookingId,
+  phase,
+  roomLabel,
+  note,
+  file,
+  clientUploadId = createFieldPhotoClientUploadId(),
+  recoverExisting = false,
+}) {
   const details = validateFieldPhotoDetails({ roomLabel, note });
   if (!details.success) return details;
   const validation = validateFieldPhoto(file);
   if (!validation.success) return validation;
 
-  const uploader = await resolveFieldPhotoUploader(tenantId);
-  if (!uploader.success) return uploader;
-
-  const metadataReference = doc(photoCollection(tenantId, bookingId));
-  const storagePath = buildFieldPhotoStoragePath(
+  const reserveBody = {
+    action: 'reserve',
     tenantId,
     bookingId,
-    phase,
-    metadataReference.id,
-    file.type,
-  );
-  const storageReference = ref(storage, storagePath);
-  const metadata = buildFieldPhotoMetadata({
-    photoId: metadataReference.id,
+    clientUploadId,
     phase,
     roomLabel: details.roomLabel,
     note: details.note,
-    storagePath,
-    uploadedByUid: uploader.uploadedByUid,
     contentType: file.type,
     sizeBytes: file.size,
-    clientFileLastModifiedAt: file.lastModified,
-  });
+    ...(Number.isFinite(file.lastModified) && file.lastModified > 0
+      ? { clientFileLastModifiedAt: file.lastModified }
+      : {}),
+  };
+  let reservation;
+  try {
+    reservation = (await callFieldPhotoGateway(reserveBody)).reservation;
+  } catch (error) {
+    return {
+      success: false,
+      message: error.message,
+      code: error.code,
+      stage: 'reserve',
+    };
+  }
+
+  const finalize = async () => {
+    const payload = await callFieldPhotoGateway({ action: 'finalize', tenantId, bookingId, clientUploadId });
+    return {
+      success: true,
+      data: {
+        ...payload.photo,
+        uploadedAt: new Date(payload.photo.uploadedAt),
+      },
+    };
+  };
+
+  if (recoverExisting) {
+    try {
+      return await finalize();
+    } catch (error) {
+      if (error.code !== 'photo_object_missing') {
+        return { success: false, message: error.message, code: error.code, stage: 'finalize' };
+      }
+    }
+  }
+
+  const storageReference = ref(storage, reservation.storagePath);
 
   try {
     await uploadBytes(storageReference, file, { contentType: file.type });
   } catch (error) {
     console.error('[Field photos] Storage upload failed.', error);
-    return { success: false, message: 'Upload failed. Try again.', stage: 'storage' };
-  }
-
-  try {
-    await setDoc(metadataReference, metadata);
-  } catch (error) {
-    let cleanupFailed = false;
-    try {
-      await deleteObject(storageReference);
-    } catch (cleanupError) {
-      cleanupFailed = true;
-      console.error('[Field photos] Orphan cleanup failed.', cleanupError);
-    }
-    console.error('[Field photos] Metadata write failed.', error);
     return {
       success: false,
-      message: 'Upload failed. Try again.',
-      stage: 'metadata',
-      cleanupFailed,
+      message: 'Upload status is uncertain. Retry to verify this same photo.',
+      stage: 'storage',
     };
   }
 
-  return {
-    success: true,
-    data: {
-      ...metadata,
-      uploadedAt: new Date(),
-    },
-  };
+  try {
+    return await finalize();
+  } catch (error) {
+    console.error('[Field photos] Finalization failed.', error);
+    return {
+      success: false,
+      message: error.message,
+      code: error.code,
+      stage: 'finalize',
+    };
+  }
 }

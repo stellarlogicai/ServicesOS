@@ -441,6 +441,9 @@ describe('employee-safe JobPacket projection', () => {
       assignedEmployeeId: sensitive,
       employeeManagement: { secret: sensitive },
       growthAIContext: { secret: sensitive },
+      fieldPhotoUploadReservations: { reservedPhoto: { storagePath: sensitive } },
+      fieldPhotoUploadControl: { quota: sensitive },
+      fieldPhotoUploadSlots: { reservedPhoto: sensitive },
     }), 'UTC');
     const keys = new Set(collectKeys(packet).map(key => key.toLowerCase()));
     for (const forbidden of [
@@ -449,7 +452,8 @@ describe('employee-safe JobPacket projection', () => {
       'sourceleadid', 'customersnapshot', 'propertysnapshot', 'requestsnapshot', 'rawinput',
       'formdata', 'tenant', 'assignedemployeeauthuid', 'assignedemployeeid',
       'employeemanagement', 'growthaicontext', 'sourcereferences', 'sourcescopesnapshot',
-      'sourcescopesignature', 'reviewedby',
+      'sourcescopesignature', 'reviewedby', 'fieldphotouploadreservations',
+      'fieldphotouploadcontrol', 'fieldphotouploadslots',
     ]) assert.equal(keys.has(forbidden), false, forbidden);
     assert.equal([...keys].some(key => /stripe|payment|pricing|billing|subscription/.test(key)), false);
     assert.equal(JSON.stringify(packet).includes(sensitive), false);

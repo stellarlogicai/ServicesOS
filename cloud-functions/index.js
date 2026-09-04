@@ -25,6 +25,12 @@ const { createGrowthAIProviderFromFirebaseParameters } = require('./growthAIProv
 const { createEmployeeSessionGatewayHandler } = require('./employeeSessionGateway');
 const { createEmployeeJobPacketGatewayHandler } = require('./employeeJobPacketGateway');
 const { createEmployeeFieldExecutionGatewayHandler } = require('./employeeFieldExecutionGateway');
+const { createFieldPhotoUploadGatewayHandler } = require('./fieldPhotoUploadGateway');
+
+const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
+  maxInstances: 3,
+  minInstances: 0,
+});
 
 const growthAIProviderApiKey = defineSecret('GROWTHAI_PROVIDER_API_KEY');
 const growthAIProviderBaseUrl = defineString('GROWTHAI_PROVIDER_BASE_URL');
@@ -73,6 +79,9 @@ exports.routeGrowthAIConversation = functions.runWith({
   admin,
   provider: createConfiguredGrowthAIProvider(),
 }));
+
+exports.fieldPhotoUploadGateway = functions.runWith(FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS)
+  .https.onRequest(createFieldPhotoUploadGatewayHandler({ admin }));
 
 // Platform fee percentage by subscription tier
 const PLATFORM_FEE_PERCENTAGE = {
