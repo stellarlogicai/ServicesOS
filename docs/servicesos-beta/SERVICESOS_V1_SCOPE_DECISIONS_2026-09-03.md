@@ -210,6 +210,22 @@ V1 should protect the employee, business, and customer with a simple locked-scop
 
 ## Locked scope
 
+The internal V1 capability name is **Job Scope Control**, with the employee/customer workflow **Add-On / Change Request**.
+
+Before field execution begins, the customer-facing service agreement/booking confirmation should make the purchased scope explicit. Where supported by the current canonical models, it should show:
+
+- service type;
+- included tasks;
+- excluded / not-included-unless-added tasks;
+- agreed price;
+- estimated duration;
+- scheduled service window;
+- payment terms;
+- cancellation policy;
+- add-on / extra-work policy.
+
+The purpose is to create a signed/accepted record of **what was purchased** before the job starts.
+
 When a booking is confirmed for field execution, ServicesOS should preserve the agreed job scope using the existing canonical booking/checklist/pricing structures wherever possible.
 
 The employee must be able to see what is included in today's work.
@@ -290,6 +306,20 @@ An approved extra-work record should reference the existing canonical add-on whe
 - completion/scheduling outcome.
 
 Reuse any existing canonical booking-price snapshot mechanism rather than inventing a parallel historical pricing system.
+
+The locked-scope evidence should remain tied to the signed/accepted service agreement or booking acceptance evidence so the business can establish what the customer approved before work began. At minimum, preserve or reference:
+
+- applicable service-agreement version;
+- customer acceptance/signature timestamp where the current contract flow supports it;
+- included and excluded scope as accepted;
+- agreed price/duration/window;
+- approved add-on/change history.
+
+The customer-facing service agreement should include clear scope-change language equivalent in meaning to:
+
+> The agreed service includes only the tasks listed in the approved booking or service agreement. Additional work requested before or during the appointment may require additional charge and additional time. Add-on work is not guaranteed for the same visit and may require a future appointment based on availability and the remaining scheduled window.
+
+Final legal/customer-facing wording should be reviewed during the planned service-agreement update rather than copied blindly from planning text.
 
 ## Employee-facing V1 rule
 
