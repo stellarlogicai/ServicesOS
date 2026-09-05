@@ -10,6 +10,16 @@ These decisions should be folded into the normal V1 implementation sequence when
 
 # 1. Owner onboarding: SaaS agreement is a V1 launch requirement
 
+## Agreement terminology — locked for V1
+
+ServicesOS has two distinct agreements and implementation must not conflate them:
+
+- **SaaS Agreement:** Stellar Logic AI ↔ ServicesOS business owner. This is accepted/signed during owner/business onboarding and governs use of the ServicesOS platform.
+- **Service Agreement / Job Scope Agreement:** service business ↔ that business's customer. This defines the purchased service, scope, price, scheduled window, cancellation terms, and add-on/change-request terms for the customer job.
+
+The owner-onboarding SaaS Agreement does not replace the customer Service Agreement, and the customer Service Agreement does not govern the business owner's subscription to ServicesOS.
+
+
 ## Current repository foundation
 
 Relevant existing code includes:
@@ -268,8 +278,11 @@ Rules:
 
 - use the canonical add-on price from the existing service/add-on catalog;
 - add the configured last-minute scope-change fee only when the business has enabled it;
-- show the customer the add-on price, the surcharge, and the additional total before the extra work begins;
-- record customer approval;
+- for V1, treat the flat scope-change fee as **one fee per approved change request**, not one fee multiplied across every add-on inside the same approved request;
+- show the customer each requested add-on price, the one applicable scope-change fee, and the additional total before the extra work begins;
+- require explicit customer approval before the extra work begins;
+- customer approval must be attributable to the customer and time-stamped; an employee must not be able to mark approval on the customer's behalf;
+- if the requested work is custom/unknown, owner or another explicitly authorized pricing role must approve the price before customer approval;
 - do not hide or silently apply the surcharge;
 - do not create a duplicate add-on or pricing record to hold the surcharge.
 
@@ -287,6 +300,15 @@ The V1 workflow should support a clear decision:
 - decline the add-on.
 
 If it cannot reasonably be completed in the allotted window, the employee must have a clear **Future Visit Required** path instead of being pressured to overrun the job.
+
+For V1, **Future Visit Required** is an actionable workflow state, not just a note:
+
+- the change request remains linked to the current booking/job;
+- the owner/admin can create a linked follow-up booking using the existing booking system;
+- the follow-up booking should carry only the approved future work/context needed for that visit;
+- ServicesOS must not automatically choose the future date/time;
+- ServicesOS must not automatically extend the employee's current schedule;
+- the owner/customer scheduling decision remains human-controlled.
 
 ## Approval and audit trail
 
@@ -377,24 +399,44 @@ Those remain V2 where applicable.
 
 These additions do not change the immediate build priority.
 
-Continue:
+For planning purposes, distinguish **Employee App non-payment core** from the final fully frozen Employee App V1. Job Scope Control and Tap to Pay still require later Employee App work, so "finish Employee App" must not be interpreted as "never reopen the mobile app."
+
+Locked execution sequence:
 
 ```text
-Finish Employee App
+Resume interrupted mobile field-photo transport
+        ↓
+Before / After photo UI
+        ↓
+Safety / method guidance
+        ↓
+Maps / navigation intent
+        ↓
+SLAI Work Assistant
+        ↓
+Employee App non-payment core polish / QA
         ↓
 Owner / Business Onboarding
         ↓
-SaaS agreement update + enforcement
+Owner SaaS Agreement update + enforcement
         ↓
-Create Booking Residential / Commercial bounded V1 slice
+Residential / Commercial Create Booking bounded V1 slice
         ↓
-Locked Job Scope + Add-On Request bounded V1 slice
+Customer Service Agreement + Job Scope Control
         ↓
-Payments / Stripe stabilization
+Employee App Add-On / Change Request action
         ↓
-Release hardening
+Stripe / Connect stabilization
+        ↓
+Tap to Pay
+        ↓
+Final Employee App + overall release QA
         ↓
 Wife / real-business beta validation
+        ↓
+Customer-ready ServicesOS V1
 ```
+
+The first Codex action after usage reset remains the interrupted mobile field-photo transport recovery: inspect the working tree first, preserve partial work, and resume in place.
 
 No V2 policy engine work should begin during this sequence.
