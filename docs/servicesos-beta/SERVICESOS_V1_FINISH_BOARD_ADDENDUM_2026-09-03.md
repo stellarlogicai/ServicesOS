@@ -10,6 +10,12 @@ This addendum should be folded into `SERVICESOS_V1_FINISH_BOARD.md` at the next 
 
 # Owner / Business Onboarding — add to V1
 
+## Agreement terminology
+
+- [ ] Keep the **SaaS Agreement** (Stellar Logic AI ↔ ServicesOS business owner) distinct from the **Service Agreement / Job Scope Agreement** (service business ↔ its customer).
+- [ ] Do not reuse one agreement as a substitute for the other.
+- [ ] Keep owner subscription/legal acceptance in onboarding and customer job/scope acceptance in the customer booking/service flow.
+
 ## SaaS agreement
 
 - [ ] Audit current `SaasAgreement.jsx` and contract persistence against the active onboarding flow.
@@ -125,9 +131,13 @@ If those are required, stop and move the advanced requirement to V2.
 
 - [ ] Add a simple Business Settings toggle for a last-minute scope-change/add-on fee.
 - [ ] Allow one bounded flat configured fee for V1.
+- [ ] Apply the flat fee once per approved change request, not once per individual add-on inside the same request.
 - [ ] Apply it only when the configured V1 trigger is met, such as extra work requested after the job has started.
 - [ ] Show add-on price, last-minute fee, and total additional charge before work begins.
 - [ ] Require customer approval before the extra work becomes authorized.
+- [ ] Customer approval is attributable to the customer and timestamped.
+- [ ] Employee cannot mark customer approval on the customer's behalf.
+- [ ] Custom/unknown work requires owner/authorized pricing approval before customer approval.
 - [ ] Do not silently apply the surcharge.
 - [ ] Do not use this V1 setting as a generalized cancellation/no-show/late-payment fee engine.
 
@@ -138,6 +148,11 @@ If those are required, stop and move the advanced requirement to V2.
 - [ ] Support same-visit completion when it fits and is authorized.
 - [ ] Support explicit appointment extension only when authorized.
 - [ ] Support Future Visit Required when the add-on cannot fit in the allotted window.
+- [ ] Future Visit Required remains linked to the original change request/current booking.
+- [ ] Owner/admin can create a linked follow-up booking using the existing booking system.
+- [ ] Follow-up booking carries the approved future-work context needed for that visit.
+- [ ] ServicesOS does not auto-select the future date/time.
+- [ ] ServicesOS does not auto-extend the employee's current schedule.
 - [ ] Support decline/cancel of the requested add-on.
 - [ ] Do not force the employee to overrun the original job window merely because the customer approved the charge.
 
@@ -208,16 +223,25 @@ These items are planning records only and must not become current V1 implementat
 
 # Locked implementation order
 
-The new V1 items do not interrupt the current Employee App work.
+The Employee App should be treated in two stages: the **non-payment core** first, then later Employee App scope-control/payment integration before final freeze.
 
 ```text
-1. Finish Employee App V1
-2. Owner / Business Onboarding
-3. SaaS agreement update + enforcement
-4. Residential / Commercial Create Booking bounded V1 slice
-5. Locked Job Scope + Add-On Request bounded V1 slice
-6. Payments / Stripe stabilization
-7. Release hardening
-8. Wife / real-business beta validation
-9. Customer-ready ServicesOS V1
+1. Resume interrupted mobile field-photo transport
+2. Before / After photo UI
+3. Safety / method guidance
+4. Maps / navigation intent
+5. SLAI Work Assistant
+6. Employee App non-payment core polish / QA
+7. Owner / Business Onboarding
+8. Owner SaaS Agreement update + enforcement
+9. Residential / Commercial Create Booking bounded V1 slice
+10. Customer Service Agreement + Job Scope Control
+11. Employee App Add-On / Change Request action
+12. Stripe / Connect stabilization
+13. Tap to Pay
+14. Final Employee App + overall release QA
+15. Wife / real-business beta validation
+16. Customer-ready ServicesOS V1
 ```
+
+First Codex task after usage reset: resume the interrupted mobile field-photo transport in place after inspecting branch, HEAD, working tree, and partial changes. Do not reset or discard interrupted work.
