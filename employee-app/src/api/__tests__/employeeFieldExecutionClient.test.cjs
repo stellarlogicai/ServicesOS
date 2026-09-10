@@ -17,6 +17,13 @@ function packet(overrides = {}) {
     status: "scheduled",
     fieldStatus: "in_progress",
     instructions: "Use the side entrance.",
+    safety: {
+      hazards: [],
+      surfaceNotes: "",
+      allergyOrProductRestrictions: "",
+      pets: { present: false, count: 0, types: [], hairLevel: "" },
+    },
+    accessSecurity: { instructions: "" },
     checklist: {
       ready: true,
       items: [{

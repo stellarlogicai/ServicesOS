@@ -8,6 +8,7 @@ const mockSaveEmployeeChecklist = jest.fn();
 const mockSaveEmployeeNotes = jest.fn();
 const mockCompleteEmployeeJob = jest.fn();
 const mockListEmployeeFieldPhotos = jest.fn();
+const mockGetEmployeeMethodsByIds = jest.fn();
 
 jest.mock("../../api/employeeJobs", () => ({
   getEmployeeJob: (...args) => mockGetEmployeeJob(...args),
@@ -21,6 +22,9 @@ jest.mock("../../api/employeeFieldExecution", () => ({
 }));
 jest.mock("../../api/employeePhotoEvidence", () => ({
   listEmployeeFieldPhotos: (...args) => mockListEmployeeFieldPhotos(...args),
+}));
+jest.mock("../../api/employeeMethods", () => ({
+  getEmployeeMethodsByIds: (...args) => mockGetEmployeeMethodsByIds(...args),
 }));
 jest.mock("../../components/FieldPhotoCapture", () => {
   const ReactModule = require("react");
@@ -71,6 +75,13 @@ function packet(id = "booking-a", overrides = {}) {
     status: "scheduled",
     fieldStatus: "not_started",
     instructions: "Use the side entrance.",
+    safety: {
+      hazards: [],
+      surfaceNotes: "",
+      allergyOrProductRestrictions: "",
+      pets: { present: false, count: 0, types: [], hairLevel: "none" },
+    },
+    accessSecurity: { instructions: "Use the side entrance." },
     checklist: {
       ready: true,
       items,
@@ -119,6 +130,7 @@ beforeEach(() => {
     },
   }));
   mockListEmployeeFieldPhotos.mockResolvedValue([]);
+  mockGetEmployeeMethodsByIds.mockResolvedValue([]);
 });
 
 test("performs a fresh GET and hides detail until it resolves", async () => {
@@ -140,7 +152,7 @@ test("renders safe job data and read-only checklist structure", async () => {
   expect(await screen.findByText("Standard Cleaning")).toBeTruthy();
   expect(screen.getByText("2026-09-03")).toBeTruthy();
   expect(screen.getByText("09:00 - 11:00")).toBeTruthy();
-  expect(screen.getByText("Use the side entrance.")).toBeTruthy();
+  expect(screen.getAllByText("Use the side entrance.")).toHaveLength(2);
   expect(screen.getByText("Clean counter")).toBeTruthy();
   expect(screen.getByText("Required")).toBeTruthy();
   expect(screen.getAllByText("Condition: If accessible")).toHaveLength(2);
@@ -152,6 +164,82 @@ test("renders safe job data and read-only checklist structure", async () => {
   expect(screen.getByLabelText("Reported Issue")).toBeTruthy();
   expect(await screen.findByText("before: 0 uploaded enabled")).toBeTruthy();
   expect(screen.getByText("after: 0 uploaded disabled")).toBeTruthy();
+});
+
+test("renders recorded safety and access before Start without inferring safety or requiring acknowledgment", async () => {
+  mockGetEmployeeJob.mockResolvedValue(packet("booking-a", {
+    safety: {
+      hazards: ["Loose stair rail"],
+      surfaceNotes: "Natural stone counter",
+      allergyOrProductRestrictions: "Unscented products only",
+      pets: { present: true, count: 2, types: ["dog", "cat"], hairLevel: "heavy" },
+    },
+    accessSecurity: { instructions: "Use the current booking gate instructions." },
+  }));
+  const view = renderDetail();
+
+  expect(await screen.findByText("Safety & Method")).toBeTruthy();
+  expect(screen.getByText("Hazard: Loose stair rail")).toBeTruthy();
+  expect(screen.getByText("Surface / material: Natural stone counter")).toBeTruthy();
+  expect(screen.getByText("Allergy / Product Restrictions: Unscented products only")).toBeTruthy();
+  expect(screen.getByText(/Pets: 2 pets/)).toBeTruthy();
+  expect(screen.getByText("Use the current booking gate instructions.")).toBeTruthy();
+  const rendered = JSON.stringify(view.toJSON());
+  expect(rendered.indexOf("Safety & Method")).toBeLessThan(rendered.indexOf("Start Job"));
+  expect(screen.queryByText("This job is safe.")).toBeNull();
+  expect(screen.queryByRole("checkbox", { name: /safety/i })).toBeNull();
+  expect(screen.getByText("Start Job")).toBeTruthy();
+});
+
+test("empty safety remains neutral and the section stays visible while in progress", async () => {
+  mockGetEmployeeJob.mockResolvedValue(packet("booking-a", { fieldStatus: "in_progress" }));
+  renderDetail();
+
+  expect(await screen.findByText("Safety & Method")).toBeTruthy();
+  expect(screen.getByText("No job-specific safety notes recorded.")).toBeTruthy();
+  expect(screen.getByText(/If conditions differ from the recorded job information/)).toBeTruthy();
+  expect(screen.queryByText("Start Job")).toBeNull();
+});
+
+test("approved and restricted live methods remain associated with their checklist task", async () => {
+  mockGetEmployeeMethodsByIds.mockResolvedValue([
+    {
+      id: "method-private-to-ui",
+      name: "Approved Counter Method",
+      classification: "cleaning",
+      status: "restricted",
+      intendedUses: ["Sealed counters"],
+      compatibleSurfaces: ["Sealed laminate"],
+      prohibitedSurfaces: ["Natural stone"],
+      requiredPPE: ["Gloves"],
+      requiredTools: ["Clean cloth"],
+      dwellTime: "Five minutes",
+      contactTime: "",
+      applicationInstructions: "Apply to the cloth.",
+      labelDirections: "",
+      rinseInstructions: "Rinse clean.",
+      dryingInstructions: "Dry immediately.",
+      ingredients: ["Water"],
+      measurements: ["One cup"],
+      formulaVariants: [],
+      dilutionInstructions: "",
+      mixingOrder: [],
+      dangerousCombinations: ["Never combine with another cleaner."],
+    },
+  ]);
+  renderDetail();
+
+  expect(await screen.findAllByText("Approved Counter Method (Preferred)")).toHaveLength(2);
+  expect(screen.getAllByText("Restricted | Cleaning")).toHaveLength(2);
+  expect(screen.getAllByText("Clean counter")).toHaveLength(2);
+  expect(mockGetEmployeeMethodsByIds).toHaveBeenCalledWith("tenant-a", ["method-private-to-ui"]);
+});
+
+test("unavailable referenced methods show neutral supervisor fallback", async () => {
+  mockGetEmployeeMethodsByIds.mockResolvedValue([]);
+  renderDetail();
+
+  expect(await screen.findAllByText(/Approved method guidance is currently unavailable/)).toHaveLength(2);
 });
 
 test("Start Job submits once and replaces the packet with in-progress state", async () => {

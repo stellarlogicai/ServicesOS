@@ -386,11 +386,90 @@ describe('employee-safe JobPacket projection', () => {
     const packet = employeeJobPacket('booking-a', baseBooking(), 'UTC');
     assert.deepEqual(Object.keys(packet), [
       'id', 'schedule', 'serviceType', 'customer', 'location', 'status', 'fieldStatus',
-      'instructions', 'checklist', 'fieldNotes', 'fieldIssue',
+      'instructions', 'safety', 'accessSecurity', 'checklist', 'fieldNotes', 'fieldIssue',
     ]);
     assert.deepEqual(Object.keys(packet.customer), ['name', 'phone']);
     assert.deepEqual(Object.keys(packet.location), ['address']);
+    assert.deepEqual(Object.keys(packet.safety), [
+      'hazards', 'surfaceNotes', 'allergyOrProductRestrictions', 'pets',
+    ]);
+    assert.deepEqual(Object.keys(packet.safety.pets), ['present', 'count', 'types', 'hairLevel']);
+    assert.deepEqual(Object.keys(packet.accessSecurity), ['instructions']);
     assert.deepEqual(Object.keys(packet.checklist), ['ready', 'items', 'completed', 'total', 'notes', 'warnings']);
+  });
+
+  test('recorded job safety facts and access instructions are narrowly projected', () => {
+    const packet = employeeJobPacket('booking-a', baseBooking({
+      fieldInstructions: '',
+      technicianNotes: '',
+      accessInstructions: '',
+      propertySnapshot: {
+        roomCounts: { bedrooms: 2, bathrooms: 1, kitchens: 1 },
+        household: {
+          pets: true,
+          petCount: 2,
+          petTypes: ['dog', 'cat'],
+          petHairLevel: 'heavy',
+          allergies: 'Use fragrance-free products.',
+          medicalHistory: 'must not leak',
+        },
+        access: { accessInstructions: 'Stale profile gate code must not be used.' },
+      },
+      requestSnapshot: {
+        cleaningType: 'standard',
+        frequency: 'one-time',
+        serviceScope: {},
+        hazards: ['Loose stair rail'],
+        surfaceNotes: 'Natural stone counters.',
+        accessInstructions: 'Use the current booking gate instructions.',
+        specialRequests: 'Mixed customer note must not enter safety.',
+      },
+    }), 'UTC');
+    assert.deepEqual(packet.safety, {
+      hazards: ['Loose stair rail'],
+      surfaceNotes: 'Natural stone counters.',
+      allergyOrProductRestrictions: 'Use fragrance-free products.',
+      pets: { present: true, count: 2, types: ['dog', 'cat'], hairLevel: 'heavy' },
+    });
+    assert.deepEqual(packet.accessSecurity, { instructions: 'Use the current booking gate instructions.' });
+    assert.equal(JSON.stringify(packet.safety).includes('Mixed customer note'), false);
+    assert.equal(JSON.stringify(packet).includes('Stale profile gate code'), false);
+    assert.equal(JSON.stringify(packet).includes('medicalHistory'), false);
+  });
+
+  test('safety fields are bounded and malformed nested values fail closed', () => {
+    const packet = employeeJobPacket('booking-a', baseBooking({
+      propertySnapshot: {
+        roomCounts: {},
+        household: {
+          pets: 'yes',
+          petCount: 1000,
+          petTypes: ['t'.repeat(100), ...Array.from({ length: 15 }, (_, index) => `pet-${index}`)],
+          petHairLevel: { unsafe: true },
+          allergies: 'a'.repeat(1200),
+        },
+      },
+      requestSnapshot: {
+        cleaningType: 'standard', frequency: 'one-time', serviceScope: {},
+        hazards: Array.from({ length: 40 }, () => 'h'.repeat(600)),
+        surfaceNotes: { unsafe: true },
+      },
+    }), 'UTC');
+    assert.equal(packet.safety.hazards.length, 30);
+    assert.equal(packet.safety.hazards[0].length, 500);
+    assert.equal(packet.safety.surfaceNotes, '');
+    assert.equal(packet.safety.allergyOrProductRestrictions, '');
+    assert.equal(packet.safety.pets.count, 0);
+    assert.equal(packet.safety.pets.types.length, 10);
+    assert.equal(packet.safety.pets.types[0].length, 80);
+    assert.equal(packet.safety.pets.hairLevel, '');
+
+    const noPets = employeeJobPacket('booking-a', baseBooking({
+      propertySnapshot: {
+        household: { pets: false, petCount: 0, petTypes: [], petHairLevel: 'None' },
+      },
+    }), 'UTC');
+    assert.equal(noPets.safety.pets.present, false);
   });
 
   test('safe display scalars follow Field Mode compatibility precedence', () => {

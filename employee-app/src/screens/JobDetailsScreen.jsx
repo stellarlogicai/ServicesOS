@@ -18,6 +18,7 @@ import {
   startEmployeeJob,
 } from "../api/employeeFieldExecution";
 import { listEmployeeFieldPhotos } from "../api/employeePhotoEvidence";
+import { getEmployeeMethodsByIds } from "../api/employeeMethods";
 import FieldPhotoCapture from "../components/FieldPhotoCapture";
 
 const DETAIL_ERROR = "This job could not be loaded. Try again.";
@@ -29,6 +30,9 @@ const FIELD_NOTES_MAX_LENGTH = 1000;
 const FIELD_ISSUE_MAX_LENGTH = 750;
 const PHOTO_EVIDENCE_ERROR = "Photo evidence could not be loaded. Try again.";
 const NO_AFTER_PHOTOS_WARNING = "No after photos have been uploaded. Complete the job anyway?";
+const METHOD_UNAVAILABLE = "Approved method guidance is currently unavailable. Contact the owner/supervisor before proceeding if clarification is needed.";
+const SAFETY_FALLBACK = "No job-specific safety notes recorded.";
+const CLARIFICATION_FALLBACK = "If conditions differ from the recorded job information or instructions are unclear, contact the owner/supervisor before proceeding.";
 
 function humanize(value) {
   return typeof value === "string"
@@ -90,6 +94,118 @@ function ChecklistItem({ item, disabled, onChange }) {
   );
 }
 
+function MethodValueList({ label, values, warning = false }) {
+  if (!values.length) return null;
+  return (
+    <View style={styles.methodDetail}>
+      <Text style={warning ? styles.warningText : styles.supportingText}>{label}</Text>
+      {values.map((value, index) => (
+        <Text style={warning ? styles.warningText : styles.supportingText} key={`${label}-${index}`}>- {value}</Text>
+      ))}
+    </View>
+  );
+}
+
+function MethodGuidance({ method, preferred }) {
+  const application = method.applicationInstructions || method.labelDirections;
+  return (
+    <View style={styles.methodCard}>
+      <Text style={styles.methodName}>{method.name}{preferred ? " (Preferred)" : ""}</Text>
+      <Text style={method.status === "restricted" ? styles.warningText : styles.supportingText}>
+        {method.status === "restricted" ? "Restricted" : "Approved"} | {humanize(method.classification)}
+      </Text>
+      <MethodValueList label="Intended use" values={method.intendedUses} />
+      <MethodValueList label="Compatible surfaces" values={method.compatibleSurfaces} />
+      <MethodValueList label="Do not use on" values={method.prohibitedSurfaces} warning />
+      <MethodValueList label="PPE" values={method.requiredPPE} />
+      <MethodValueList label="Tools" values={method.requiredTools} />
+      {method.dwellTime || method.contactTime ? (
+        <Text style={styles.supportingText}>Dwell/contact time: {method.dwellTime || method.contactTime}</Text>
+      ) : null}
+      <MethodValueList label="Ingredients" values={method.ingredients} />
+      <MethodValueList label="Formula" values={method.measurements} />
+      {method.formulaVariants.map(variant => (
+        <View style={styles.methodDetail} key={variant.id || variant.name}>
+          <Text style={styles.supportingText}>{variant.name || "Approved formula"}</Text>
+          {variant.measurements.map((value, index) => (
+            <Text style={styles.supportingText} key={`${variant.id || variant.name}-measurement-${index}`}>- {value}</Text>
+          ))}
+          {variant.expectedYield ? <Text style={styles.supportingText}>Yield: {variant.expectedYield}</Text> : null}
+        </View>
+      ))}
+      {method.dilutionInstructions ? <Text style={styles.supportingText}>Dilution: {method.dilutionInstructions}</Text> : null}
+      <MethodValueList label="Preparation" values={method.mixingOrder} />
+      {application ? <Text style={styles.supportingText}>Application: {application}</Text> : null}
+      {method.rinseInstructions ? <Text style={styles.supportingText}>Rinse: {method.rinseInstructions}</Text> : null}
+      {method.dryingInstructions ? <Text style={styles.supportingText}>Drying: {method.dryingInstructions}</Text> : null}
+      <MethodValueList label="Dangerous combinations" values={method.dangerousCombinations} warning />
+    </View>
+  );
+}
+
+function TaskMethodGuidance({ item, methodById, loading }) {
+  const ids = Array.isArray(item.approvedMethodIds) ? item.approvedMethodIds : [];
+  if (!ids.length) return null;
+  if (loading) return <Text style={styles.supportingText}>Loading approved method guidance...</Text>;
+  const records = ids.map(id => methodById.get(id)).filter(Boolean);
+  if (!records.length) return <Text style={styles.warningText}>{METHOD_UNAVAILABLE}</Text>;
+  const preferred = records.find(record => record.id === item.preferredMethodId) || records[0];
+  return (
+    <View style={styles.taskMethod}>
+      <Text style={styles.methodTaskName}>{item.label}</Text>
+      <MethodGuidance method={preferred} preferred />
+      {records.filter(record => record.id !== preferred.id).map(record => (
+        <MethodGuidance key={record.id} method={record} preferred={false} />
+      ))}
+    </View>
+  );
+}
+
+function SafetyAndMethod({ job, methodById, methodsLoading }) {
+  const { safety, accessSecurity } = job;
+  const hasCautions = safety.hazards.length > 0 || Boolean(
+    safety.surfaceNotes || safety.allergyOrProductRestrictions || safety.pets.present
+  );
+  const methodItems = job.checklist.ready
+    ? job.checklist.items.filter(item => item.approvedMethodIds.length > 0)
+    : [];
+  const petDetails = [
+    safety.pets.count > 0 ? `${safety.pets.count} pet${safety.pets.count === 1 ? "" : "s"}` : "Pets recorded",
+    safety.pets.types.length ? safety.pets.types.join(", ") : "",
+    safety.pets.hairLevel && safety.pets.hairLevel !== "none" ? `${humanize(safety.pets.hairLevel)} pet hair` : "",
+  ].filter(Boolean).join(" | ");
+
+  return (
+    <DetailSection title="Safety & Method">
+      <Text style={styles.subsectionTitle}>Job-Specific Cautions</Text>
+      {!hasCautions ? <Text style={styles.text}>{SAFETY_FALLBACK}</Text> : null}
+      {safety.hazards.map((hazard, index) => (
+        <Text style={styles.warningText} key={`hazard-${index}`}>Hazard: {hazard}</Text>
+      ))}
+      {safety.surfaceNotes ? <Text style={styles.warningText}>Surface / material: {safety.surfaceNotes}</Text> : null}
+      {safety.allergyOrProductRestrictions ? (
+        <Text style={styles.warningText}>Allergy / Product Restrictions: {safety.allergyOrProductRestrictions}</Text>
+      ) : null}
+      {safety.pets.present ? <Text style={styles.warningText}>Pets: {petDetails}</Text> : null}
+
+      <Text style={styles.subsectionTitle}>Access / Security</Text>
+      <Text style={styles.text}>{accessSecurity.instructions || "No job-specific access instructions recorded."}</Text>
+
+      <Text style={styles.subsectionTitle}>Service Method</Text>
+      {!methodItems.length ? <Text style={styles.text}>No approved method guidance is recorded for this job.</Text> : null}
+      {methodItems.map(item => (
+        <TaskMethodGuidance
+          item={item}
+          key={item.id}
+          loading={methodsLoading}
+          methodById={methodById}
+        />
+      ))}
+      <Text style={styles.clarificationText}>{CLARIFICATION_FALLBACK}</Text>
+    </DetailSection>
+  );
+}
+
 export default function JobDetailsScreen({ route, navigation }) {
   const bookingId = route?.params?.bookingId || "";
   const { employee, tenantId } = useContext(AuthContext);
@@ -101,6 +217,7 @@ export default function JobDetailsScreen({ route, navigation }) {
   const mutationRequestId = useRef(0);
   const mutationInFlight = useRef(false);
   const photoRequestId = useRef(0);
+  const methodRequestId = useRef(0);
   const [state, setState] = useState({ key: "", job: null, loading: true, error: "", unavailable: false });
   const [checklist, setChecklist] = useState([]);
   const [fieldNotes, setFieldNotes] = useState("");
@@ -110,6 +227,7 @@ export default function JobDetailsScreen({ route, navigation }) {
   const [actionError, setActionError] = useState("");
   const [photoEvidence, setPhotoEvidence] = useState({ key: "", photos: [], loading: true, error: "" });
   const [completionWarning, setCompletionWarning] = useState(false);
+  const [methodState, setMethodState] = useState({ key: "", records: [], loading: false });
   currentKey.current = requestKey;
 
   const replaceWithPacket = useCallback((job, key, message = "") => {
@@ -235,6 +353,34 @@ export default function JobDetailsScreen({ route, navigation }) {
   const afterPhotos = currentPhotoEvidence.photos.filter(photo => photo.phase === "after");
   const incompleteRequired = checklist.filter(item => item.required && !item.completed);
   const mutationBusy = Boolean(savingAction);
+  const methodIds = job?.checklist.ready
+    ? [...new Set(job.checklist.items.flatMap(item => item.approvedMethodIds))].sort()
+    : [];
+  const methodIdsKey = methodIds.join("|");
+  const methodStateKey = `${requestKey}:${methodIdsKey}`;
+  const currentMethodState = methodState.key === methodStateKey
+    ? methodState
+    : { key: methodStateKey, records: [], loading: methodIds.length > 0 };
+  const methodById = new Map(currentMethodState.records.map(record => [record.id, record]));
+
+  useEffect(() => {
+    const request = ++methodRequestId.current;
+    if (!tenantId || methodIds.length === 0) {
+      setMethodState({ key: methodStateKey, records: [], loading: false });
+      return undefined;
+    }
+    setMethodState({ key: methodStateKey, records: [], loading: true });
+    getEmployeeMethodsByIds(tenantId, methodIds).then(records => {
+      if (request === methodRequestId.current && currentKey.current === requestKey) {
+        setMethodState({ key: methodStateKey, records, loading: false });
+      }
+    }).catch(() => {
+      if (request === methodRequestId.current && currentKey.current === requestKey) {
+        setMethodState({ key: methodStateKey, records: [], loading: false });
+      }
+    });
+    return () => { methodRequestId.current += 1; };
+  }, [methodIdsKey, methodStateKey, requestKey, tenantId]);
 
   const toggleChecklistItem = (id, completed) => {
     if (mutationInFlight.current) return;
@@ -302,15 +448,6 @@ export default function JobDetailsScreen({ route, navigation }) {
       <DetailSection title="Job">
         <Text style={styles.text}>Booking status: {humanize(job.status)}</Text>
         <Text style={styles.text}>Field status: {humanize(job.fieldStatus)}</Text>
-        {job.fieldStatus === "not_started" ? (
-          <View style={styles.actionButton}>
-            <Button
-              title={savingAction === "start" ? "Starting..." : "Start Job"}
-              disabled={mutationBusy}
-              onPress={() => mutate("start", () => startEmployeeJob(bookingId), "Job started.")}
-            />
-          </View>
-        ) : null}
       </DetailSection>
 
       <DetailSection title="Schedule">
@@ -330,6 +467,22 @@ export default function JobDetailsScreen({ route, navigation }) {
       <DetailSection title="Instructions">
         <Text style={styles.text}>{job.instructions}</Text>
       </DetailSection>
+
+      <SafetyAndMethod
+        job={job}
+        methodById={methodById}
+        methodsLoading={currentMethodState.loading}
+      />
+
+      {job.fieldStatus === "not_started" ? (
+        <View style={styles.startButton}>
+          <Button
+            title={savingAction === "start" ? "Starting..." : "Start Job"}
+            disabled={mutationBusy}
+            onPress={() => mutate("start", () => startEmployeeJob(bookingId), "Job started.")}
+          />
+        </View>
+      ) : null}
 
       <DetailSection title="Photo Evidence">
         {currentPhotoEvidence.loading ? (
@@ -493,6 +646,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: "#1e293b", marginBottom: 10 },
+  subsectionTitle: { fontSize: 15, fontWeight: "700", color: "#334155", marginTop: 10, marginBottom: 4 },
   text: { fontSize: 16, lineHeight: 23, color: "#475569", marginBottom: 3 },
   readyText: { fontSize: 16, fontWeight: "600", color: "#166534", marginBottom: 4 },
   reviewText: { fontSize: 16, fontWeight: "600", color: "#92400e" },
@@ -524,6 +678,13 @@ const styles = StyleSheet.create({
   },
   characterCount: { color: "#64748b", fontSize: 12, textAlign: "right", marginTop: 5 },
   actionButton: { marginTop: 12, alignSelf: "flex-start", minWidth: 150 },
+  startButton: { marginBottom: 18, alignSelf: "flex-start", minWidth: 150 },
+  clarificationText: { color: "#475569", fontStyle: "italic", lineHeight: 20, marginTop: 14 },
+  taskMethod: { marginTop: 10 },
+  methodCard: { borderLeftWidth: 3, borderLeftColor: "#64748b", paddingLeft: 10, marginTop: 8 },
+  methodName: { color: "#0f172a", fontWeight: "700" },
+  methodTaskName: { color: "#334155", fontWeight: "600" },
+  methodDetail: { marginTop: 4 },
   requiredText: { color: "#92400e", marginBottom: 12, textAlign: "center" },
   completeButton: { marginTop: 4 },
   photoLoading: { flexDirection: "row", alignItems: "center", gap: 8 },

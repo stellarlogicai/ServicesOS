@@ -5,6 +5,10 @@ const CHECKLIST_MAX_JOB_AID_STEPS = 50;
 const CHECKLIST_MAX_ITEM_WARNINGS = 10;
 const CHECKLIST_MAX_PACKET_WARNINGS = 50;
 const CHECKLIST_MAX_RESPONSE_BYTES = 512 * 1024;
+const SAFETY_MAX_HAZARDS = 30;
+const SAFETY_MAX_HAZARD_LENGTH = 500;
+const SAFETY_MAX_PET_TYPES = 10;
+const SAFETY_MAX_PET_TYPE_LENGTH = 80;
 
 const ROOM_SCOPE = Object.freeze({
   bedroom: ['bedrooms'],
@@ -306,6 +310,47 @@ function fieldInstructions(booking) {
   ), 1000, 'No field instructions provided');
 }
 
+function safetyProjection(booking) {
+  const requestSnapshot = firstObject(booking.requestSnapshot);
+  const propertySnapshot = firstObject(booking.propertySnapshot);
+  const household = firstObject(propertySnapshot.household);
+  const hazards = boundedStringArray(requestSnapshot.hazards, {
+    maxItems: SAFETY_MAX_HAZARDS,
+    maxLength: SAFETY_MAX_HAZARD_LENGTH,
+  }) || [];
+  const petTypes = boundedStringArray(household.petTypes, {
+    maxItems: SAFETY_MAX_PET_TYPES,
+    maxLength: SAFETY_MAX_PET_TYPE_LENGTH,
+  }) || [];
+  const rawPetCount = numberValue(household.petCount);
+  const count = Number.isInteger(rawPetCount) && rawPetCount <= 100 ? rawPetCount : 0;
+  const hairLevel = checkedText(household.petHairLevel, 80) || '';
+  const recordedPresent = household.pets === true;
+
+  return {
+    hazards,
+    surfaceNotes: checkedText(requestSnapshot.surfaceNotes, 1000) || '',
+    allergyOrProductRestrictions: checkedText(household.allergies, 1000) || '',
+    pets: {
+      present: recordedPresent || count > 0 || petTypes.length > 0 || Boolean(hairLevel && hairLevel.toLowerCase() !== 'none'),
+      count,
+      types: petTypes,
+      hairLevel,
+    },
+  };
+}
+
+function accessSecurityProjection(booking) {
+  return {
+    instructions: boundedText(firstText(
+      booking.fieldInstructions,
+      booking.technicianNotes,
+      booking.accessInstructions,
+      booking.requestSnapshot?.accessInstructions
+    ), 1000),
+  };
+}
+
 function boundedStringArray(value, { maxItems, maxLength }) {
   if (value === undefined) return [];
   if (!Array.isArray(value)) return null;
@@ -477,6 +522,8 @@ function employeeJobPacket(id, booking, timeZone) {
     status: booking.status,
     fieldStatus: normalizedFieldStatus(booking.fieldStatus),
     instructions: fieldInstructions(booking),
+    safety: safetyProjection(booking),
+    accessSecurity: accessSecurityProjection(booking),
     checklist: checklistProjection(booking),
     fieldNotes: boundedText(booking.fieldNotes, 1000),
     fieldIssue: boundedText(booking.fieldIssue, 750),
@@ -499,6 +546,8 @@ module.exports = {
   employeeJobPacket,
   employeeJobSortValue,
   employeeJobSummary,
+  accessSecurityProjection,
   isApprovedChecklistCurrent,
   localDateKey,
+  safetyProjection,
 };

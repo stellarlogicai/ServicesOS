@@ -42,6 +42,13 @@ function packet(overrides = {}) {
     status: "scheduled",
     fieldStatus: "not_started",
     instructions: "Use the side entrance.",
+    safety: {
+      hazards: [],
+      surfaceNotes: "",
+      allergyOrProductRestrictions: "",
+      pets: { present: false, count: 0, types: [], hairLevel: "none" },
+    },
+    accessSecurity: { instructions: "Use the side entrance." },
     checklist: {
       ready: true,
       items: [{
@@ -169,16 +176,42 @@ test("summary and detail projections strip all unknown and forbidden fields", ()
       sourceScopeSignature: "private",
       items: [{ ...packet().checklist.items[0], provenance: { private: true } }],
     },
+    safety: {
+      ...packet().safety,
+      private: { ownerNote: true },
+      pets: { ...packet().safety.pets, medicalHistory: "private" },
+    },
+    accessSecurity: { ...packet().accessSecurity, alarmCredential: "private" },
   });
   const forbidden = new Set([
     "agreedPrice", "price", "pricing", "paymentStatus", "paymentMethod", "amountReceived",
     "stripeCustomerId", "billing", "subscription", "leadId", "sourceLeadId",
     "customerSnapshot", "propertySnapshot", "requestSnapshot", "rawInput", "formData",
     "assignedEmployeeAuthUid", "assignedEmployeeId", "jobChecklistSnapshot", "provenance",
-    "sourceScopeSignature", "tenantUsers",
+    "sourceScopeSignature", "tenantUsers", "medicalHistory", "alarmCredential", "ownerNote",
   ]);
   assert.equal(recursiveKeys(safeSummary).some(key => forbidden.has(key)), false);
   assert.equal(recursiveKeys(safePacket).some(key => forbidden.has(key)), false);
+});
+
+test("safety and access values are reconstructed through the narrow mobile allowlist", () => {
+  const safe = sanitizeEmployeeJobPacket(packet({
+    safety: {
+      hazards: ["Loose stair rail"],
+      surfaceNotes: "Natural stone counter",
+      allergyOrProductRestrictions: "Unscented products only",
+      pets: { present: true, count: 2, types: ["dog", "cat"], hairLevel: "heavy", private: true },
+      private: true,
+    },
+    accessSecurity: { instructions: "Use the rear gate", private: true },
+  }));
+  assert.deepEqual(safe.safety, {
+    hazards: ["Loose stair rail"],
+    surfaceNotes: "Natural stone counter",
+    allergyOrProductRestrictions: "Unscented products only",
+    pets: { present: true, count: 2, types: ["dog", "cat"], hairLevel: "heavy" },
+  });
+  assert.deepEqual(safe.accessSecurity, { instructions: "Use the rear gate" });
 });
 
 test("unready checklist cannot place stale task content in mobile state", () => {

@@ -60,6 +60,28 @@ function safeSchedule(value) {
   };
 }
 
+function safeSafety(value) {
+  const safety = objectValue(value);
+  const pets = objectValue(safety.pets);
+  if (typeof pets.present !== "boolean") malformedPayload();
+  return {
+    hazards: stringArray(safety.hazards, 30),
+    surfaceNotes: text(safety.surfaceNotes),
+    allergyOrProductRestrictions: text(safety.allergyOrProductRestrictions),
+    pets: {
+      present: pets.present,
+      count: nonnegativeInteger(pets.count),
+      types: stringArray(pets.types, 10),
+      hairLevel: text(pets.hairLevel),
+    },
+  };
+}
+
+function safeAccessSecurity(value) {
+  const accessSecurity = objectValue(value);
+  return { instructions: text(accessSecurity.instructions) };
+}
+
 function safeJobAidStep(value) {
   const step = objectValue(value);
   return {
@@ -132,6 +154,8 @@ function sanitizeEmployeeJobPacket(value) {
     status: text(job.status),
     fieldStatus: text(job.fieldStatus),
     instructions: text(job.instructions),
+    safety: safeSafety(job.safety),
+    accessSecurity: safeAccessSecurity(job.accessSecurity),
     checklist: {
       ready: checklist.ready,
       items,
