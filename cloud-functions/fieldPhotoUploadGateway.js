@@ -44,11 +44,12 @@ function exactKeys(value, allowed, required) {
 }
 
 function normalizeGatewayRequest(body = {}) {
-  const action = cleanString(body.action, 16);
+  const action = cleanString(body.action, 32);
   const common = ['action', 'tenantId', 'bookingId', 'clientUploadId'];
   const reserveOnly = ['phase', 'roomLabel', 'note', 'contentType', 'sizeBytes', 'clientFileLastModifiedAt'];
   const allowed = action === 'reserve' ? [...common, ...reserveOnly] : common;
-  if (!['reserve', 'finalize'].includes(action) || !exactKeys(body, allowed, common)) {
+  if (!['reserve', 'create_upload_session', 'finalize'].includes(action) ||
+      !exactKeys(body, allowed, common)) {
     throw new FieldPhotoUploadError('The field-photo upload request is invalid.', { code: 'invalid_request' });
   }
 
@@ -61,7 +62,7 @@ function normalizeGatewayRequest(body = {}) {
   if (request.tenantId === 'DEFAULT' || !/^[A-Za-z0-9_-]{16,128}$/.test(request.clientUploadId)) {
     throw new FieldPhotoUploadError('The field-photo upload request is invalid.', { code: 'invalid_request' });
   }
-  if (action === 'finalize') return request;
+  if (action !== 'reserve') return request;
 
   const phase = cleanString(body.phase, 16);
   const roomLabel = cleanString(body.roomLabel, 80);
@@ -329,7 +330,50 @@ async function loadReservedSlot({ admin, request, uid }) {
   if (!slot || slot.uploadedByUid !== uid || !['reserved', 'finalized'].includes(slot.status)) {
     throw new FieldPhotoUploadError('The field-photo reservation was not found.', { code: 'reservation_not_found', status: 404 });
   }
-  return { refs, slot };
+  return { refs, slot, booking };
+}
+
+async function createFieldPhotoUploadSession({ admin, requestBody, uid }) {
+  const request = normalizeGatewayRequest(requestBody);
+  if (request.action !== 'create_upload_session') {
+    throw new FieldPhotoUploadError('Create upload session action required.', { code: 'invalid_request' });
+  }
+  const { slot, booking } = await loadReservedSlot({ admin, request, uid });
+  const projection = booking[FIELD_PHOTO_RESERVATIONS_FIELD]?.[slot.fileName];
+  if (slot.status !== 'reserved' || !projectionMatchesSlot(projection, slot)) {
+    throw new FieldPhotoUploadError('The field-photo reservation was not found.', {
+      code: 'reservation_not_found',
+      status: 404,
+    });
+  }
+
+  let sessionUrl;
+  try {
+    [sessionUrl] = await admin.storage().bucket().file(slot.storagePath).createResumableUpload({
+      metadata: {
+        contentLength: slot.sizeBytes,
+        contentType: slot.contentType,
+      },
+      preconditionOpts: { ifGenerationMatch: 0 },
+    });
+  } catch {
+    throw new FieldPhotoUploadError('The mobile photo upload session could not be created.', {
+      code: 'upload_session_unavailable',
+      status: 502,
+    });
+  }
+  if (typeof sessionUrl !== 'string' || !/^https?:\/\//.test(sessionUrl)) {
+    throw new FieldPhotoUploadError('The mobile photo upload session could not be created.', {
+      code: 'upload_session_unavailable',
+      status: 502,
+    });
+  }
+  return {
+    sessionUrl,
+    storagePath: slot.storagePath,
+    contentType: slot.contentType,
+    sizeBytes: slot.sizeBytes,
+  };
 }
 
 async function finalizeFieldPhotoUpload({ admin, requestBody, uid }) {
@@ -441,6 +485,10 @@ function createFieldPhotoUploadGatewayHandler({ admin }) {
         const result = await reserveFieldPhotoUpload({ admin, requestBody: req.body, uid });
         return res.status(200).json({ success: true, action: 'reserve', ...result });
       }
+      if (request.action === 'create_upload_session') {
+        const upload = await createFieldPhotoUploadSession({ admin, requestBody: req.body, uid });
+        return res.status(200).json({ success: true, action: 'create_upload_session', upload });
+      }
       const photo = await finalizeFieldPhotoUpload({ admin, requestBody: req.body, uid });
       return res.status(200).json({ success: true, action: 'finalize', photo });
     } catch (error) {
@@ -460,6 +508,7 @@ module.exports = {
   FieldPhotoUploadError,
   authorizeFieldPhotoActor,
   createFieldPhotoUploadGatewayHandler,
+  createFieldPhotoUploadSession,
   finalizeFieldPhotoUpload,
   normalizeGatewayRequest,
   reserveFieldPhotoUpload,

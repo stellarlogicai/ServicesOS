@@ -5,6 +5,7 @@ const {
   FIELD_PHOTO_MAX_PER_BOOKING,
   FieldPhotoUploadError,
   createFieldPhotoUploadGatewayHandler,
+  createFieldPhotoUploadSession,
   finalizeFieldPhotoUpload,
   normalizeGatewayRequest,
   reserveFieldPhotoUpload,
@@ -138,9 +139,15 @@ function baseDocuments() {
 function fakeAdmin(documents = baseDocuments()) {
   const db = new FakeFirestore(documents);
   const objects = new Map();
+  const uploadSessions = [];
+  const sessionUrl = 'https://storage.example.test/fake-resumable-session';
+  const sessionState = { error: null };
   return {
     db,
     objects,
+    uploadSessions,
+    sessionUrl,
+    sessionState,
     admin: {
       auth: () => ({ verifyIdToken: async token => {
         if (!token || token === 'invalid') throw new Error('invalid token');
@@ -152,6 +159,11 @@ function fakeAdmin(documents = baseDocuments()) {
       storage: () => ({
         bucket: () => ({
           file: storagePath => ({
+            createResumableUpload: async options => {
+              uploadSessions.push({ storagePath, options: clone(options) });
+              if (sessionState.error) throw sessionState.error;
+              return [sessionUrl];
+            },
             getMetadata: async () => {
               if (!objects.has(storagePath)) throw Object.assign(new Error('missing'), { code: 404 });
               return [clone(objects.get(storagePath))];
@@ -188,6 +200,15 @@ function finalizeRequest(source = reserveRequest()) {
   };
 }
 
+function uploadSessionRequest(source = reserveRequest()) {
+  return {
+    action: 'create_upload_session',
+    tenantId: source.tenantId,
+    bookingId: source.bookingId,
+    clientUploadId: source.clientUploadId,
+  };
+}
+
 function slotPath(request, uid = 'admin-a') {
   const { slotId } = slotIdentity(request);
   return `tenants/${request.tenantId}/bookings/${request.bookingId}/fieldPhotoUploadSlots/${slotId}`;
@@ -206,6 +227,14 @@ async function reserveAndStore(env, request = reserveRequest(), uid = 'admin-a')
     size: String(slot.sizeBytes),
   });
   return result;
+}
+
+async function createSession(env, request = reserveRequest(), uid = 'admin-a') {
+  return createFieldPhotoUploadSession({
+    admin: env.admin,
+    requestBody: uploadSessionRequest(request),
+    uid,
+  });
 }
 
 describe('field photo upload gateway', () => {
@@ -284,6 +313,156 @@ describe('field photo upload gateway', () => {
       reserve(env, reserveRequest({ roomLabel: 'Bathroom' })),
       error => error.code === 'upload_conflict',
     );
+  });
+
+  test('create upload session accepts only the exact reservation identity request', () => {
+    assert.deepEqual(normalizeGatewayRequest(uploadSessionRequest()), uploadSessionRequest());
+    assert.throws(
+      () => normalizeGatewayRequest({ ...uploadSessionRequest(), action: 'create_session' }),
+      error => error.code === 'invalid_request',
+    );
+    for (const extra of [
+      { storagePath: 'other/path' },
+      { contentType: 'image/png' },
+      { sizeBytes: 1 },
+      { phase: 'after' },
+      { uid: 'employee-a' },
+    ]) {
+      assert.throws(
+        () => normalizeGatewayRequest({ ...uploadSessionRequest(), ...extra }),
+        error => error.code === 'invalid_request',
+      );
+    }
+  });
+
+  test('create upload session requires authentication through the handler', async () => {
+    const env = fakeAdmin();
+    const handler = createFieldPhotoUploadGatewayHandler({ admin: env.admin });
+    const response = {
+      statusCode: 0,
+      set() {},
+      status(code) { this.statusCode = code; return this; },
+      json(payload) { this.payload = payload; return this; },
+      send() { return this; },
+    };
+    await handler({ method: 'POST', headers: {}, body: uploadSessionRequest() }, response);
+    assert.equal(response.statusCode, 401);
+    assert.equal(env.uploadSessions.length, 0);
+  });
+
+  test('create upload session denies missing slots, wrong uploaders, and invalid actors', async () => {
+    const missing = fakeAdmin();
+    await assert.rejects(createSession(missing), error => error.code === 'reservation_not_found');
+
+    const wrongUploader = fakeAdmin();
+    await reserve(wrongUploader);
+    await assert.rejects(createSession(wrongUploader, reserveRequest(), 'employee-a'), error => error.code === 'reservation_not_found');
+
+    const invalidActor = fakeAdmin();
+    await reserve(invalidActor);
+    await assert.rejects(createSession(invalidActor, reserveRequest(), 'customer-a'), error => error.code === 'forbidden');
+  });
+
+  test('create upload session rechecks reassignment and archived/deleted state', async () => {
+    for (const bookingPatch of [
+      { assignedEmployeeAuthUid: 'employee-b' },
+      { isArchived: true },
+      { isDeleted: true },
+    ]) {
+      const env = fakeAdmin();
+      await reserve(env, reserveRequest(), 'employee-a');
+      const bookingPath = 'tenants/tenant-a/bookings/booking-a';
+      env.db.documents.set(bookingPath, { ...env.db.documents.get(bookingPath), ...bookingPatch });
+      await assert.rejects(createSession(env, reserveRequest(), 'employee-a'), error => error.code === 'forbidden');
+      assert.equal(env.uploadSessions.length, 0);
+    }
+  });
+
+  test('create upload session denies finalized or inconsistent reservations', async () => {
+    const finalized = fakeAdmin();
+    await reserveAndStore(finalized);
+    await finalizeFieldPhotoUpload({ admin: finalized.admin, requestBody: finalizeRequest(), uid: 'admin-a' });
+    await assert.rejects(createSession(finalized), error => error.code === 'reservation_not_found');
+
+    const inconsistent = fakeAdmin();
+    await reserve(inconsistent);
+    const bookingPath = 'tenants/tenant-a/bookings/booking-a';
+    inconsistent.db.documents.set(bookingPath, {
+      ...inconsistent.db.documents.get(bookingPath),
+      fieldPhotoUploadReservations: {},
+    });
+    await assert.rejects(createSession(inconsistent), error => error.code === 'reservation_not_found');
+  });
+
+  test('create upload session uses the exact reserved object and create-only precondition', async () => {
+    const env = fakeAdmin();
+    const reservation = await reserve(env, reserveRequest(), 'employee-a');
+    const upload = await createSession(env, reserveRequest(), 'employee-a');
+    assert.deepEqual(upload, {
+      sessionUrl: env.sessionUrl,
+      storagePath: reservation.reservation.storagePath,
+      contentType: 'image/jpeg',
+      sizeBytes: 128,
+    });
+    assert.deepEqual(env.uploadSessions, [{
+      storagePath: reservation.reservation.storagePath,
+      options: {
+        metadata: { contentLength: 128, contentType: 'image/jpeg' },
+        preconditionOpts: { ifGenerationMatch: 0 },
+      },
+    }]);
+  });
+
+  test('session capability is returned only in the response and is not persisted or logged', async () => {
+    const env = fakeAdmin();
+    await reserve(env);
+    const messages = [];
+    const original = { log: console.log, info: console.info, warn: console.warn, error: console.error };
+    for (const key of Object.keys(original)) console[key] = (...values) => messages.push(values.join(' '));
+    try {
+      const upload = await createSession(env);
+      assert.equal(upload.sessionUrl, env.sessionUrl);
+    } finally {
+      Object.assign(console, original);
+    }
+    assert.equal(JSON.stringify([...env.db.documents.values()]).includes(env.sessionUrl), false);
+    assert.equal(messages.join('\n').includes(env.sessionUrl), false);
+  });
+
+  test('handler session response is allowlisted and Storage failures cannot leak capability details', async () => {
+    const invoke = async env => {
+      const handler = createFieldPhotoUploadGatewayHandler({ admin: env.admin });
+      const response = {
+        statusCode: 0,
+        set() {},
+        status(code) { this.statusCode = code; return this; },
+        json(payload) { this.payload = payload; return this; },
+        send() { return this; },
+      };
+      await handler({
+        method: 'POST',
+        headers: { authorization: 'Bearer employee-a' },
+        body: uploadSessionRequest(),
+      }, response);
+      return response;
+    };
+
+    const success = fakeAdmin();
+    await reserve(success, reserveRequest(), 'employee-a');
+    const allowed = await invoke(success);
+    assert.equal(allowed.statusCode, 200);
+    assert.deepEqual(Object.keys(allowed.payload).sort(), ['action', 'success', 'upload']);
+    assert.deepEqual(Object.keys(allowed.payload.upload).sort(), [
+      'contentType', 'sessionUrl', 'sizeBytes', 'storagePath',
+    ]);
+
+    const failure = fakeAdmin();
+    await reserve(failure, reserveRequest(), 'employee-a');
+    failure.sessionState.error = new Error(`Storage rejected ${failure.sessionUrl}`);
+    const denied = await invoke(failure);
+    assert.equal(denied.statusCode, 502);
+    assert.equal(denied.payload.code, 'upload_session_unavailable');
+    assert.equal(JSON.stringify(denied.payload).includes(failure.sessionUrl), false);
   });
 
   test('permits exactly 20 issued slots and denies the twenty-first', async () => {
