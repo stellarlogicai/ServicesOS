@@ -9,6 +9,10 @@ const mockSaveEmployeeNotes = jest.fn();
 const mockCompleteEmployeeJob = jest.fn();
 const mockListEmployeeFieldPhotos = jest.fn();
 const mockGetEmployeeMethodsByIds = jest.fn();
+const mockOpenEmployeeJobDirections = jest.fn();
+const mockHasEmployeeJobDirections = jest.fn(address => (
+  typeof address === "string" && address.trim() && address.trim().toLowerCase() !== "address not provided"
+));
 
 jest.mock("../../api/employeeJobs", () => ({
   getEmployeeJob: (...args) => mockGetEmployeeJob(...args),
@@ -25,6 +29,10 @@ jest.mock("../../api/employeePhotoEvidence", () => ({
 }));
 jest.mock("../../api/employeeMethods", () => ({
   getEmployeeMethodsByIds: (...args) => mockGetEmployeeMethodsByIds(...args),
+}));
+jest.mock("../../api/employeeNavigation", () => ({
+  openEmployeeJobDirections: (...args) => mockOpenEmployeeJobDirections(...args),
+  hasEmployeeJobDirections: (...args) => mockHasEmployeeJobDirections(...args),
 }));
 jest.mock("../../components/FieldPhotoCapture", () => {
   const ReactModule = require("react");
@@ -131,6 +139,7 @@ beforeEach(() => {
   }));
   mockListEmployeeFieldPhotos.mockResolvedValue([]);
   mockGetEmployeeMethodsByIds.mockResolvedValue([]);
+  mockOpenEmployeeJobDirections.mockResolvedValue({ opened: true });
 });
 
 test("performs a fresh GET and hides detail until it resolves", async () => {
@@ -164,6 +173,77 @@ test("renders safe job data and read-only checklist structure", async () => {
   expect(screen.getByLabelText("Reported Issue")).toBeTruthy();
   expect(await screen.findByText("before: 0 uploaded enabled")).toBeTruthy();
   expect(screen.getByText("after: 0 uploaded disabled")).toBeTruthy();
+});
+
+test("shows Get Directions beside a valid safe address before Start and while in progress", async () => {
+  renderDetail();
+
+  expect(await screen.findByText("100 Example Ave")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Get Directions" })).toBeTruthy();
+  expect(screen.getByText("Start Job")).toBeTruthy();
+
+  await act(async () => fireEvent.press(screen.getByText("Start Job")));
+  expect(await screen.findByText("Field status: In Progress")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Get Directions" })).toBeTruthy();
+});
+
+test("omits Get Directions when the current packet has no usable address", async () => {
+  mockGetEmployeeJob.mockResolvedValue(packet("booking-a", { location: { address: "Address not provided" } }));
+  renderDetail();
+
+  expect(await screen.findByText("Address not provided")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Get Directions" })).toBeNull();
+});
+
+test("opens directions with only the current JobPacket address", async () => {
+  renderDetail();
+  const directions = await screen.findByRole("button", { name: "Get Directions" });
+  await act(async () => fireEvent.press(directions));
+
+  expect(mockOpenEmployeeJobDirections).toHaveBeenCalledTimes(1);
+  expect(mockOpenEmployeeJobDirections.mock.calls[0][0]).toBe("100 Example Ave");
+});
+
+test("navigation failure shows a safe message without interrupting job work", async () => {
+  mockOpenEmployeeJobDirections.mockRejectedValue(new Error("private navigation detail"));
+  renderDetail();
+
+  const directions = await screen.findByRole("button", { name: "Get Directions" });
+  await act(async () => fireEvent.press(directions));
+  expect(await screen.findByText("Unable to open directions. Please open your maps app and enter the service address manually.")).toBeTruthy();
+  expect(screen.getByText("Standard Cleaning")).toBeTruthy();
+  expect(screen.getByText("Start Job")).toBeTruthy();
+});
+
+test("a replaced JobPacket invalidates an earlier navigation callback", async () => {
+  const pending = deferred();
+  mockOpenEmployeeJobDirections.mockReturnValue(pending.promise);
+  const view = renderDetail();
+  const directions = await screen.findByRole("button", { name: "Get Directions" });
+  act(() => {
+    fireEvent.press(directions);
+  });
+  const firstCall = mockOpenEmployeeJobDirections.mock.calls[0];
+
+  mockGetEmployeeJob.mockResolvedValueOnce(packet("booking-b", {
+    customer: { name: "Customer B", phone: "555-0200" },
+    location: { address: "200 New Address" },
+  }));
+  view.rerender(
+    <AuthContext.Provider value={{ employee: { uid: "employee-a" }, tenantId: "tenant-a" }}>
+      <JobDetailsScreen route={{ params: { bookingId: "booking-b" } }} navigation={{ goBack: jest.fn() }} />
+    </AuthContext.Provider>
+  );
+  expect(await screen.findByText("Customer B")).toBeTruthy();
+  expect(firstCall[1].isCurrent()).toBe(false);
+
+  await act(async () => {
+    pending.reject(new Error("late native failure"));
+    await Promise.resolve();
+  });
+  mockOpenEmployeeJobDirections.mockResolvedValueOnce({ opened: true });
+  await act(async () => fireEvent.press(screen.getByRole("button", { name: "Get Directions" })));
+  expect(mockOpenEmployeeJobDirections.mock.calls[1][0]).toBe("200 New Address");
 });
 
 test("renders recorded safety and access before Start without inferring safety or requiring acknowledgment", async () => {

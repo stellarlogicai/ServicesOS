@@ -20,6 +20,10 @@ import {
 import { listEmployeeFieldPhotos } from "../api/employeePhotoEvidence";
 import { getEmployeeMethodsByIds } from "../api/employeeMethods";
 import FieldPhotoCapture from "../components/FieldPhotoCapture";
+import {
+  hasEmployeeJobDirections,
+  openEmployeeJobDirections,
+} from "../api/employeeNavigation";
 
 const DETAIL_ERROR = "This job could not be loaded. Try again.";
 const UPDATE_ERROR = "Your job update could not be saved. Try again.";
@@ -33,6 +37,7 @@ const NO_AFTER_PHOTOS_WARNING = "No after photos have been uploaded. Complete th
 const METHOD_UNAVAILABLE = "Approved method guidance is currently unavailable. Contact the owner/supervisor before proceeding if clarification is needed.";
 const SAFETY_FALLBACK = "No job-specific safety notes recorded.";
 const CLARIFICATION_FALLBACK = "If conditions differ from the recorded job information or instructions are unclear, contact the owner/supervisor before proceeding.";
+const DIRECTIONS_ERROR = "Unable to open directions. Please open your maps app and enter the service address manually.";
 
 function humanize(value) {
   return typeof value === "string"
@@ -218,6 +223,8 @@ export default function JobDetailsScreen({ route, navigation }) {
   const mutationInFlight = useRef(false);
   const photoRequestId = useRef(0);
   const methodRequestId = useRef(0);
+  const navigationRequestId = useRef(0);
+  const packetVersion = useRef(0);
   const [state, setState] = useState({ key: "", job: null, loading: true, error: "", unavailable: false });
   const [checklist, setChecklist] = useState([]);
   const [fieldNotes, setFieldNotes] = useState("");
@@ -228,9 +235,13 @@ export default function JobDetailsScreen({ route, navigation }) {
   const [photoEvidence, setPhotoEvidence] = useState({ key: "", photos: [], loading: true, error: "" });
   const [completionWarning, setCompletionWarning] = useState(false);
   const [methodState, setMethodState] = useState({ key: "", records: [], loading: false });
+  const [navigationBusy, setNavigationBusy] = useState(false);
+  const [navigationError, setNavigationError] = useState("");
   currentKey.current = requestKey;
 
   const replaceWithPacket = useCallback((job, key, message = "") => {
+    packetVersion.current += 1;
+    navigationRequestId.current += 1;
     setState({ key, job, loading: false, error: "", unavailable: false });
     setChecklist(job.checklist.ready ? job.checklist.items.map(item => ({ ...item })) : []);
     setFieldNotes(job.fieldNotes);
@@ -238,9 +249,13 @@ export default function JobDetailsScreen({ route, navigation }) {
     setActionMessage(message);
     setActionError("");
     setCompletionWarning(false);
+    setNavigationBusy(false);
+    setNavigationError("");
   }, []);
 
   const clearUnavailable = useCallback(key => {
+    packetVersion.current += 1;
+    navigationRequestId.current += 1;
     setState({ key, job: null, loading: false, error: UNAVAILABLE_ERROR, unavailable: true });
     setChecklist([]);
     setFieldNotes("");
@@ -248,9 +263,15 @@ export default function JobDetailsScreen({ route, navigation }) {
     setActionMessage("");
     setActionError("");
     setCompletionWarning(false);
+    setNavigationBusy(false);
+    setNavigationError("");
   }, []);
 
   const loadJob = useCallback(async () => {
+    packetVersion.current += 1;
+    navigationRequestId.current += 1;
+    setNavigationBusy(false);
+    setNavigationError("");
     if (!employeeUid || !bookingId) {
       setState({ key: requestKey, job: null, loading: false, error: DETAIL_ERROR, unavailable: false });
       return;
@@ -362,6 +383,8 @@ export default function JobDetailsScreen({ route, navigation }) {
     ? methodState
     : { key: methodStateKey, records: [], loading: methodIds.length > 0 };
   const methodById = new Map(currentMethodState.records.map(record => [record.id, record]));
+  const navigationAddress = job?.location?.address;
+  const navigationAvailable = hasEmployeeJobDirections(navigationAddress);
 
   useEffect(() => {
     const request = ++methodRequestId.current;
@@ -381,6 +404,28 @@ export default function JobDetailsScreen({ route, navigation }) {
     });
     return () => { methodRequestId.current += 1; };
   }, [methodIdsKey, methodStateKey, requestKey, tenantId]);
+
+  const openDirections = useCallback(async () => {
+    if (!navigationAvailable || navigationBusy) return;
+    const key = requestKey;
+    const version = packetVersion.current;
+    const request = ++navigationRequestId.current;
+    setNavigationBusy(true);
+    setNavigationError("");
+    try {
+      await openEmployeeJobDirections(navigationAddress, {
+        isCurrent: () => currentKey.current === key && packetVersion.current === version,
+      });
+    } catch {
+      if (request === navigationRequestId.current && currentKey.current === key && packetVersion.current === version) {
+        setNavigationError(DIRECTIONS_ERROR);
+      }
+    } finally {
+      if (request === navigationRequestId.current && currentKey.current === key && packetVersion.current === version) {
+        setNavigationBusy(false);
+      }
+    }
+  }, [navigationAddress, navigationAvailable, navigationBusy, requestKey]);
 
   const toggleChecklistItem = (id, completed) => {
     if (mutationInFlight.current) return;
@@ -462,6 +507,16 @@ export default function JobDetailsScreen({ route, navigation }) {
 
       <DetailSection title="Location">
         <Text style={styles.text}>{job.location.address}</Text>
+        {navigationAvailable ? (
+          <View style={styles.actionButton}>
+            <Button
+              title={navigationBusy ? "Opening Directions..." : "Get Directions"}
+              disabled={navigationBusy}
+              onPress={openDirections}
+            />
+          </View>
+        ) : null}
+        {navigationError ? <Text style={styles.errorText} accessibilityRole="alert">{navigationError}</Text> : null}
       </DetailSection>
 
       <DetailSection title="Instructions">
