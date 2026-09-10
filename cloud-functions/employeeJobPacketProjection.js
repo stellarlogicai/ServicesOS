@@ -343,8 +343,6 @@ function safetyProjection(booking) {
 function accessSecurityProjection(booking) {
   return {
     instructions: boundedText(firstText(
-      booking.fieldInstructions,
-      booking.technicianNotes,
       booking.accessInstructions,
       booking.requestSnapshot?.accessInstructions
     ), 1000),

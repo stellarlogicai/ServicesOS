@@ -400,9 +400,9 @@ describe('employee-safe JobPacket projection', () => {
 
   test('recorded job safety facts and access instructions are narrowly projected', () => {
     const packet = employeeJobPacket('booking-a', baseBooking({
-      fieldInstructions: '',
-      technicianNotes: '',
-      accessInstructions: '',
+      fieldInstructions: 'Generic field instruction.',
+      technicianNotes: 'Generic technician note.',
+      accessInstructions: 'Use the current booking gate instructions.',
       propertySnapshot: {
         roomCounts: { bedrooms: 2, bathrooms: 1, kitchens: 1 },
         household: {
@@ -421,7 +421,7 @@ describe('employee-safe JobPacket projection', () => {
         serviceScope: {},
         hazards: ['Loose stair rail'],
         surfaceNotes: 'Natural stone counters.',
-        accessInstructions: 'Use the current booking gate instructions.',
+        accessInstructions: 'Fallback request gate instructions.',
         specialRequests: 'Mixed customer note must not enter safety.',
       },
     }), 'UTC');
@@ -431,10 +431,28 @@ describe('employee-safe JobPacket projection', () => {
       allergyOrProductRestrictions: 'Use fragrance-free products.',
       pets: { present: true, count: 2, types: ['dog', 'cat'], hairLevel: 'heavy' },
     });
+    assert.equal(packet.instructions, 'Generic field instruction.');
     assert.deepEqual(packet.accessSecurity, { instructions: 'Use the current booking gate instructions.' });
     assert.equal(JSON.stringify(packet.safety).includes('Mixed customer note'), false);
     assert.equal(JSON.stringify(packet).includes('Stale profile gate code'), false);
     assert.equal(JSON.stringify(packet).includes('medicalHistory'), false);
+  });
+
+  test('access guidance falls back to explicit request access without generic or profile fields', () => {
+    const packet = employeeJobPacket('booking-a', baseBooking({
+      fieldInstructions: 'Generic field instruction.',
+      technicianNotes: 'Generic technician note.',
+      accessInstructions: '',
+      propertySnapshot: {
+        access: { accessInstructions: 'Stale profile gate code must not be used.' },
+      },
+      requestSnapshot: {
+        accessInstructions: 'Use the request-specific lockbox instructions.',
+      },
+    }), 'UTC');
+
+    assert.equal(packet.instructions, 'Generic field instruction.');
+    assert.deepEqual(packet.accessSecurity, { instructions: 'Use the request-specific lockbox instructions.' });
   });
 
   test('safety fields are bounded and malformed nested values fail closed', () => {
