@@ -53,7 +53,6 @@ export default function MessagesScreen() {
 
     try {
       // TODO: Implement actual message sending to Firestore
-      console.log("Sending message:", newMessage);
       setNewMessage("");
     } catch (error) {
       console.error("Error sending message:", error);

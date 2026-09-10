@@ -1,6 +1,6 @@
 # ServicesOS Employee App
 
-React Native Expo mobile app for ServicesOS employees to manage their assigned jobs, checklists, training, and communications.
+React Native Expo mobile app for verified ServicesOS employees to complete assigned field work.
 
 ## Project Structure
 
@@ -17,8 +17,6 @@ employee-app/
 │   │   ├── LoginScreen.jsx      # Login screen
 │   │   ├── TodayScreen.jsx      # Today's jobs
 │   │   ├── JobDetailsScreen.jsx # Job details
-│   │   ├── TrainingScreen.jsx   # Training modules
-│   │   ├── MessagesScreen.jsx   # Messages
 │   │   └── ProfileScreen.jsx    # Employee profile
 │   ├── components/              # Reusable components
 │   └── utils/                   # Utility functions
@@ -29,12 +27,13 @@ employee-app/
 
 ## Features
 
-- **Authentication**: Firebase-based login for employees
-- **Today's Jobs**: View assigned jobs for the current day
-- **Job Details**: Detailed job information with customer notes, access instructions, pet info
-- **Training**: View assigned training modules and completion status
-- **Messages**: Communicate with office/manager
-- **Profile**: View employee profile and logout
+- **Canonical employee authentication**: Firebase credentials are verified against the server-side employee session gateway before the app shell unlocks.
+- **My Day**: View only the employee-safe summaries for assigned current and upcoming jobs.
+- **Job Detail**: Load a fresh employee-safe JobPacket for each job, including field instructions, safety and method guidance, and directions.
+- **Field execution**: Start work, record approved checklist progress, save field notes or an issue, and complete through the server-owned execution gateway.
+- **Photo evidence**: Capture before/after evidence through the reserved-slot upload flow.
+- **SLAI Work Assistant**: Get bounded help for the current assigned job.
+- **Profile**: View verified display name, email, and role; log out.
 
 ## Setup
 
@@ -73,21 +72,17 @@ listen on a non-loopback interface; this app does not alter emulator server bind
 
 ## Security
 
-Employees can only access:
-- Their own profile
-- Jobs assigned to them
-- Their training assignments
-- Their messages
+Employees can only access their verified employee session and server-projected assigned job data. The app never directly reads full booking documents.
 
 Firestore security rules must be configured to enforce these restrictions.
 
-## Next Steps
+## Later Work
 
-- Implement actual Firestore queries for jobs, training, messages
-- Add checklist completion functionality
-- Add photo upload capability
-- Add time tracking
-- Add Stripe Terminal for Tap to Pay
-- Implement offline support
-- Add push notifications
-- Tighten Firestore security rules
+The following are intentionally not active in this V1 app:
+
+- Add-On / Change Request
+- Tap to Pay
+- Training library
+- Office messaging
+- Offline queue
+- Push notifications

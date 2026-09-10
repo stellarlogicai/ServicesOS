@@ -33,43 +33,23 @@ export default function ProfileScreen() {
     <ScrollView style={styles.container}>
       <Text style={styles.title}>Profile</Text>
 
-      <View style={styles.section}>
-        <Text style={styles.label}>Name</Text>
-        <Text style={styles.value}>{employee.name || "Not set"}</Text>
-      </View>
+      {employee.displayName ? (
+        <View style={styles.section}>
+          <Text style={styles.label}>Name</Text>
+          <Text style={styles.value}>{employee.displayName}</Text>
+        </View>
+      ) : null}
 
-      <View style={styles.section}>
-        <Text style={styles.label}>Email</Text>
-        <Text style={styles.value}>{employee.email || "Not set"}</Text>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.label}>Phone</Text>
-        <Text style={styles.value}>{employee.phone || "Not set"}</Text>
-      </View>
+      {employee.email ? (
+        <View style={styles.section}>
+          <Text style={styles.label}>Email</Text>
+          <Text style={styles.value}>{employee.email}</Text>
+        </View>
+      ) : null}
 
       <View style={styles.section}>
         <Text style={styles.label}>Role</Text>
-        <Text style={styles.value}>{employee.role || "Not set"}</Text>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.label}>Status</Text>
-        <Text style={[styles.value, employee.status === 'active' ? styles.active : styles.inactive]}>
-          {employee.status || "Unknown"}
-        </Text>
-      </View>
-
-      {employee.companyId && (
-        <View style={styles.section}>
-          <Text style={styles.label}>Company ID</Text>
-          <Text style={styles.value}>{employee.companyId}</Text>
-        </View>
-      )}
-
-      <View style={styles.section}>
-        <Text style={styles.label}>Employee ID</Text>
-        <Text style={styles.value}>{employee.id}</Text>
+        <Text style={styles.value}>Employee</Text>
       </View>
 
       <View style={styles.buttonContainer}>
@@ -104,12 +84,6 @@ const styles = StyleSheet.create({
   value: {
     fontSize: 18,
     color: "#333",
-  },
-  active: {
-    color: "green",
-  },
-  inactive: {
-    color: "red",
   },
   errorText: {
     fontSize: 18,

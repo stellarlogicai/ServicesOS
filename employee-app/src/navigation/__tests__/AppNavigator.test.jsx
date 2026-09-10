@@ -34,8 +34,6 @@ jest.mock("@react-navigation/native-stack", () => ({
 jest.mock("../../screens/TodayScreen", () => () => null);
 jest.mock("../../screens/JobDetailsScreen", () => () => null);
 jest.mock("../../screens/WorkAssistantScreen", () => () => null);
-jest.mock("../../screens/TrainingScreen", () => () => null);
-jest.mock("../../screens/MessagesScreen", () => () => null);
 jest.mock("../../screens/ProfileScreen", () => () => null);
 
 import { AuthContext } from "../../context/AuthContext";
@@ -106,4 +104,14 @@ test("jobs stack keeps Today and Job Details, adds Work Assistant, and retires t
   expect(source).toMatch(/name="WorkAssistant"/);
   expect(source).not.toMatch(/name="Checklist"/);
   expect(source).not.toMatch(/import ChecklistScreen/);
+});
+
+test("active V1 tabs exclude the dormant Training and Messages screens", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const source = fs.readFileSync(path.resolve(__dirname, "..", "AppNavigator.jsx"), "utf8");
+  expect(source).not.toMatch(/TrainingScreen/);
+  expect(source).not.toMatch(/MessagesScreen/);
+  expect(source).not.toMatch(/name="Training"/);
+  expect(source).not.toMatch(/name="Messages"/);
 });

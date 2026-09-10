@@ -16,8 +16,6 @@ import LoginScreen from "../screens/LoginScreen";
 import TodayScreen from "../screens/TodayScreen";
 import JobDetailsScreen from "../screens/JobDetailsScreen";
 import WorkAssistantScreen from "../screens/WorkAssistantScreen";
-import TrainingScreen from "../screens/TrainingScreen";
-import MessagesScreen from "../screens/MessagesScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 
 const Tab = createBottomTabNavigator();
@@ -37,8 +35,6 @@ function EmployeeTabs() {
   return (
     <Tab.Navigator>
       <Tab.Screen name="Jobs" component={JobsStack} options={{ title: "Jobs" }} />
-      <Tab.Screen name="Training" component={TrainingScreen} options={{ title: "Training" }} />
-      <Tab.Screen name="Messages" component={MessagesScreen} options={{ title: "Messages" }} />
       <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: "Profile" }} />
     </Tab.Navigator>
   );

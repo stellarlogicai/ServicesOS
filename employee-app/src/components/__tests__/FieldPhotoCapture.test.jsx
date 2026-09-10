@@ -141,6 +141,29 @@ test("upload failure retains the local selection and stable id for retry", async
   expect(mockUpload.mock.calls[0][0].clientUploadId).toBe(mockUpload.mock.calls[1][0].clientUploadId);
 });
 
+test("a booking change clears the selected draft and never reuses its upload id", async () => {
+  const view = renderCapture();
+  await act(async () => fireEvent.press(screen.getByText("Take Photo")));
+  fireEvent.changeText(screen.getByLabelText("Before Photos room or area"), "Kitchen");
+  fireEvent.changeText(screen.getByLabelText("Before Photos note"), "Job A draft");
+
+  view.rerender(
+    <FieldPhotoCapture
+      bookingId="booking-b"
+      disabled={false}
+      onUploaded={jest.fn()}
+      phase="before"
+      photos={[]}
+      tenantId="tenant-a"
+    />
+  );
+
+  expect(screen.queryByLabelText("Before Photos preview")).toBeNull();
+  expect(screen.queryByLabelText("Before Photos room or area")).toBeNull();
+  expect(screen.queryByText("Job A draft")).toBeNull();
+  expect(mockUpload).not.toHaveBeenCalled();
+});
+
 test("duplicate submission is disabled while upload is pending", async () => {
   const pending = deferred();
   mockUpload.mockReturnValue(pending.promise);

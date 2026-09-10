@@ -6,10 +6,15 @@ const FIELD_PHOTO_PHASES = new Set(["before", "after"]);
 const FIELD_PHOTO_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 class EmployeePhotoEvidenceError extends Error {
-  constructor(message = "Photo evidence could not be loaded. Try again.") {
+  constructor(message = "Photo evidence could not be loaded. Try again.", code = "photo_evidence_unavailable") {
     super(message);
     this.name = "EmployeePhotoEvidenceError";
+    this.code = code;
   }
+}
+
+function isEmployeePhotoEvidenceAccessLossError(error) {
+  return error instanceof EmployeePhotoEvidenceError && error.code === "access_denied";
 }
 
 function segment(value) {
@@ -53,7 +58,10 @@ function createEmployeePhotoEvidenceClient({ db, collection, getDocs, limit, que
           collection(db, "tenants", safeTenantId, "bookings", safeBookingId, "fieldPhotos"),
           limit(FIELD_PHOTO_MAX_PER_BOOKING)
         ));
-      } catch {
+      } catch (error) {
+        if (["permission-denied", "unauthenticated"].includes(error?.code)) {
+          throw new EmployeePhotoEvidenceError(undefined, "access_denied");
+        }
         throw new EmployeePhotoEvidenceError();
       }
       if (!Array.isArray(snapshot?.docs)) throw new EmployeePhotoEvidenceError();
@@ -69,5 +77,6 @@ module.exports = {
   EmployeePhotoEvidenceError,
   FIELD_PHOTO_MAX_PER_BOOKING,
   createEmployeePhotoEvidenceClient,
+  isEmployeePhotoEvidenceAccessLossError,
   safePhotoMetadata,
 };

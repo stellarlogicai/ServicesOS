@@ -6,6 +6,7 @@ const test = require("node:test");
 const {
   EmployeePhotoEvidenceError,
   createEmployeePhotoEvidenceClient,
+  isEmployeePhotoEvidenceAccessLossError,
   safePhotoMetadata,
 } = require("../employeePhotoEvidenceClient");
 
@@ -35,6 +36,32 @@ test("safe photo metadata is explicitly allowlisted", () => {
   });
   assert.equal(safePhotoMetadata("photo-a", validPhoto({ phase: "other" })), null);
   assert.equal(safePhotoMetadata("photo-a", validPhoto({ contentType: "application/pdf" })), null);
+});
+
+test("only explicit Firestore authorization failures retain an access-loss signal", async () => {
+  const denied = createEmployeePhotoEvidenceClient({
+    db: "db",
+    collection: () => "field-photos-query",
+    limit: value => ({ limit: value }),
+    query: (...args) => args,
+    getDocs: async () => { throw { code: "permission-denied" }; },
+  });
+  const transient = createEmployeePhotoEvidenceClient({
+    db: "db",
+    collection: () => "field-photos-query",
+    limit: value => ({ limit: value }),
+    query: (...args) => args,
+    getDocs: async () => { throw new Error("network"); },
+  });
+
+  await assert.rejects(denied.listEmployeeFieldPhotos("tenant-a", "booking-a"), error => {
+    assert.equal(isEmployeePhotoEvidenceAccessLossError(error), true);
+    return true;
+  });
+  await assert.rejects(transient.listEmployeeFieldPhotos("tenant-a", "booking-a"), error => {
+    assert.equal(isEmployeePhotoEvidenceAccessLossError(error), false);
+    return true;
+  });
 });
 
 test("metadata reads only the nested fieldPhotos collection with verified identifiers", async () => {

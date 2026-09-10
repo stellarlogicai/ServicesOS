@@ -1,6 +1,20 @@
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 
+let triggerFocus;
+
+jest.mock("@react-navigation/native", () => {
+  const ReactModule = require("react");
+  return {
+    useFocusEffect: callback => {
+      ReactModule.useEffect(() => {
+        triggerFocus = callback;
+        return callback();
+      }, [callback]);
+    },
+  };
+});
+
 const mockGetEmployeeJob = jest.fn();
 const mockIsAccessLoss = jest.fn(error => ["job_unavailable", "unauthenticated", "forbidden"].includes(error?.code));
 const mockStartEmployeeJob = jest.fn();
@@ -8,6 +22,7 @@ const mockSaveEmployeeChecklist = jest.fn();
 const mockSaveEmployeeNotes = jest.fn();
 const mockCompleteEmployeeJob = jest.fn();
 const mockListEmployeeFieldPhotos = jest.fn();
+const mockIsPhotoEvidenceAccessLoss = jest.fn(error => error?.code === "access_denied");
 const mockGetEmployeeMethodsByIds = jest.fn();
 const mockOpenEmployeeJobDirections = jest.fn();
 const mockHasEmployeeJobDirections = jest.fn(address => (
@@ -26,6 +41,7 @@ jest.mock("../../api/employeeFieldExecution", () => ({
 }));
 jest.mock("../../api/employeePhotoEvidence", () => ({
   listEmployeeFieldPhotos: (...args) => mockListEmployeeFieldPhotos(...args),
+  isEmployeePhotoEvidenceAccessLossError: (...args) => mockIsPhotoEvidenceAccessLoss(...args),
 }));
 jest.mock("../../api/employeeMethods", () => ({
   getEmployeeMethodsByIds: (...args) => mockGetEmployeeMethodsByIds(...args),
@@ -421,7 +437,8 @@ test("incomplete required checklist blocks completion locally", async () => {
 });
 
 test("complete sends checklist, notes, and issue then keeps completed detail visible", async () => {
-  renderDetail();
+  const navigation = { goBack: jest.fn() };
+  renderDetail({ navigation });
   const toggle = await screen.findByTestId("checklist-toggle-required-item");
   await screen.findByText("before: 0 uploaded enabled");
   fireEvent(toggle, "valueChange", true);
@@ -445,6 +462,8 @@ test("complete sends checklist, notes, and issue then keeps completed detail vis
   expect(await screen.findByText("Field status: Completed")).toBeTruthy();
   expect(screen.getByText("Job completed.")).toBeTruthy();
   expect(screen.getByText("Completed")).toBeTruthy();
+  fireEvent.press(screen.getByText("Back to My Day"));
+  expect(navigation.goBack).toHaveBeenCalledTimes(1);
 });
 
 test("uploaded metadata controls the phase counts and removes the completion warning", async () => {
@@ -562,7 +581,6 @@ test("job_unavailable GET clears detail and returns through native back", async 
   renderDetail({ navigation });
 
   expect(await screen.findByText("This job is no longer available.")).toBeTruthy();
-  fireEvent.press(screen.getByText("Back to My Day"));
   expect(navigation.goBack).toHaveBeenCalledTimes(1);
 });
 
@@ -574,6 +592,85 @@ test("generic GET failure retries without exposing internal details", async () =
   fireEvent.press(screen.getByText("Retry"));
   expect(await screen.findByText("Sample Customer")).toBeTruthy();
   expect(mockGetEmployeeJob).toHaveBeenCalledTimes(2);
+});
+
+test("focus revalidates the current packet and replaces it only with the latest safe response", async () => {
+  renderDetail();
+  expect(await screen.findByText("Sample Customer")).toBeTruthy();
+  mockGetEmployeeJob.mockResolvedValueOnce(packet("booking-a", {
+    customer: { name: "Refreshed Customer", phone: "555-0200" },
+  }));
+
+  await act(async () => { triggerFocus(); });
+
+  expect(await screen.findByText("Refreshed Customer")).toBeTruthy();
+  expect(mockGetEmployeeJob).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText("Sample Customer")).toBeNull();
+});
+
+test("a late focus refresh cannot overwrite a newer job packet", async () => {
+  const pendingFocusRefresh = deferred();
+  const view = renderDetail();
+  expect(await screen.findByText("Sample Customer")).toBeTruthy();
+  mockGetEmployeeJob.mockReturnValueOnce(pendingFocusRefresh.promise);
+
+  await act(async () => { triggerFocus(); });
+  mockGetEmployeeJob.mockResolvedValueOnce(packet("booking-b", {
+    customer: { name: "Customer B", phone: "555-0200" },
+  }));
+  view.rerender(
+    <AuthContext.Provider value={{ employee: { uid: "employee-a" }, tenantId: "tenant-a" }}>
+      <JobDetailsScreen route={{ params: { bookingId: "booking-b" }}} navigation={{ goBack: jest.fn() }} />
+    </AuthContext.Provider>
+  );
+  expect(await screen.findByText("Customer B")).toBeTruthy();
+
+  await act(async () => pendingFocusRefresh.resolve(packet("booking-a", {
+    customer: { name: "Late Customer A", phone: "555-0100" },
+  })));
+  expect(screen.queryByText("Late Customer A")).toBeNull();
+  expect(screen.getByText("Customer B")).toBeTruthy();
+});
+
+test("focus access loss clears the packet and exits through the existing navigation", async () => {
+  const navigation = { goBack: jest.fn() };
+  renderDetail({ navigation });
+  expect(await screen.findByText("Sample Customer")).toBeTruthy();
+  mockGetEmployeeJob.mockRejectedValueOnce({ code: "job_unavailable" });
+
+  await act(async () => { triggerFocus(); });
+
+  expect(navigation.goBack).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("Sample Customer")).toBeNull();
+});
+
+test("transient focus refresh failure keeps the current packet and offers a bounded retry", async () => {
+  const navigation = { goBack: jest.fn() };
+  renderDetail({ navigation });
+  expect(await screen.findByText("Sample Customer")).toBeTruthy();
+  mockGetEmployeeJob.mockRejectedValueOnce(new Error("network"));
+
+  await act(async () => { triggerFocus(); });
+
+  expect(screen.getByText("Sample Customer")).toBeTruthy();
+  expect(screen.getByText("This job could not be loaded. Try again.")).toBeTruthy();
+  expect(screen.getByText("Retry Job Details")).toBeTruthy();
+  expect(navigation.goBack).not.toHaveBeenCalled();
+});
+
+test("explicit photo-evidence access loss clears the packet while transient photo failure stays local", async () => {
+  const navigation = { goBack: jest.fn() };
+  mockListEmployeeFieldPhotos.mockRejectedValueOnce({ code: "access_denied" });
+  renderDetail({ navigation });
+
+  expect(await screen.findByText("This job is no longer available.")).toBeTruthy();
+  expect(navigation.goBack).toHaveBeenCalledTimes(1);
+
+  mockListEmployeeFieldPhotos.mockRejectedValueOnce(new Error("network"));
+  const nextNavigation = { goBack: jest.fn() };
+  renderDetail({ bookingId: "booking-b", navigation: nextNavigation });
+  expect(await screen.findByText("Photo evidence could not be loaded. Try again.")).toBeTruthy();
+  expect(nextNavigation.goBack).not.toHaveBeenCalled();
 });
 
 test("payment and raw snapshot fields never render", async () => {

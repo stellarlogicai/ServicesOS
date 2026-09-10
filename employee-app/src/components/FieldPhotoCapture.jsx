@@ -92,6 +92,17 @@ export default function FieldPhotoCapture({
     requestId.current += 1;
   }, []);
 
+  useEffect(() => {
+    // A selected asset and its idempotency key are scoped to one booking only.
+    requestId.current += 1;
+    uploadInFlight.current = false;
+    setAsset(null);
+    setRoomLabel("");
+    setNote("");
+    setUploading(false);
+    setError("");
+  }, [bookingId]);
+
   const select = async source => {
     if (disabled || uploading) return;
     const request = ++requestId.current;

@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../context/AuthContext";
 import { getEmployeeJob, isEmployeeJobAccessLossError } from "../api/employeeJobs";
 import {
@@ -17,7 +18,10 @@ import {
   saveEmployeeNotes,
   startEmployeeJob,
 } from "../api/employeeFieldExecution";
-import { listEmployeeFieldPhotos } from "../api/employeePhotoEvidence";
+import {
+  isEmployeePhotoEvidenceAccessLossError,
+  listEmployeeFieldPhotos,
+} from "../api/employeePhotoEvidence";
 import { getEmployeeMethodsByIds } from "../api/employeeMethods";
 import FieldPhotoCapture from "../components/FieldPhotoCapture";
 import {
@@ -225,6 +229,7 @@ export default function JobDetailsScreen({ route, navigation }) {
   const methodRequestId = useRef(0);
   const navigationRequestId = useRef(0);
   const packetVersion = useRef(0);
+  const skipInitialFocusRevalidation = useRef(true);
   const [state, setState] = useState({ key: "", job: null, loading: true, error: "", unavailable: false });
   const [checklist, setChecklist] = useState([]);
   const [fieldNotes, setFieldNotes] = useState("");
@@ -234,12 +239,13 @@ export default function JobDetailsScreen({ route, navigation }) {
   const [actionError, setActionError] = useState("");
   const [photoEvidence, setPhotoEvidence] = useState({ key: "", photos: [], loading: true, error: "" });
   const [completionWarning, setCompletionWarning] = useState(false);
+  const [completedSuccessfully, setCompletedSuccessfully] = useState(false);
   const [methodState, setMethodState] = useState({ key: "", records: [], loading: false });
   const [navigationBusy, setNavigationBusy] = useState(false);
   const [navigationError, setNavigationError] = useState("");
   currentKey.current = requestKey;
 
-  const replaceWithPacket = useCallback((job, key, message = "") => {
+  const replaceWithPacket = useCallback((job, key, message = "", completed = false) => {
     packetVersion.current += 1;
     navigationRequestId.current += 1;
     setState({ key, job, loading: false, error: "", unavailable: false });
@@ -249,6 +255,7 @@ export default function JobDetailsScreen({ route, navigation }) {
     setActionMessage(message);
     setActionError("");
     setCompletionWarning(false);
+    setCompletedSuccessfully(completed && job.fieldStatus === "completed");
     setNavigationBusy(false);
     setNavigationError("");
   }, []);
@@ -263,11 +270,17 @@ export default function JobDetailsScreen({ route, navigation }) {
     setActionMessage("");
     setActionError("");
     setCompletionWarning(false);
+    setCompletedSuccessfully(false);
     setNavigationBusy(false);
     setNavigationError("");
   }, []);
 
-  const loadJob = useCallback(async () => {
+  const leaveUnavailable = useCallback(key => {
+    clearUnavailable(key);
+    navigation.goBack?.();
+  }, [clearUnavailable, navigation]);
+
+  const loadJob = useCallback(async ({ retainCurrent = false } = {}) => {
     packetVersion.current += 1;
     navigationRequestId.current += 1;
     setNavigationBusy(false);
@@ -277,27 +290,43 @@ export default function JobDetailsScreen({ route, navigation }) {
       return;
     }
     const request = ++detailRequestId.current;
-    setState({ key: requestKey, job: null, loading: true, error: "", unavailable: false });
-    setChecklist([]);
-    setFieldNotes("");
-    setFieldIssue("");
-    setActionMessage("");
-    setActionError("");
+    if (retainCurrent) {
+      setState(previous => previous.key === requestKey && previous.job
+        ? { ...previous, error: "", unavailable: false }
+        : { key: requestKey, job: null, loading: true, error: "", unavailable: false });
+    } else {
+      setState({ key: requestKey, job: null, loading: true, error: "", unavailable: false });
+      setChecklist([]);
+      setFieldNotes("");
+      setFieldIssue("");
+      setActionMessage("");
+      setActionError("");
+      setCompletedSuccessfully(false);
+    }
     try {
       const job = await getEmployeeJob(bookingId);
       if (request !== detailRequestId.current || currentKey.current !== requestKey) return;
       replaceWithPacket(job, requestKey);
     } catch (error) {
       if (request !== detailRequestId.current || currentKey.current !== requestKey) return;
-      if (isEmployeeJobAccessLossError(error)) clearUnavailable(requestKey);
-      else setState({ key: requestKey, job: null, loading: false, error: DETAIL_ERROR, unavailable: false });
+      if (isEmployeeJobAccessLossError(error)) {
+        leaveUnavailable(requestKey);
+      } else if (retainCurrent) {
+        setState(previous => previous.key === requestKey && previous.job
+          ? { ...previous, loading: false }
+          : { key: requestKey, job: null, loading: false, error: DETAIL_ERROR, unavailable: false });
+        setActionError(DETAIL_ERROR);
+      } else {
+        setState({ key: requestKey, job: null, loading: false, error: DETAIL_ERROR, unavailable: false });
+      }
     }
-  }, [bookingId, clearUnavailable, employeeUid, replaceWithPacket, requestKey]);
+  }, [bookingId, employeeUid, leaveUnavailable, replaceWithPacket, requestKey]);
 
   useEffect(() => {
     detailRequestId.current += 1;
     mutationRequestId.current += 1;
     mutationInFlight.current = false;
+    skipInitialFocusRevalidation.current = true;
     setSavingAction("");
     loadJob();
     return () => {
@@ -306,6 +335,15 @@ export default function JobDetailsScreen({ route, navigation }) {
       mutationInFlight.current = false;
     };
   }, [loadJob]);
+
+  useFocusEffect(useCallback(() => {
+    if (skipInitialFocusRevalidation.current) {
+      skipInitialFocusRevalidation.current = false;
+      return undefined;
+    }
+    loadJob({ retainCurrent: true });
+    return undefined;
+  }, [loadJob]));
 
   const loadPhotoEvidence = useCallback(async () => {
     if (!employeeUid || !tenantId || !bookingId) {
@@ -318,11 +356,15 @@ export default function JobDetailsScreen({ route, navigation }) {
       const photos = await listEmployeeFieldPhotos(tenantId, bookingId);
       if (request !== photoRequestId.current || currentKey.current !== requestKey) return;
       setPhotoEvidence({ key: photoRequestKey, photos, loading: false, error: "" });
-    } catch {
+    } catch (error) {
       if (request !== photoRequestId.current || currentKey.current !== requestKey) return;
-      setPhotoEvidence({ key: photoRequestKey, photos: [], loading: false, error: PHOTO_EVIDENCE_ERROR });
+      if (isEmployeePhotoEvidenceAccessLossError(error)) {
+        leaveUnavailable(requestKey);
+      } else {
+        setPhotoEvidence({ key: photoRequestKey, photos: [], loading: false, error: PHOTO_EVIDENCE_ERROR });
+      }
     }
-  }, [bookingId, employeeUid, photoRequestKey, requestKey, tenantId]);
+  }, [bookingId, employeeUid, leaveUnavailable, photoRequestKey, requestKey, tenantId]);
 
   useEffect(() => {
     photoRequestId.current += 1;
@@ -332,7 +374,7 @@ export default function JobDetailsScreen({ route, navigation }) {
     };
   }, [loadPhotoEvidence]);
 
-  const mutate = useCallback(async (action, operation, successMessage) => {
+  const mutate = useCallback(async (action, operation, successMessage, completed = false) => {
     if (mutationInFlight.current) return;
     mutationInFlight.current = true;
     const request = ++mutationRequestId.current;
@@ -343,11 +385,11 @@ export default function JobDetailsScreen({ route, navigation }) {
     try {
       const job = await operation();
       if (request !== mutationRequestId.current || currentKey.current !== key) return;
-      replaceWithPacket(job, key, successMessage);
+      replaceWithPacket(job, key, successMessage, completed);
     } catch (error) {
       if (request !== mutationRequestId.current || currentKey.current !== key) return;
       if (isEmployeeJobAccessLossError(error)) {
-        clearUnavailable(key);
+        leaveUnavailable(key);
       } else if (error?.code === "checklist_unavailable") {
         setActionError(CHECKLIST_UNAVAILABLE);
       } else if (error?.code === "incomplete_required_checklist") {
@@ -361,7 +403,7 @@ export default function JobDetailsScreen({ route, navigation }) {
         setSavingAction("");
       }
     }
-  }, [clearUnavailable, replaceWithPacket, requestKey]);
+  }, [leaveUnavailable, replaceWithPacket, requestKey]);
 
   const visibleState = state.key === requestKey
     ? state
@@ -460,7 +502,8 @@ export default function JobDetailsScreen({ route, navigation }) {
     mutate(
       "complete",
       () => completeEmployeeJob(bookingId, completionState(checklist), fieldNotes, fieldIssue),
-      "Job completed."
+      "Job completed.",
+      true
     );
   };
 
@@ -563,6 +606,7 @@ export default function JobDetailsScreen({ route, navigation }) {
         ) : (
           <>
             <FieldPhotoCapture
+              key={`${bookingId}:before`}
               bookingId={bookingId}
               disabled={mutationBusy || job.fieldStatus !== "not_started"}
               onUploaded={recordUploadedPhoto}
@@ -572,6 +616,7 @@ export default function JobDetailsScreen({ route, navigation }) {
             />
             <View style={styles.photoDivider} />
             <FieldPhotoCapture
+              key={`${bookingId}:after`}
               bookingId={bookingId}
               disabled={mutationBusy || job.fieldStatus !== "in_progress"}
               onUploaded={recordUploadedPhoto}
@@ -660,6 +705,11 @@ export default function JobDetailsScreen({ route, navigation }) {
 
       {actionMessage ? <Text style={styles.successText} accessibilityRole="alert">{actionMessage}</Text> : null}
       {actionError ? <Text style={styles.errorText} accessibilityRole="alert">{actionError}</Text> : null}
+      {actionError === DETAIL_ERROR ? (
+        <View style={styles.retryButton}>
+          <Button title="Retry Job Details" onPress={() => loadJob({ retainCurrent: true })} />
+        </View>
+      ) : null}
       {job.checklist.ready && incompleteRequired.length > 0 ? (
         <Text style={styles.requiredText}>
           {incompleteRequired.length} required checklist item{incompleteRequired.length === 1 ? "" : "s"} must be completed first.
@@ -686,6 +736,11 @@ export default function JobDetailsScreen({ route, navigation }) {
           onPress={completeJob}
         />
       </View>
+      {completedSuccessfully ? (
+        <View style={styles.returnButton}>
+          <Button title="Back to My Day" onPress={() => navigation.goBack?.()} />
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -752,6 +807,8 @@ const styles = StyleSheet.create({
   methodDetail: { marginTop: 4 },
   requiredText: { color: "#92400e", marginBottom: 12, textAlign: "center" },
   completeButton: { marginTop: 4 },
+  returnButton: { marginTop: 12 },
+  retryButton: { marginBottom: 12, alignSelf: "flex-start" },
   photoLoading: { flexDirection: "row", alignItems: "center", gap: 8 },
   photoDivider: { borderBottomWidth: 1, borderBottomColor: "#e2e8f0", marginVertical: 16 },
   completionWarning: { marginBottom: 12 },
