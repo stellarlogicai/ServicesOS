@@ -49,12 +49,15 @@ function boundedTrimmedText(value, maxLength, required = false) {
 }
 
 function normalizeAsset(asset) {
-  if (!exactKeys(asset, ["uri", "mimeType", "fileSize", "fileName", "width", "height", "assetId", "base64", "duration", "exif"], ["uri", "mimeType", "fileSize"])) {
+  if (!exactKeys(asset, ["uri", "mimeType", "fileSize", "fileName", "width", "height", "assetId", "base64", "duration", "exif", "rotation", "type"], ["uri", "mimeType", "fileSize"])) {
     invalidRequest();
   }
   const uri = typeof asset.uri === "string" ? asset.uri.trim() : "";
   const contentType = typeof asset.mimeType === "string" ? asset.mimeType.trim().toLowerCase() : "";
-  if (!uri.startsWith("file://") || !FIELD_PHOTO_CONTENT_TYPES.has(contentType) ||
+  if (("type" in asset && asset.type !== "image") ||
+      ("rotation" in asset && asset.rotation != null &&
+        (!Number.isFinite(asset.rotation) || asset.rotation < 0 || asset.rotation >= 360)) ||
+      !uri.startsWith("file://") || !FIELD_PHOTO_CONTENT_TYPES.has(contentType) ||
       !Number.isInteger(asset.fileSize) || asset.fileSize <= 0 || asset.fileSize > FIELD_PHOTO_MAX_SIZE_BYTES) {
     invalidRequest();
   }

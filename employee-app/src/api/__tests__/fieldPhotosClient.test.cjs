@@ -160,7 +160,13 @@ test("client upload identifiers are stable-format non-secret values", () => {
 
 test("native upload sends the local file as one binary PUT to the returned session URL", async () => {
   const { api, uploadCalls } = harness();
-  const result = await api.uploadReservedFieldPhotoBinary(asset, upload);
+  const result = await api.uploadReservedFieldPhotoBinary({
+    ...asset,
+    // Expo ImagePicker Android assets include this documented optional discriminator.
+    type: "image",
+    // Android also returns this native orientation metadata.
+    rotation: null,
+  }, upload);
   assert.deepEqual(result, { status: 200 });
   assert.deepEqual(uploadCalls, [[
     upload.sessionUrl,
@@ -178,6 +184,18 @@ test("native upload rejects a local file that does not match the reserved MIME o
   const { api, uploadCalls } = harness();
   await assert.rejects(api.uploadReservedFieldPhotoBinary({ ...asset, mimeType: "image/png" }, upload));
   await assert.rejects(api.uploadReservedFieldPhotoBinary({ ...asset, fileSize: 127 }, upload));
+  assert.equal(uploadCalls.length, 0);
+});
+
+test("native upload rejects a non-image ImagePicker asset before sending bytes", async () => {
+  const { api, uploadCalls } = harness();
+  await assert.rejects(api.uploadReservedFieldPhotoBinary({ ...asset, type: "video" }, upload));
+  assert.equal(uploadCalls.length, 0);
+});
+
+test("native upload rejects invalid ImagePicker rotation metadata before sending bytes", async () => {
+  const { api, uploadCalls } = harness();
+  await assert.rejects(api.uploadReservedFieldPhotoBinary({ ...asset, rotation: 360 }, upload));
   assert.equal(uploadCalls.length, 0);
 });
 
