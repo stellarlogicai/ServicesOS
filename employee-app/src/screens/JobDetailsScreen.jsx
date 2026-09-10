@@ -17,6 +17,8 @@ import {
   saveEmployeeNotes,
   startEmployeeJob,
 } from "../api/employeeFieldExecution";
+import { listEmployeeFieldPhotos } from "../api/employeePhotoEvidence";
+import FieldPhotoCapture from "../components/FieldPhotoCapture";
 
 const DETAIL_ERROR = "This job could not be loaded. Try again.";
 const UPDATE_ERROR = "Your job update could not be saved. Try again.";
@@ -25,6 +27,8 @@ const CHECKLIST_UNAVAILABLE = "Owner review is required before this checklist ca
 const INCOMPLETE_CHECKLIST = "Complete all required checklist items before finishing the job.";
 const FIELD_NOTES_MAX_LENGTH = 1000;
 const FIELD_ISSUE_MAX_LENGTH = 750;
+const PHOTO_EVIDENCE_ERROR = "Photo evidence could not be loaded. Try again.";
+const NO_AFTER_PHOTOS_WARNING = "No after photos have been uploaded. Complete the job anyway?";
 
 function humanize(value) {
   return typeof value === "string"
@@ -88,13 +92,15 @@ function ChecklistItem({ item, disabled, onChange }) {
 
 export default function JobDetailsScreen({ route, navigation }) {
   const bookingId = route?.params?.bookingId || "";
-  const { employee } = useContext(AuthContext);
+  const { employee, tenantId } = useContext(AuthContext);
   const employeeUid = employee?.uid || "";
   const requestKey = `${employeeUid}:${bookingId}`;
+  const photoRequestKey = `${employeeUid}:${tenantId || ""}:${bookingId}`;
   const currentKey = useRef(requestKey);
   const detailRequestId = useRef(0);
   const mutationRequestId = useRef(0);
   const mutationInFlight = useRef(false);
+  const photoRequestId = useRef(0);
   const [state, setState] = useState({ key: "", job: null, loading: true, error: "", unavailable: false });
   const [checklist, setChecklist] = useState([]);
   const [fieldNotes, setFieldNotes] = useState("");
@@ -102,6 +108,8 @@ export default function JobDetailsScreen({ route, navigation }) {
   const [savingAction, setSavingAction] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [actionError, setActionError] = useState("");
+  const [photoEvidence, setPhotoEvidence] = useState({ key: "", photos: [], loading: true, error: "" });
+  const [completionWarning, setCompletionWarning] = useState(false);
   currentKey.current = requestKey;
 
   const replaceWithPacket = useCallback((job, key, message = "") => {
@@ -111,6 +119,7 @@ export default function JobDetailsScreen({ route, navigation }) {
     setFieldIssue(job.fieldIssue);
     setActionMessage(message);
     setActionError("");
+    setCompletionWarning(false);
   }, []);
 
   const clearUnavailable = useCallback(key => {
@@ -120,6 +129,7 @@ export default function JobDetailsScreen({ route, navigation }) {
     setFieldIssue("");
     setActionMessage("");
     setActionError("");
+    setCompletionWarning(false);
   }, []);
 
   const loadJob = useCallback(async () => {
@@ -158,6 +168,31 @@ export default function JobDetailsScreen({ route, navigation }) {
     };
   }, [loadJob]);
 
+  const loadPhotoEvidence = useCallback(async () => {
+    if (!employeeUid || !tenantId || !bookingId) {
+      setPhotoEvidence({ key: photoRequestKey, photos: [], loading: false, error: PHOTO_EVIDENCE_ERROR });
+      return;
+    }
+    const request = ++photoRequestId.current;
+    setPhotoEvidence({ key: photoRequestKey, photos: [], loading: true, error: "" });
+    try {
+      const photos = await listEmployeeFieldPhotos(tenantId, bookingId);
+      if (request !== photoRequestId.current || currentKey.current !== requestKey) return;
+      setPhotoEvidence({ key: photoRequestKey, photos, loading: false, error: "" });
+    } catch {
+      if (request !== photoRequestId.current || currentKey.current !== requestKey) return;
+      setPhotoEvidence({ key: photoRequestKey, photos: [], loading: false, error: PHOTO_EVIDENCE_ERROR });
+    }
+  }, [bookingId, employeeUid, photoRequestKey, requestKey, tenantId]);
+
+  useEffect(() => {
+    photoRequestId.current += 1;
+    loadPhotoEvidence();
+    return () => {
+      photoRequestId.current += 1;
+    };
+  }, [loadPhotoEvidence]);
+
   const mutate = useCallback(async (action, operation, successMessage) => {
     if (mutationInFlight.current) return;
     mutationInFlight.current = true;
@@ -193,6 +228,11 @@ export default function JobDetailsScreen({ route, navigation }) {
     ? state
     : { key: requestKey, job: null, loading: true, error: "", unavailable: false };
   const job = visibleState.job;
+  const currentPhotoEvidence = photoEvidence.key === photoRequestKey
+    ? photoEvidence
+    : { key: photoRequestKey, photos: [], loading: true, error: "" };
+  const beforePhotos = currentPhotoEvidence.photos.filter(photo => photo.phase === "before");
+  const afterPhotos = currentPhotoEvidence.photos.filter(photo => photo.phase === "after");
   const incompleteRequired = checklist.filter(item => item.required && !item.completed);
   const mutationBusy = Boolean(savingAction);
 
@@ -201,6 +241,15 @@ export default function JobDetailsScreen({ route, navigation }) {
     setChecklist(current => current.map(item => item.id === id ? { ...item, completed } : item));
     setActionMessage("");
     setActionError("");
+    setCompletionWarning(false);
+  };
+
+  const recordUploadedPhoto = photo => {
+    if (currentPhotoEvidence.key !== photoRequestKey || !photo?.id) return;
+    setPhotoEvidence(current => {
+      if (current.key !== photoRequestKey) return current;
+      return { ...current, photos: [...current.photos.filter(item => item.id !== photo.id), photo] };
+    });
   };
 
   const completeJob = () => {
@@ -212,6 +261,11 @@ export default function JobDetailsScreen({ route, navigation }) {
       setActionError(INCOMPLETE_CHECKLIST);
       return;
     }
+    if (!completionWarning && !currentPhotoEvidence.loading && !currentPhotoEvidence.error && !afterPhotos.length) {
+      setCompletionWarning(true);
+      return;
+    }
+    setCompletionWarning(false);
     mutate(
       "complete",
       () => completeEmployeeJob(bookingId, completionState(checklist), fieldNotes, fieldIssue),
@@ -275,6 +329,40 @@ export default function JobDetailsScreen({ route, navigation }) {
 
       <DetailSection title="Instructions">
         <Text style={styles.text}>{job.instructions}</Text>
+      </DetailSection>
+
+      <DetailSection title="Photo Evidence">
+        {currentPhotoEvidence.loading ? (
+          <View style={styles.photoLoading} accessibilityRole="progressbar">
+            <ActivityIndicator color="#2563eb" />
+            <Text style={styles.text}>Loading photo evidence...</Text>
+          </View>
+        ) : currentPhotoEvidence.error ? (
+          <>
+            <Text style={styles.errorText}>{currentPhotoEvidence.error}</Text>
+            <Button title="Retry Photo Evidence" onPress={loadPhotoEvidence} />
+          </>
+        ) : (
+          <>
+            <FieldPhotoCapture
+              bookingId={bookingId}
+              disabled={mutationBusy || job.fieldStatus !== "not_started"}
+              onUploaded={recordUploadedPhoto}
+              phase="before"
+              photos={beforePhotos}
+              tenantId={tenantId}
+            />
+            <View style={styles.photoDivider} />
+            <FieldPhotoCapture
+              bookingId={bookingId}
+              disabled={mutationBusy || job.fieldStatus !== "in_progress"}
+              onUploaded={recordUploadedPhoto}
+              phase="after"
+              photos={afterPhotos}
+              tenantId={tenantId}
+            />
+          </>
+        )}
       </DetailSection>
 
       <DetailSection title="Checklist">
@@ -359,6 +447,15 @@ export default function JobDetailsScreen({ route, navigation }) {
           {incompleteRequired.length} required checklist item{incompleteRequired.length === 1 ? "" : "s"} must be completed first.
         </Text>
       ) : null}
+      {completionWarning ? (
+        <View style={styles.completionWarning} accessibilityRole="alert">
+          <Text style={styles.requiredText}>{NO_AFTER_PHOTOS_WARNING}</Text>
+          <View style={styles.warningActions}>
+            <Button title="Go Back" onPress={() => setCompletionWarning(false)} />
+            <Button title="Complete Anyway" disabled={mutationBusy} onPress={completeJob} />
+          </View>
+        </View>
+      ) : null}
       <View style={styles.completeButton}>
         <Button
           title={job.fieldStatus === "completed" ? "Completed" : savingAction === "complete" ? "Completing..." : "Complete Job"}
@@ -429,4 +526,8 @@ const styles = StyleSheet.create({
   actionButton: { marginTop: 12, alignSelf: "flex-start", minWidth: 150 },
   requiredText: { color: "#92400e", marginBottom: 12, textAlign: "center" },
   completeButton: { marginTop: 4 },
+  photoLoading: { flexDirection: "row", alignItems: "center", gap: 8 },
+  photoDivider: { borderBottomWidth: 1, borderBottomColor: "#e2e8f0", marginVertical: 16 },
+  completionWarning: { marginBottom: 12 },
+  warningActions: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
 });

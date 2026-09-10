@@ -7,6 +7,7 @@ const mockStartEmployeeJob = jest.fn();
 const mockSaveEmployeeChecklist = jest.fn();
 const mockSaveEmployeeNotes = jest.fn();
 const mockCompleteEmployeeJob = jest.fn();
+const mockListEmployeeFieldPhotos = jest.fn();
 
 jest.mock("../../api/employeeJobs", () => ({
   getEmployeeJob: (...args) => mockGetEmployeeJob(...args),
@@ -18,6 +19,16 @@ jest.mock("../../api/employeeFieldExecution", () => ({
   saveEmployeeNotes: (...args) => mockSaveEmployeeNotes(...args),
   completeEmployeeJob: (...args) => mockCompleteEmployeeJob(...args),
 }));
+jest.mock("../../api/employeePhotoEvidence", () => ({
+  listEmployeeFieldPhotos: (...args) => mockListEmployeeFieldPhotos(...args),
+}));
+jest.mock("../../components/FieldPhotoCapture", () => {
+  const ReactModule = require("react");
+  const { Text } = require("react-native");
+  return function FieldPhotoCapture({ phase, photos, disabled }) {
+    return <Text>{`${phase}: ${photos.length} uploaded${disabled ? " disabled" : " enabled"}`}</Text>;
+  };
+});
 jest.mock("../../context/AuthContext", () => {
   const ReactModule = require("react");
   return { AuthContext: ReactModule.createContext(null) };
@@ -88,7 +99,7 @@ function deferred() {
 function renderDetail({ bookingId = "booking-a", employeeUid = "employee-a", navigation } = {}) {
   const resolvedNavigation = navigation || { goBack: jest.fn() };
   const result = render(
-    <AuthContext.Provider value={{ employee: employeeUid ? { uid: employeeUid } : null }}>
+    <AuthContext.Provider value={{ employee: employeeUid ? { uid: employeeUid } : null, tenantId: employeeUid ? "tenant-a" : null }}>
       <JobDetailsScreen route={{ params: { bookingId } }} navigation={resolvedNavigation} />
     </AuthContext.Provider>
   );
@@ -107,6 +118,7 @@ beforeEach(() => {
       items: [checklistItem({ completed: true }), checklistItem({ id: "optional-item", label: "Polish fixture", required: false })],
     },
   }));
+  mockListEmployeeFieldPhotos.mockResolvedValue([]);
 });
 
 test("performs a fresh GET and hides detail until it resolves", async () => {
@@ -138,7 +150,8 @@ test("renders safe job data and read-only checklist structure", async () => {
   expect(screen.queryByText("method-private-to-ui")).toBeNull();
   expect(screen.getByLabelText("Field Notes")).toBeTruthy();
   expect(screen.getByLabelText("Reported Issue")).toBeTruthy();
-  expect(screen.queryByText("Upload Photos")).toBeNull();
+  expect(await screen.findByText("before: 0 uploaded enabled")).toBeTruthy();
+  expect(screen.getByText("after: 0 uploaded disabled")).toBeTruthy();
 });
 
 test("Start Job submits once and replaces the packet with in-progress state", async () => {
@@ -234,10 +247,18 @@ test("incomplete required checklist blocks completion locally", async () => {
 test("complete sends checklist, notes, and issue then keeps completed detail visible", async () => {
   renderDetail();
   const toggle = await screen.findByTestId("checklist-toggle-required-item");
+  await screen.findByText("before: 0 uploaded enabled");
   fireEvent(toggle, "valueChange", true);
   fireEvent.changeText(screen.getByLabelText("Field Notes"), "Finished safely");
   fireEvent.changeText(screen.getByLabelText("Reported Issue"), "");
   await act(async () => fireEvent.press(screen.getByText("Complete Job")));
+
+  expect(screen.getByText("No after photos have been uploaded. Complete the job anyway?")).toBeTruthy();
+  expect(mockCompleteEmployeeJob).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByText("Go Back"));
+  expect(screen.queryByText("No after photos have been uploaded. Complete the job anyway?")).toBeNull();
+  await act(async () => fireEvent.press(screen.getByText("Complete Job")));
+  await act(async () => fireEvent.press(screen.getByText("Complete Anyway")));
 
   expect(mockCompleteEmployeeJob).toHaveBeenCalledWith(
     "booking-a",
@@ -250,11 +271,29 @@ test("complete sends checklist, notes, and issue then keeps completed detail vis
   expect(screen.getByText("Completed")).toBeTruthy();
 });
 
+test("uploaded metadata controls the phase counts and removes the completion warning", async () => {
+  mockListEmployeeFieldPhotos.mockResolvedValue([
+    { id: "before-photo", phase: "before", roomLabel: "Kitchen", note: "Before" },
+    { id: "after-photo", phase: "after", roomLabel: "Kitchen", note: "After" },
+  ]);
+  renderDetail();
+  const toggle = await screen.findByTestId("checklist-toggle-required-item");
+  await screen.findByText("after: 1 uploaded disabled");
+  fireEvent(toggle, "valueChange", true);
+  await act(async () => fireEvent.press(screen.getByText("Complete Job")));
+  expect(mockCompleteEmployeeJob).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("No after photos have been uploaded. Complete the job anyway?")).toBeNull();
+});
+
 test("duplicate completion is blocked while the first request is pending", async () => {
   const pending = deferred();
   mockCompleteEmployeeJob.mockReturnValue(pending.promise);
+  mockListEmployeeFieldPhotos.mockResolvedValue([
+    { id: "after-photo", phase: "after", roomLabel: "Kitchen", note: "After" },
+  ]);
   renderDetail();
   const toggle = await screen.findByTestId("checklist-toggle-required-item");
+  await screen.findByText("after: 1 uploaded disabled");
   fireEvent(toggle, "valueChange", true);
   const complete = screen.getByText("Complete Job");
   await act(async () => {
@@ -304,7 +343,7 @@ test("late job and mutation responses cannot restore a prior job", async () => {
     customer: { name: "Customer B", phone: "555-0200" },
   }));
   view.rerender(
-    <AuthContext.Provider value={{ employee: { uid: "employee-a" } }}>
+    <AuthContext.Provider value={{ employee: { uid: "employee-a" }, tenantId: "tenant-a" }}>
       <JobDetailsScreen route={{ params: { bookingId: "booking-b" } }} navigation={navigation} />
     </AuthContext.Provider>
   );
@@ -330,7 +369,7 @@ test("employee logout clears packet and local drafts before late work resolves",
   });
 
   view.rerender(
-    <AuthContext.Provider value={{ employee: null }}>
+    <AuthContext.Provider value={{ employee: null, tenantId: null }}>
       <JobDetailsScreen route={{ params: { bookingId: "booking-a" } }} navigation={navigation} />
     </AuthContext.Provider>
   );
