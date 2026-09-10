@@ -130,7 +130,7 @@ describe('GrowthAI provider adapter', () => {
         };
       },
     });
-    const output = await provider.generateText({ systemInstruction: 'System', userPrompt: 'User' });
+    const output = await provider.generateText({ systemInstruction: 'System', userPrompt: 'User', maxOutputTokens: 400 });
     assert.equal(output.text, 'Generated text');
     assert.equal(output.providerRequestId, 'request-1');
     assert.equal(calls[0].url, 'https://provider.example/v1/responses');
@@ -139,6 +139,7 @@ describe('GrowthAI provider adapter', () => {
     assert.equal(body.instructions, 'System');
     assert.equal(body.input, 'User');
     assert.equal(body.store, false);
+    assert.equal(body.max_output_tokens, 400);
     assert.equal('temperature' in body, false);
     assert.equal('messages' in body, false);
     assert.equal(calls[0].options.headers.Authorization, 'Bearer server-secret');

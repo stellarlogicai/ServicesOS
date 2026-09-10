@@ -89,7 +89,7 @@ function createOpenAICompatibleGrowthAIProvider({
 
   return {
     configured: true,
-    async generateText({ systemInstruction, userPrompt }) {
+    async generateText({ systemInstruction, userPrompt, maxOutputTokens }) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       let response;
@@ -105,6 +105,9 @@ function createOpenAICompatibleGrowthAIProvider({
             instructions: systemInstruction,
             input: userPrompt,
             store: false,
+            ...(Number.isInteger(maxOutputTokens) && maxOutputTokens > 0 && maxOutputTokens <= 4_096
+              ? { max_output_tokens: maxOutputTokens }
+              : {}),
           }),
           signal: controller.signal,
         });

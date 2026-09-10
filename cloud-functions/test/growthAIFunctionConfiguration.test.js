@@ -37,10 +37,16 @@ describe('GrowthAI Function provider configuration', () => {
     ]);
   });
 
-  test('binds the provider secret only to provider-backed GrowthAI Functions', () => {
+  test('binds the provider secret only to provider-backed AI Functions', () => {
     assert.deepEqual(endpointSecretNames(functionsEntry.generateGrowthAIContent), [providerSecretName]);
     assert.deepEqual(endpointSecretNames(functionsEntry.routeGrowthAIConversation), [providerSecretName]);
+    assert.deepEqual(endpointSecretNames(functionsEntry.employeeWorkAssistantGateway), [providerSecretName]);
     assert.deepEqual(endpointSecretNames(functionsEntry.getGrowthAICreditBalance), []);
+  });
+
+  test('bounds the employee Work Assistant Function', () => {
+    assert.equal(functionsEntry.employeeWorkAssistantGateway.__endpoint.minInstances, 0);
+    assert.equal(functionsEntry.employeeWorkAssistantGateway.__endpoint.maxInstances, 3);
   });
 
   test('caps the field-photo gateway without granting provider secret access', () => {

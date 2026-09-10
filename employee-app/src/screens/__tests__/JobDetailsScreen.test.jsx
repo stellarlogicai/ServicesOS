@@ -175,6 +175,14 @@ test("renders safe job data and read-only checklist structure", async () => {
   expect(screen.getByText("after: 0 uploaded disabled")).toBeTruthy();
 });
 
+test("opens Work Assistant with bookingId only", async () => {
+  const navigation = { goBack: jest.fn(), navigate: jest.fn() };
+  renderDetail({ navigation });
+  await screen.findByText("Standard Cleaning");
+  fireEvent.press(screen.getByText("Open Work Assistant"));
+  expect(navigation.navigate).toHaveBeenCalledWith("WorkAssistant", { bookingId: "booking-a" });
+});
+
 test("shows Get Directions beside a valid safe address before Start and while in progress", async () => {
   renderDetail();
 

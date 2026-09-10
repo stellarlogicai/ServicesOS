@@ -523,6 +523,16 @@ export default function JobDetailsScreen({ route, navigation }) {
         <Text style={styles.text}>{job.instructions}</Text>
       </DetailSection>
 
+      <DetailSection title="SLAI Work Assistant">
+        <Text style={styles.text}>Get help understanding this assigned job.</Text>
+        <View style={styles.actionButton}>
+          <Button
+            title="Open Work Assistant"
+            onPress={() => navigation.navigate("WorkAssistant", { bookingId })}
+          />
+        </View>
+      </DetailSection>
+
       <SafetyAndMethod
         job={job}
         methodById={methodById}

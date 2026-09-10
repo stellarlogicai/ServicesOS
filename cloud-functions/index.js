@@ -26,6 +26,7 @@ const { createEmployeeSessionGatewayHandler } = require('./employeeSessionGatewa
 const { createEmployeeJobPacketGatewayHandler } = require('./employeeJobPacketGateway');
 const { createEmployeeFieldExecutionGatewayHandler } = require('./employeeFieldExecutionGateway');
 const { createFieldPhotoUploadGatewayHandler } = require('./fieldPhotoUploadGateway');
+const { createEmployeeWorkAssistantGatewayHandler } = require('./employeeWorkAssistantGateway');
 
 const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
@@ -76,6 +77,16 @@ exports.getGrowthAICreditBalance = functions.https.onRequest(createGrowthAICredi
 exports.routeGrowthAIConversation = functions.runWith({
   secrets: [growthAIProviderApiKey],
 }).https.onRequest(createGrowthAIConversationRouterHandler({
+  admin,
+  provider: createConfiguredGrowthAIProvider(),
+}));
+
+// Employee-only, read-only AI endpoint. It shares provider configuration, not owner GrowthAI behavior or credits.
+exports.employeeWorkAssistantGateway = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+  secrets: [growthAIProviderApiKey],
+}).https.onRequest(createEmployeeWorkAssistantGatewayHandler({
   admin,
   provider: createConfiguredGrowthAIProvider(),
 }));
