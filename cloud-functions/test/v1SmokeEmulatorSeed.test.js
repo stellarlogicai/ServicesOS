@@ -5,8 +5,10 @@ const {
   TENANT_A,
   TENANT_B,
   buildSeedDocuments,
+  smokeDates,
   validateSmokeEnvironment,
 } = require('../scripts/seedV1SmokeEmulator');
+const { employeeJobPacket, isApprovedChecklistCurrent } = require('../employeeJobPacketProjection');
 
 const validEnvironment = {
   FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099',
@@ -46,6 +48,11 @@ describe('V1 smoke emulator seed safety', () => {
     );
   });
 
+  test('uses the fixture tenant local date across the UTC midnight boundary', () => {
+    assert.equal(smokeDates(new Date('2026-07-15T04:30:00.000Z')).today, '2026-07-14');
+    assert.equal(smokeDates(new Date('2026-07-15T05:30:00.000Z')).today, '2026-07-15');
+  });
+
   test('builds distinct tenant data and preserves payment truth fixtures', () => {
     const documents = buildSeedDocuments(new Date('2026-07-14T12:00:00.000Z'));
     const tenantA = documents.get(`tenants/${TENANT_A}`);
@@ -58,6 +65,7 @@ describe('V1 smoke emulator seed safety', () => {
     const customer = documents.get(`tenants/${TENANT_A}/customers/customer-smoke-a`);
     const tenantACredits = documents.get(`tenants/${TENANT_A}/growthAICreditBalances/current`);
     const tenantBCredits = documents.get(`tenants/${TENANT_B}/growthAICreditBalances/current`);
+    const smokeMethod = documents.get(`tenants/${TENANT_A}/cleaningProductsMethods/smoke-method-laminate`);
 
     assert.equal(tenantA.businessSettings.businessName, 'Aunt B Smoke Cleaning A');
     assert.equal(tenantB.businessSettings.businessName, 'ServicesOS Smoke Cleaning B');
@@ -69,6 +77,20 @@ describe('V1 smoke emulator seed safety', () => {
     assert.equal(fieldBooking.paymentStatus, 'not_paid');
     assert.equal(fieldBooking.fieldStatus, 'not_started');
     assert.equal(fieldBooking.assignedEmployeeAuthUid, 'smoke-employee-a');
+    assert.equal(fieldBooking.accessInstructions, 'Use the marked side entrance and secure the door when leaving.');
+    assert.equal(fieldBooking.jobChecklistSnapshot.ownerApproved, true);
+    assert.equal(fieldBooking.jobChecklistSnapshot.items.length, 3);
+    assert.equal(fieldBooking.jobChecklistSnapshot.items[1].preferredMethodId, 'smoke-method-laminate');
+    assert.equal(typeof fieldBooking.jobChecklistSnapshot.provenance.sourceScopeSignature, 'string');
+    assert.equal(isApprovedChecklistCurrent(fieldBooking), true);
+    const packet = employeeJobPacket('booking-smoke-a-field', fieldBooking, 'America/Chicago');
+    assert.equal(packet.checklist.ready, true);
+    assert.equal(packet.checklist.items.length, 3);
+    assert.equal(packet.checklist.items[1].preferredMethodId, 'smoke-method-laminate');
+    assert.equal(packet.accessSecurity.instructions, fieldBooking.accessInstructions);
+    assert.equal(packet.safety.allergyOrProductRestrictions, 'Use unscented products only.');
+    assert.equal(smokeMethod.status, 'approved');
+    assert.equal(smokeMethod.employeeVisible, true);
     assert.equal(fieldBooking.assignedEmployeeId, undefined);
     assert.equal(fieldBooking.assignedEmployeeUid, undefined);
     assert.equal(unassignedBooking.assignedEmployeeAuthUid, undefined);

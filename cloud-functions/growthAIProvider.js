@@ -150,7 +150,9 @@ function isLocalMockGrowthAIEnvironment(env) {
   } catch {
     firebaseProjectId = '';
   }
-  const projectId = firebaseProjectId || env.GCLOUD_PROJECT;
+  // The Functions Emulator reserves GCLOUD_PROJECT from .env.local. The explicit
+  // local mock project value keeps this test-only path pinned to the demo project.
+  const projectId = firebaseProjectId || env.GCLOUD_PROJECT || env.GROWTHAI_LOCAL_MOCK_PROJECT_ID;
   return env.GROWTHAI_PROVIDER_MODE === 'mock' &&
     env.FUNCTIONS_EMULATOR === 'true' &&
     projectId === 'demo-servicesos-v1-smoke-local';

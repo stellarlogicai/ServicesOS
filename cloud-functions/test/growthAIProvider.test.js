@@ -54,6 +54,20 @@ describe('GrowthAI provider adapter', () => {
       GROWTHAI_PROVIDER_MODE: 'mock',
     });
     assert.equal(nonEmulatedDemo.configured, false);
+
+    const emulatorLocalOverride = createGrowthAIProviderFromEnvironment({
+      FUNCTIONS_EMULATOR: 'true',
+      GROWTHAI_LOCAL_MOCK_PROJECT_ID: 'demo-servicesos-v1-smoke-local',
+      GROWTHAI_PROVIDER_MODE: 'mock',
+    });
+    assert.equal(emulatorLocalOverride.configured, true);
+
+    const wrongLocalOverride = createGrowthAIProviderFromEnvironment({
+      FUNCTIONS_EMULATOR: 'true',
+      GROWTHAI_LOCAL_MOCK_PROJECT_ID: 'cleaning-intake-system',
+      GROWTHAI_PROVIDER_MODE: 'mock',
+    });
+    assert.equal(wrongLocalOverride.configured, false);
   });
 
   test('resolves Firebase provider parameters lazily at invocation time', () => {

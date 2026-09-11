@@ -4,6 +4,7 @@ const { deleteApp, getApps, initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
+const { localDateKey } = require('../employeeJobPacketProjection');
 
 const PROJECT_ID = 'demo-servicesos-v1-smoke-local';
 const STORAGE_BUCKET = `${PROJECT_ID}.appspot.com`;
@@ -11,6 +12,7 @@ const TENANT_A = 'tenant-smoke-a';
 const TENANT_B = 'tenant-smoke-b';
 const OTHER_EMPLOYEE_A_UID = 'smoke-employee-a-other';
 const LOCAL_PASSWORD = 'ServicesOS-Local-Smoke-Only!';
+const SMOKE_TIME_ZONE = 'America/Chicago';
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const CREDENTIALS_PATH = path.join(REPO_ROOT, '.servicesos-smoke-credentials.local.json');
 const FIXTURES_PATH = path.join(REPO_ROOT, '.servicesos-smoke-fixtures.local');
@@ -59,24 +61,23 @@ function validateSmokeEnvironment(env = process.env) {
   };
 }
 
-function dateKey(date) {
-  const pad = value => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+function addDaysToDateKey(dateKey, days) {
+  const date = new Date(`${dateKey}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function smokeDates(now = new Date()) {
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
+  const today = localDateKey(now, SMOKE_TIME_ZONE);
+  const tomorrow = addDaysToDateKey(today, 1);
+  const yesterday = addDaysToDateKey(today, -1);
   return {
-    today: dateKey(today),
-    todayIso: today.toISOString(),
-    tomorrow: dateKey(tomorrow),
-    tomorrowIso: tomorrow.toISOString(),
-    yesterday: dateKey(yesterday),
-    yesterdayIso: yesterday.toISOString(),
+    today,
+    todayIso: `${today}T15:00:00.000Z`,
+    tomorrow,
+    tomorrowIso: `${tomorrow}T15:00:00.000Z`,
+    yesterday,
+    yesterdayIso: `${yesterday}T15:00:00.000Z`,
   };
 }
 
@@ -137,6 +138,7 @@ function buildSeedDocuments(now = new Date()) {
       businessPhone: '555-0101',
       businessEmail: 'tenant-a@servicesos.test',
       serviceArea: 'Example District A',
+      timeZone: 'America/Chicago',
       businessAddress: '100 Example Avenue, Test City, TX 00000',
       websiteUrl: 'https://example.test/tenant-a',
       facebookUrl: '',
@@ -282,8 +284,119 @@ function buildSeedDocuments(now = new Date()) {
     address: '110 Example Lane, Test City, TX 00000', date: dates.today, startTime: '09:00',
     serviceType: 'standard', agreedPrice: 185,
   });
-  fieldBooking.assignedEmployeeAuthUid = employeeA;
+  Object.assign(fieldBooking, {
+    assignedEmployeeAuthUid: employeeA,
+    fieldInstructions: 'Complete the approved task list, then leave the work area clean and dry.',
+    technicianNotes: 'Use the recorded checklist rather than generic owner notes.',
+    accessInstructions: 'Use the marked side entrance and secure the door when leaving.',
+    requestSnapshot: {
+      ...fieldBooking.requestSnapshot,
+      accessInstructions: 'Fallback access instruction for this fake smoke job.',
+      hazards: ['Loose threshold at the side entrance.'],
+      surfaceNotes: 'Use the approved method on sealed laminate only.',
+      specialRequests: 'Use unscented products for this fake smoke job.',
+    },
+    propertySnapshot: {
+      ...fieldBooking.propertySnapshot,
+      household: {
+        petCount: 1,
+        petTypes: ['dog'],
+        petHairLevel: 'low',
+        allergies: 'Use unscented products only.',
+      },
+    },
+  });
+  const checklistItems = [
+    {
+      id: 'entry-walkthrough',
+      area: 'Entry',
+      fixtureOrSurface: 'Entryway',
+      label: 'Complete the entry walkthrough',
+      completionCriteria: 'Entry is clear and the assigned surfaces are clean.',
+      jobAidSteps: [{ label: 'Check the entryway', note: 'Confirm the loose threshold warning first.', condition: '' }],
+      warnings: ['Watch the loose threshold.'],
+      note: '',
+      condition: '',
+      required: true,
+      completed: false,
+      approvedMethodIds: [],
+      preferredMethodId: '',
+      sourceReferences: ['fake-smoke-entry'],
+    },
+    {
+      id: 'kitchen-counter',
+      area: 'Kitchen',
+      fixtureOrSurface: 'Sealed laminate counter',
+      label: 'Clean the kitchen counter',
+      completionCriteria: 'Counter is clean and dry with no residue.',
+      jobAidSteps: [{ label: 'Wipe the counter', note: 'Use even passes with the approved method.', condition: 'After clearing loose items.' }],
+      warnings: [],
+      note: 'Work from left to right.',
+      condition: '',
+      required: true,
+      completed: false,
+      approvedMethodIds: ['smoke-method-laminate'],
+      preferredMethodId: 'smoke-method-laminate',
+      sourceReferences: ['fake-smoke-counter'],
+    },
+    {
+      id: 'bathroom-sink',
+      area: 'Bathroom',
+      fixtureOrSurface: 'Sink',
+      label: 'Clean the bathroom sink',
+      completionCriteria: 'Sink is clean, dry, and free of visible residue.',
+      jobAidSteps: [{ label: 'Wipe the sink', note: 'Use a clean cloth.', condition: '' }],
+      warnings: [],
+      note: '',
+      condition: '',
+      required: false,
+      completed: false,
+      approvedMethodIds: [],
+      preferredMethodId: '',
+      sourceReferences: ['fake-smoke-sink'],
+    },
+  ];
+  fieldBooking.jobChecklistSnapshot = {
+    ownerApproved: true,
+    items: checklistItems,
+    notes: 'Follow the approved local smoke packet.',
+    warnings: ['Watch the loose threshold at the marked entrance.'],
+    provenance: {},
+    reviewedBy: adminA,
+  };
+  // Keep the approved fixture current against the exact server-side scope calculation.
+  // The helper remains in the projection module to prevent duplicate signature logic.
+  const { currentChecklistScopeSignature } = require('../employeeJobPacketProjection');
+  fieldBooking.jobChecklistSnapshot.provenance.sourceScopeSignature = currentChecklistScopeSignature(fieldBooking);
   add(`tenants/${TENANT_A}/bookings/booking-smoke-a-field`, fieldBooking);
+
+  add(`tenants/${TENANT_A}/cleaningProductsMethods/smoke-method-laminate`, {
+    id: 'smoke-method-laminate',
+    tenantId: TENANT_A,
+    name: 'Fake Unscented Laminate Method',
+    classification: 'cleaning',
+    status: 'approved',
+    employeeVisible: true,
+    intendedUses: ['Sealed laminate counters'],
+    compatibleSurfaces: ['Sealed laminate'],
+    prohibitedSurfaces: ['Natural stone'],
+    requiredTools: ['Clean cloth'],
+    requiredPPE: ['Gloves'],
+    dwellTime: '',
+    contactTime: '',
+    applicationInstructions: 'Apply the recorded cleaner to a clean cloth and wipe the sealed laminate surface.',
+    labelDirections: 'Follow the product label directions.',
+    rinseInstructions: 'Rinse the cloth as needed.',
+    dryingInstructions: 'Dry the surface after cleaning.',
+    ingredients: [],
+    measurements: [],
+    formulaVariants: [],
+    dilutionInstructions: '',
+    mixingOrder: [],
+    dangerousCombinations: [],
+    createdAt: dates.todayIso,
+    updatedAt: dates.todayIso,
+  });
 
   const pendingPaymentBooking = bookingBase({
     id: 'booking-smoke-a-payment-pending', tenantId: TENANT_A, customerId: 'customer-smoke-a-secondary',

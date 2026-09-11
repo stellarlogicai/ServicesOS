@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { FieldValue } = require('firebase-admin/firestore');
 const { localDateKey } = require('./employeeJobPacketProjection');
 
 const EMPLOYEE_DAILY_LIMIT = 20;
@@ -21,7 +22,7 @@ function hash(value) {
 }
 
 function serverTimestamp(admin) {
-  return admin.firestore.FieldValue.serverTimestamp();
+  return admin.firestore?.FieldValue?.serverTimestamp?.() || FieldValue.serverTimestamp();
 }
 
 function activeLeases(value, nowMs) {
@@ -182,6 +183,7 @@ module.exports = {
   EMPLOYEE_CONCURRENCY_LIMIT,
   EMPLOYEE_DAILY_LIMIT,
   EmployeeWorkAssistantUsageError,
+  serverTimestamp,
   TENANT_CONCURRENCY_LIMIT,
   TENANT_DAILY_LIMIT,
   reserveEmployeeWorkAssistantUsage,

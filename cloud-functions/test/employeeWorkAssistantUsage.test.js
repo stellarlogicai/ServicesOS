@@ -4,6 +4,7 @@ const {
   EMPLOYEE_DAILY_LIMIT,
   TENANT_DAILY_LIMIT,
   reserveEmployeeWorkAssistantUsage,
+  serverTimestamp,
   settleEmployeeWorkAssistantUsage,
 } = require('../employeeWorkAssistantUsage');
 
@@ -127,6 +128,12 @@ test('enforces employee and tenant daily limits', async () => {
     reserveEmployeeWorkAssistantUsage({ ...tenantValue, request: { ...tenantValue.request, requestId: 'tenant-limit-12345' } }),
     error => error.code === 'usage_limit',
   );
+});
+
+test('uses the modular Admin SDK timestamp when the legacy namespace is unavailable', () => {
+  const { admin } = fixture();
+  delete admin.firestore.FieldValue;
+  assert.doesNotThrow(() => serverTimestamp(admin));
 });
 
 test('same request ID with different input is rejected', async () => {
