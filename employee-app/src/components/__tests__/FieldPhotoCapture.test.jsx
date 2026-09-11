@@ -59,6 +59,7 @@ function deferred() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGetInfoAsync.mockResolvedValue({ exists: true, size: asset.fileSize });
   mockRequestCameraPermissions.mockResolvedValue({ granted: true });
   mockRequestLibraryPermissions.mockResolvedValue({ granted: true });
   mockLaunchCamera.mockResolvedValue({ canceled: false, assets: [asset] });
@@ -86,10 +87,20 @@ test("picker cancellation is quiet and a denied permission is actionable", async
   expect(await screen.findByText("Photo permission is required to add evidence.")).toBeTruthy();
 });
 
-test("missing fileSize uses FileSystem metadata without base64", async () => {
+test("FileSystem metadata supplies the actual native file size without base64", async () => {
   mockGetInfoAsync.mockResolvedValue({ exists: true, size: 222 });
   await expect(normalizePickedAsset({ ...asset, fileSize: undefined })).resolves.toMatchObject({ fileSize: 222 });
   expect(mockGetInfoAsync).toHaveBeenCalledWith(asset.uri, { size: true });
+});
+
+test("FileSystem metadata overrides a stale ImagePicker fileSize", async () => {
+  mockGetInfoAsync.mockResolvedValue({ exists: true, size: 847 });
+  await expect(normalizePickedAsset({ ...asset, fileSize: 404 })).resolves.toMatchObject({ fileSize: 847 });
+});
+
+test("actual native file size rejects an oversized image despite smaller picker metadata", async () => {
+  mockGetInfoAsync.mockResolvedValue({ exists: true, size: 10 * 1024 * 1024 + 1 });
+  await expect(normalizePickedAsset({ ...asset, fileSize: 404 })).resolves.toBeNull();
 });
 
 test("missing or unsupported MIME is rejected rather than defaulted", async () => {
@@ -107,8 +118,9 @@ test("upload receives a stable id and only selected asset metadata", async () =>
   expect(mockUpload).toHaveBeenCalledWith(expect.objectContaining({
     tenantId: "tenant-a", bookingId: "booking-a", clientUploadId: "field_photo_upload_0001",
     phase: "before", roomLabel: "Kitchen", note: "Before work",
-    asset: expect.objectContaining({ uri: asset.uri, mimeType: "image/jpeg", fileSize: 128 }),
+    asset,
   }));
+  expect(mockUpload.mock.calls[0][0].asset).not.toHaveProperty("clientUploadId");
   expect(onUploaded).toHaveBeenCalledWith({ id: "photo-a", phase: "before", roomLabel: "Kitchen", note: "Before work" });
 });
 

@@ -29,11 +29,8 @@ function photoAssetFromPicker(asset, fileSize) {
 }
 
 async function normalizePickedAsset(asset) {
-  let fileSize = asset?.fileSize;
-  if (!Number.isInteger(fileSize)) {
-    const info = await FileSystem.getInfoAsync(asset?.uri, { size: true });
-    fileSize = info?.size;
-  }
+  const info = await FileSystem.getInfoAsync(asset?.uri, { size: true });
+  const fileSize = info?.exists === true ? info.size : null;
   return photoAssetFromPicker(asset, fileSize);
 }
 
@@ -123,6 +120,7 @@ export default function FieldPhotoCapture({
 
   const submit = async () => {
     if (disabled || uploading || uploadInFlight.current || !asset) return;
+    const { clientUploadId, ...uploadAsset } = asset;
     const normalizedRoomLabel = roomLabel.trim();
     const normalizedNote = note.trim();
     if (!normalizedRoomLabel) {
@@ -137,11 +135,11 @@ export default function FieldPhotoCapture({
       const photo = await uploadFieldPhoto({
         tenantId,
         bookingId,
-        clientUploadId: asset.clientUploadId,
+        clientUploadId,
         phase,
         roomLabel: normalizedRoomLabel,
         note: normalizedNote,
-        asset,
+        asset: uploadAsset,
       });
       if (!mounted.current || request !== requestId.current) return;
       onUploaded({
