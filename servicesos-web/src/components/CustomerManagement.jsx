@@ -6,7 +6,8 @@ import {
   mapExistingCustomerToEstimatePrefill,
 } from '../services/existingCustomerBookingService';
 import { useAuth } from '../contexts/AuthContext';
-import { formatLocalDateInputValue } from '../utils/dateOnly';
+import BookingIntakeFields from './BookingIntakeFields';
+import { emptyCommercialDetails } from './bookingIntakeModel';
 import {
   getCustomerPortalQuoteRequests,
   updateCustomerPortalQuoteRequestStatus
@@ -649,14 +650,30 @@ function CustomerDetailPanel({ customer, onClose, onCreateEstimate, onBookNewJob
 }
 
 function ExistingCustomerBookingModal({ customer, tenantId, createdBy, onClose, onCreated }) {
-  const [form, setForm] = useState({ serviceType: '', date: '', startTime: '', agreedPrice: '', notes: '' });
+  const [form, setForm] = useState({
+    bookingType: '', serviceType: '', date: '', startTime: '', agreedPrice: '', notes: '',
+    commercialDetails: {
+      ...emptyCommercialDetails(),
+      businessName: customer.name || '',
+      primaryContactName: customer.name || '',
+      phone: customer.phone || '',
+      email: customer.email || '',
+      serviceAddress: [customer.address, customer.city, customer.state, customer.zip].filter(Boolean).join(', '),
+    },
+  });
   const [error, setError] = useState('');
   const [savingBooking, setSavingBooking] = useState(false);
   const submissionRef = useRef(false);
 
   const updateField = event => {
     setError('');
-    setForm(current => ({ ...current, [event.target.name]: event.target.value }));
+    const { name, value } = event.target;
+    if (name.startsWith('commercialDetails.')) {
+      const key = name.split('.')[1];
+      setForm(current => ({ ...current, commercialDetails: { ...current.commercialDetails, [key]: value } }));
+    } else {
+      setForm(current => ({ ...current, [name]: value }));
+    }
   };
 
   const handleSubmit = async event => {
@@ -701,28 +718,7 @@ function ExistingCustomerBookingModal({ customer, tenantId, createdBy, onClose, 
           <span><strong>Saved property:</strong> <SavedProperty customer={customer} /></span>
         </div>
         <form className="customers-form" onSubmit={handleSubmit}>
-          <div className="customers-form-field">
-            <label htmlFor="existing-customer-service-type">Service type or job title *</label>
-            <input id="existing-customer-service-type" name="serviceType" value={form.serviceType} onChange={updateField} required />
-          </div>
-          <div className="customers-booking-date-time">
-            <div className="customers-form-field">
-              <label htmlFor="existing-customer-booking-date">Scheduled date *</label>
-              <input id="existing-customer-booking-date" className="booking-date-time-field" type="date" name="date" min={formatLocalDateInputValue()} value={form.date} onChange={updateField} required />
-            </div>
-            <div className="customers-form-field">
-              <label htmlFor="existing-customer-booking-time">Scheduled time *</label>
-              <input id="existing-customer-booking-time" className="booking-date-time-field" type="time" name="startTime" value={form.startTime} onChange={updateField} required />
-            </div>
-          </div>
-          <div className="customers-form-field">
-            <label htmlFor="existing-customer-approved-price">Approved price ($) *</label>
-            <input id="existing-customer-approved-price" type="number" name="agreedPrice" min="0.01" step="0.01" value={form.agreedPrice} onChange={updateField} required />
-          </div>
-          <div className="customers-form-field">
-            <label htmlFor="existing-customer-booking-notes">Service scope and notes</label>
-            <textarea id="existing-customer-booking-notes" name="notes" rows={3} value={form.notes} onChange={updateField} />
-          </div>
+          <BookingIntakeFields form={form} onChange={updateField} idPrefix="existing-customer" />
           {error && <div className="customers-form-alert" role="alert">{error}</div>}
           <div className="customers-modal-actions">
             <button className="v1-button v1-button-secondary" type="button" onClick={onClose} disabled={savingBooking}>Cancel</button>

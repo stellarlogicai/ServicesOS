@@ -5,6 +5,25 @@ import { errorResponse, successResponse } from '../shared/api/apiResponseStandar
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_ONLY = /^\d{2}:\d{2}$/;
+export const BOOKING_TYPES = Object.freeze(['residential', 'commercial']);
+
+const COMMERCIAL_TEXT_LIMITS = Object.freeze({
+  businessName: 160,
+  primaryContactName: 160,
+  phone: 40,
+  email: 254,
+  serviceAddress: 300,
+  facilityType: 120,
+  areasToClean: 1000,
+  preferredServiceWindow: 160,
+  operatingHours: 500,
+  accessSecurityInstructions: 1000,
+  knownHazards: 1000,
+  specialSurfacesMaterials: 1000,
+  suppliesEquipmentNotes: 1000,
+  generalNotes: 1000,
+  frequency: 120,
+});
 
 function text(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -81,7 +100,39 @@ function bookingValidationError(message) {
   return errorResponse(message, 'VALIDATION_ERROR');
 }
 
+function boundedText(value, maximum) {
+  const normalized = text(value);
+  return normalized.length <= maximum ? normalized : null;
+}
+
+function buildCommercialDetails(input = {}) {
+  const details = {};
+  for (const [key, maximum] of Object.entries(COMMERCIAL_TEXT_LIMITS)) {
+    const value = boundedText(input[key], maximum);
+    if (value === null) return bookingValidationError(`${key} is too long.`);
+    details[key] = value;
+  }
+
+  const squareFeetText = text(input.approximateSquareFootage);
+  const approximateSquareFootage = squareFeetText ? Number(squareFeetText) : null;
+  const restroomsText = text(input.numberOfRestrooms);
+  const numberOfRestrooms = restroomsText ? Number(restroomsText) : null;
+  if (approximateSquareFootage !== null && (!Number.isInteger(approximateSquareFootage) || approximateSquareFootage <= 0 || approximateSquareFootage > 10_000_000)) {
+    return bookingValidationError('Approximate square footage must be a whole number greater than zero.');
+  }
+  if (numberOfRestrooms !== null && (!Number.isInteger(numberOfRestrooms) || numberOfRestrooms < 0 || numberOfRestrooms > 10_000)) {
+    return bookingValidationError('Number of restrooms must be a non-negative whole number.');
+  }
+  if (!details.businessName) return bookingValidationError('Business name is required for a commercial booking.');
+  if (!details.primaryContactName) return bookingValidationError('Primary contact name is required for a commercial booking.');
+  if (!details.phone && !details.email) return bookingValidationError('A phone number or email is required for the commercial contact.');
+  if (!details.serviceAddress) return bookingValidationError('Service address is required for a commercial booking.');
+
+  return successResponse({ ...details, approximateSquareFootage, numberOfRestrooms });
+}
+
 export function buildExistingCustomerBooking({ tenantId, customer, bookingInput, createdBy, now }) {
+  const bookingType = text(bookingInput?.bookingType);
   const serviceType = text(bookingInput?.serviceType);
   const date = text(bookingInput?.date);
   const startTime = text(bookingInput?.startTime);
@@ -94,6 +145,7 @@ export function buildExistingCustomerBooking({ tenantId, customer, bookingInput,
     return bookingValidationError('This customer does not belong to the selected tenant. Refresh Customers and try again.');
   }
   if (customer.isArchived === true) return bookingValidationError('Archived customers cannot be scheduled for a new job.');
+  if (!BOOKING_TYPES.includes(bookingType)) return bookingValidationError('Choose Residential or Commercial.');
   if (!serviceType) return bookingValidationError('A service type or job title is required.');
   if (!validDate(date)) return bookingValidationError('Choose a valid booking date.');
   if (!validTime(startTime)) return bookingValidationError('Choose a valid booking time.');
@@ -121,11 +173,27 @@ export function buildExistingCustomerBooking({ tenantId, customer, bookingInput,
     zipCode: property.zip,
   };
 
+  let commercialDetails;
+  if (bookingType === 'commercial') {
+    const commercialResult = buildCommercialDetails(bookingInput?.commercialDetails);
+    if (!commercialResult.success) return commercialResult;
+    commercialDetails = commercialResult.data;
+    customerSnapshot.name = commercialDetails.businessName;
+    customerSnapshot.fullName = commercialDetails.businessName;
+    customerSnapshot.email = commercialDetails.email;
+    customerSnapshot.phone = commercialDetails.phone;
+    propertySnapshot.address = commercialDetails.serviceAddress;
+    propertySnapshot.city = '';
+    propertySnapshot.state = '';
+    propertySnapshot.zipCode = '';
+  }
+
   return successResponse(addSchemaVersion({
     tenantId,
     source: 'owner-existing-customer',
     customerId: customer.id,
-    customerName: name,
+    bookingType,
+    customerName: bookingType === 'commercial' ? commercialDetails.businessName : name,
     customerSnapshot,
     propertySnapshot,
     requestSnapshot: {
@@ -140,7 +208,11 @@ export function buildExistingCustomerBooking({ tenantId, customer, bookingInput,
     status: 'scheduled',
     serviceType,
     address: propertySnapshot.address,
-    notes,
+    notes: bookingType === 'commercial' ? commercialDetails.generalNotes : notes,
+    ...(bookingType === 'commercial' ? {
+      commercialDetails,
+      accessInstructions: commercialDetails.accessSecurityInstructions,
+    } : {}),
     createdBy: text(createdBy),
     createdAt: now,
     updatedAt: now,

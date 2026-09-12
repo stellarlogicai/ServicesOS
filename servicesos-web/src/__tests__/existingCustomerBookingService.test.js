@@ -102,6 +102,7 @@ describe('existing customer repeat workflow service', () => {
       createdBy: 'admin-a',
       now: '2026-07-29T12:00:00.000Z',
       bookingInput: {
+        bookingType: 'residential',
         serviceType: 'Deep clean',
         date: '2026-08-12',
         startTime: '09:30',
@@ -116,6 +117,7 @@ describe('existing customer repeat workflow service', () => {
       source: 'owner-existing-customer',
       customerId: 'customer-a',
       status: 'scheduled',
+      bookingType: 'residential',
       serviceType: 'Deep clean',
       date: '2026-08-12',
       startTime: '09:30',
@@ -142,6 +144,7 @@ describe('existing customer repeat workflow service', () => {
       createdBy: 'admin-a',
       now: '2026-07-29T12:00:00.000Z',
       bookingInput: {
+        bookingType: 'residential',
         serviceType: 'Standard clean', date: '2026-08-12', startTime: '09:00', agreedPrice: '185',
       },
     });
@@ -152,18 +155,53 @@ describe('existing customer repeat workflow service', () => {
     });
   });
 
+  it('builds commercial work through the same booking model with bounded operational details', () => {
+    const result = buildExistingCustomerBooking({
+      tenantId: 'tenant-a', customer, createdBy: 'admin-a', now: '2026-07-29T12:00:00.000Z',
+      bookingInput: {
+        bookingType: 'commercial', serviceType: 'Office maintenance', date: '2026-08-12', startTime: '18:00', agreedPrice: '900',
+        commercialDetails: {
+          businessName: 'Example Office', primaryContactName: 'Ada Cruz', phone: '555-0100', email: '',
+          serviceAddress: '500 Commerce Drive', facilityType: 'Office', approximateSquareFootage: '12000',
+          areasToClean: 'Offices and lobby', numberOfRestrooms: '4', frequency: 'Weekly', preferredServiceWindow: 'After 6 PM',
+          operatingHours: '8 AM to 5 PM', accessSecurityInstructions: 'Use the east entrance', knownHazards: '',
+          specialSurfacesMaterials: 'Stone lobby floor', suppliesEquipmentNotes: 'Tenant supplies liners', generalNotes: 'Call on arrival',
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      bookingType: 'commercial', customerId: 'customer-a', customerName: 'Example Office', serviceType: 'Office maintenance',
+      address: '500 Commerce Drive', accessInstructions: 'Use the east entrance',
+      commercialDetails: { approximateSquareFootage: 12000, numberOfRestrooms: 4, frequency: 'Weekly' },
+    });
+    expect(JSON.stringify(result.data)).not.toMatch(/payment|stripe|assignment/i);
+  });
+
+  it('allows optional commercial context to remain empty and rejects incomplete identity/location', () => {
+    const base = {
+      bookingType: 'commercial', serviceType: 'Office clean', date: '2026-08-12', startTime: '18:00', agreedPrice: '500',
+      commercialDetails: { businessName: 'Example Office', primaryContactName: 'Ada Cruz', phone: '555-0100', serviceAddress: '500 Commerce Drive' },
+    };
+    expect(buildExistingCustomerBooking({ tenantId: 'tenant-a', customer, createdBy: 'admin-a', now: '2026-07-29T12:00:00.000Z', bookingInput: base }).success).toBe(true);
+    expect(buildExistingCustomerBooking({ tenantId: 'tenant-a', customer, createdBy: 'admin-a', now: '2026-07-29T12:00:00.000Z', bookingInput: {
+      ...base, commercialDetails: { ...base.commercialDetails, businessName: '', serviceAddress: '' },
+    } })).toMatchObject({ success: false, message: 'Business name is required for a commercial booking.' });
+  });
+
   it('rejects archived customers and missing new job fields before any write', () => {
     expect(buildExistingCustomerBooking({
       tenantId: 'tenant-a', customer: { ...customer, isArchived: true }, createdBy: 'admin-a', now: '2026-07-29T12:00:00.000Z', bookingInput: {}
     })).toMatchObject({ success: false, message: 'Archived customers cannot be scheduled for a new job.' });
     expect(buildExistingCustomerBooking({
       tenantId: 'tenant-a', customer, createdBy: 'admin-a', now: '2026-07-29T12:00:00.000Z', bookingInput: {
-        serviceType: 'Standard clean', date: '2026-08-12', startTime: '', agreedPrice: '0'
+        bookingType: 'residential', serviceType: 'Standard clean', date: '2026-08-12', startTime: '', agreedPrice: '0'
       }
     })).toMatchObject({ success: false, message: 'Choose a valid booking time.' });
     expect(buildExistingCustomerBooking({
       tenantId: 'tenant-a', customer: { ...customer, tenantId: 'tenant-b' }, createdBy: 'admin-a', now: '2026-07-29T12:00:00.000Z', bookingInput: {
-        serviceType: 'Standard clean', date: '2026-08-12', startTime: '09:00', agreedPrice: '200'
+        bookingType: 'residential', serviceType: 'Standard clean', date: '2026-08-12', startTime: '09:00', agreedPrice: '200'
       }
     })).toMatchObject({ success: false, message: 'This customer does not belong to the selected tenant. Refresh Customers and try again.' });
   });

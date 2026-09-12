@@ -224,25 +224,28 @@ describe('CustomerManagement restoration safety gate', () => {
 
     expect(await screen.findByText('Linked Customer')).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: 'Book New Job' })[0]);
+    fireEvent.click(screen.getByRole('radio', { name: 'Residential' }));
     fireEvent.change(screen.getByLabelText('Service type or job title *'), { target: { value: 'Deep clean' } });
-    fireEvent.change(screen.getByLabelText('Scheduled date *'), { target: { value: '2026-08-12' } });
+    fireEvent.change(screen.getByLabelText('Scheduled date *'), { target: { value: '2026-10-12' } });
     fireEvent.change(screen.getByLabelText('Scheduled time *'), { target: { value: '09:30' } });
     fireEvent.change(screen.getByLabelText('Approved price ($) *'), { target: { value: '240' } });
     fireEvent.change(screen.getByLabelText('Service scope and notes'), { target: { value: 'Kitchen focus' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create booking' }));
 
-    await waitFor(() => expect(repeatWorkflowMocks.createExistingCustomerBooking).toHaveBeenCalledWith({
+    await waitFor(() => expect(repeatWorkflowMocks.createExistingCustomerBooking).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: 'tenant-test',
       customerId: 'customer-linked',
       createdBy: 'admin-test',
       bookingInput: {
+        bookingType: 'residential',
         serviceType: 'Deep clean',
-        date: '2026-08-12',
+        date: '2026-10-12',
         startTime: '09:30',
         agreedPrice: '240',
         notes: 'Kitchen focus',
+        commercialDetails: expect.any(Object),
       },
-    }));
+    })));
     expect(onBookingCreated).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(repeatWorkflowMocks.createExistingCustomerBooking.mock.calls)).not.toMatch(/stripe|payment/i);
   });

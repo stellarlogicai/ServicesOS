@@ -148,6 +148,22 @@ body:has(.booking-detail-modal) { overflow: hidden; }
 .create-estimate-submit { min-height: 46px; padding-inline: 20px; }
 .create-estimate-submit:disabled { cursor: not-allowed; opacity: .5; }
 
+.create-booking-page { max-width: 1120px; margin: 0 auto; }
+.create-booking-form { display: grid; gap: 18px; }
+.create-booking-type { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 4px; border: 1px solid var(--v1-border); border-radius: 8px; background: #f8fafc; }
+.create-booking-type legend { padding: 0 8px; color: var(--v1-text); font-size: 14px; font-weight: 700; }
+.create-booking-type label { display: flex; align-items: center; min-height: 44px; gap: 9px; padding: 10px 14px; border-radius: 6px; background: #fff; color: var(--v1-text); font-weight: 700; cursor: pointer; }
+.create-booking-type input { width: 18px; height: 18px; accent-color: var(--v1-accent); }
+.create-booking-section { padding: 20px; border: 1px solid var(--v1-border); border-radius: 8px; background: #fff; }
+.create-booking-section h2 { margin: 0 0 16px; color: var(--v1-text); font-size: 18px; letter-spacing: 0; }
+.create-booking-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.create-booking-field { display: grid; min-width: 0; gap: 7px; color: var(--v1-text); font-size: 14px; font-weight: 700; }
+.create-booking-field input, .create-booking-field select, .create-booking-field textarea { width: 100%; min-width: 0; min-height: 44px; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; }
+.create-booking-field textarea { resize: vertical; }
+.create-booking-wide { margin-top: 16px; }
+.create-booking-actions { display: flex; justify-content: flex-end; padding-bottom: 24px; }
+.create-booking-actions .v1-button { min-height: 46px; }
+
 .servicesos-main input,
 .servicesos-main select,
 .servicesos-main textarea { box-sizing: border-box; color: var(--v1-text); background: #fff; font: inherit; }
@@ -176,6 +192,9 @@ body:has(.booking-detail-modal) { overflow: hidden; }
   .create-estimate-extra-level { max-width: none; margin-left: 27px; }
   .create-estimate-action-area { padding-top: 0; }
   .create-estimate-submit { width: 100%; }
+  .create-booking-type, .create-booking-grid { grid-template-columns: 1fr; }
+  .create-booking-section { padding: 16px; }
+  .create-booking-actions .v1-button { width: 100%; }
   .booking-list-card { padding: 18px; }
   .booking-list-main { grid-template-columns: 1fr auto; gap: 12px 16px; }
   .booking-list-customer { grid-column: 1; }

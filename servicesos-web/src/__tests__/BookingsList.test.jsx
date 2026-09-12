@@ -189,6 +189,19 @@ describe('read-only Bookings admin list', () => {
     expect(screen.getByText('10 Main Street')).toBeInTheDocument();
     expect(screen.getByText('$245.00')).toBeInTheDocument();
     expect(screen.getByText('scheduled')).toBeInTheDocument();
+    expect(screen.getByText('Booking')).toBeInTheDocument();
+  });
+
+  it('renders residential and commercial bookings from the same list', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [
+      { id: 'residential-a', bookingType: 'residential', customerName: 'Home Customer', serviceType: 'Deep clean', date: '2026-10-01', startTime: '09:00', agreedPrice: 200, status: 'scheduled' },
+      { id: 'commercial-a', bookingType: 'commercial', customerName: 'Example Office', serviceType: 'Office maintenance', date: '2026-10-02', startTime: '18:00', agreedPrice: 900, status: 'scheduled' },
+    ] });
+    render(<BookingsList />);
+    expect(await screen.findByRole('heading', { name: 'Home Customer' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Example Office' })).toBeInTheDocument();
+    expect(screen.getByText('Residential')).toBeInTheDocument();
+    expect(screen.getByText('Commercial')).toBeInTheDocument();
   });
 
   it('displays customerName for admin-created estimate bookings without exposing mutation controls', async () => {

@@ -25,6 +25,7 @@ import {
   bookingServiceType,
   bookingStatus,
   bookingStillOwed,
+  bookingTypeLabel,
 } from './bookingDisplay';
 import { createBookingCheckoutSession } from '../services/stripeService';
 import {
@@ -583,6 +584,7 @@ export default function BookingsList() {
                 <div className="booking-list-address">{bookingAddress(booking)}</div>
                 <div className="booking-list-price">{bookingPrice(booking)}</div>
                 <div className="booking-list-badges">
+                  <span className="v1-pill">{bookingTypeLabel(booking)}</span>
                   <span
                     className="v1-pill"
                     style={booking.status === 'cancelled'

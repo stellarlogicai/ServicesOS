@@ -18,6 +18,7 @@ import CalendarView           from "./components/CalendarView.jsx";
 import DataExport             from "./components/DataExport.jsx";
 import InsuranceTracking      from "./components/InsuranceTracking.jsx";
 import OwnerOnboardingEntry   from "./components/OwnerOnboardingEntry.jsx";
+import CreateBooking          from "./components/CreateBooking.jsx";
 // import ImprovedOnboarding     from "./components/ImprovedOnboarding.jsx"; // Legacy onboarding disabled for beta
 import RouteOptimization      from "./components/RouteOptimization.jsx";
 import GrowthAIPage           from "./modules/growthAI/GrowthAIPage.jsx";
@@ -57,6 +58,13 @@ const NAV_ITEMS = [
     icon: "📋",
     label: "Create estimate",
     roles: ["admin", "super-admin"],
+  },
+  {
+    id: "create-booking",
+    icon: "📆",
+    label: "Create booking",
+    roles: ["admin", "super-admin"],
+    permission: "manage_bookings",
   },
   {
     id: "customers",
@@ -537,6 +545,7 @@ function AuthenticatedApp() {
 
     switch (page) {
       case "intake":            return <div className="v1-page create-estimate-page-shell" key={`${tenantId}-${activeEstimateCustomerContext?.customerId || 'manual'}`}><AIPhotoEstimateSystem initialCustomerPrefill={activeEstimateCustomerContext?.customer} existingCustomerContext={activeEstimateCustomerContext} onLeadSaved={(formData, estimate, aiAnalysis, customerContext) => saveLead(tenantId, formData, estimate, aiAnalysis, customerContext)} /></div>;
+      case "create-booking":    return <CreateBooking key={tenantId} onCreated={showBookingsAfterCustomerBooking} />;
       case "dashboard":         return <Dashboard key={tenantId} />;
       case "customers":         return <CustomerManagement key={tenantId} onCreateEstimate={createEstimateForExistingCustomer} onBookingCreated={showBookingsAfterCustomerBooking} />;
       case "bookings":          return <BookingsList key={tenantId} />;

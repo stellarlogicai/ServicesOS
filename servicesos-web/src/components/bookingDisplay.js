@@ -36,6 +36,12 @@ export function bookingServiceType(booking = {}) {
   ) || 'Service not specified';
 }
 
+export function bookingTypeLabel(booking = {}) {
+  if (booking.bookingType === 'commercial') return 'Commercial';
+  if (booking.bookingType === 'residential') return 'Residential';
+  return 'Booking';
+}
+
 function addressText(value) {
   if (typeof value === 'string') return value.trim();
   if (!value || typeof value !== 'object') return '';
