@@ -1,4 +1,5 @@
 const { membershipContains, normalizedText } = require('./ownerOnboardingBootstrapGateway');
+const { firestoreServerTimestamp } = require('./firebaseAdminCompat');
 
 const BILLING_PURPOSE = 'servicesos_owner_subscription';
 const BILLING_SCHEMA_VERSION = '1';
@@ -122,7 +123,7 @@ async function ensureCustomer({ stripe, access, admin }) {
     if (existing && existing !== customerId) failClosed();
     if (!existing) transaction.update(tenantRef, {
       stripeCustomerId: customerId,
-      billingUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      billingUpdatedAt: firestoreServerTimestamp(admin),
     });
   });
   return customerId;
@@ -170,7 +171,7 @@ async function createCheckout({ admin, identity, stripe, priceId, appUrl, body }
         status: 'open',
         attempt,
       },
-      billingUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      billingUpdatedAt: firestoreServerTimestamp(admin),
     });
   });
   return { success: true, checkout: { sessionId: session.id, checkoutUrl: session.url } };

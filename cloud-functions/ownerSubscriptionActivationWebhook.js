@@ -1,5 +1,6 @@
 const { membershipContains, normalizedText } = require('./ownerOnboardingBootstrapGateway');
 const { BILLING_PURPOSE } = require('./ownerOnboardingBillingGateway');
+const { firestoreServerTimestamp } = require('./firebaseAdminCompat');
 
 const BILLING_SCHEMA_VERSION = '1';
 
@@ -25,7 +26,9 @@ function subscriptionIdFromInvoice(invoice) {
 }
 
 function verifiedSubscriptionFacts({ invoice, subscription, priceId }) {
-  if (!invoice || invoice.paid !== true || invoice.status !== 'paid') throw new ActivationError();
+  if (!invoice || invoice.status !== 'paid' || (invoice.paid !== undefined && invoice.paid !== true)) {
+    throw new ActivationError();
+  }
   const invoiceSubscriptionId = subscriptionIdFromInvoice(invoice);
   if (!invoiceSubscriptionId || subscription?.id !== invoiceSubscriptionId) throw new ActivationError();
   if (subscription.status !== 'active') throw new ActivationError();
@@ -103,7 +106,7 @@ async function activateOwnerSubscription({ admin, invoice, subscription, priceId
       cancelAtPeriodEnd: facts.cancelAtPeriodEnd,
       latestInvoiceId: facts.latestInvoiceId,
       latestInvoiceCreated: facts.latestInvoiceCreated,
-      billingUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      billingUpdatedAt: firestoreServerTimestamp(admin),
       status: 'active',
       onboardingState: 'active',
       ownerSubscriptionCheckout: null,

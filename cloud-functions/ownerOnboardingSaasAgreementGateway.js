@@ -3,6 +3,7 @@ const {
   AGREEMENT_VERSION_DATE_LABEL, CONTRACT_ID, termsHash, termsMarkdown,
 } = require('./ownerSaasAgreement');
 const { membershipContains, normalizedText } = require('./ownerOnboardingBootstrapGateway');
+const { firestoreServerTimestamp } = require('./firebaseAdminCompat');
 
 const ALLOWED_ORIGINS = new Set(['https://servicesos.netlify.app', 'http://127.0.0.1:5173', 'http://localhost:5173', 'http://127.0.0.1:5174', 'http://localhost:5174']);
 class AgreementError extends Error {
@@ -71,7 +72,7 @@ async function processAgreement({ admin, identity, method, body }) {
     }
     if (tenant.onboardingState !== 'agreement_required' || existing) conflict();
     if (method === 'GET') return presentation({ tenantId });
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = firestoreServerTimestamp(admin);
     transaction.create(contractRef, {
       agreementType: AGREEMENT_TYPE, agreementVersion: AGREEMENT_ID,
       agreementVersionDate: AGREEMENT_VERSION_DATE, tenantId,

@@ -64,6 +64,15 @@ test('valid invoice.paid activates tenant and writes canonical billing facts', a
   assert.equal('subscriptionTier' in source.state['tenants/tenant-a'], false);
 });
 
+test('current Stripe invoice.paid shape may omit the legacy paid boolean', async () => {
+  const source = fixture();
+  assert.deepEqual(
+    await activate(source, invoice({ paid: undefined })),
+    { success: true, activated: true, stale: false },
+  );
+  assert.equal(source.state['tenants/tenant-a'].status, 'active');
+});
+
 test('supports current parent subscription correlation and rejects non-subscription parent', () => {
   assert.equal(subscriptionIdFromInvoice(invoice({ subscription: undefined, parent: { type: 'subscription_details', subscription_details: { subscription: 'sub_owner' } } })), 'sub_owner');
   assert.equal(subscriptionIdFromInvoice(invoice({ parent: { type: 'quote_details', quote_details: { quote: 'qt_1' } } })), '');

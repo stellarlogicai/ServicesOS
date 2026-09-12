@@ -4,6 +4,7 @@ const {
   normalizedText,
   safeProjection,
 } = require('./ownerOnboardingBootstrapGateway');
+const { firestoreServerTimestamp } = require('./firebaseAdminCompat');
 const { isValidIanaTimeZone } = require('./growthAICreditEntitlement');
 
 const ALLOWED_ORIGINS = new Set([
@@ -100,7 +101,7 @@ async function saveOwnerBusinessProfile({ admin, identity, profileData }) {
       businessAddress: approved.businessAddress,
       businessSettings: { ...(tenant.businessSettings || {}), timeZone: approved.timezone },
       onboardingState: 'agreement_required',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firestoreServerTimestamp(admin),
     };
     transaction.update(tenantRef, patch);
     return safeProjection({ tenantId, tenant: { ...tenant, ...patch } });

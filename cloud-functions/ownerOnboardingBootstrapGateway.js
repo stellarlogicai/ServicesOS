@@ -1,3 +1,5 @@
+const { firestoreServerTimestamp } = require('./firebaseAdminCompat');
+
 const OWNER_ONBOARDING_ALLOWED_ORIGINS = new Set([
   'https://servicesos.netlify.app',
   'http://127.0.0.1:5173',
@@ -132,7 +134,7 @@ async function bootstrapOwnerOnboarding({ admin, identity }) {
   const db = admin.firestore();
   const userRef = db.collection('users').doc(uid);
   const candidateTenantRef = db.collection('tenants').doc();
-  const serverTimestamp = admin.firestore.FieldValue.serverTimestamp;
+  const serverTimestamp = () => firestoreServerTimestamp(admin);
 
   return db.runTransaction(async transaction => {
     const userSnapshot = await transaction.get(userRef);
