@@ -38,6 +38,7 @@ import {
 } from '../services/ownerOnboardingService';
 import { AuthContext } from './AuthContextValue';
 import { acceptOwnerSaasAgreement, loadOwnerSaasAgreement } from '../services/ownerSaasAgreementService';
+import { createOwnerSubscriptionCheckout } from '../services/ownerBillingService';
 import { normalizeTenantId, resolveActiveTenantId } from './activeTenant';
 
 // ─── Permission map ───────────────────────────────────────────────────────────
@@ -421,6 +422,12 @@ export function AuthProvider({ children }) {
     }
     return agreement;
   };
+  const startOwnerSubscriptionCheckout = async () => {
+    if (!user || ownerOnboarding?.onboardingState !== 'billing_required') {
+      throw new Error('Subscription checkout is unavailable.');
+    }
+    return createOwnerSubscriptionCheckout({ user });
+  };
 
   // ── Tenant switching (super-admin only) ───────────────────────────────────
 
@@ -522,6 +529,7 @@ export function AuthProvider({ children }) {
       completeOwnerBusinessProfile,
       loadOwnerAgreement,
       acceptOwnerAgreement,
+      startOwnerSubscriptionCheckout,
 
       // Tenant actions
       switchTenant,        // super-admin only

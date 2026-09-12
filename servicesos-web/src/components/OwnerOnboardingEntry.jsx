@@ -153,12 +153,45 @@ function AgreementStep({ loadAgreement, acceptAgreement }) {
   );
 }
 
+export function BillingStep({ startCheckout, redirectToCheckout = url => window.location.assign(url) }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const checkout = await startCheckout();
+      redirectToCheckout(checkout.checkoutUrl);
+    } catch {
+      setError('Secure checkout could not be opened. Try again.');
+      setSubmitting(false);
+    }
+  };
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>ServicesOS subscription</h1>
+      <p style={{ color: '#475569' }}>Complete secure billing setup to activate your business account.</p>
+      <dl aria-label="ServicesOS subscription summary" style={{ display: 'grid', gap: 8, margin: '22px 0' }}>
+        <div><dt style={{ fontWeight: 700 }}>ServicesOS</dt><dd style={{ margin: 0 }}>$100/month</dd></div>
+        <div><dt style={{ fontWeight: 700 }}>Billing</dt><dd style={{ margin: 0 }}>Monthly subscription</dd></div>
+        <div><dt style={{ fontWeight: 700 }}>Trial</dt><dd style={{ margin: 0 }}>No trial</dd></div>
+      </dl>
+      {error ? <p role="alert" style={{ color: '#991b1b' }}>{error}</p> : null}
+      <button type="button" disabled={submitting} onClick={submit}>
+        {submitting ? 'Opening Secure Checkout…' : 'Continue to Secure Checkout'}
+      </button>
+    </div>
+  );
+}
+
 export default function OwnerOnboardingEntry() {
   const {
     bootstrapOwner,
     completeOwnerBusinessProfile,
     loadOwnerAgreement,
     acceptOwnerAgreement,
+    startOwnerSubscriptionCheckout,
     ownerBootstrapCandidate,
     ownerOnboarding,
   } = useAuth();
@@ -218,6 +251,8 @@ export default function OwnerOnboardingEntry() {
           <BusinessProfileForm onboarding={ownerOnboarding} onSubmit={completeOwnerBusinessProfile} />
         ) : ownerOnboarding?.onboardingState === 'agreement_required' ? (
           <AgreementStep loadAgreement={loadOwnerAgreement} acceptAgreement={acceptOwnerAgreement} />
+        ) : ownerOnboarding?.onboardingState === 'billing_required' ? (
+          <BillingStep startCheckout={startOwnerSubscriptionCheckout} />
         ) : copy ? (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>{copy.title}</h1>

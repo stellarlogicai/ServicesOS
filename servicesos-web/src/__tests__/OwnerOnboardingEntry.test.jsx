@@ -7,13 +7,14 @@ const authState = {
   completeOwnerBusinessProfile: vi.fn(),
   loadOwnerAgreement: vi.fn(),
   acceptOwnerAgreement: vi.fn(),
+  startOwnerSubscriptionCheckout: vi.fn(),
   ownerBootstrapCandidate: false,
   ownerOnboarding: null,
 };
 
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => authState }));
 
-import OwnerOnboardingEntry from '../components/OwnerOnboardingEntry';
+import OwnerOnboardingEntry, { BillingStep } from '../components/OwnerOnboardingEntry';
 
 describe('OwnerOnboardingEntry', () => {
   beforeEach(() => {
@@ -21,6 +22,7 @@ describe('OwnerOnboardingEntry', () => {
     authState.completeOwnerBusinessProfile.mockReset();
     authState.loadOwnerAgreement.mockReset();
     authState.acceptOwnerAgreement.mockReset();
+    authState.startOwnerSubscriptionCheckout.mockReset();
     authState.ownerBootstrapCandidate = false;
     authState.ownerOnboarding = null;
   });
@@ -33,16 +35,32 @@ describe('OwnerOnboardingEntry', () => {
     expect(authState.bootstrapOwner).toHaveBeenCalledTimes(1);
   });
 
-  for (const [state, heading] of [
-    ['billing_required', 'Billing setup required'],
-  ]) {
-    it(`renders the ${state} onboarding state`, () => {
-      authState.ownerOnboarding = { lifecycleManaged: true, onboardingState: state };
-      render(<OwnerOnboardingEntry />);
-      expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
-      expect(authState.bootstrapOwner).not.toHaveBeenCalled();
-    });
-  }
+  it('renders the fixed no-trial subscription and redirects only after the gateway returns', async () => {
+    let resolveCheckout;
+    const startCheckout = vi.fn(() => new Promise(resolve => { resolveCheckout = resolve; }));
+    const assign = vi.fn();
+    render(<BillingStep startCheckout={startCheckout} redirectToCheckout={assign} />);
+    expect(screen.getByRole('heading', { name: 'ServicesOS subscription' })).toBeInTheDocument();
+    expect(screen.getByText('$100/month')).toBeInTheDocument();
+    expect(screen.getByText('Monthly subscription')).toBeInTheDocument();
+    expect(screen.getByText('No trial')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    const button = screen.getByRole('button', { name: 'Continue to Secure Checkout' });
+    fireEvent.click(button); fireEvent.click(button);
+    expect(startCheckout).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Opening Secure Checkout…' })).toBeDisabled();
+    resolveCheckout({ checkoutUrl: 'https://checkout.stripe.com/c/pay/test' });
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('https://checkout.stripe.com/c/pay/test'));
+  });
+
+  it('keeps billing_required after a transient Checkout failure', async () => {
+    authState.ownerOnboarding = { lifecycleManaged: true, onboardingState: 'billing_required' };
+    authState.startOwnerSubscriptionCheckout.mockRejectedValue(new Error('private'));
+    render(<OwnerOnboardingEntry />);
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to Secure Checkout' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Secure checkout could not be opened. Try again.');
+    expect(authState.ownerOnboarding.onboardingState).toBe('billing_required');
+  });
 
   it('loads exact server terms and requires typed name plus an initially unchecked affirmation', async () => {
     const agreement = {

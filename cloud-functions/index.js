@@ -30,6 +30,7 @@ const { createEmployeeWorkAssistantGatewayHandler } = require('./employeeWorkAss
 const { createOwnerOnboardingBootstrapGatewayHandler } = require('./ownerOnboardingBootstrapGateway');
 const { createOwnerOnboardingBusinessProfileGatewayHandler } = require('./ownerOnboardingBusinessProfileGateway');
 const { createOwnerOnboardingSaasAgreementGatewayHandler } = require('./ownerOnboardingSaasAgreementGateway');
+const { createOwnerOnboardingBillingGatewayHandler } = require('./ownerOnboardingBillingGateway');
 
 const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
@@ -39,6 +40,9 @@ const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
 const growthAIProviderApiKey = defineSecret('GROWTHAI_PROVIDER_API_KEY');
 const growthAIProviderBaseUrl = defineString('GROWTHAI_PROVIDER_BASE_URL');
 const growthAIProviderModel = defineString('GROWTHAI_PROVIDER_MODEL');
+const stripeSecretKey = defineSecret('STRIPE_SECRET_KEY');
+const ownerSubscriptionPriceId = defineString('SERVICESOS_OWNER_SUBSCRIPTION_PRICE_ID');
+const servicesosAppUrl = defineString('SERVICESOS_APP_URL');
 
 function createConfiguredGrowthAIProvider() {
   return createGrowthAIProviderFromFirebaseParameters({
@@ -66,6 +70,17 @@ exports.ownerOnboardingSaasAgreementGateway = functions.runWith({
   minInstances: 0,
   maxInstances: 3,
 }).https.onRequest(createOwnerOnboardingSaasAgreementGatewayHandler({ admin }));
+
+exports.ownerOnboardingBillingGateway = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+  secrets: [stripeSecretKey],
+}).https.onRequest(createOwnerOnboardingBillingGatewayHandler({
+  admin,
+  getStripe: () => require('stripe')(stripeSecretKey.value()),
+  getPriceId: () => ownerSubscriptionPriceId.value(),
+  getAppUrl: () => servicesosAppUrl.value(),
+}));
 
 // Keep this gateway in the bounded-Function inventory when reconciling cost guardrails.
 exports.employeeSessionGateway = functions.runWith({
@@ -906,7 +921,7 @@ exports.sendCustomerEmail = functions.https.onRequest(
 /**
  * Stripe webhook handler for subscription events
  */
-exports.subscriptionWebhook = functions.https.onRequest(async (req, res) => {
+const subscriptionWebhook = functions.https.onRequest(async (req, res) => {
   const sig = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_SUBSCRIPTION_WEBHOOK_SECRET;
 

@@ -196,7 +196,7 @@ describe('App onboarding router context', () => {
   it.each([
     ['business_profile_required', 'Set up your business profile'],
     ['agreement_required', 'ServicesOS Software-as-a-Service Agreement'],
-    ['billing_required', 'Billing setup required'],
+      ['billing_required', 'ServicesOS subscription'],
   ])('keeps managed %s tenants inside owner onboarding', async (onboardingState, heading) => {
     authState.currentTenant = {
       id: 'tenant-test', onboardingSchemaVersion: 1, onboardingState, status: 'onboarding',
