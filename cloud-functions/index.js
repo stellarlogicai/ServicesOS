@@ -31,6 +31,7 @@ const { createOwnerOnboardingBootstrapGatewayHandler } = require('./ownerOnboard
 const { createOwnerOnboardingBusinessProfileGatewayHandler } = require('./ownerOnboardingBusinessProfileGateway');
 const { createOwnerOnboardingSaasAgreementGatewayHandler } = require('./ownerOnboardingSaasAgreementGateway');
 const { createOwnerOnboardingBillingGatewayHandler } = require('./ownerOnboardingBillingGateway');
+const { createOwnerSubscriptionActivationWebhookHandler } = require('./ownerSubscriptionActivationWebhook');
 
 const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
@@ -41,6 +42,7 @@ const growthAIProviderApiKey = defineSecret('GROWTHAI_PROVIDER_API_KEY');
 const growthAIProviderBaseUrl = defineString('GROWTHAI_PROVIDER_BASE_URL');
 const growthAIProviderModel = defineString('GROWTHAI_PROVIDER_MODEL');
 const stripeSecretKey = defineSecret('STRIPE_SECRET_KEY');
+const ownerSubscriptionWebhookSecret = defineSecret('STRIPE_OWNER_SUBSCRIPTION_WEBHOOK_SECRET');
 const ownerSubscriptionPriceId = defineString('SERVICESOS_OWNER_SUBSCRIPTION_PRICE_ID');
 const servicesosAppUrl = defineString('SERVICESOS_APP_URL');
 
@@ -80,6 +82,17 @@ exports.ownerOnboardingBillingGateway = functions.runWith({
   getStripe: () => require('stripe')(stripeSecretKey.value()),
   getPriceId: () => ownerSubscriptionPriceId.value(),
   getAppUrl: () => servicesosAppUrl.value(),
+}));
+
+exports.ownerSubscriptionActivationWebhook = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+  secrets: [stripeSecretKey, ownerSubscriptionWebhookSecret],
+}).https.onRequest(createOwnerSubscriptionActivationWebhookHandler({
+  admin,
+  getStripe: () => require('stripe')(stripeSecretKey.value()),
+  getWebhookSecret: () => ownerSubscriptionWebhookSecret.value(),
+  getPriceId: () => ownerSubscriptionPriceId.value(),
 }));
 
 // Keep this gateway in the bounded-Function inventory when reconciling cost guardrails.

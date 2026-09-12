@@ -37,6 +37,7 @@ const canonicalExports = [
   'generateOnboardingLink',
   'getConnectedAccountStatus',
   'sendCustomerEmail',
+  'ownerSubscriptionActivationWebhook',
 ];
 
 function listActiveWebSourceFiles(directory) {
