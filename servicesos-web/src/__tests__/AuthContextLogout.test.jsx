@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   auth: { name: 'test-auth' },
   authStateChanged: null,
+  bootstrapOwnerOnboarding: vi.fn(),
   clearCurrentTenantId: vi.fn(),
   createUserWithEmailAndPassword: vi.fn(),
   firebaseSignOut: vi.fn(),
@@ -51,6 +52,19 @@ vi.mock('../services/onboardingService', () => ({
   completeUserOnboarding: vi.fn(),
 }));
 
+vi.mock('../services/ownerOnboardingService', () => ({
+  bootstrapOwnerOnboarding: mocks.bootstrapOwnerOnboarding,
+  ownerOnboardingFromTenant: tenant => {
+    if (!tenant) return null;
+    return {
+      tenantId: tenant.id || '',
+      lifecycleManaged: tenant.onboardingSchemaVersion === 1,
+      onboardingState: tenant.onboardingSchemaVersion === 1 ? tenant.onboardingState : null,
+      businessProfileComplete: Boolean(tenant.businessName && tenant.businessEmail && tenant.businessPhone),
+    };
+  },
+}));
+
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 
 function AuthStateProbe() {
@@ -62,6 +76,8 @@ function AuthStateProbe() {
     isEmployee,
     loading,
     logout,
+    bootstrapOwner,
+    ownerBootstrapCandidate,
     role,
     tenantId,
     user,
@@ -78,6 +94,8 @@ function AuthStateProbe() {
       <div>Employee role: {isEmployee() ? 'yes' : 'no'}</div>
       <div>Field Mode access: {canAccessFieldMode() ? 'yes' : 'no'}</div>
       <div>Admin area access: {canAccessAdminArea() ? 'yes' : 'no'}</div>
+      <div>Owner bootstrap: {ownerBootstrapCandidate ? 'yes' : 'no'}</div>
+      {ownerBootstrapCandidate ? <button onClick={bootstrapOwner}>Bootstrap owner</button> : null}
       <button onClick={logout}>Sign out</button>
     </div>
   );
@@ -108,6 +126,12 @@ describe('AuthContext logout', () => {
     vi.clearAllMocks();
     mocks.authStateChanged = null;
     mocks.firebaseSignOut.mockResolvedValue(undefined);
+    mocks.bootstrapOwnerOnboarding.mockResolvedValue({
+      tenantId: 'tenant-a',
+      lifecycleManaged: true,
+      onboardingState: 'business_profile_required',
+      businessProfileComplete: false,
+    });
     mocks.getDoc.mockResolvedValue({
       data: () => ({
         onboardingCompleted: true,
@@ -200,7 +224,7 @@ describe('AuthContext logout', () => {
     expect(screen.queryByText('Profile role: customer')).not.toBeInTheDocument();
   });
 
-  it('denies a signed-in user whose canonical profile does not exist', async () => {
+  it('keeps a signed-in missing-profile user behind the owner bootstrap boundary', async () => {
     mocks.getDoc.mockResolvedValueOnce({ exists: () => false });
 
     render(
@@ -210,12 +234,60 @@ describe('AuthContext logout', () => {
     );
 
     await act(async () => {
-      await mocks.authStateChanged({ email: 'customer@example.com', uid: 'customer-new' });
+      await mocks.authStateChanged({ email: 'owner@example.com', uid: 'owner-new' });
     });
 
-    expect(await screen.findByText(/account profile is not configured/i)).toBeInTheDocument();
-    expect(screen.queryByText('Profile role: customer')).not.toBeInTheDocument();
-    expect(mocks.firebaseSignOut).toHaveBeenCalledWith(mocks.auth);
+    expect(await screen.findByText('Owner bootstrap: yes')).toBeInTheDocument();
+    expect(screen.getByText('Tenant ID: none')).toBeInTheDocument();
+    expect(screen.queryByText('Tenant dashboard: Tenant A')).not.toBeInTheDocument();
+    expect(mocks.firebaseSignOut).not.toHaveBeenCalled();
+    expect(mocks.getTenant).not.toHaveBeenCalled();
+  });
+
+  it('treats an active admin without a tenant as an owner bootstrap candidate', async () => {
+    mocks.getDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ role: 'admin', status: 'active', tenantId: '' }),
+    });
+
+    render(<AuthProvider><AuthStateProbe /></AuthProvider>);
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'owner@example.com', uid: 'owner-new' });
+    });
+
+    expect(await screen.findByText('Owner bootstrap: yes')).toBeInTheDocument();
+    expect(mocks.firebaseSignOut).not.toHaveBeenCalled();
+    expect(mocks.getTenant).not.toHaveBeenCalled();
+  });
+
+  it('reloads canonical profile and tenant state after owner bootstrap succeeds', async () => {
+    mocks.getDoc
+      .mockResolvedValueOnce({ exists: () => false })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ role: 'admin', status: 'active', tenantId: 'tenant-a' }),
+      });
+    mocks.getTenant.mockResolvedValueOnce({
+      id: 'tenant-a',
+      businessName: 'Tenant A',
+      businessEmail: 'owner@example.com',
+      businessPhone: '555-0100',
+      onboardingSchemaVersion: 1,
+      onboardingState: 'business_profile_required',
+    });
+
+    render(<AuthProvider><AuthStateProbe /></AuthProvider>);
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'owner@example.com', uid: 'owner-new' });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Bootstrap owner' }));
+
+    expect(await screen.findByText('Owner bootstrap: no')).toBeInTheDocument();
+    expect(screen.getByText('Tenant dashboard: Tenant A')).toBeInTheDocument();
+    expect(screen.getByText('Profile role: admin')).toBeInTheDocument();
+    expect(screen.getByText('Tenant ID: tenant-a')).toBeInTheDocument();
+    expect(mocks.bootstrapOwnerOnboarding).toHaveBeenCalledTimes(1);
+    expect(mocks.setCurrentTenantId).toHaveBeenCalledWith('tenant-a');
   });
 
   it('accepts an active tenant employee without loading the full tenant document', async () => {

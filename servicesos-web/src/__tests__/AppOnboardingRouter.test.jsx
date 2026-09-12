@@ -110,6 +110,14 @@ const authState = {
   tenantId: 'tenant-test',
   tenantLoading: false,
   loading: false,
+  ownerBootstrapCandidate: false,
+  ownerOnboarding: {
+    tenantId: 'tenant-test',
+    lifecycleManaged: false,
+    onboardingState: null,
+    businessProfileComplete: false,
+  },
+  bootstrapOwner: vi.fn(),
   logout: vi.fn(),
   hasPermission: () => true,
   isSuperAdmin: () => false,
@@ -144,6 +152,14 @@ describe('App onboarding router context', () => {
     };
     authState.tenantId = 'tenant-test';
     authState.tenantLoading = false;
+    authState.ownerBootstrapCandidate = false;
+    authState.ownerOnboarding = {
+      tenantId: 'tenant-test',
+      lifecycleManaged: false,
+      onboardingState: null,
+      businessProfileComplete: false,
+    };
+    authState.bootstrapOwner.mockReset();
     authState.userProfile = { uid: 'admin-test', onboardingCompleted: false };
     repeatWorkflowMocks.selectedCustomer = {
       id: 'customer-a',
@@ -167,6 +183,47 @@ describe('App onboarding router context', () => {
     expect(screen.queryByRole('heading', { name: 'Welcome to CleanOps' })).not.toBeInTheDocument();
     expect(screen.queryByText('Step 1 of 7 • 14% Complete')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Wife Beta Dashboard' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['business_profile_required', 'Set up your business profile'],
+    ['agreement_required', 'SaaS Agreement required'],
+    ['billing_required', 'Billing setup required'],
+  ])('keeps managed %s tenants inside owner onboarding', (onboardingState, heading) => {
+    authState.currentTenant = {
+      id: 'tenant-test', onboardingSchemaVersion: 1, onboardingState, status: 'onboarding',
+    };
+    authState.ownerOnboarding = {
+      tenantId: 'tenant-test', lifecycleManaged: true, onboardingState, businessProfileComplete: false,
+    };
+    render(<App />);
+    expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Wife Beta Dashboard' })).not.toBeInTheDocument();
+  });
+
+  it('allows an active managed tenant into the normal application', () => {
+    authState.currentTenant = {
+      id: 'tenant-test', onboardingSchemaVersion: 1, onboardingState: 'active', status: 'active',
+    };
+    authState.ownerOnboarding = {
+      tenantId: 'tenant-test', lifecycleManaged: true, onboardingState: 'active', businessProfileComplete: true,
+    };
+    render(<App />);
+    expect(screen.getByRole('heading', { name: 'Wife Beta Dashboard' })).toBeInTheDocument();
+    expect(screen.queryByText('ServicesOS business setup')).not.toBeInTheDocument();
+  });
+
+  it('routes an authenticated missing-profile candidate to bootstrap without showing the dashboard', () => {
+    authState.userProfile = null;
+    authState.currentTenant = null;
+    authState.tenantId = null;
+    authState.ownerOnboarding = null;
+    authState.ownerBootstrapCandidate = true;
+    authState.bootstrapOwner.mockReturnValue(new Promise(() => {}));
+    render(<App />);
+    expect(screen.getByRole('heading', { name: 'Preparing your business account' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Wife Beta Dashboard' })).not.toBeInTheDocument();
+    expect(authState.bootstrapOwner).toHaveBeenCalledTimes(1);
   });
 
   it('skips onboarding for an admin whose tenant is complete', () => {

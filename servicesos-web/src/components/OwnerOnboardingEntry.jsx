@@ -1,0 +1,91 @@
+import { useEffect, useRef, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+
+const STEP_COPY = {
+  business_profile_required: {
+    title: 'Set up your business profile',
+    detail: 'Your ServicesOS business account is ready for its basic business information.',
+    next: 'Business profile setup is the next step.',
+  },
+  agreement_required: {
+    title: 'SaaS Agreement required',
+    detail: 'Your business profile is ready. Agreement review is the next required step.',
+    next: 'Agreement acceptance is not available in this setup step yet.',
+  },
+  billing_required: {
+    title: 'Billing setup required',
+    detail: 'Your agreement step is complete. Billing setup is the next required step.',
+    next: 'Billing activation is not available in this setup step yet.',
+  },
+};
+
+export default function OwnerOnboardingEntry() {
+  const { bootstrapOwner, ownerBootstrapCandidate, ownerOnboarding } = useAuth();
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(ownerBootstrapCandidate === true);
+  const requestRef = useRef(0);
+
+  const runBootstrap = async () => {
+    const requestId = ++requestRef.current;
+    setLoading(true);
+    setError('');
+    try {
+      await bootstrapOwner();
+    } catch {
+      if (requestId === requestRef.current) {
+        setError('ServicesOS could not set up your business account. Try again.');
+      }
+    } finally {
+      if (requestId === requestRef.current) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!ownerBootstrapCandidate) return undefined;
+    const requestId = ++requestRef.current;
+    bootstrapOwner()
+      .catch(() => {
+        if (requestId === requestRef.current) {
+          setError('ServicesOS could not set up your business account. Try again.');
+        }
+      })
+      .finally(() => {
+        if (requestId === requestRef.current) setLoading(false);
+      });
+    return () => { requestRef.current += 1; };
+    // Bootstrap only when auth identifies a new candidate; retry is user-controlled.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownerBootstrapCandidate]);
+
+  const copy = STEP_COPY[ownerOnboarding?.onboardingState];
+  return (
+    <main style={{ minHeight: '100vh', background: '#f8fafc', display: 'grid', placeItems: 'center', padding: 24 }}>
+      <section style={{ width: '100%', maxWidth: 520, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 32 }}>
+        <p style={{ margin: '0 0 8px', color: '#475569', fontSize: 13 }}>ServicesOS business setup</p>
+        {loading ? (
+          <div role="status" aria-live="polite">
+            <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Preparing your business account</h1>
+            <p style={{ margin: 0, color: '#475569' }}>Verifying your secure owner workspace…</p>
+          </div>
+        ) : error ? (
+          <div role="alert">
+            <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Business setup is unavailable</h1>
+            <p style={{ color: '#475569' }}>{error}</p>
+            <button type="button" onClick={runBootstrap}>Try again</button>
+          </div>
+        ) : copy ? (
+          <div>
+            <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>{copy.title}</h1>
+            <p style={{ color: '#475569' }}>{copy.detail}</p>
+            <p role="status" style={{ color: '#334155', fontWeight: 600 }}>{copy.next}</p>
+          </div>
+        ) : (
+          <div role="alert">
+            <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Business setup is unavailable</h1>
+            <p style={{ margin: 0, color: '#475569' }}>ServicesOS could not verify the next setup step.</p>
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}

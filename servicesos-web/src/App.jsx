@@ -17,6 +17,7 @@ import AIModelTraining        from "./components/AIModelTraining.jsx";
 import CalendarView           from "./components/CalendarView.jsx";
 import DataExport             from "./components/DataExport.jsx";
 import InsuranceTracking      from "./components/InsuranceTracking.jsx";
+import OwnerOnboardingEntry   from "./components/OwnerOnboardingEntry.jsx";
 // import ImprovedOnboarding     from "./components/ImprovedOnboarding.jsx"; // Legacy onboarding disabled for beta
 import RouteOptimization      from "./components/RouteOptimization.jsx";
 import GrowthAIPage           from "./modules/growthAI/GrowthAIPage.jsx";
@@ -632,7 +633,7 @@ export default function App() {
 }
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, loading, ownerBootstrapCandidate, ownerOnboarding } = useAuth();
 
   if (loading) {
     return (
@@ -646,5 +647,10 @@ function AppContent() {
     );
   }
 
-  return user ? <AuthenticatedApp /> : <LoginForm />;
+  if (!user) return <LoginForm />;
+  if (ownerBootstrapCandidate) return <OwnerOnboardingEntry />;
+  if (ownerOnboarding?.lifecycleManaged && ownerOnboarding.onboardingState !== 'active') {
+    return <OwnerOnboardingEntry />;
+  }
+  return <AuthenticatedApp />;
 }

@@ -31,6 +31,10 @@ import { auth, googleProvider, db } from '../firebase';
 import { setCurrentTenantId, clearCurrentTenantId } from '../services/multiTenantService';
 import { getTenant } from '../services/tenantService';
 import { completeUserOnboarding } from '../services/onboardingService';
+import {
+  bootstrapOwnerOnboarding,
+  ownerOnboardingFromTenant,
+} from '../services/ownerOnboardingService';
 import { AuthContext } from './AuthContextValue';
 import { normalizeTenantId, resolveActiveTenantId } from './activeTenant';
 
@@ -109,6 +113,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading]         = useState(true);
   const [tenantLoading, setTenantLoading] = useState(false);
   const [accessError, setAccessError] = useState('');
+  const [ownerBootstrapCandidate, setOwnerBootstrapCandidate] = useState(false);
   const tenantLoadRequestRef = useRef(0);
 
   // ── Load tenant helper ────────────────────────────────────────────────────
@@ -171,6 +176,7 @@ export function AuthProvider({ children }) {
         setUser(null);
         setUserProfile(null);
         setCurrentTenant(null);
+        setOwnerBootstrapCandidate(false);
         clearCurrentTenantId();
         setLoading(false);
         return;
@@ -180,12 +186,25 @@ export function AuthProvider({ children }) {
         const userSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (userSnap.exists()) {
           const profile = { uid: firebaseUser.uid, ...userSnap.data() };
+          const profileTenantId = normalizeTenantId(profile.tenantId);
+          if (profile.role === 'admin' && profile.status === 'active' && !profileTenantId) {
+            setAccessError('');
+            setUser(firebaseUser);
+            setUserProfile(profile);
+            setCurrentTenant(null);
+            setOwnerBootstrapCandidate(true);
+            setTenantLoading(false);
+            clearCurrentTenantId();
+            setLoading(false);
+            return;
+          }
           const deniedMessage = profileAccessError(profile);
           if (deniedMessage) {
             setAccessError(deniedMessage);
             setUser(null);
             setUserProfile(null);
             setCurrentTenant(null);
+            setOwnerBootstrapCandidate(false);
             setTenantLoading(false);
             clearCurrentTenantId();
             setLoading(false);
@@ -196,18 +215,20 @@ export function AuthProvider({ children }) {
           setAccessError('');
           setUser(firebaseUser);
           setUserProfile(profile);
+          setOwnerBootstrapCandidate(false);
 
           // Load their tenant (super-admins may have tenantId = null)
           await loadTenant(profile.tenantId || null, profile.role);
         } else {
-          setAccessError(PROFILE_NOT_CONFIGURED_MESSAGE);
-          setUser(null);
+          setAccessError('');
+          setUser(firebaseUser);
           setUserProfile(null);
           setCurrentTenant(null);
+          setOwnerBootstrapCandidate(true);
           setTenantLoading(false);
           clearCurrentTenantId();
           setLoading(false);
-          await firebaseSignOut(auth);
+          return;
         }
       } catch (err) {
         console.error('[Auth] Error loading user profile:', err);
@@ -215,6 +236,7 @@ export function AuthProvider({ children }) {
         setUser(null);
         setUserProfile(null);
         setCurrentTenant(null);
+        setOwnerBootstrapCandidate(false);
         setTenantLoading(false);
         clearCurrentTenantId();
         try {
@@ -318,6 +340,7 @@ export function AuthProvider({ children }) {
       setUser(null);
       setUserProfile(null);
       setCurrentTenant(null);
+      setOwnerBootstrapCandidate(false);
       setTenantLoading(false);
       setAccessError('');
       clearCurrentTenantId();
@@ -350,6 +373,30 @@ export function AuthProvider({ children }) {
     }));
   };
 
+  const bootstrapOwner = async () => {
+    if (!user || !ownerBootstrapCandidate) {
+      throw new Error('Owner onboarding is unavailable.');
+    }
+    const projection = await bootstrapOwnerOnboarding({ user });
+    const userSnap = await getDoc(doc(db, 'users', user.uid));
+    if (!userSnap.exists()) throw new Error('Owner profile was not created.');
+    const profile = { uid: user.uid, ...userSnap.data() };
+    if (
+      profile.role !== 'admin' ||
+      profile.status !== 'active' ||
+      normalizeTenantId(profile.tenantId) !== projection.tenantId
+    ) {
+      throw new Error('Owner profile could not be verified.');
+    }
+    const tenantResult = await loadTenant(projection.tenantId, 'admin');
+    if (!tenantResult.success || !tenantResult.tenant) {
+      throw new Error('Owner tenant could not be verified.');
+    }
+    setUserProfile(profile);
+    setOwnerBootstrapCandidate(false);
+    return projection;
+  };
+
   // ── Tenant switching (super-admin only) ───────────────────────────────────
 
   /**
@@ -379,6 +426,15 @@ export function AuthProvider({ children }) {
   const isEmployee   = () => role === 'employee';
   const canAccessFieldMode = () => isEmployee() || isAdmin();
   const canAccessAdminArea = () => isAdmin();
+  const ownerOnboarding = (() => {
+    try {
+      return ownerOnboardingFromTenant(currentTenant);
+    } catch {
+      return currentTenant?.onboardingSchemaVersion === 1
+        ? { lifecycleManaged: true, onboardingState: null, tenantId: activeTenantId || '' }
+        : null;
+    }
+  })();
 
   /**
    * Check a single permission string against the user's role.
@@ -427,6 +483,8 @@ export function AuthProvider({ children }) {
       loading,
       tenantLoading,
       accessError,
+      ownerBootstrapCandidate,
+      ownerOnboarding,
 
       // Auth actions
       login,
@@ -435,6 +493,7 @@ export function AuthProvider({ children }) {
       logout,
       resetPassword,
       completeOnboarding,
+      bootstrapOwner,
 
       // Tenant actions
       switchTenant,        // super-admin only
