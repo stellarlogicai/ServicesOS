@@ -280,14 +280,15 @@ test('safe response allowlists onboarding and known business identity only', asy
     'users/owner-a': ownerProfile(),
     'tenants/tenant-a': managedTenant({
       businessName: 'Business A', businessEmail: 'business@example.test', businessPhone: '555-0100',
-      businessAddress: '100 Test Street', stripeSecret: 'must-not-leak', subscription: { private: true },
+      businessAddress: '100 Test Street', businessSettings: { timeZone: 'America/Chicago' },
+      stripeSecret: 'must-not-leak', subscription: { private: true },
       settings: { private: true }, employees: ['private'],
     }),
   } });
   const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
   assert.deepEqual(Object.keys(result.onboarding).sort(), [
     'businessAddress', 'businessEmail', 'businessName', 'businessPhone',
-    'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'tenantId',
+    'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'tenantId', 'timeZone',
   ]);
   assert.equal(JSON.stringify(result).includes('must-not-leak'), false);
   assert.equal(result.onboarding.businessProfileComplete, true);

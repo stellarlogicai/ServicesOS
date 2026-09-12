@@ -33,7 +33,10 @@ function localEndpointAllowed(value, projectId) {
   }
 }
 
-export function resolveOwnerOnboardingGatewayUrl(env = import.meta.env) {
+export function resolveOwnerOnboardingGatewayUrl(
+  env = import.meta.env,
+  functionName = OWNER_BOOTSTRAP_FUNCTION
+) {
   const projectId = typeof env.VITE_FIREBASE_PROJECT_ID === 'string'
     ? env.VITE_FIREBASE_PROJECT_ID.trim()
     : '';
@@ -48,7 +51,7 @@ export function resolveOwnerOnboardingGatewayUrl(env = import.meta.env) {
       if (!localEndpointAllowed(configured, projectId)) {
         throw new OwnerOnboardingServiceError('Owner onboarding emulator configuration is unsafe.');
       }
-      return `${configured}/${OWNER_BOOTSTRAP_FUNCTION}`;
+      return `${configured}/${functionName}`;
     }
     const host = typeof env.VITE_FIREBASE_FUNCTIONS_EMULATOR_HOST === 'string'
       ? env.VITE_FIREBASE_FUNCTIONS_EMULATOR_HOST.trim()
@@ -57,7 +60,7 @@ export function resolveOwnerOnboardingGatewayUrl(env = import.meta.env) {
     if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
       throw new OwnerOnboardingServiceError('Owner onboarding configuration is unavailable.');
     }
-    return `http://${host}:${port}/${projectId}/us-central1/${OWNER_BOOTSTRAP_FUNCTION}`;
+    return `http://${host}:${port}/${projectId}/us-central1/${functionName}`;
   }
 
   if (configured) {
@@ -66,12 +69,12 @@ export function resolveOwnerOnboardingGatewayUrl(env = import.meta.env) {
     } catch {
       throw new OwnerOnboardingServiceError('Owner onboarding configuration is unavailable.');
     }
-    return `${configured}/${OWNER_BOOTSTRAP_FUNCTION}`;
+    return `${configured}/${functionName}`;
   }
   if (!projectId || projectId === LOCAL_PROJECT_ID) {
     throw new OwnerOnboardingServiceError('Owner onboarding configuration is unavailable.');
   }
-  return `https://us-central1-${projectId}.cloudfunctions.net/${OWNER_BOOTSTRAP_FUNCTION}`;
+  return `https://us-central1-${projectId}.cloudfunctions.net/${functionName}`;
 }
 
 function optionalText(value) {
@@ -102,7 +105,7 @@ export function sanitizeOwnerOnboardingProjection(payload) {
     lifecycleManaged: source.lifecycleManaged,
     businessProfileComplete: source.businessProfileComplete,
   };
-  for (const field of ['businessName', 'businessEmail', 'businessPhone', 'businessAddress']) {
+  for (const field of ['businessName', 'businessEmail', 'businessPhone', 'businessAddress', 'timeZone']) {
     const value = optionalText(source[field]);
     if (value !== undefined) projection[field] = value;
   }
@@ -132,9 +135,41 @@ export function ownerOnboardingFromTenant(tenant) {
     businessProfileComplete: Boolean(
       optionalText(tenant.businessName) &&
       optionalText(tenant.businessEmail) &&
-      optionalText(tenant.businessPhone)
+      optionalText(tenant.businessPhone) &&
+      optionalText(tenant.businessAddress) &&
+      optionalText(tenant.businessSettings?.timeZone)
     ),
   };
+}
+
+export async function saveOwnerBusinessProfile(
+  profile,
+  { user = auth.currentUser, fetchImpl = fetch } = {}
+) {
+  if (!user || typeof user.getIdToken !== 'function') {
+    throw new OwnerOnboardingServiceError('Sign in to continue owner onboarding.', {
+      code: 'unauthenticated', status: 401,
+    });
+  }
+  const token = await user.getIdToken();
+  const response = await fetchImpl(resolveOwnerOnboardingGatewayUrl(
+    import.meta.env,
+    'ownerOnboardingBusinessProfileGateway'
+  ), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+  let body;
+  try { body = await response.json(); }
+  catch { throw new OwnerOnboardingServiceError('Business profile is temporarily unavailable.'); }
+  if (!response.ok) {
+    throw new OwnerOnboardingServiceError('Business profile could not be saved.', {
+      code: typeof body?.code === 'string' ? body.code : 'save_failed',
+      status: response.status,
+    });
+  }
+  return sanitizeOwnerOnboardingProjection(body);
 }
 
 export async function bootstrapOwnerOnboarding({ user = auth.currentUser, fetchImpl = fetch } = {}) {

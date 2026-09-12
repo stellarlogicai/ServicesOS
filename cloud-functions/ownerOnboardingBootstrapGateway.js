@@ -77,7 +77,9 @@ function hasCompleteBusinessProfile(tenant) {
   return Boolean(
     normalizedText(tenant.businessName) &&
     normalizedText(tenant.businessEmail) &&
-    normalizedText(tenant.businessPhone)
+    normalizedText(tenant.businessPhone) &&
+    normalizedText(tenant.businessAddress) &&
+    normalizedText(tenant.businessSettings?.timeZone)
   );
 }
 
@@ -95,6 +97,8 @@ function safeProjection({ tenantId, tenant }) {
     const value = normalizedText(tenant[field]);
     if (value !== null) result.onboarding[field] = value;
   }
+  const timeZone = normalizedText(tenant.businessSettings?.timeZone);
+  if (timeZone !== null) result.onboarding.timeZone = timeZone;
   return result;
 }
 
@@ -236,5 +240,6 @@ module.exports = {
   createOwnerOnboardingBootstrapGatewayHandler,
   hasCompleteBusinessProfile,
   membershipContains,
+  normalizedText,
   safeProjection,
 };

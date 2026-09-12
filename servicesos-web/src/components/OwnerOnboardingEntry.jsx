@@ -19,8 +19,89 @@ const STEP_COPY = {
   },
 };
 
+const fieldStyle = {
+  width: '100%', boxSizing: 'border-box', padding: 10,
+  border: '1px solid #cbd5e1', borderRadius: 6,
+};
+
+function BusinessProfileForm({ onboarding, onSubmit }) {
+  const [form, setForm] = useState(() => ({
+    businessName: onboarding.businessName || '',
+    businessEmail: onboarding.businessEmail || '',
+    businessPhone: onboarding.businessPhone || '',
+    businessAddress: onboarding.businessAddress || '',
+    timezone: onboarding.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+  }));
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const update = event => {
+    const { name, value } = event.target;
+    setForm(current => ({ ...current, [name]: value }));
+    setError('');
+  };
+
+  const submit = async event => {
+    event.preventDefault();
+    if (submitting) return;
+    const normalized = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]));
+    if (Object.values(normalized).some(value => !value)) {
+      setError('Complete all required business profile fields.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized.businessEmail)) {
+      setError('Enter a valid business email address.');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try { await onSubmit(normalized); }
+    catch { setError('Your business profile could not be saved. Try again.'); }
+    finally { setSubmitting(false); }
+  };
+
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Set up your business profile</h1>
+      <p style={{ color: '#475569' }}>Enter the business details ServicesOS will use for your workspace.</p>
+      <form aria-label="Business profile setup" onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
+        {[
+          ['businessName', 'Business Name', 'text', 160],
+          ['businessEmail', 'Business Email', 'email', 254],
+          ['businessPhone', 'Business Phone', 'tel', 40],
+          ['businessAddress', 'Business Address', 'text', 500],
+          ['timezone', 'Timezone', 'text', 100],
+        ].map(([name, label, type, maxLength]) => (
+          <label key={name} style={{ display: 'grid', gap: 6, color: '#334155', fontSize: 13, fontWeight: 600 }}>
+            {label}
+            <input
+              name={name}
+              type={type}
+              value={form[name]}
+              onChange={update}
+              maxLength={maxLength}
+              required
+              disabled={submitting}
+              style={fieldStyle}
+            />
+          </label>
+        ))}
+        {error ? <p role="alert" style={{ margin: 0, color: '#991b1b' }}>{error}</p> : null}
+        <button type="submit" disabled={submitting}>
+          {submitting ? 'Saving business profile…' : 'Continue to agreement'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function OwnerOnboardingEntry() {
-  const { bootstrapOwner, ownerBootstrapCandidate, ownerOnboarding } = useAuth();
+  const {
+    bootstrapOwner,
+    completeOwnerBusinessProfile,
+    ownerBootstrapCandidate,
+    ownerOnboarding,
+  } = useAuth();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(ownerBootstrapCandidate === true);
   const requestRef = useRef(0);
@@ -73,6 +154,8 @@ export default function OwnerOnboardingEntry() {
             <p style={{ color: '#475569' }}>{error}</p>
             <button type="button" onClick={runBootstrap}>Try again</button>
           </div>
+        ) : ownerOnboarding?.onboardingState === 'business_profile_required' ? (
+          <BusinessProfileForm onboarding={ownerOnboarding} onSubmit={completeOwnerBusinessProfile} />
         ) : copy ? (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>{copy.title}</h1>

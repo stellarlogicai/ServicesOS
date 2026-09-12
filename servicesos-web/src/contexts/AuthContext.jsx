@@ -34,6 +34,7 @@ import { completeUserOnboarding } from '../services/onboardingService';
 import {
   bootstrapOwnerOnboarding,
   ownerOnboardingFromTenant,
+  saveOwnerBusinessProfile,
 } from '../services/ownerOnboardingService';
 import { AuthContext } from './AuthContextValue';
 import { normalizeTenantId, resolveActiveTenantId } from './activeTenant';
@@ -397,6 +398,18 @@ export function AuthProvider({ children }) {
     return projection;
   };
 
+  const completeOwnerBusinessProfile = async profile => {
+    if (!user || ownerOnboarding?.onboardingState !== 'business_profile_required') {
+      throw new Error('Business profile onboarding is unavailable.');
+    }
+    const projection = await saveOwnerBusinessProfile(profile, { user });
+    const tenantResult = await loadTenant(projection.tenantId, 'admin');
+    if (!tenantResult.success || tenantResult.tenant?.onboardingState !== 'agreement_required') {
+      throw new Error('Business profile state could not be verified.');
+    }
+    return projection;
+  };
+
   // ── Tenant switching (super-admin only) ───────────────────────────────────
 
   /**
@@ -494,6 +507,7 @@ export function AuthProvider({ children }) {
       resetPassword,
       completeOnboarding,
       bootstrapOwner,
+      completeOwnerBusinessProfile,
 
       // Tenant actions
       switchTenant,        // super-admin only

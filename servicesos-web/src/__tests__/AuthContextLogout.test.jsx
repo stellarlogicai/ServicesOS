@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   auth: { name: 'test-auth' },
   authStateChanged: null,
   bootstrapOwnerOnboarding: vi.fn(),
+  saveOwnerBusinessProfile: vi.fn(),
   clearCurrentTenantId: vi.fn(),
   createUserWithEmailAndPassword: vi.fn(),
   firebaseSignOut: vi.fn(),
@@ -54,6 +55,7 @@ vi.mock('../services/onboardingService', () => ({
 
 vi.mock('../services/ownerOnboardingService', () => ({
   bootstrapOwnerOnboarding: mocks.bootstrapOwnerOnboarding,
+  saveOwnerBusinessProfile: mocks.saveOwnerBusinessProfile,
   ownerOnboardingFromTenant: tenant => {
     if (!tenant) return null;
     return {
@@ -77,6 +79,7 @@ function AuthStateProbe() {
     loading,
     logout,
     bootstrapOwner,
+    completeOwnerBusinessProfile,
     ownerBootstrapCandidate,
     role,
     tenantId,
@@ -96,6 +99,10 @@ function AuthStateProbe() {
       <div>Admin area access: {canAccessAdminArea() ? 'yes' : 'no'}</div>
       <div>Owner bootstrap: {ownerBootstrapCandidate ? 'yes' : 'no'}</div>
       {ownerBootstrapCandidate ? <button onClick={bootstrapOwner}>Bootstrap owner</button> : null}
+      <button onClick={() => completeOwnerBusinessProfile({
+        businessName: 'Business', businessEmail: 'owner@example.test', businessPhone: '555-0100',
+        businessAddress: '10 Main', timezone: 'UTC',
+      })}>Complete business profile</button>
       <button onClick={logout}>Sign out</button>
     </div>
   );
@@ -131,6 +138,10 @@ describe('AuthContext logout', () => {
       lifecycleManaged: true,
       onboardingState: 'business_profile_required',
       businessProfileComplete: false,
+    });
+    mocks.saveOwnerBusinessProfile.mockResolvedValue({
+      tenantId: 'tenant-a', lifecycleManaged: true,
+      onboardingState: 'agreement_required', businessProfileComplete: true,
     });
     mocks.getDoc.mockResolvedValue({
       data: () => ({
@@ -288,6 +299,28 @@ describe('AuthContext logout', () => {
     expect(screen.getByText('Tenant ID: tenant-a')).toBeInTheDocument();
     expect(mocks.bootstrapOwnerOnboarding).toHaveBeenCalledTimes(1);
     expect(mocks.setCurrentTenantId).toHaveBeenCalledWith('tenant-a');
+  });
+
+  it('reloads canonical agreement state after business profile submission', async () => {
+    mocks.getTenant
+      .mockResolvedValueOnce({
+        id: 'tenant-a', onboardingSchemaVersion: 1,
+        onboardingState: 'business_profile_required', status: 'onboarding',
+      })
+      .mockResolvedValueOnce({
+        id: 'tenant-a', businessName: 'Business', businessEmail: 'owner@example.test',
+        businessPhone: '555-0100', businessAddress: '10 Main', businessSettings: { timeZone: 'UTC' },
+        onboardingSchemaVersion: 1, onboardingState: 'agreement_required', status: 'onboarding',
+      });
+    render(<AuthProvider><AuthStateProbe /></AuthProvider>);
+    await act(async () => {
+      await mocks.authStateChanged({ email: 'owner@example.com', uid: 'admin-a' });
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Complete business profile' }));
+    await waitFor(() => expect(mocks.saveOwnerBusinessProfile).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Tenant dashboard: Business')).toBeInTheDocument();
+    expect(mocks.getTenant).toHaveBeenCalledTimes(2);
   });
 
   it('accepts an active tenant employee without loading the full tenant document', async () => {

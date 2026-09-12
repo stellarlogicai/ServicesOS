@@ -7,6 +7,7 @@ import {
   bootstrapOwnerOnboarding,
   ownerOnboardingFromTenant,
   resolveOwnerOnboardingGatewayUrl,
+  saveOwnerBusinessProfile,
   sanitizeOwnerOnboardingProjection,
 } from '../services/ownerOnboardingService';
 
@@ -52,6 +53,28 @@ describe('owner onboarding web service', () => {
 
   it('requires an authenticated Firebase user locally', async () => {
     await expect(bootstrapOwnerOnboarding({ user: null })).rejects.toMatchObject({ code: 'unauthenticated' });
+  });
+
+  it('submits only canonical business fields to the business profile gateway', async () => {
+    const payload = {
+      businessName: 'Business', businessEmail: 'owner@example.test', businessPhone: '555-0100',
+      businessAddress: '10 Main Street', timezone: 'UTC',
+    };
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ...validPayload, onboarding: { ...validPayload.onboarding, onboardingState: 'agreement_required' } }),
+    });
+    await saveOwnerBusinessProfile(payload, {
+      user: { getIdToken: vi.fn().mockResolvedValue('fake-token') }, fetchImpl,
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://127.0.0.1:5001/demo-servicesos-v1-smoke-local/us-central1/ownerOnboardingBusinessProfileGateway',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(payload) })
+    );
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    for (const field of ['uid', 'tenantId', 'role', 'adminUsers', 'users', 'status', 'onboardingState']) {
+      expect(body).not.toHaveProperty(field);
+    }
   });
 
   it('derives a production endpoint only from validated Firebase configuration', () => {
@@ -102,6 +125,7 @@ describe('owner onboarding web service', () => {
     expect(ownerOnboardingFromTenant({
       id: 'managed', onboardingSchemaVersion: 1, onboardingState: 'active',
       businessName: 'A', businessEmail: 'a@example.test', businessPhone: '555',
+      businessAddress: '10 Main', businessSettings: { timeZone: 'UTC' },
     })).toEqual({
       tenantId: 'managed', onboardingState: 'active', lifecycleManaged: true, businessProfileComplete: true,
     });
