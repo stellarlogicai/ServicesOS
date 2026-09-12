@@ -27,6 +27,7 @@ const { createEmployeeJobPacketGatewayHandler } = require('./employeeJobPacketGa
 const { createEmployeeFieldExecutionGatewayHandler } = require('./employeeFieldExecutionGateway');
 const { createFieldPhotoUploadGatewayHandler } = require('./fieldPhotoUploadGateway');
 const { createEmployeeWorkAssistantGatewayHandler } = require('./employeeWorkAssistantGateway');
+const { createOwnerOnboardingBootstrapGatewayHandler } = require('./ownerOnboardingBootstrapGateway');
 
 const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
@@ -46,6 +47,12 @@ function createConfiguredGrowthAIProvider() {
 }
 
 admin.initializeApp();
+
+// Keep this gateway in the bounded-Function inventory when reconciling cost guardrails.
+exports.ownerOnboardingBootstrapGateway = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+}).https.onRequest(createOwnerOnboardingBootstrapGatewayHandler({ admin }));
 
 // Keep this gateway in the bounded-Function inventory when reconciling cost guardrails.
 exports.employeeSessionGateway = functions.runWith({
