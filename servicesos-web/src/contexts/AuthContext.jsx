@@ -37,6 +37,7 @@ import {
   saveOwnerBusinessProfile,
 } from '../services/ownerOnboardingService';
 import { AuthContext } from './AuthContextValue';
+import { acceptOwnerSaasAgreement, loadOwnerSaasAgreement } from '../services/ownerSaasAgreementService';
 import { normalizeTenantId, resolveActiveTenantId } from './activeTenant';
 
 // ─── Permission map ───────────────────────────────────────────────────────────
@@ -410,6 +411,17 @@ export function AuthProvider({ children }) {
     return projection;
   };
 
+  const loadOwnerAgreement = () => loadOwnerSaasAgreement({ user });
+  const acceptOwnerAgreement = async acceptance => {
+    if (!user || ownerOnboarding?.onboardingState !== 'agreement_required') throw new Error('SaaS agreement is unavailable.');
+    const agreement = await acceptOwnerSaasAgreement(acceptance, { user });
+    const tenantResult = await loadTenant(activeTenantId, 'admin');
+    if (!tenantResult.success || tenantResult.tenant?.onboardingState !== 'billing_required') {
+      throw new Error('SaaS agreement state could not be verified.');
+    }
+    return agreement;
+  };
+
   // ── Tenant switching (super-admin only) ───────────────────────────────────
 
   /**
@@ -508,6 +520,8 @@ export function AuthProvider({ children }) {
       completeOnboarding,
       bootstrapOwner,
       completeOwnerBusinessProfile,
+      loadOwnerAgreement,
+      acceptOwnerAgreement,
 
       // Tenant actions
       switchTenant,        // super-admin only

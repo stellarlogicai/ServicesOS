@@ -29,6 +29,7 @@ const { createFieldPhotoUploadGatewayHandler } = require('./fieldPhotoUploadGate
 const { createEmployeeWorkAssistantGatewayHandler } = require('./employeeWorkAssistantGateway');
 const { createOwnerOnboardingBootstrapGatewayHandler } = require('./ownerOnboardingBootstrapGateway');
 const { createOwnerOnboardingBusinessProfileGatewayHandler } = require('./ownerOnboardingBusinessProfileGateway');
+const { createOwnerOnboardingSaasAgreementGatewayHandler } = require('./ownerOnboardingSaasAgreementGateway');
 
 const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
@@ -60,6 +61,11 @@ exports.ownerOnboardingBusinessProfileGateway = functions.runWith({
   minInstances: 0,
   maxInstances: 3,
 }).https.onRequest(createOwnerOnboardingBusinessProfileGatewayHandler({ admin }));
+
+exports.ownerOnboardingSaasAgreementGateway = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+}).https.onRequest(createOwnerOnboardingSaasAgreementGatewayHandler({ admin }));
 
 // Keep this gateway in the bounded-Function inventory when reconciling cost guardrails.
 exports.employeeSessionGateway = functions.runWith({

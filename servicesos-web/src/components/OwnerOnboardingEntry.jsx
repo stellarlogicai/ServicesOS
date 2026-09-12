@@ -95,10 +95,70 @@ function BusinessProfileForm({ onboarding, onSubmit }) {
   );
 }
 
+function AgreementStep({ loadAgreement, acceptAgreement }) {
+  const [agreement, setAgreement] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [signerName, setSignerName] = useState('');
+  const [affirmed, setAffirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const requestRef = useRef(0);
+
+  const load = async () => {
+    const requestId = ++requestRef.current;
+    setLoading(true); setError('');
+    try { const result = await loadAgreement(); if (requestId === requestRef.current) setAgreement(result); }
+    catch { if (requestId === requestRef.current) setError('The SaaS agreement could not be loaded. Try again.'); }
+    finally { if (requestId === requestRef.current) setLoading(false); }
+  };
+  useEffect(() => {
+    const requestId = ++requestRef.current;
+    loadAgreement()
+      .then(result => { if (requestId === requestRef.current) setAgreement(result); })
+      .catch(() => { if (requestId === requestRef.current) setError('The SaaS agreement could not be loaded. Try again.'); })
+      .finally(() => { if (requestId === requestRef.current) setLoading(false); });
+    return () => { requestRef.current += 1; };
+  }, [loadAgreement]);
+
+  const submit = async event => {
+    event.preventDefault();
+    const normalizedName = signerName.trim();
+    if (!agreement || !normalizedName || normalizedName.length > 160 || !affirmed || submitting) return;
+    setSubmitting(true); setError('');
+    try { await acceptAgreement({ signerName: normalizedName, agreementId: agreement.agreementId, termsHash: agreement.termsHash }); }
+    catch { setError('The agreement could not be accepted. Try again.'); }
+    finally { setSubmitting(false); }
+  };
+
+  if (loading) return <div role="status"><h1 style={{ fontSize: 24 }}>Loading SaaS Agreement</h1></div>;
+  if (error && !agreement) return <div role="alert"><h1 style={{ fontSize: 24 }}>SaaS Agreement unavailable</h1><p>{error}</p><button type="button" onClick={load}>Try again</button></div>;
+  if (!agreement) return null;
+  return (
+    <div>
+      <h1 style={{ fontSize: 24 }}>ServicesOS Software-as-a-Service Agreement</h1>
+      <p><strong>ServicesOS SaaS V1</strong> <code>{agreement.agreementId}</code></p>
+      <pre aria-label="ServicesOS SaaS agreement terms" style={{ whiteSpace: 'pre-wrap', overflowY: 'auto', maxHeight: 440, padding: 16, border: '1px solid #cbd5e1', fontFamily: 'inherit', lineHeight: 1.55 }}>{agreement.termsMarkdown}</pre>
+      <form aria-label="SaaS agreement acceptance" onSubmit={submit} style={{ display: 'grid', gap: 14, marginTop: 18 }}>
+        <label style={{ display: 'grid', gap: 6, fontWeight: 600 }}>Typed signer name
+          <input aria-label="Typed signer name" value={signerName} onChange={event => setSignerName(event.target.value)} maxLength={160} disabled={submitting} style={fieldStyle} />
+        </label>
+        <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <input type="checkbox" checked={affirmed} onChange={event => setAffirmed(event.target.checked)} disabled={submitting} />
+          <span>{agreement.acceptanceLanguage}</span>
+        </label>
+        {error ? <p role="alert" style={{ color: '#991b1b' }}>{error}</p> : null}
+        <button type="submit" disabled={!signerName.trim() || !affirmed || submitting}>{submitting ? 'Accepting Agreement…' : 'Accept Agreement & Continue'}</button>
+      </form>
+    </div>
+  );
+}
+
 export default function OwnerOnboardingEntry() {
   const {
     bootstrapOwner,
     completeOwnerBusinessProfile,
+    loadOwnerAgreement,
+    acceptOwnerAgreement,
     ownerBootstrapCandidate,
     ownerOnboarding,
   } = useAuth();
@@ -156,6 +216,8 @@ export default function OwnerOnboardingEntry() {
           </div>
         ) : ownerOnboarding?.onboardingState === 'business_profile_required' ? (
           <BusinessProfileForm onboarding={ownerOnboarding} onSubmit={completeOwnerBusinessProfile} />
+        ) : ownerOnboarding?.onboardingState === 'agreement_required' ? (
+          <AgreementStep loadAgreement={loadOwnerAgreement} acceptAgreement={acceptOwnerAgreement} />
         ) : copy ? (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>{copy.title}</h1>

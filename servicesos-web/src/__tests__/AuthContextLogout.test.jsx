@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   authStateChanged: null,
   bootstrapOwnerOnboarding: vi.fn(),
   saveOwnerBusinessProfile: vi.fn(),
+  loadOwnerSaasAgreement: vi.fn(),
+  acceptOwnerSaasAgreement: vi.fn(),
   clearCurrentTenantId: vi.fn(),
   createUserWithEmailAndPassword: vi.fn(),
   firebaseSignOut: vi.fn(),
@@ -65,6 +67,11 @@ vi.mock('../services/ownerOnboardingService', () => ({
       businessProfileComplete: Boolean(tenant.businessName && tenant.businessEmail && tenant.businessPhone),
     };
   },
+}));
+
+vi.mock('../services/ownerSaasAgreementService', () => ({
+  loadOwnerSaasAgreement: mocks.loadOwnerSaasAgreement,
+  acceptOwnerSaasAgreement: mocks.acceptOwnerSaasAgreement,
 }));
 
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
@@ -143,6 +150,8 @@ describe('AuthContext logout', () => {
       tenantId: 'tenant-a', lifecycleManaged: true,
       onboardingState: 'agreement_required', businessProfileComplete: true,
     });
+    mocks.loadOwnerSaasAgreement.mockResolvedValue({ agreementId: 'servicesos-saas-v1' });
+    mocks.acceptOwnerSaasAgreement.mockResolvedValue({ onboardingState: 'billing_required' });
     mocks.getDoc.mockResolvedValue({
       data: () => ({
         onboardingCompleted: true,

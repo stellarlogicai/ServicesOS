@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const authState = {
   bootstrapOwner: vi.fn(),
   completeOwnerBusinessProfile: vi.fn(),
+  loadOwnerAgreement: vi.fn(),
+  acceptOwnerAgreement: vi.fn(),
   ownerBootstrapCandidate: false,
   ownerOnboarding: null,
 };
@@ -17,6 +19,8 @@ describe('OwnerOnboardingEntry', () => {
   beforeEach(() => {
     authState.bootstrapOwner.mockReset();
     authState.completeOwnerBusinessProfile.mockReset();
+    authState.loadOwnerAgreement.mockReset();
+    authState.acceptOwnerAgreement.mockReset();
     authState.ownerBootstrapCandidate = false;
     authState.ownerOnboarding = null;
   });
@@ -30,7 +34,6 @@ describe('OwnerOnboardingEntry', () => {
   });
 
   for (const [state, heading] of [
-    ['agreement_required', 'SaaS Agreement required'],
     ['billing_required', 'Billing setup required'],
   ]) {
     it(`renders the ${state} onboarding state`, () => {
@@ -40,6 +43,44 @@ describe('OwnerOnboardingEntry', () => {
       expect(authState.bootstrapOwner).not.toHaveBeenCalled();
     });
   }
+
+  it('loads exact server terms and requires typed name plus an initially unchecked affirmation', async () => {
+    const agreement = {
+      agreementId: 'servicesos-saas-v1', termsHash: 'a'.repeat(64),
+      termsMarkdown: '# Exact canonical terms\n\nFull agreement.',
+      acceptanceLanguage: 'I have read and agree to the ServicesOS Software-as-a-Service Agreement on behalf of my business, and I confirm that I am authorized to accept these terms.',
+    };
+    authState.ownerOnboarding = { lifecycleManaged: true, onboardingState: 'agreement_required' };
+    authState.loadOwnerAgreement.mockResolvedValue(agreement);
+    authState.acceptOwnerAgreement.mockResolvedValue({ onboardingState: 'billing_required' });
+    render(<OwnerOnboardingEntry />);
+    expect(await screen.findByText('# Exact canonical terms', { exact: false })).toBeInTheDocument();
+    const checkbox = screen.getByRole('checkbox');
+    const button = screen.getByRole('button', { name: 'Accept Agreement & Continue' });
+    expect(checkbox).not.toBeChecked(); expect(button).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Typed signer name'), { target: { value: 'Owner Name' } });
+    expect(button).toBeDisabled();
+    fireEvent.click(checkbox); expect(button).toBeEnabled();
+    fireEvent.click(button);
+    await waitFor(() => expect(authState.acceptOwnerAgreement).toHaveBeenCalledWith({ signerName: 'Owner Name', agreementId: agreement.agreementId, termsHash: agreement.termsHash }));
+  });
+
+  it('blocks duplicate acceptance and retains signer after transient failure', async () => {
+    authState.ownerOnboarding = { lifecycleManaged: true, onboardingState: 'agreement_required' };
+    authState.loadOwnerAgreement.mockResolvedValue({ agreementId: 'servicesos-saas-v1', termsHash: 'a'.repeat(64), termsMarkdown: 'Terms', acceptanceLanguage: 'Acceptance' });
+    let reject;
+    authState.acceptOwnerAgreement.mockImplementation(() => new Promise((_resolve, rejectPromise) => { reject = rejectPromise; }));
+    render(<OwnerOnboardingEntry />);
+    await screen.findByText('Terms');
+    fireEvent.change(screen.getByLabelText('Typed signer name'), { target: { value: 'Owner Name' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    const button = screen.getByRole('button', { name: 'Accept Agreement & Continue' });
+    fireEvent.click(button); fireEvent.click(button);
+    expect(authState.acceptOwnerAgreement).toHaveBeenCalledTimes(1);
+    reject(new Error('temporary'));
+    expect(await screen.findByText('The agreement could not be accepted. Try again.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Typed signer name')).toHaveValue('Owner Name');
+  });
 
   it('prefills and submits the five canonical business profile fields', async () => {
     authState.ownerOnboarding = {

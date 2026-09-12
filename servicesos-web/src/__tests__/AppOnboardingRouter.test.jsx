@@ -118,6 +118,8 @@ const authState = {
     businessProfileComplete: false,
   },
   bootstrapOwner: vi.fn(),
+  loadOwnerAgreement: vi.fn(),
+  acceptOwnerAgreement: vi.fn(),
   logout: vi.fn(),
   hasPermission: () => true,
   isSuperAdmin: () => false,
@@ -160,6 +162,12 @@ describe('App onboarding router context', () => {
       businessProfileComplete: false,
     };
     authState.bootstrapOwner.mockReset();
+    authState.loadOwnerAgreement.mockReset();
+    authState.loadOwnerAgreement.mockResolvedValue({
+      agreementId: 'servicesos-saas-v1', termsHash: 'a'.repeat(64), termsMarkdown: 'Canonical terms',
+      acceptanceLanguage: 'Canonical acceptance', accepted: false, onboardingState: 'agreement_required',
+    });
+    authState.acceptOwnerAgreement.mockReset();
     authState.userProfile = { uid: 'admin-test', onboardingCompleted: false };
     repeatWorkflowMocks.selectedCustomer = {
       id: 'customer-a',
@@ -187,9 +195,9 @@ describe('App onboarding router context', () => {
 
   it.each([
     ['business_profile_required', 'Set up your business profile'],
-    ['agreement_required', 'SaaS Agreement required'],
+    ['agreement_required', 'ServicesOS Software-as-a-Service Agreement'],
     ['billing_required', 'Billing setup required'],
-  ])('keeps managed %s tenants inside owner onboarding', (onboardingState, heading) => {
+  ])('keeps managed %s tenants inside owner onboarding', async (onboardingState, heading) => {
     authState.currentTenant = {
       id: 'tenant-test', onboardingSchemaVersion: 1, onboardingState, status: 'onboarding',
     };
@@ -197,7 +205,7 @@ describe('App onboarding router context', () => {
       tenantId: 'tenant-test', lifecycleManaged: true, onboardingState, businessProfileComplete: false,
     };
     render(<App />);
-    expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Wife Beta Dashboard' })).not.toBeInTheDocument();
   });
 
