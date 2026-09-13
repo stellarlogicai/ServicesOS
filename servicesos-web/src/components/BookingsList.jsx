@@ -34,6 +34,7 @@ import {
 } from '../services/employeeProfileService';
 import { BookingFieldPhotoReview } from './FieldPhotoEvidence';
 import { BookingChecklistPrep, OwnerTodayJobPrep } from './BookingChecklistPrep';
+import { OwnerJobScopeAgreement } from './JobScopeAgreement';
 
 const customerMessageButtonStyle = {
   border: '1px solid #cbd5e1',
@@ -673,6 +674,8 @@ export default function BookingsList() {
                 This booking is cancelled. Payment history and notes have been preserved.
               </div>
             )}
+
+            <OwnerJobScopeAgreement bookingId={selectedBooking.id} />
 
             <dl className="booking-detail-summary-grid">
               <DetailItem label="Customer email" value={bookingCustomerEmail(selectedBooking)} />

@@ -386,7 +386,7 @@ describe('employee-safe JobPacket projection', () => {
     const packet = employeeJobPacket('booking-a', baseBooking(), 'UTC');
     assert.deepEqual(Object.keys(packet), [
       'id', 'schedule', 'serviceType', 'customer', 'location', 'status', 'fieldStatus',
-      'instructions', 'safety', 'accessSecurity', 'checklist', 'fieldNotes', 'fieldIssue',
+      'instructions', 'safety', 'accessSecurity', 'checklist', 'fieldNotes', 'fieldIssue', 'approvedScope',
     ]);
     assert.deepEqual(Object.keys(packet.customer), ['name', 'phone']);
     assert.deepEqual(Object.keys(packet.location), ['address']);
@@ -396,6 +396,29 @@ describe('employee-safe JobPacket projection', () => {
     assert.deepEqual(Object.keys(packet.safety.pets), ['present', 'count', 'types', 'hairLevel']);
     assert.deepEqual(Object.keys(packet.accessSecurity), ['instructions']);
     assert.deepEqual(Object.keys(packet.checklist), ['ready', 'items', 'completed', 'total', 'notes', 'warnings']);
+  });
+
+  test('approved scope is available without price, customer, or private booking data', () => {
+    const packet = employeeJobPacket('booking-a', baseBooking({
+      approvedJobScope: {
+        version: 2,
+        approvedAt: '2026-09-12T12:00:00.000Z',
+        snapshot: {
+          serviceType: 'Deep clean', price: 400, customerName: 'Private customer',
+          serviceItems: [{ id: 'task-a', label: 'Clean lobby', required: true, ownerNote: 'private' }],
+          selectedAddOns: ['oven'],
+        },
+      },
+    }), 'UTC');
+    assert.deepEqual(packet.approvedScope, {
+      version: 2,
+      approvedAt: '2026-09-12T12:00:00.000Z',
+      serviceType: 'Deep clean',
+      serviceItems: [{ id: 'task-a', label: 'Clean lobby', required: true }],
+      selectedAddOns: ['oven'],
+    });
+    assert.equal(JSON.stringify(packet.approvedScope).includes('400'), false);
+    assert.equal(JSON.stringify(packet.approvedScope).includes('Private customer'), false);
   });
 
   test('recorded job safety facts and access instructions are narrowly projected', () => {

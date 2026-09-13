@@ -148,6 +148,8 @@ export function sanitizeEmployeeJobPacket(value) {
     ? job.checklist
     : {};
   const items = Array.isArray(checklist.items) ? checklist.items.map(safeChecklistItem) : [];
+  const approvedScope = job.approvedScope && typeof job.approvedScope === 'object' && !Array.isArray(job.approvedScope)
+    ? job.approvedScope : null;
   return {
     id: text(job.id),
     schedule: safeSchedule(job.schedule),
@@ -172,6 +174,16 @@ export function sanitizeEmployeeJobPacket(value) {
     },
     fieldNotes: text(job.fieldNotes),
     fieldIssue: text(job.fieldIssue),
+    ...(approvedScope ? { approvedScope: {
+      version: Number.isInteger(approvedScope.version) ? approvedScope.version : null,
+      approvedAt: nullableText(approvedScope.approvedAt),
+      serviceType: text(approvedScope.serviceType),
+      serviceItems: Array.isArray(approvedScope.serviceItems) ? approvedScope.serviceItems.map(item => ({
+        id: text(item?.id), label: text(item?.label), required: item?.required === true,
+      })).filter(item => item.id && item.label) : [],
+      selectedAddOns: Array.isArray(approvedScope.selectedAddOns)
+        ? approvedScope.selectedAddOns.filter(item => typeof item === 'string') : [],
+    } } : {}),
   };
 }
 

@@ -142,6 +142,7 @@ function sanitizeEmployeeJobPacket(value) {
     malformedPayload();
   }
   const items = checklist.ready ? checklist.items.map(safeChecklistItem) : [];
+  const approvedScope = job.approvedScope == null ? null : objectValue(job.approvedScope);
   return {
     id: safeBookingId(job.id),
     schedule: safeSchedule(job.schedule),
@@ -166,6 +167,17 @@ function sanitizeEmployeeJobPacket(value) {
     },
     fieldNotes: text(job.fieldNotes),
     fieldIssue: text(job.fieldIssue),
+    ...(approvedScope ? { approvedScope: {
+      version: approvedScope.version == null ? null : nonnegativeInteger(approvedScope.version),
+      approvedAt: approvedScope.approvedAt == null ? null : text(approvedScope.approvedAt),
+      serviceType: text(approvedScope.serviceType),
+      serviceItems: Array.isArray(approvedScope.serviceItems) ? approvedScope.serviceItems.map(item => ({
+        id: text(objectValue(item).id),
+        label: text(objectValue(item).label),
+        required: objectValue(item).required === true,
+      })) : [],
+      selectedAddOns: stringArray(approvedScope.selectedAddOns, 100),
+    } } : {}),
   };
 }
 

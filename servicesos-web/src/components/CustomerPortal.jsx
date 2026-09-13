@@ -19,12 +19,14 @@ import {
   isPendingOwnerReview
 } from '../services/quoteLeadDisplay';
 import './CustomerPortal.css';
+import { CustomerJobScopeAgreements } from './JobScopeAgreement';
 
 const CUSTOMER_PORTAL_TABS = [
   { id: 'quotes', label: 'Quotes' },
   { id: 'request-quote', label: 'Request Quote' },
   { id: 'booking', label: 'Booking' },
   { id: 'appointments', label: 'Appointments' }
+  ,{ id: 'service-agreements', label: 'Service agreements' }
 ];
 
 const DEFAULT_QUOTE_REQUEST_FORM = {
@@ -476,6 +478,7 @@ export default function CustomerPortal() {
       </div>
 
       {/* Quotes Tab */}
+      {activeTab === 'service-agreements' && <CustomerJobScopeAgreements />}
       {activeTab === 'quotes' && (
         <div>
           <div style={{

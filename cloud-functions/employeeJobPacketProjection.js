@@ -525,6 +525,17 @@ function employeeJobPacket(id, booking, timeZone) {
     checklist: checklistProjection(booking),
     fieldNotes: boundedText(booking.fieldNotes, 1000),
     fieldIssue: boundedText(booking.fieldIssue, 750),
+    approvedScope: booking.approvedJobScope?.snapshot ? {
+      version: Number.isInteger(booking.approvedJobScope.version) ? booking.approvedJobScope.version : null,
+      approvedAt: boundedText(booking.approvedJobScope.approvedAt, 40) || null,
+      serviceType: boundedText(booking.approvedJobScope.snapshot.serviceType, 160),
+      serviceItems: Array.isArray(booking.approvedJobScope.snapshot.serviceItems)
+        ? booking.approvedJobScope.snapshot.serviceItems.slice(0, CHECKLIST_MAX_ITEMS).map(item => ({
+          id: boundedText(item?.id, 128), label: boundedText(item?.label, 160), required: item?.required === true,
+        })).filter(item => item.id && item.label) : [],
+      selectedAddOns: Array.isArray(booking.approvedJobScope.snapshot.selectedAddOns)
+        ? booking.approvedJobScope.snapshot.selectedAddOns.slice(0, 100).map(item => boundedText(item, 128)).filter(Boolean) : [],
+    } : null,
   };
 }
 
