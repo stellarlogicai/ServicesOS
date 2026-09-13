@@ -28,6 +28,10 @@ vi.mock('../components/CleaningProductsMethodsSection', () => ({
   ),
 }));
 
+vi.mock('../components/AddOnCatalogSettings', () => ({
+  default: () => <section aria-label="Add-on catalog test section" />,
+}));
+
 vi.mock('../services/businessSettingsService', () => ({
   BUSINESS_DAYS: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
   getBusinessSettings: mocks.getBusinessSettings,

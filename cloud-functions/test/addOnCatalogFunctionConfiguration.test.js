@@ -1,0 +1,2 @@
+const assert=require('node:assert/strict'); const {test}=require('node:test'); const fs=require('node:fs'); const path=require('node:path');
+test('catalog gateway is bounded and secret-free',()=>{const source=fs.readFileSync(path.join(__dirname,'..','index.js'),'utf8');const match=source.match(/exports\.addOnCatalogGateway\s*=\s*functions\.runWith\(([^)]*)\)/s);assert.ok(match);assert.match(match[1],/minInstances:\s*0/);assert.match(match[1],/maxInstances:\s*3/);assert.doesNotMatch(match[1],/secrets/);});
