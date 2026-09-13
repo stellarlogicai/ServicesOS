@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import ExtraWorkRequestSection from "../components/ExtraWorkRequestSection";
 import { useFocusEffect } from "@react-navigation/native";
 import { AuthContext } from "../context/AuthContext";
 import { getEmployeeJob, isEmployeeJobAccessLossError } from "../api/employeeJobs";
@@ -564,6 +565,10 @@ export default function JobDetailsScreen({ route, navigation }) {
 
       <DetailSection title="Instructions">
         <Text style={styles.text}>{job.instructions}</Text>
+      </DetailSection>
+
+      <DetailSection title="Approved Scope">
+        {job.approvedScope ? <ExtraWorkRequestSection bookingId={bookingId} approvedScope={job.approvedScope} /> : <Text style={styles.reviewText}>An approved scope is required before extra work can be requested.</Text>}
       </DetailSection>
 
       <DetailSection title="SLAI Work Assistant">

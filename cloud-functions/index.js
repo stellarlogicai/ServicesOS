@@ -34,6 +34,7 @@ const { createOwnerOnboardingBillingGatewayHandler } = require('./ownerOnboardin
 const { createOwnerSubscriptionActivationWebhookHandler } = require('./ownerSubscriptionActivationWebhook');
 const { createJobScopeGatewayHandler } = require('./jobScopeGateway');
 const { createAddOnCatalogGatewayHandler } = require('./addOnCatalogGateway');
+const { createExtraWorkGatewayHandler } = require('./extraWorkGateway');
 
 const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
@@ -149,6 +150,9 @@ exports.jobScopeGateway = functions.runWith({ minInstances: 0, maxInstances: 3 }
 
 exports.addOnCatalogGateway = functions.runWith({ minInstances: 0, maxInstances: 3 })
   .https.onRequest(createAddOnCatalogGatewayHandler({ admin }));
+
+exports.extraWorkGateway = functions.runWith({ minInstances: 0, maxInstances: 3 })
+  .https.onRequest(createExtraWorkGatewayHandler({ admin }));
 
 // Platform fee percentage by subscription tier
 const PLATFORM_FEE_PERCENTAGE = {

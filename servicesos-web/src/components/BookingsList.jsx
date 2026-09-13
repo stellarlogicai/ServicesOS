@@ -35,6 +35,7 @@ import {
 import { BookingFieldPhotoReview } from './FieldPhotoEvidence';
 import { BookingChecklistPrep, OwnerTodayJobPrep } from './BookingChecklistPrep';
 import { OwnerJobScopeAgreement } from './JobScopeAgreement';
+import ExtraWorkReview from './ExtraWorkReview';
 
 const customerMessageButtonStyle = {
   border: '1px solid #cbd5e1',
@@ -676,6 +677,7 @@ export default function BookingsList() {
             )}
 
             <OwnerJobScopeAgreement bookingId={selectedBooking.id} />
+            <ExtraWorkReview bookingId={selectedBooking.id} />
 
             <dl className="booking-detail-summary-grid">
               <DetailItem label="Customer email" value={bookingCustomerEmail(selectedBooking)} />

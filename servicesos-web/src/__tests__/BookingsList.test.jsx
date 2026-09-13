@@ -85,6 +85,10 @@ vi.mock('../services/employeeProfileService', () => ({
   employeeAssignmentLabel: employee => employee.displayName || employee.email || employee.uid,
 }));
 
+vi.mock('../components/ExtraWorkReview', () => ({
+  default: () => <section aria-label="Extra-work review test section" />,
+}));
+
 import BookingsList from '../components/BookingsList';
 
 describe('read-only Bookings admin list', () => {
