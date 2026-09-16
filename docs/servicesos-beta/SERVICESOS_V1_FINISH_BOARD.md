@@ -1,6 +1,6 @@
 # ServicesOS V1 Finish Board
 
-Last updated: 2026-09-15
+Last updated: 2026-09-16
 
 This document is the authoritative progress board for the defined customer-facing ServicesOS V1 finish line.
 
@@ -14,11 +14,42 @@ The Employee App is part of customer-facing V1. Tap to Pay is also part of V1, b
 
 The legacy `ImprovedOnboarding.jsx` / CleanOps-style flow is reference material only. Do not restore it as the production onboarding. New onboarding must use current canonical ServicesOS models and settings.
 
+## V1 basic-capability rule
+
+For V1, a feature family does not need its most advanced future form. V1 ships the smallest safe, useful, connected version of the capability that lets a real service business operate end to end.
+
+Examples:
+
+- routing/navigation V1 = ordered daily work, clear next-job progression, and reliable directions handoff; not route optimization, continuous GPS, fleet telemetry, or mileage automation,
+- field safety V1 = emergency actions, tenant-scoped alerting, limited job-safety location when permitted, honest delivery state, and owner review; not a monitoring center, direct police dispatch, or all-day surveillance,
+- offline V1 = targeted resilience only where required for safety/critical field actions; not a general offline-first employee platform,
+- Tap to Pay V1 = authorized card-present collection with verified backend truth and owner auditability; not every future mobile invoicing/tipping/reconciliation feature,
+- extra-work V1 = employee request → owner/customer approval → authoritative scope refresh; not advanced field quoting or autonomous pricing.
+
+Do not turn a basic V1 capability into a broad platform while trying to finish the release.
+
+## Small-slice execution rule
+
+Protect the late-October launch target by implementing V1 in small, heavily defined slices.
+
+Each coding prompt should contain only one controlled capability delta and must define:
+
+- exact goal,
+- exact scope,
+- task-specific exclusions,
+- files/areas to avoid where relevant,
+- acceptance criteria,
+- tests/build/validation,
+- stop conditions,
+- required report-back.
+
+Do not combine owner onboarding, mobile routing, field safety, Tap to Pay, and release hardening into one coding task. Complete and validate one slice before promoting the next.
+
 ## Current checkpoint
 
 Active V1 branch: `feature/owner-onboarding-v1`
 
-Latest application-code checkpoint before this documentation refresh: `8bce3919d8e26d2643a476e44b89ed34b7d34718` — `Add employee extra-work request review`
+Latest application-code checkpoint before the current documentation refresh: `8bce3919d8e26d2643a476e44b89ed34b7d34718` — `Add employee extra-work request review`
 
 Documentation-only commits follow that application checkpoint on the same branch. See `SERVICESOS_V1_CURRENT_STATE.md` for the current remote branch head.
 
@@ -30,11 +61,13 @@ The deployed wife-beta build is older than this branch and cannot validate the n
 | --- | --- |
 | ServicesOS Core V1 | ✅ Complete |
 | GrowthAI / SLAI Assistant V1 implementation | ✅ Substantially complete; V1 acceptance/freeze remains |
-| Employee App core field workflow | 🟡 Substantially implemented; mobile acceptance/payment phase remains |
+| Employee App core field workflow | 🟡 Substantially implemented |
+| Employee App routing/navigation basic V1 | 🟡 Directions foundation built; day/next-job progression remains |
+| Employee App field safety basic V1 | ⏳ Planned V1 work |
+| Employee App Tap to Pay | ⏳ V1 later mobile/payment phase |
 | Owner/business onboarding | 🟡 Partial — secure activation spine built; operational setup still incomplete |
 | Owner SaaS billing | 🟡 Partial — checkout + verified paid activation built; annual/lifecycle work remains |
 | Customer-job payments / Stripe Connect | 🟡 Foundation built; production verification remains |
-| Tap to Pay | ⏳ V1 later mobile/payment phase |
 | Release hardening | 🟡 In progress |
 | Wife testing of current V1 | ⬜ Not yet deployed for testing |
 | Customer-ready release | ⬜ Final target |
@@ -89,11 +122,13 @@ The already-defined V1 implementation is substantially complete. Do not add new 
 
 ---
 
-# 3. Employee App V1 — 🟡 SUBSTANTIALLY IMPLEMENTED
+# 3. Employee App V1 — 🟡 SUBSTANTIALLY IMPLEMENTED, FIELD CAPABILITIES REMAIN
 
 Project path: `employee-app/`
 
-## Core field workflow
+The Employee App must remain a field-execution client for ServicesOS, not a second independent operating system. Web/admin owns planning and approval; mobile confirms, navigates, executes, records, and collects approved payments.
+
+## A. Core field workflow — substantially implemented
 
 - [x] React Native Expo application
 - [x] Canonical employee authentication through server verification
@@ -112,20 +147,71 @@ Project path: `employee-app/`
 - [x] Verified employee profile / logout
 - [x] Extra-work request UI and server flow foundation
 - [x] Tenant add-on catalog consumption in extra-work requests
-- [ ] Verify customer-approval/final-scope end state for extra work
-- [ ] Confirm owner/admin visibility for the full extra-work lifecycle
 
-## Mobile acceptance
+## B. Basic routing / day progression — V1
 
-- [ ] Current V1 Android emulator/device pass
-- [ ] Permissions pass
-- [ ] Photo capture/upload pass
-- [ ] Network failure/retry pass
-- [ ] Auth expiration/session recovery pass
-- [ ] Tenant isolation / employee authorization pass
-- [ ] Real field workflow acceptance pass
+V1 routing is the useful field-worker version, not a route-optimization platform.
 
-## Tap to Pay — V1 later phase
+- [x] Today / upcoming assigned-job list
+- [x] Job address available in employee-safe projection
+- [x] Native/Google/Apple Maps directions handoff foundation
+- [ ] Define/confirm canonical ordered work sequence for the employee day
+- [ ] Clear current-job / next-job progression in the mobile UX
+- [ ] Ensure assignment, cancellation, reschedule, and reassignment changes refresh safely
+- [ ] Owner/admin ↔ employee route/day correspondence acceptance
+- [ ] Device acceptance for directions and next-job flow
+
+Explicitly deferred unless re-scoped:
+
+- advanced route optimization
+- continuous route telemetry
+- all-day/background GPS tracking
+- fleet management
+- automatic mileage calculation
+- broad crew roll call / complex multi-crew logistics
+
+## C. Field Safety / Emergency — basic V1 capability
+
+This is a field-safety tool, not a guaranteed emergency-response system.
+
+- [ ] Safety / Emergency action available from active job
+- [ ] Call 911 device-dialer handoff
+- [ ] Call owner/admin handoff when contact is available
+- [ ] Tenant-scoped safety alert to owner/admin
+- [ ] Include active job/address/timestamp and limited location when permission/connection allow
+- [ ] Honest `sent` / `queued` / `failed` / `location unavailable` states
+- [ ] Narrow offline queue for unsent safety alerts only
+- [ ] Retry/sync queued safety alert when connection returns
+- [ ] Owner/admin active-alert review
+- [ ] Owner/admin resolve/close alert
+- [ ] Missed-check-in / overdue basic safety status if included in promoted V1 slice
+- [ ] Limited on-demand location ping for active-job safety/missed check-in when permitted
+- [ ] Tenant-isolation and permission tests
+- [ ] Device/network/location acceptance
+
+Explicitly deferred unless re-scoped:
+
+- monitoring center
+- direct police/public-safety dispatch integration
+- guaranteed emergency-response claims
+- hidden recording
+- constant live GPS
+- all-day employee surveillance
+- advanced escalation trees
+
+## D. Extra work / scope refresh — V1
+
+- [x] Tenant add-ons available to employee
+- [x] Bounded custom extra-work request
+- [x] Employee context/note
+- [x] Submitted request reaches owner review foundation
+- [ ] Verify owner-approved extra work reaches customer-approval-ready state correctly
+- [ ] Verify customer approval before authoritative scope mutation
+- [ ] Refresh employee JobPacket/checklist/time/price context after approved scope change
+- [ ] Verify declined/unapproved requests do not alter employee-authoritative work
+- [ ] Confirm owner/admin visibility for the full lifecycle
+
+## E. Tap to Pay / mobile payments — V1 later phase
 
 Tap to Pay is not removed from V1. It was intentionally deferred until the team returns to the Employee App/mobile-payment phase.
 
@@ -133,12 +219,25 @@ Tap to Pay is not removed from V1. It was intentionally deferred until the team 
 - [ ] Canonical mobile payment API
 - [ ] Stripe mobile SDK integration
 - [ ] Tap to Pay implementation
-- [ ] Payment confirmation
+- [ ] Confirmed backend payment truth
 - [ ] Owner visibility / audit trail
 - [ ] Failure/retry handling
-- [ ] Device/payment acceptance testing
+- [ ] Supported-device/payment acceptance testing
 
-Training-library expansion, office messaging, push notifications, full offline queue, payroll/break management, and advanced employee-management features do not become V1 blockers unless Jamie explicitly re-scopes them.
+## F. Mobile acceptance / hardening
+
+- [ ] Current V1 Android emulator/device pass
+- [ ] Session persistence / auth expiration / recovery pass
+- [ ] Camera/photo permission pass
+- [ ] Location permission behavior for promoted V1 safety/routing slices
+- [ ] Network failure/retry pass
+- [ ] Duplicate-submit/idempotency pass
+- [ ] Reassignment-away denial
+- [ ] Cross-tenant denial
+- [ ] Real owner → assign → employee execute → owner review workflow
+- [ ] Real field-workflow acceptance
+
+Training-library expansion, office messaging, push notifications, general offline-first sync, payroll/break management, advanced employee management, advanced route optimization, and continuous GPS do not become V1 blockers unless Jamie explicitly re-scopes them.
 
 ---
 
@@ -208,6 +307,7 @@ The customer must go through onboarding that gathers the information ServicesOS 
 - [ ] `Just me` path
 - [ ] `I have employees` path
 - [ ] Basic employee setup/invite when applicable
+- [ ] Employee created through onboarding can reach the canonical mobile authentication path
 
 ### Finish / resume
 
@@ -318,6 +418,7 @@ Do not claim these complete from old branch evidence. Re-run against the integra
 - [ ] Cross-tenant denial smoke
 - [ ] Employee assignment/authorization smoke
 - [ ] Field-photo authorization smoke
+- [ ] Field-safety tenant/permission smoke after that slice is implemented
 - [ ] Current payment/security integration smoke
 - [ ] Fix known stale fixed-date/JSDOM test if it still reproduces
 - [ ] Update deployment/release evidence after current-head validation
@@ -337,7 +438,10 @@ After the current V1 branch passes integration/release validation and is deploye
 - [ ] Customer-approved scope
 - [ ] Add-on / extra-work workflow
 - [ ] Employee field workflow
-- [ ] Payments
+- [ ] Basic day/next-job navigation flow
+- [ ] Basic field-safety flow
+- [ ] Customer-job payment flow
+- [ ] Tap to Pay flow
 - [ ] GrowthAI / SLAI Assistant
 - [ ] Record hesitation/confusion/blockers
 - [ ] Fix V1-specific findings
@@ -351,7 +455,10 @@ After the current V1 branch passes integration/release validation and is deploye
 - [ ] Full owner onboarding complete
 - [ ] Monthly + annual SaaS billing complete
 - [ ] Required post-activation subscription lifecycle complete
-- [ ] Employee App V1 complete, including Tap to Pay
+- [ ] Employee App core field workflow accepted
+- [ ] Employee App basic routing/day progression accepted
+- [ ] Employee App basic field-safety capability accepted
+- [ ] Employee App Tap to Pay accepted
 - [ ] Integrated security/tests/build green
 - [ ] Controlled V1 deployment green
 - [ ] Wife V1 acceptance critical findings closed
@@ -376,12 +483,16 @@ Unless Jamie explicitly changes scope, these do not become V1 blockers merely be
 - Training Library expansion
 - office messaging
 - push notifications
-- full offline queue
+- general/full offline queue beyond narrow critical V1 safety resilience
 - payroll/break management
-- route optimization beyond already-approved V1 needs
+- route optimization beyond the basic approved V1 field flow
+- continuous/all-day GPS tracking
+- fleet telemetry
 - expenses and mileage
+- advanced crew-management/roll-call systems
 - advanced employee management
 - photo deletion/retention automation
+- monitoring-center or direct emergency-dispatch platform
 - future standalone SLAI products
 
 ---
