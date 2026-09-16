@@ -1,201 +1,190 @@
-# Onboarding Flow Comparison
+# ServicesOS V1 Onboarding Contract
 
-## Current Onboarding (CompanyOnboarding.jsx)
+Updated: 2026-09-15
 
-### Steps: 3
-1. **Business Details** - Company name, email, phone, address
-2. **Admin Account** - Create admin credentials
-3. **Plan Selection** - Choose subscription plan
+This document supersedes the old `CompanyOnboarding.jsx` vs `ImprovedOnboarding.jsx` comparison.
 
-### Characteristics:
-- Software-focused setup wizard
-- Focus on account creation and billing
-- No business value demonstrated
-- No services or pricing setup
-- No team onboarding
-- No data import options
-- Plan selection happens before seeing value
+The legacy CleanOps-style `ImprovedOnboarding.jsx` is reference material only. Do not restore it as the production onboarding. Current ServicesOS onboarding must use the secure owner/tenant bootstrap and current canonical ServicesOS settings/data contracts.
 
-### Time to Value: High
-- User must complete all steps before seeing any value
-- No "aha moment" during onboarding
-- Plan selection feels like a barrier to entry
+## Product rule
 
----
+A customer who creates a ServicesOS account must go through onboarding that gathers the information ServicesOS needs to function correctly for that business.
 
-## Ideal Onboarding (ImprovedOnboarding.jsx)
+Onboarding is a business setup flow, not just account creation and billing.
 
-### Steps: 7 + Completion
-1. **Create Company** - Business name, type, phone, email, timezone
-2. **Connect Payments** - Stripe Connect with skip option
-3. **Company Settings** - Address, service radius, business hours
-4. **Branding** - Logo, colors, email footer with live preview
-5. **Services & Pricing** - Template selection with AI-recommended pricing
-6. **Add Employees** - Team invitation with skip option
-7. **Import Data** - Migration from other platforms (optional)
-8. **Completion** - Admin account creation + first action
+Subscription payment and operational onboarding completion are separate facts:
 
-### Characteristics:
-- Business launch process, not software setup
-- Every step demonstrates business value
-- Skip options on non-critical steps
-- Template-based setup reduces friction
-- Live previews show immediate results
-- Import options leverage existing data
-- Clear next action after completion
+- verified Stripe payment can activate billing entitlement,
+- but the business is not onboarding-complete until required operational setup is finished.
 
-### Time to Value: Low
-- User sees value at each step
-- Can skip non-critical steps
-- Template selection provides instant services
-- First action is clear (create estimate)
+## Current implementation
 
----
+The current V1 branch already implements the secure activation spine:
 
-## Key Differences
+1. server-owned owner/tenant bootstrap
+2. basic business profile
+3. versioned SaaS agreement
+4. typed signer + explicit acceptance
+5. owner subscription Checkout
+6. verified paid-invoice activation
 
-| Aspect | Current | Ideal |
-|--------|---------|-------|
-| **Focus** | Software setup | Business launch |
-| **Steps** | 3 | 7 + completion |
-| **Time to Value** | High (end of flow) | Low (each step) |
-| **Skip Options** | None | Available on steps 2, 6, 7 |
-| **Templates** | None | Service templates |
-| **Live Preview** | None | Branding preview |
-| **Data Import** | None | 5 platforms + CSV |
-| **Team Onboarding** | None | Employee invitation |
-| **Payment Setup** | Plan selection | Stripe Connect |
-| **First Action** | Go to dashboard | Create first estimate |
-| **Progress Indicator** | Step dots | Percentage + checklist |
+This is only the first portion of the full onboarding contract.
 
----
+## Canonical V1 onboarding sequence
 
-## Recommended Implementation Priority
+### 1. Secure account bootstrap — built
 
-### Phase 1: Critical (Launch Blocker)
-1. **Replace current onboarding with improved flow**
-   - Use ImprovedOnboarding.jsx as base
-   - Integrate with existing tenant creation
-   - Integrate with Stripe Connect component
-   - Test end-to-end flow
+- create/verify owner identity
+- create/verify canonical tenant
+- establish exact admin/tenant relationship
+- fail closed on malformed/conflicting identity state
 
-### Phase 2: High Value (Week 1)
-2. **Add service templates to database**
-   - Create service_templates collection
-   - Pre-populate with common services
-   - AI pricing integration
-3. **Implement data import endpoints**
-   - Connect to existing migration services
-   - Add import progress tracking
-   - Handle import errors gracefully
+### 2. Business basics — partial
 
-### Phase 3: Enhancement (Week 2)
-4. **Add live preview components**
-   - Estimate preview
-   - Invoice preview
-   - Customer portal preview
-5. **Implement business launch checklist**
-   - Persistent progress tracking
-   - Visible in dashboard
-   - Celebrate completions
+Required:
 
-### Phase 4: Optimization (Week 3+)
-6. **Add AI setup wizard**
-   - Optional post-onboarding
-   - Feature education
-   - Credit allocation
-7. **Employee app onboarding flow**
-   - Separate mobile experience
-   - Job-focused first login
-   - No setup required
+- business name
+- business type
+- phone
+- email
+- timezone
+- service area
+- optional business address
+- optional website
 
----
+Compatible fields must write to the current canonical `businessSettings` model rather than a parallel onboarding-only settings object.
 
-## Migration Strategy
+### 3. SaaS agreement — built
 
-### Option A: Complete Replacement (Recommended)
-- Replace CompanyOnboarding.jsx with ImprovedOnboarding.jsx
-- Update routing to use new component
-- Test with new signups
-- Keep old component as backup for 1 week
+- display the immutable current agreement/version
+- typed signer name
+- explicit affirmation
+- immutable acceptance evidence
 
-### Option B: Gradual Rollout
-- A/B test both flows
-- Measure completion rates
-- Measure time to first estimate
-- Roll out winner to 100%
+### 4. ServicesOS subscription — partial
 
-### Option C: Hybrid Approach
-- Keep current flow for quick signups
-- Offer "guided setup" option
-- Allow completion later from dashboard
-- Progressive enhancement
+Company platform pricing:
 
----
+- $100/month
+- $1,000/year
+- same normal entitlement either way
 
-## Success Metrics
+Required:
 
-### Current Onboarding Metrics (to measure)
-- Completion rate
-- Time to complete
-- Drop-off points
-- Time to first estimate
-- Time to first payment
+- owner chooses monthly or annual
+- server accepts only the two approved canonical Price IDs
+- secure platform-account Stripe Checkout
+- verified `invoice.paid`
+- active linked subscription
+- exact tenant/customer/purpose/schema/Price/quantity validation
 
-### Target Metrics (after improvement)
-- Completion rate: 80%+ (from current ~60%)
-- Time to complete: 15-20 minutes (from current ~10 minutes but more value)
-- Time to first estimate: <30 minutes (from current ~2 hours)
-- Time to first payment: <48 hours (from current ~1 week)
-- Drop-off at plan selection: <10% (from current ~40%)
+Do not use Stripe Connect destination charges, transfers, or application fees for the SLAI subscription itself.
 
----
+### 5. Services & deterministic pricing — remaining
 
-## Technical Requirements
+Required:
 
-### Backend Changes Needed
-1. **Service Templates Collection**
-   - Create Firestore collection
-   - Add template documents
-   - Create template service endpoints
+- select offered services
+- add custom services
+- choose pricing method
+- create initial canonical pricing configuration
 
-2. **Onboarding Progress Tracking**
-   - Add onboardingProgress field to tenant
-   - Track completed steps
-   - Track skipped steps
-   - Calculate completion percentage
+AI may assist later where explicitly approved, but deterministic ServicesOS pricing remains authoritative.
 
-3. **Import Progress Tracking**
-   - Add importJobs collection
-   - Track import status
-   - Handle import errors
-   - Provide import reports
+### 6. Availability / scheduling rules — partial
 
-### Frontend Changes Needed
-1. **Route Updates**
-   - Update /onboarding route
-   - Add /onboarding/payment route
-   - Add /onboarding/complete route
+Required:
 
-2. **Component Integration**
-   - Integrate StripeConnectOnboarding
-   - Integrate with existing services
-   - Connect to migration center
+- working days
+- business hours
+- typical duration
+- scheduling buffer
+- booking horizon
 
-3. **Dashboard Integration**
-   - Add setup progress widget
-   - Add business launch checklist
-   - Add first estimate prompt
+The current Business Settings working-day model should be reused rather than duplicated.
 
----
+### 7. Brand basics — remaining
 
-## Next Steps
+Required minimum:
 
-1. **Review ImprovedOnboarding.jsx** - Confirm it meets requirements
-2. **Integrate with backend** - Connect to tenant creation service
-3. **Add Stripe Connect integration** - Use existing component
-4. **Create service templates** - Add to Firestore
-5. **Test end-to-end** - Walk through complete flow
-6. **Deploy to staging** - Test with real users
-7. **Monitor metrics** - Compare with current flow
-8. **Launch to production** - Replace current onboarding
+- logo
+- canonical business/brand identity needed by customer-facing copy
+- approved brand preferences needed by ServicesOS/GrowthAI
+
+Reuse current branding/brand-profile contracts. Do not revive a second legacy settings model.
+
+### 8. Customer-payment setup — partial
+
+- integrate the existing Stripe Connect onboarding component
+- show current connection status
+- allow `Skip / do later`
+
+This is separate from the ServicesOS SaaS subscription.
+
+### 9. Team setup — remaining
+
+Provide a simple fork:
+
+- `Just me`
+- `I have employees`
+
+If employees are present, support the minimum employee setup/invite required for the V1 field workflow.
+
+### 10. Review / resume / finish — remaining
+
+Required:
+
+- review key setup
+- persist completed/skipped stages
+- resume interrupted onboarding safely
+- separate `billing entitlement active` from `onboarding complete`
+- only mark onboarding complete after required operational setup is satisfied
+- provide a clear first action in ServicesOS
+- pass an end-to-end test where a new owner completes setup without founder/developer help
+
+## Existing canonical destinations to reuse
+
+Current V1 already has a Business Settings foundation for:
+
+- business name
+- phone
+- email
+- service area
+- business address
+- website
+- Facebook link
+- default service notes
+- timezone
+- working days
+- Stripe Connect status/setup
+- cleaning products/methods
+- tenant add-on catalog
+
+Onboarding should populate/reuse these contracts instead of introducing incompatible duplicates.
+
+## Explicitly not required for initial V1 onboarding
+
+These old ideas do not become launch blockers unless Jamie explicitly re-scopes them:
+
+- restoring the legacy `ImprovedOnboarding.jsx` flow
+- multi-platform data migration/import
+- AI setup wizard
+- AI-recommended pricing as authority
+- elaborate live previews
+- celebration/gamification systems
+- broad template marketplaces
+
+## Implementation order
+
+1. preserve the existing secure activation spine
+2. add monthly + annual subscription choice
+3. separate paid entitlement from operational onboarding completion
+4. extend onboarding through business basics/services/pricing/availability/brand/Connect/team
+5. persist/resume progress
+6. run new-owner end-to-end tests
+7. deploy to controlled V1 test environment
+8. run outcome-based wife V1 acceptance
+
+## Acceptance rule
+
+The onboarding is ready when a new business owner can create an account, provide the required business/operational information, choose billing, finish setup, enter ServicesOS, and successfully begin normal work without Jamie or a developer telling them where to click.
