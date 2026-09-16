@@ -1,246 +1,214 @@
 # ServicesOS V1 Current State
 
-Updated: 2026-07-26
+Updated: 2026-09-15
 
-This file contains the changing ServicesOS checkpoint. Keep durable repository rules in `AGENTS.md` files and update this document when the active branch, blocker, completed gate, or next task changes.
+This file contains the changing ServicesOS checkpoint. Durable repository rules belong in `AGENTS.md`; detailed progress belongs in `SERVICESOS_V1_FINISH_BOARD.md`.
 
 ## Active priority
 
 ServicesOS customer-facing V1 is the active build.
 
-The frozen wife-beta candidate remains protected on `master` / `origin/master` at:
+The original wife-beta build already served as discovery/UX validation. Many V1 requirements came directly from that testing and from the real problems encountered while trying to start a cleaning business.
 
-`031bb46249fd09bbe7014e5f9747d4a7a4737a6f`
-
-It is waiting for the planned deployment and manual wife testing. V1 work continues in isolated lab branches while that candidate remains protected.
+Do not treat the older deployed beta as representative of the current V1 branch.
 
 ## Git checkpoint
 
-Operational checkpoint branch:
+Active branch:
 
-`v1-lab-production-storage-rules-smoke`
+`feature/owner-onboarding-v1`
 
-Latest known owner job-prep and outcome-checklist checkpoint:
+Current checkpoint:
 
-`c638aa205627a4bb6a7a66dd119983448d14f83a`
+`8bce3919d8e26d2643a476e44b89ed34b7d34718` — `Add employee extra-work request review`
 
-The two-document Storage-rules correction commit `af05274` is in that history.
+The branch is backed up to:
 
-Codex-instruction setup branch:
+`origin/feature/owner-onboarding-v1`
 
-`v1-lab-codex-instructions-setup`
+Do not merge to `master` until current-head integration/security/release validation passes.
 
-This setup branch was created from the known clean V1 checkpoint above and adds only Codex instruction/current-state files.
+## What is already implemented on the current V1 branch
 
-Latest completed local remediation branch:
+### ServicesOS owner/core workflow
 
-`fix/v1-field-photo-firestore-authorization`
+- multi-tenant owner/admin foundation
+- customers, leads, estimates, bookings, calendar/scheduling
+- deterministic estimate/pricing foundation
+- repeat-customer workflow
+- web Field Mode
+- required checklist completion controls
+- before/after field-photo evidence and owner review foundation
+- cleaning methods/products guidance
+- Business Settings foundation
+- Stripe / Stripe Connect foundation
+- GrowthAI / SLAI Assistant V1 feature set
+- residential and commercial booking intake
+- customer-approved job scope control
+- canonical tenant add-on catalog
+- employee extra-work request / owner-review foundation
 
-This branch starts from the committed browser-side AI release-gate fix `b4bbec6`.
-Canonical and mirrored Firestore rules now match the existing Storage contract for
-employee field-photo access: the employee must remain exactly assigned to a scheduled or
-completed booking that is neither archived nor deleted. Cancelled, archived, deleted,
-statusless, unsupported-status, unassigned, reassigned-away, cross-tenant, customer, and
-anonymous metadata access is denied. Production rules have not been deployed.
+### Employee App
 
-Active production preflight branch:
+The Employee App is no longer a placeholder-only shell. Current branch capabilities include:
 
-`release/v1-firestore-rules-deployment-preflight`
+- canonical employee authentication through the server-side session gateway
+- My Day / assigned current and upcoming jobs
+- employee-safe JobPacket loading
+- approved job instructions, safety and method guidance
+- start-work flow
+- checklist progress
+- notes/issues
+- before/after photo evidence
+- complete-job path through the server-owned execution gateway
+- SLAI Work Assistant bounded to current authorized work
+- verified employee profile/logout
+- extra-work request UI using tenant add-ons or a bounded custom request
 
-At `a1221c8`, the currently deployed Firestore `cloud.firestore` release was captured
-through read-only Rules API GET operations into a private local rollback directory. The
-deployed ruleset was created/updated on 2026-06-16 and does not match the candidate:
-production lacks the nested `fieldPhotos` contract and retains the legacy broad
-authenticated booking update. The private rollback source hash was verified, and both
-forward and rollback commands target only Firestore rules. Nothing was deployed.
+Current mobile work still requires current-head device/emulator acceptance and the later V1 Tap to Pay phase.
 
-The browser AI release-gate branch starts from the committed truthful checkout-confirmation
-fix `d828bba`.
-Browser photo analysis no longer reads a Vite-exposed provider credential or calls
-an AI provider directly. The optional photo-analysis action is unavailable with
-honest owner-facing wording, while manual estimate creation remains available. The
-unmounted legacy intake path is also prevented from calling an AI provider.
+### Owner onboarding / SaaS activation spine
 
-The checkout-confirmation fix in `d828bba` starts from the committed
-required-checklist completion fix `d04afff`.
-The public Stripe Checkout return page no longer treats the client-controlled
-`stripe_booking_checkout=success` query parameter as proof of payment. It shows a
-pending confirmation state instead. Confirmed Stripe-paid wording remains in the
-authenticated Booking Detail view and is driven by the booking payment fields that
-the verified Stripe webhook updates.
+Implemented:
 
-The required-checklist completion blocker is fixed in `d04afff` through the
-supported Field Mode and scheduling-service path. Field Mode lists incomplete
-required parent outcomes and disables completion until they are complete. The
-scheduling service also rejects completion without the current checklist, rejects
-incomplete required outcomes, and preserves owner-approved checklist structure.
-Optional outcomes and job-aid steps do not block completion.
+- server-owned owner/tenant bootstrap
+- canonical admin/tenant relationship validation
+- basic business profile step
+- versioned SaaS agreement delivery and acceptance evidence
+- owner subscription Checkout gateway
+- server-owned Stripe Customer
+- verified `invoice.paid` activation path
+- exact tenant/customer/subscription/Price/quantity validation
+- stale/idempotent event protection
 
-Firestore rules cannot derive required completion from the current arbitrary list
-shape, so this slice does not claim server-side enforcement against a caller that
-bypasses the supported client service and writes directly through the Firebase SDK.
-A trusted backend or enforcement-oriented data contract would be required for that
-stronger boundary.
+Important: this is the secure activation spine, not the complete ServicesOS operational onboarding.
 
-Separate narrow beta defect to fix after required-checklist enforcement and before
-the final release-candidate smoke: date-only payment values are parsed as UTC and
-can display one calendar day early in Central time.
+## Canonical V1 onboarding requirement
 
-## Completed production gates
+A new customer must complete onboarding that gathers the information ServicesOS needs to function correctly for that business.
 
-- Production Firebase project confirmed: `cleaning-intake-system`.
-- Firestore database confirmed: `(default)`, native mode, `nam5`.
-- Verified full Firestore backup completed successfully: 59/59 documents.
-- Production Firebase Storage initialized:
-  - bucket: `cleaning-intake-system.firebasestorage.app`
-  - location: `US-EAST1`
-- Narrow bucket CORS configured for:
-  - `https://servicesos.netlify.app`
-  - `http://127.0.0.1:5173` temporarily for controlled local production smoke
-- Corrected two-document Storage rules deployed successfully.
-- Deployed Storage ruleset:
-  - `0789729e-2caa-42f7-972a-0b15a80d84d0`
-  - updated `2026-07-15T03:13:33.781481Z`
-- Firebase Rules Firestore Service Agent permission enabled only for the managed Firebase Storage service identity.
-- Public Storage principals remain absent.
-- Firestore rules, indexes, Functions, Hosting, Auth, and application code were not changed by the Storage deployment.
+The production onboarding must use current canonical ServicesOS models and settings. Do not restore the legacy CleanOps `ImprovedOnboarding.jsx` flow as-is.
 
-## Current blocker
+Required V1 onboarding areas:
 
-Production photo smoke is blocked before upload because deployed Firestore rules do not contain the nested metadata contract:
+1. secure owner/tenant bootstrap
+2. business basics
+3. SaaS agreement
+4. ServicesOS subscription choice and verified payment
+5. services and deterministic pricing setup
+6. availability / scheduling rules
+7. brand basics
+8. customer-payment setup through Stripe Connect, with `Skip / do later`
+9. team choice/setup
+10. review, resume support, completion marker, and clear first action
 
-`tenants/{tenantId}/bookings/{bookingId}/fieldPhotos/{photoId}`
+Existing `businessSettings` must remain the canonical destination for compatible business information rather than creating a competing onboarding-only settings object.
 
-Canonical V1 Firestore rules contain this contract and pass the local Firestore rules suite, but production still uses older rules with broader authenticated behavior.
+## Billing state correction still required
 
-No production photo objects or field-photo metadata were created during the blocked smoke. Booking, payment, price, schedule, customer, lead, assignment, status, and Stripe fields remained unchanged.
+Current implementation activates the paid tenant after verified subscription payment. V1 now needs to separate:
 
-## Next production task
+- **billing entitlement active**, from
+- **operational onboarding complete**.
 
-Review the completed Firestore rules deployment preflight in
-`SERVICESOS_V1_FIRESTORE_RULES_DEPLOYMENT_PREFLIGHT.md`.
+Verified subscription payment must not by itself mean the business has completed ServicesOS setup.
 
-Only after a separate explicit production deployment approval:
+The company-wide ServicesOS pricing decision is:
 
-1. Re-capture the deployed rules and stop if the private ruleset/hash changed.
-2. Reconfirm the private Firestore-only rollback package.
-3. Deploy only canonical Firestore rules.
-4. Confirm indexes, Storage rules, IAM, CORS, Auth, Functions, Hosting, and application code remain untouched.
-5. Complete owner/admin before-and-after photo smoke.
-6. Confirm refresh persistence and Booking Detail read-only review.
-7. Verify own-tenant success and cross-tenant/anonymous denial.
-8. Run customer-role denial only with a proven, unambiguous customer identity.
-9. Roll back immediately on unexpected authorization or data-integrity behavior.
-10. Record and commit sanitized evidence.
+- $100/month
+- $1,000/year
+- same normal entitlement either way
 
-Do not begin customer identity remediation before the photo path is proven and the Storage/photo evidence is committed.
+Current code still exposes a single monthly Price path. Monthly + annual selection and exact two-Price validation are required before customer release.
 
-## Current local V1 slice
+Post-activation subscription lifecycle work also remains: renewal, failed payment, cancellation/end-of-term, recovery/reactivation, and customer billing-management behavior as required for V1.
 
-- Owner job prep and outcome checklists are implemented at the `c638aa2` checkpoint.
-- Phase 1 cleaning-product work at `d4eba89` adds immutable starter company methods, tenant commercial-product review, and tenant-scoped Firestore authorization.
-- Phase 2 at `4d7c912` adds deterministic tenant adoption of immutable system defaults, owner approval lifecycle enforcement, stable outcome-level mappings, owner review guidance, and employee-safe read-only Field Mode guidance.
-- Phase 3 aggregates approved mixtures, exact commercial products, tools, PPE, surface and chemical warnings, and owner exceptions across today's ready jobs. It excludes unusable methods and jobs without current approved snapshots from usable preparation totals.
+## Tap to Pay status
 
-## Remaining customer-facing V1 blockers
+Tap to Pay remains part of ServicesOS V1.
 
-- Production Firestore `fieldPhotos` metadata contract and full photo smoke.
-- Exact customer identity remediation:
-  - cross-tenant duplicate `authUid`
-  - customer/profile tenant mismatch
-  - customer linked to a non-customer role
-  - production customer privacy smoke
-- Cohesive Field Job Workspace redesign centered on the real checklist.
-- Required employee assignment index, real employee setup/assignment, and production employee smoke before claiming the employee workflow production-ready.
-- Controlled release integration, production deployment, and final customer-facing smoke.
+It was intentionally deferred until the team returns to the Employee App/mobile-payment phase. Do not classify it as post-V1 and do not let it distract from the current owner/onboarding/payment sequence.
 
-## Release-track distinction
+## Current remaining V1 work
 
-- Frozen wife-beta candidate: built; awaiting deployment and manual testing.
-- Owner-operator workflow: separately advanced and not equivalent to customer-ready V1.
-- Customer-facing V1: blocked until exact customer ownership and production privacy smoke pass.
-- Customers without Auth accounts may remain valid non-portal records and must never be linked approximately.
+### Immediate workflow edges
 
-## Parked beyond V1
+- verify the extra-work flow through customer approval and authoritative job-scope update
+- confirm declined/unapproved extra work cannot mutate authoritative scope
 
-Unless Jamie explicitly changes scope, keep these parked:
+### Owner onboarding
 
-- Recurring Service Plans and rotating periodic tasks
+- finish the operational setup stages described above
+- persist/resume onboarding progress
+- separate paid entitlement from onboarding completion
+- new-owner end-to-end acceptance
+
+### Owner SaaS billing
+
+- add monthly + annual choice
+- approve exactly two canonical server-side Price IDs
+- accept either approved Price in activation verification
+- implement required ongoing subscription lifecycle
+
+### Employee App / mobile
+
+- current-head Android/device acceptance
+- network/auth/photo/permission testing
+- later V1 Tap to Pay implementation and acceptance
+
+### Security / release
+
+- current-head full web tests
+- current-head Cloud Functions tests
+- Employee App tests
+- Firestore rules tests
+- Storage rules tests
+- lint and production build
+- customer identity/tenant/privacy verification
+- employee assignment/authorization smoke
+- field-photo authorization smoke
+- payment/security integration smoke
+- fix the known stale fixed-date/JSDOM test if it still reproduces
+
+### V1 acceptance
+
+After the integrated branch is validated and deployed to a controlled V1 test environment, Jamie's wife should test the current V1 using outcome-based tasks rather than click-by-click instructions. Only current V1 findings should drive final fixes/UI fine-tuning.
+
+## Release sequence
+
+Current sequence:
+
+1. close remaining job-scope / extra-work edges
+2. finish full owner onboarding
+3. update owner SaaS billing to monthly + annual and finish required lifecycle
+4. return to Employee App/mobile work, including Tap to Pay
+5. run full current-head integration/security validation
+6. controlled V1 test deployment
+7. wife V1 acceptance
+8. fix V1-specific findings
+9. UI fine-tuning
+10. customer-release hardening and final smoke
+11. customer-facing V1 release
+
+## Explicitly parked unless Jamie re-scopes them
+
+- legacy CleanOps onboarding restoration
+- broad multi-platform data import/migration
+- AI setup wizard
+- AI-recommended pricing as authority
 - Training Library expansion
-- Tap to Pay
-- route optimization
-- expenses and mileage
+- office messaging
+- push notifications
 - full offline queue
+- payroll/break management
+- expenses/mileage
 - advanced employee management
 - photo deletion/retention automation
-- GrowthAI expansion
+- GrowthAI expansion beyond the already-defined ServicesOS V1
+- future standalone SLAI products
 
-## Established local validation baselines
+## Validation evidence rule
 
-Latest known green baselines for the required-checklist completion remediation:
+Old branch-specific test totals are historical evidence only. Do not reuse them as proof for the integrated current branch.
 
-- focused Field Mode and scheduling service: 89 tests
-- full web: 465 tests
-- Cloud Functions: 39 tests
-- Firestore rules: 42 tests
-- Storage rules: 20 tests
-- lint: passed
-- build: passed
-- Firestore and Storage rules were unchanged by this remediation. The local
-  authenticated emulator smoke confirmed blocked states with zero completed
-  required outcomes and with one required outcome remaining, refresh persistence,
-  completion with all required outcomes and one
-  optional outcome open, persisted notes/issues, and unchanged payment, price,
-  schedule, assignment, and customer fields.
-
-Treat these as checkpoint evidence, not permanent expected totals. Report current totals honestly after future changes.
-
-Latest checkout-confirmation wording validation on `fix/v1-checkout-confirmation-wording`:
-
-- focused checkout and payment safety: 65 tests
-- full web: 465 tests
-- Cloud Functions: 39 tests
-- lint: passed
-- build: passed
-- local fake-data smoke: a forged success return remained confirmation-pending
-  after refresh; cancelled, failed, expired, incomplete, and unpaid return values
-  showed no confirmed-payment claim; an authenticated webhook-confirmed fake booking
-  showed `Paid in full` and `Stripe (confirmed by Stripe)`; no console errors or
-  payment-state mutations occurred.
-- Stripe checkout creation, Connect, webhook processing, payment-link generation,
-  manual-payment behavior, Firestore rules, and production configuration were
-  unchanged.
-
-Latest browser AI release-gate validation on `fix/v1-browser-ai-release-gate`:
-
-- focused Create Estimate and browser AI security: 11 tests
-- full web: 468 tests
-- Cloud Functions: 39 tests
-- lint: passed
-- normal production build: passed
-- fake-sentinel production build: passed; the sentinel, provider endpoint, provider
-  key header, and browser secret variable patterns were absent from built assets
-- tracked repository provider-secret pattern scan: clean
-- authenticated local emulator smoke: the optional AI action was disabled with
-  honest wording, a fake manual estimate saved successfully, and no console errors
-  occurred
-- no AI-provider request, production access, backend change, payment change, rules
-  change, deployment, or GrowthAI behavior change occurred.
-
-Latest employee field-photo metadata authorization validation on
-`fix/v1-field-photo-firestore-authorization`:
-
-- focused Firestore field-photo authorization: 7 tests
-- full Firestore rules: 44 tests
-- Storage rules lifecycle parity: 20 tests
-- full web: 468 tests
-- Cloud Functions: 39 tests
-- lint: passed
-- build: passed with existing chunk and dynamic-import warnings only
-- canonical/shared Firestore and Storage rules parity: passed
-- fake emulator users confirmed scheduled/completed create and read access; cancelled,
-  archived, deleted, statusless, unsupported-status, reassigned-away, customer, anonymous,
-  and cross-tenant access remained denied
-- Storage rules, application photo services and UI, booking lifecycle behavior, payments,
-  Stripe, customer identity, deployment configuration, and production resources were
-  unchanged.
+The next release-readiness audit must report the actual current totals and current-head results.
