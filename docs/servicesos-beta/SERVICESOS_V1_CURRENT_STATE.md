@@ -1,6 +1,6 @@
 # ServicesOS V1 Current State
 
-Updated: 2026-09-15
+Updated: 2026-09-16
 
 This file contains the changing ServicesOS checkpoint. Durable repository rules belong in `AGENTS.md`; detailed progress belongs in `SERVICESOS_V1_FINISH_BOARD.md`.
 
@@ -28,7 +28,29 @@ The branch is backed up to:
 
 `origin/feature/owner-onboarding-v1`
 
-Jamie’s local branch was at the application checkpoint before these documentation-only remote commits, so sync the branch before the next coding session. Do not merge to `master` until current-head integration/security/release validation passes.
+Do not merge to `master` until current-head integration/security/release validation passes.
+
+## V1 capability rule
+
+A V1 feature family means the smallest safe, useful, connected form of that capability — not the most advanced version that could eventually exist.
+
+For the Employee App this means:
+
+- basic routing/day progression, not route optimization or fleet telemetry,
+- limited active-job safety location, not all-day tracking,
+- field safety alerting and emergency handoffs, not a monitoring center or direct police dispatch,
+- narrow offline resilience for critical safety state, not a full offline-first platform,
+- Tap to Pay with verified backend truth and owner auditability, not every future mobile payment feature.
+
+Advanced forms remain deferred unless Jamie explicitly re-scopes them.
+
+## Small-slice implementation rule
+
+Protect the late-October launch target by keeping Codex/implementation work in small, heavily defined slices.
+
+Each coding task should include one capability delta only and explicitly define goal, scope, exclusions, files/areas to avoid, acceptance criteria, validation, stop conditions, and report-back.
+
+Do not combine major areas such as onboarding, mobile routing, field safety, Tap to Pay, and release hardening into a single task. Complete and validate one slice before moving to the next.
 
 ## What is already implemented on the current V1 branch
 
@@ -66,8 +88,9 @@ The Employee App is no longer a placeholder-only shell. Current branch capabilit
 - SLAI Work Assistant bounded to current authorized work
 - verified employee profile/logout
 - extra-work request UI using tenant add-ons or a bounded custom request
+- native/Google/Apple Maps directions handoff foundation
 
-Current mobile work still requires current-head device/emulator acceptance and the later V1 Tap to Pay phase.
+The active navigation shell is intentionally narrow: Jobs/Today, Job Details, Work Assistant, and Profile. Legacy Training and Messages files do not make those features current V1 blockers.
 
 ### Owner onboarding / SaaS activation spine
 
@@ -106,6 +129,8 @@ Required V1 onboarding areas:
 
 Existing `businessSettings` must remain the canonical destination for compatible business information rather than creating a competing onboarding-only settings object.
 
+The `I have employees` path must eventually create/link employees through the canonical employee identity flow so those employees can authenticate into the mobile app safely.
+
 ## Billing state correction still required
 
 Current implementation activates the paid tenant after verified subscription payment. V1 now needs to separate:
@@ -125,11 +150,70 @@ Current code still exposes a single monthly Price path. Monthly + annual selecti
 
 Post-activation subscription lifecycle work also remains: renewal, failed payment, cancellation/end-of-term, recovery/reactivation, and customer billing-management behavior as required for V1.
 
-## Tap to Pay status
+## Employee App V1 remaining work
 
-Tap to Pay remains part of ServicesOS V1.
+### Web-linked field correspondence
 
-It was intentionally deferred until the team returns to the Employee App/mobile-payment phase. Do not classify it as post-V1 and do not let it distract from the current owner/onboarding/payment sequence.
+- finish extra-work through customer approval and authoritative scope refresh
+- ensure approved scope changes refresh the employee JobPacket/checklist/time/price safely
+- ensure declined/unapproved requests do not alter authoritative mobile work
+- verify assignment, cancellation, reschedule, and reassignment changes refresh safely
+- verify employees created through onboarding can enter the canonical mobile login path
+
+### Basic routing / day progression
+
+V1 requires the practical field-worker form only:
+
+- define/confirm ordered work sequence for the employee day
+- clear current-job / next-job progression
+- retain reliable external maps/directions handoff
+- owner/admin ↔ employee day/assignment correspondence acceptance
+
+Do not expand this into advanced route optimization, continuous GPS, mileage automation, fleet telemetry, or complex crew logistics during V1 unless explicitly re-scoped.
+
+### Field Safety / Emergency — basic V1 capability
+
+Planned V1 field-safety work includes:
+
+- Safety / Emergency action from the active job
+- call-911 device dialer handoff
+- call owner/admin handoff when contact exists
+- tenant-scoped safety alert
+- job/address/timestamp context
+- limited on-demand location when permission/connection allow
+- honest sent/queued/failed/location-unavailable state
+- narrow local queue for unsent safety alerts
+- owner/admin alert review and resolution
+- basic missed-check-in / overdue safety status if promoted in the implementation slice
+- tenant/permission/device/network acceptance
+
+This is not a monitoring-center or emergency-dispatch product. Do not add constant live GPS, hidden recording, all-day surveillance, direct police dispatch, or advanced escalation trees to V1.
+
+### Tap to Pay / mobile payments
+
+Tap to Pay remains part of ServicesOS V1 and was intentionally deferred until the later Employee App/mobile-payment phase.
+
+Remaining work:
+
+- secure employee payment permission model
+- canonical mobile payment API
+- Stripe mobile SDK integration
+- Tap to Pay implementation
+- confirmed backend payment truth
+- owner visibility/audit trail
+- failure/retry behavior
+- supported-device acceptance
+
+### Mobile hardening
+
+- Android emulator/physical-device acceptance
+- auth persistence/expiration/recovery
+- camera/photo permissions
+- location permissions for promoted V1 safety/routing slices
+- network failure/retry behavior
+- duplicate-submit/idempotency behavior
+- reassignment-away and cross-tenant denial
+- full owner → employee → owner field workflow acceptance
 
 ## Current remaining V1 work
 
@@ -154,9 +238,11 @@ It was intentionally deferred until the team returns to the Employee App/mobile-
 
 ### Employee App / mobile
 
-- current-head Android/device acceptance
-- network/auth/photo/permission testing
-- later V1 Tap to Pay implementation and acceptance
+- finish web-linked correspondence pieces
+- finish basic routing/day progression
+- implement basic V1 field safety
+- implement Tap to Pay
+- complete device/network/auth/permission acceptance
 
 ### Security / release
 
@@ -169,6 +255,7 @@ It was intentionally deferred until the team returns to the Employee App/mobile-
 - customer identity/tenant/privacy verification
 - employee assignment/authorization smoke
 - field-photo authorization smoke
+- field-safety tenant/permission smoke after implementation
 - payment/security integration smoke
 - fix the known stale fixed-date/JSDOM test if it still reproduces
 
@@ -183,14 +270,19 @@ Current sequence:
 1. close remaining job-scope / extra-work edges
 2. finish full owner onboarding
 3. update owner SaaS billing to monthly + annual and finish required lifecycle
-4. return to Employee App/mobile work, including Tap to Pay
-5. run full current-head integration/security validation
-6. controlled V1 test deployment
-7. wife V1 acceptance
-8. fix V1-specific findings
-9. UI fine-tuning
-10. customer-release hardening and final smoke
-11. customer-facing V1 release
+4. finish Employee App web-linked correspondence pieces
+5. finish basic routing/day progression
+6. implement basic V1 field safety
+7. implement Tap to Pay/mobile payment acceptance
+8. run full current-head integration/security validation
+9. controlled V1 test deployment
+10. wife V1 acceptance
+11. fix V1-specific findings
+12. UI fine-tuning
+13. customer-release hardening and final smoke
+14. customer-facing V1 release
+
+The sequence can use parallel planning, but coding should remain small-slice and controlled. Do not let later mobile capability expansion move the V1 finish line.
 
 ## Explicitly parked unless Jamie re-scopes them
 
@@ -201,11 +293,16 @@ Current sequence:
 - Training Library expansion
 - office messaging
 - push notifications
-- full offline queue
+- general/full offline queue beyond narrow critical safety resilience
 - payroll/break management
 - expenses/mileage
+- advanced route optimization
+- continuous/all-day GPS tracking
+- fleet telemetry
+- advanced crew-management/roll-call systems
 - advanced employee management
 - photo deletion/retention automation
+- monitoring-center or direct emergency-dispatch platform
 - GrowthAI expansion beyond the already-defined ServicesOS V1
 - future standalone SLAI products
 
