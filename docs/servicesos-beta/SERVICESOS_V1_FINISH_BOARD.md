@@ -18,9 +18,9 @@ The legacy `ImprovedOnboarding.jsx` / CleanOps-style flow is reference material 
 
 Active V1 branch: `feature/owner-onboarding-v1`
 
-Current branch checkpoint: `8bce3919d8e26d2643a476e44b89ed34b7d34718` — `Add employee extra-work request review`
+Latest application-code checkpoint before this documentation refresh: `8bce3919d8e26d2643a476e44b89ed34b7d34718` — `Add employee extra-work request review`
 
-Branch is backed up to `origin/feature/owner-onboarding-v1`.
+Documentation-only commits follow that application checkpoint on the same branch. See `SERVICESOS_V1_CURRENT_STATE.md` for the current remote branch head.
 
 The deployed wife-beta build is older than this branch and cannot validate the newer V1 work.
 
