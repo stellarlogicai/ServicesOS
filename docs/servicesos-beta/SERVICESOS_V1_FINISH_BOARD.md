@@ -1,44 +1,43 @@
 # ServicesOS V1 Finish Board
 
-Last updated: 2026-08-28
+Last updated: 2026-09-15
 
 This document is the authoritative progress board for the defined customer-facing ServicesOS V1 finish line.
 
 ## Scope rule
 
-ServicesOS Core V1 is reached. The remaining work is to finish the already-defined customer-facing product around that core.
+ServicesOS remains priority one. The frozen wife-beta build proved the baseline owner workflow and exposed real cleaning-business friction; the active V1 branch incorporates that feedback and is now the source for remaining V1 work.
 
-GrowthAI V1 scope is locked: complete everything already designed and agreed for GrowthAI inside ServicesOS — no more, no less. New ideas outside the agreed V1 scope are parked unless Jamie explicitly changes the V1 scope.
+Do not expand V1 because legacy, prototype, or future code exists in the repository. Build only the already-defined customer-facing V1 requirements.
 
-The Employee App is part of customer-facing ServicesOS V1. It is the employee-side operating environment for assigned work, Field Mode, the employee assistant, safety functions, routing, and Tap to Pay as already planned.
+The Employee App is part of customer-facing V1. Tap to Pay is also part of V1, but intentionally belongs to the later mobile/payment phase after the current owner/onboarding/payment work is stabilized.
 
-Owner/business onboarding and release hardening are required before unfamiliar customers can self-serve and safely use ServicesOS.
+The legacy `ImprovedOnboarding.jsx` / CleanOps-style flow is reference material only. Do not restore it as the production onboarding. New onboarding must use current canonical ServicesOS models and settings.
+
+## Current checkpoint
+
+Active V1 branch: `feature/owner-onboarding-v1`
+
+Current branch checkpoint: `8bce3919d8e26d2643a476e44b89ed34b7d34718` — `Add employee extra-work request review`
+
+Branch is backed up to `origin/feature/owner-onboarding-v1`.
+
+The deployed wife-beta build is older than this branch and cannot validate the newer V1 work.
 
 ## Overall status
 
 | Area | Status |
 | --- | --- |
 | ServicesOS Core V1 | ✅ Complete |
-| Legacy security cleanup | ✅ Complete |
-| GrowthAI V1 | 🟡 Wife beta candidate live |
-| Employee App V1 | 🟡 Started |
-| Owner/business onboarding | ⬜ Remaining |
-| Payments / Tap to Pay | 🟡 Foundation built |
+| GrowthAI / SLAI Assistant V1 implementation | ✅ Substantially complete; V1 acceptance/freeze remains |
+| Employee App core field workflow | 🟡 Substantially implemented; mobile acceptance/payment phase remains |
+| Owner/business onboarding | 🟡 Partial — secure activation spine built; operational setup still incomplete |
+| Owner SaaS billing | 🟡 Partial — checkout + verified paid activation built; annual/lifecycle work remains |
+| Customer-job payments / Stripe Connect | 🟡 Foundation built; production verification remains |
+| Tap to Pay | ⏳ V1 later mobile/payment phase |
 | Release hardening | 🟡 In progress |
-| Wife beta | 🟡 Ready to begin |
+| Wife testing of current V1 | ⬜ Not yet deployed for testing |
 | Customer-ready release | ⬜ Final target |
-
-## Current checkpoint
-
-Production branch: `master`
-
-Latest validated production checkpoint: `5e8554955293d3c32042967b70d3c2fc38e66936` — `Fix GrowthAI OpenAI provider compatibility`
-
-Current focus: **Wife beta for live SLAI Assistant while Employee App planning/audit proceeds in parallel**
-
-Just completed: **Controlled production promotion passed. The live SLAI Assistant is serving the validated web candidate; GrowthAI Functions and Firestore rules are deployed; a real provider-backed action succeeded with exactly one credit consumed (100 → 99); deterministic/free behavior remained zero-credit; retired unsafe legacy Functions were deleted; browser console remained clean.**
-
-Next planned GrowthAI slice: **Wife beta — no new SLAI Assistant feature work unless beta reveals a real defect. Remaining release-hardening work includes the previously absent production `sendCustomerEmail` deployment and broader payment/security verification.**
 
 ---
 
@@ -48,501 +47,317 @@ Next planned GrowthAI slice: **Wife beta — no new SLAI Assistant feature work 
 - [x] Authentication and role foundation
 - [x] Customer management
 - [x] Leads
-- [x] Deterministic estimates and pricing
+- [x] Deterministic estimates and pricing foundation
 - [x] Bookings
+- [x] Residential and commercial booking intake
 - [x] Calendar and scheduling foundation
 - [x] Repeat-customer workflows
 - [x] Web Field Mode
+- [x] Required checklist completion controls
 - [x] Field photos
+- [x] Owner/admin field-photo review foundation
 - [x] Business Settings foundation
 - [x] Stripe / Stripe Connect foundation
 - [x] Firestore / Storage security foundation
 - [x] Tenant-isolation foundation
-
-Core V1 should not be redefined by legacy, disabled, prototype, internal-only, or deferred code that happens to remain in the repository.
-
----
-
-# 2. Security / legacy cleanup — ✅ COMPLETE FOR CURRENT FINDING
-
-- [x] ServicesOS V1 completion audit performed
-- [x] GrowthAI tenant async-isolation race fixed
-- [x] Legacy unauthenticated payment exports retired
-- [x] Legacy unauthenticated employee exports retired
-- [x] Legacy model-training/image exports retired
-- [x] Canonical booking checkout preserved
-- [x] Stripe Connect preserved
-- [x] Required webhooks preserved
-- [x] GrowthAI gateway preserved
-- [x] Retired legacy payment/subscription Functions removed from production after live candidate validation
-- [x] Functions/rules/build/test validation passed
-- [x] Canonical `recurring_services` tenant-admin read authorization added with client writes still denied
-- [x] Raw Firestore rules diagnostics no longer render in SLAI Assistant
-
-Security and production verification still continue under Release Hardening.
+- [x] Customer-approved job scope control
+- [x] Canonical tenant add-on catalog
+- [x] Employee extra-work request submission and owner review foundation
 
 ---
 
-# 3. GrowthAI V1 — 🟡 ACTIVE PRIORITY
+# 2. GrowthAI / SLAI Assistant V1 — 🟡 ACCEPTANCE / FREEZE REMAINS
 
-## Foundation
+The already-defined V1 implementation is substantially complete. Do not add new GrowthAI feature scope before ServicesOS V1 is stable.
 
-- [x] Conversation-first Home foundation
-- [x] GrowthAI first-run guide foundation
-- [x] Deterministic opportunity detection
-- [x] Draft persistence foundation
-- [x] Activity/audit foundation
-- [x] AI credit ledger/foundation
-- [x] Human-review requirement
-- [x] Provider gateway
-- [x] Tenant isolation
-- [x] Async tenant-switch hardening
-- [x] AI Estimate Assistance foundation
-- [x] ServicesOS deterministic estimate remains authoritative
-
-## Business Briefing / intelligent Home — ✅ COMPLETE
-
-- [x] Today's business summary
-- [x] Today's wins from canonical completed-today booking data
-- [x] Needs attention
-- [x] GrowthAI noticed from existing deterministic opportunities
-- [x] Estimate follow-up signals
-- [x] Work signals where canonical data safely supports them; no payment metric invented without a safe canonical selector
-- [x] Existing observed opportunities can surface without new AI generation
-- [x] Dedicated rebooking opportunities from the completed Retention / rebooking V1 slice
-- [x] Suggested next actions are non-mutating and use controlled existing workflows
-- [x] Routine briefing is deterministic/free and does not call the AI provider
-- [x] Natural-language briefing intents
-- [x] Controlled-date behavior
-- [x] Empty/loading behavior
-- [x] Tenant A → B → A stale-result protection
-
-## Marketing — ✅ COMPLETE
-
-- [x] Marketing workflow foundation
-- [x] Human-reviewed draft model
-- [x] Completed-job content using verified minimal service context
-- [x] Service spotlights
-- [x] Promotional content
-- [x] Seasonal content
-- [x] Educational/tip content
-- [x] Humor/engagement content
-- [x] Availability content
-- [x] Local/community content
-- [x] Before/after copy-only draft path without invented visual facts
-- [x] Authorized photo/asset integration reuses canonical field-photo identity and separate Marketing review metadata
-- [x] Marketing photo approval follows the trusted tenant-management boundary: active tenant admin plus explicit-tenant super-admin
-- [x] Field-photo evidence remains immutable; approval/revocation changes only separate Marketing review state
-- [x] Gateway re-verifies selected stable photo IDs and current Marketing approval under the authenticated tenant's canonical booking path before credit reservation/provider use
-- [x] Provider receives only approved-asset count; no image binary, URL, storage path, room label, notes, or customer data
-- [x] Testimonial/review content is structurally blocked unless an approved source exists; no fabricated testimonials or ratings
-- [x] Verified testimonial Marketing is intentionally unavailable in V1 because no approved canonical testimonial source exists; external review-platform ingestion is post-V1
-- [x] Platform variants: General, Facebook, Instagram, LinkedIn, Website
-- [x] Full canonical brand-aware generation integration through the shared approved Brand Intelligence context
-- [x] Lightweight deterministic content planning
-- [x] Content planning uses zero provider calls and zero credits
-- [x] Deterministic marketing setup costs zero credits
-- [x] Provider marketing generation preserves the existing one-credit contract
-- [x] Completed-job provider payload excludes customer, address, photo, payment, Stripe, employee, and internal data
-- [x] Marketing generation remains draft-only with no automatic publish/send behavior
-
-## Customer communication — ✅ COMPLETE
-
-- [x] Response workflow foundation
-- [x] Estimate follow-up drafts
-- [x] Scheduling responses without fabricated availability
-- [x] Quote/estimate question drafts using authoritative saved values
-- [x] Service-question drafts using verified tenant service context
-- [x] Problem-resolution drafts with liability/refund/employee-data guardrails
-- [x] Explicit rebooking messages
-- [x] Explicit review-request messages
-- [x] Deterministic/free templates where appropriate
-- [x] Explicit one-credit AI enhancement where useful
-- [x] Server reloads and verifies one typed lead or booking source reference
-- [x] Provider context excludes customer identity, addresses, internal notes, payment, and Stripe data
-- [x] Communication output is review-required and never auto-sent
-- [x] No estimate, booking, customer, or payment mutation
-- [x] Tenant-switch stale-result protection preserved
-
-## Retention / rebooking — ✅ COMPLETE
-
-- [x] Detect customers due for another service from supported canonical weekly, bi-weekly, and monthly cadence
-- [x] Detect recurring customers missing a matching next booking
-- [x] Long-gap handling is covered by authoritative cadence-based due detection; no separate guessed threshold is invented without a defensible history baseline
-- [x] Surface stable tenant-scoped, service-aware rebooking opportunities
-- [x] Resolve authoritative cadence from tenant-scoped `recurring_services` when `recurringServiceId` is present
-- [x] Canonical recurring-service cadence overrides conflicting duplicated booking frequency
-- [x] Missing, paused, invalid, unsupported, mismatched, or cross-tenant canonical recurrence does not fall back to stale booking cadence
-- [x] Legacy supported booking cadence remains a fallback only when no `recurringServiceId` exists
-- [x] Upcoming/in-progress suppression matches the same service identity so Service A does not suppress Service B
-- [x] Prepare rebooking drafts through Customer Communication once the owner selects context
-- [x] Require owner approval before action through the existing review-required communication workflow
-- [x] Detection and opportunity display use zero provider calls and zero credits
-
-## Reputation — ✅ COMPLETE
-
-- [x] Identify tenant-scoped review-request opportunities from qualifying completed, non-problem bookings
-- [x] Review-request lifecycle is customer-scoped so recurring work cannot flood the owner with simultaneous prompts
-- [x] Most recent qualifying completed booking can refresh context while the customer-scoped opportunity identity remains stable
-- [x] Acted opportunities remain acted and disable the duplicate action as `Review Request Drafted`
-- [x] Dismissed/resolved opportunities preserve existing GrowthAI lifecycle behavior and are not reopened by refresh
-- [x] Issue-flagged, cancelled, unlinked, and wrong-tenant booking contexts remain excluded
-- [x] Draft explicit review-request messages through Customer Communication
-- [x] Review-response assistance accepts bounded owner-pasted review text without creating a canonical review/testimonial record
-- [x] Positive / neutral / sensitive deterministic response handling
-- [x] Deterministic review-response drafts are free
-- [x] Optional AI review-response enhancement uses the existing one-credit gateway contract
-- [x] Human approval before sending/posting for review-request and review-response drafts
-- [x] No automatic send/post, external review integration, reputation scoring, or satisfaction prediction
-- [x] Owner-pasted review text is temporary response context and is not an approved Marketing testimonial source
-
-## Brand intelligence — ✅ COMPLETE
-
-- [x] Existing GrowthAI brand preferences foundation
-- [x] Canonical tenant brand profile integration through trusted tenant Business Settings plus tenant-scoped GrowthAI preferences
-- [x] Logo/profile integration reuses tenant-controlled logo metadata; logo remains display-only and is not sent to the text provider
-- [x] Brand colors
-- [x] Tone
-- [x] Preferred writing style
-- [x] Default CTA
-- [x] Words/topics to avoid
-- [x] Service-area context from canonical tenant Business Settings, with legacy tenant service-area fallback only
-- [x] Platform preferences
-- [x] GrowthAI automatically uses the approved brand context for Marketing, Customer Communication AI enhancement, and Reputation AI response enhancement
-- [x] Gateway reloads and sanitizes canonical tenant brand context server-side before provider use
-- [x] Client-supplied business name/service area cannot override canonical tenant facts
-- [x] Workflow-specific factual and safety guardrails outrank brand styling
-- [x] Missing brand preferences fall back to neutral-safe behavior without AI inference or extra credit use
-
-## Conversation orchestration — ✅ COMPLETE
-
-- [x] Intent-routing foundation
-- [x] Allowlisted V1 skill registry
-- [x] Deterministic fast paths for clear intents
-- [x] Constrained ambiguous-intent router with validated skill output
-- [x] Routing costs zero user GrowthAI credits
-- [x] Router provider input is limited to authenticated tenant context plus the owner's current message; no customer, payment, photo, draft, or Brand context is used for classification
-- [x] Router cannot send, publish, mutate records, or reserve credits
-- [x] Estimate-assistance conversational trigger
-- [x] Business-briefing questions
-- [x] Marketing routing polish for the implemented Marketing V1 content types
-- [x] Retention/rebooking detection routing
-- [x] Reputation routing
-- [x] Customer-communication routing
-- [x] Contextual follow-ups use only current bounded/visible tenant-scoped workflow context
-- [x] Natural transitions between controlled workflows
-- [x] Rebooking and review-request opportunities hand off to Customer Communication without automatic send or draft creation
-- [x] Marketing-photo opportunities hand off to Marketing
-- [x] Estimate follow-up remains in Opportunities for explicit owner action
-- [x] Active writing refinements remain in the current workflow while explicit new intents can change workflows
-- [x] Tenant-switch stale router/context results are ignored
-- [x] Malformed, unsupported, or ambiguous routing falls back to controlled clarification
-
-## Drafts / Activity — ✅ COMPLETE
-
-- [x] Draft persistence foundation
-- [x] Audit foundation
-- [x] Owner-friendly draft statuses
-- [x] Needs Review state
-- [x] Approved state
-- [x] Clear source/context with safe unavailable-source fallback
-- [x] Clear human-vs-AI action history
-- [x] Activity reads like a business tool rather than a developer log
-- [x] Human-friendly draft type labels replace internal implementation identifiers in owner-facing UI
-- [x] Legacy/malformed drafts degrade safely without leaking raw IDs or crashing
-- [x] Cross-tenant or missing source references do not resolve into owner-facing context
-- [x] Drafts/Activity rendering is deterministic, provider-free, and zero-credit
-- [x] Existing approval semantics remain intact: Approved means owner-approved content, not sent/published/executed
-- [x] Existing immutable per-draft audit history remains authoritative for activity events
-
-## Credits UX — ✅ COMPLETE
-
-- [x] Credit ledger/foundation
-- [x] Canonical server-owned monthly entitlement foundation
-- [x] 100 included AI credits per calendar month
-- [x] Canonical tenant timezone authority at `businessSettings.timeZone` using validated IANA identifiers
-- [x] Missing/invalid tenant timezone uses server-side UTC fallback
-- [x] Monthly period renewal uses tenant-local calendar boundaries rather than fixed durations
-- [x] Monthly allowance does not roll over; renewal resets the monthly bucket to exactly 100
-- [x] Promotional and purchased buckets survive monthly renewal
-- [x] Existing consumption order remains monthly → promotional → purchased
-- [x] First authenticated server interaction can lazily provision/advance the period atomically and idempotently
-- [x] Legacy canonical balances gain period metadata without overwriting existing bucket values
-- [x] Active old-period reservations defer renewal rather than risking duplicate/lost credit accounting
-- [x] Explicit paid estimate-assistance action
-- [x] Zero-credit blocking where AI is required
-- [x] Final customer-facing balance UX
-- [x] Clear free-vs-paid actions
-- [x] Included monthly allowance UX
-- [x] Failure/restore UX
-- [x] No-surprise-spending review
-- [x] Canonical remaining balance, monthly allowance, tenant-local renewal date, and timezone are consumed from server-owned state
-- [x] Loading, unavailable, malformed, zero, and normal balance states remain distinct
-- [x] Every provider-backed V1 action shows its one-credit cost before explicit owner initiation
-- [x] Zero credits block only provider-backed generation; deterministic/free alternatives remain available
-- [x] Provider failure messaging reflects backend-authored credit restoration behavior and refreshes canonical balance
-- [x] Successful generation refreshes canonical balance without optimistic subtraction
-- [x] Tenant A → B → A stale-balance protection is preserved
-- [x] Credits UX is reusable for the upcoming SLAI Assistant shell without duplicating entitlement logic
-
-## GrowthAI finalization
-
-- [x] Update first-run guide for completed V1
-- [x] SLAI Assistant three-column UI refinement and customer-facing naming pass
-- [x] Desktop QA
-- [x] Tablet QA
-- [x] Approximately 390 × 844 mobile QA
-- [x] Empty-business states
-- [x] No-opportunity states
-- [x] No-estimate states
-- [x] Zero-credit states
-- [x] Provider failure
-- [x] Slow provider
-- [x] Malformed AI response
-- [x] Long names/content
-- [x] Accessibility
-- [x] Loading/error states
-- [x] Triage the pre-existing local smoke `false for 'list'` alert if it reproduces during final QA
-- [ ] Wife GrowthAI beta
-- [ ] Fix beta findings
+- [x] Conversation-first Home
+- [x] Business briefing
+- [x] Marketing workflows
+- [x] Customer communication workflows
+- [x] Retention / rebooking detection
+- [x] Reputation assistance
+- [x] Brand intelligence
+- [x] Drafts / Activity
+- [x] Human review / approval boundaries
+- [x] Provider gateway and tenant isolation
+- [x] Credit ledger and customer-facing credit UX
+- [x] First-run guide and responsive UI pass
+- [x] Production provider-backed action verified previously
+- [ ] Re-test inside the current integrated V1 branch/release candidate
+- [ ] Close any V1-specific regression findings
 - [ ] GrowthAI V1 freeze
 
-Final pre-beta QA result: **READY FOR WIFE BETA**. No P0, P1, or P2 findings remained. Production provider verification is now complete: one real provider-backed action succeeded, consumed exactly one credit, persisted the new balance after refresh, created a review-required draft, and did not send or publish anything automatically.
-
-**GrowthAI V1 rule:** everything already designed and agreed gets completed. No more, no less.
-
 ---
 
-# 4. Employee App V1 — 🟡 STARTED
+# 3. Employee App V1 — 🟡 SUBSTANTIALLY IMPLEMENTED
 
 Project path: `employee-app/`
 
-## Foundation
+## Core field workflow
 
-- [x] React Native project started
-- [x] Source/navigation/component structure exists
-- [ ] Audit existing implementation against final Employee App V1 design
-- [ ] Replace placeholder/demo Firebase configuration
-- [ ] Replace placeholder jobs/actions
-- [ ] Establish authenticated canonical ServicesOS mobile API/data path
+- [x] React Native Expo application
+- [x] Canonical employee authentication through server verification
+- [x] Session-gated app shell
+- [x] My Day / assigned current and upcoming jobs
+- [x] Fresh employee-safe JobPacket
+- [x] Job details and approved instructions
+- [x] Safety and method guidance
+- [x] Start work
+- [x] Required checklist progress
+- [x] Employee notes / issue reporting
+- [x] Before photo evidence
+- [x] After photo evidence
+- [x] Complete job through server-owned execution path
+- [x] SLAI Work Assistant for current authorized work
+- [x] Verified employee profile / logout
+- [x] Extra-work request UI and server flow foundation
+- [x] Tenant add-on catalog consumption in extra-work requests
+- [ ] Verify customer-approval/final-scope end state for extra work
+- [ ] Confirm owner/admin visibility for the full extra-work lifecycle
 
-## Employee workflow
+## Mobile acceptance
 
-- [ ] Login
-- [ ] My Day
-- [ ] Assigned jobs
-- [ ] Ordered daily work
-- [ ] Job details
-- [ ] Customer-safe information
-- [ ] Approved job instructions
-- [ ] Checklist
-- [ ] Before photos
-- [ ] Start Job
-- [ ] Employee notes/problems
-- [ ] After photos
-- [ ] Complete Job
-- [ ] Owner/admin visibility of field updates
+- [ ] Current V1 Android emulator/device pass
+- [ ] Permissions pass
+- [ ] Photo capture/upload pass
+- [ ] Network failure/retry pass
+- [ ] Auth expiration/session recovery pass
+- [ ] Tenant isolation / employee authorization pass
+- [ ] Real field workflow acceptance pass
 
-## Employee assistant
+## Tap to Pay — V1 later phase
 
-- [ ] Work Assistant UI
-- [ ] Current authorized job context
-- [ ] Tenant-approved knowledge
-- [ ] Approved procedures
-- [ ] Safe AI interpretation
-- [ ] Manager escalation
-- [ ] Permission boundaries
+Tap to Pay is not removed from V1. It was intentionally deferred until the team returns to the Employee App/mobile-payment phase.
 
-## Safety
-
-- [ ] Property hazards
-- [ ] Product/chemical warnings
-- [ ] Allergy/prohibited-product instructions
-- [ ] PPE reminders
-- [ ] Do-not-mix rules
-- [ ] Incident/problem reporting
-- [ ] Emergency/manager escalation behavior
-- [ ] Safety-critical facts are never invented by AI
-
-## Routing
-
-- [ ] Ordered daily jobs
-- [ ] Next-job workflow
-- [ ] Open navigation
-- [ ] Routing foundation
-- [ ] Advanced optimization only to the extent already defined for V1
-
-## Payments / Tap to Pay
-
-- [ ] Secure employee payment permissions
+- [ ] Secure employee payment permission model
 - [ ] Canonical mobile payment API
-- [ ] Stripe mobile integration
-- [ ] Tap to Pay
+- [ ] Stripe mobile SDK integration
+- [ ] Tap to Pay implementation
 - [ ] Payment confirmation
-- [ ] Owner visibility
-- [ ] Audit trail
+- [ ] Owner visibility / audit trail
 - [ ] Failure/retry handling
+- [ ] Device/payment acceptance testing
 
-## Employee App QA
-
-- [ ] Android device/emulator testing
-- [ ] Permissions
-- [ ] Photos
-- [ ] Network failures
-- [ ] Auth expiration
-- [ ] Tenant isolation
-- [ ] Employee authorization
-- [ ] Safety escalation
-- [ ] Payment testing
-- [ ] Wife/field workflow testing
-- [ ] Employee App V1 freeze
+Training-library expansion, office messaging, push notifications, full offline queue, payroll/break management, and advanced employee-management features do not become V1 blockers unless Jamie explicitly re-scopes them.
 
 ---
 
-# 5. Owner / business onboarding — ⬜ REMAINING
+# 4. Owner / business onboarding — 🟡 PARTIAL
 
-The old CleanOps onboarding is legacy/reference material, not the current production onboarding.
+## Completed secure activation spine
 
-- [ ] Read-only onboarding architecture audit
-- [ ] Map onboarding to canonical ServicesOS models
-- [ ] New-business / first-login gate
-- [ ] Welcome
+- [x] Server-owned owner/tenant bootstrap
+- [x] Verified admin/tenant relationship
+- [x] Basic business profile gateway and UI
+- [x] Versioned immutable SaaS agreement delivery
+- [x] Typed signer + explicit affirmation
+- [x] Immutable agreement acceptance evidence
+- [x] Owner subscription checkout gateway
+- [x] Server-owned Stripe Customer relationship
+- [x] Verified `invoice.paid` activation path
+- [x] Exact tenant/customer/subscription/Price/quantity validation
+- [x] Idempotent/stale-event protections
 
-## Business Basics
+## Canonical V1 onboarding contract still to finish
 
-- [ ] Business name
+The customer must go through onboarding that gathers the information ServicesOS needs to operate correctly. Subscription payment and onboarding completion are separate states.
+
+### Business basics
+
+- [x] Business name
+- [x] Phone
+- [x] Email
+- [x] Timezone
+- [x] Business address field exists
 - [ ] Business type
-- [ ] Phone
-- [ ] Email
-- [ ] Service area
-- [ ] Optional address
-- [ ] Optional website
+- [ ] Service area in onboarding
+- [ ] Optional website in onboarding
+- [ ] Reuse current canonical `businessSettings` model instead of creating a parallel settings object
 
-## Services & Pricing
+### Services & pricing
 
-- [ ] Select services
-- [ ] Add custom service
-- [ ] Pricing method
-- [ ] Initial canonical pricing configuration
+- [ ] Select offered services
+- [ ] Add custom services
+- [ ] Choose pricing method
+- [ ] Create initial canonical deterministic pricing configuration
+- [ ] Do not make AI pricing authoritative
 
-## Availability
+### Availability / scheduling rules
 
+- [x] Working-day model exists in Business Settings
+- [ ] Gather working days during onboarding
 - [ ] Business hours
-- [ ] Working days
 - [ ] Typical duration
 - [ ] Scheduling buffer
 - [ ] Booking horizon
 
-## Brand
+### Brand basics
 
 - [ ] Logo
-- [ ] Existing canonical brand information
-- [ ] Approved brand preferences
+- [ ] Minimum canonical brand information ServicesOS / GrowthAI need
+- [ ] Reuse current branding/brand-profile contracts; do not revive a parallel legacy config model
 
-## Payments
+### Customer-payment setup
 
-- [ ] Connect Stripe
-- [ ] Skip/do later
+- [x] Stripe Connect component/foundation exists
+- [ ] Include Stripe Connect in onboarding
+- [ ] Allow `Skip / do later`
 
-## Team
+### Team
 
-- [ ] Just me
-- [ ] I have employees
-- [ ] Basic employee setup/invite where appropriate
+- [ ] `Just me` path
+- [ ] `I have employees` path
+- [ ] Basic employee setup/invite when applicable
 
-## Finish
+### Finish / resume
 
 - [ ] Review setup
-- [ ] Completion marker
-- [ ] Resume interrupted onboarding
-- [ ] Start using ServicesOS
-- [ ] New-owner end-to-end test
+- [ ] Persist onboarding progress
+- [ ] Resume interrupted onboarding safely
+- [ ] Separate billing entitlement from `onboardingState`
+- [ ] Verified subscription payment must not by itself mark operational onboarding complete
+- [ ] Mark onboarding complete only after required operational setup is satisfied
+- [ ] Clear first action after completion
+- [ ] New-owner end-to-end acceptance test without founder/developer help
+
+## Explicitly not required for initial V1 onboarding
+
+- legacy CleanOps `ImprovedOnboarding.jsx` restoration
+- data migration/import from multiple platforms
+- AI setup wizard
+- AI-recommended pricing as authority
+- elaborate preview/celebration systems
+
+These may be future improvements after the required operational onboarding works cleanly.
 
 ---
 
-# 6. Payments / production readiness — 🟡 FOUNDATION BUILT
+# 5. Owner SaaS subscription billing — 🟡 PARTIAL
 
-- [x] Stripe architecture
+Company platform pricing is:
+
+- $100/month
+- $1,000/year
+- same normal entitlement either way
+
+## Complete
+
+- [x] Secure platform-account subscription Checkout
+- [x] Server-owned tenant/customer metadata
+- [x] Quantity locked to 1
+- [x] No Connect destination/transfer/application fee on SLAI subscription billing
+- [x] Verified paid-invoice activation
+- [x] Active linked subscription required before activation
+
+## Remaining
+
+- [ ] Add monthly + annual billing selection
+- [ ] Add exactly two server-approved canonical Price IDs
+- [ ] Update activation validation to accept either approved monthly or annual Price
+- [ ] Preserve identical normal product entitlement across monthly/annual terms
+- [ ] Define and implement post-activation billing lifecycle
+- [ ] Subscription renewal verification
+- [ ] Payment-failure handling
+- [ ] Cancellation/end-of-term handling
+- [ ] Recovery/reactivation behavior
+- [ ] Customer Portal / self-service billing-management path if required for customer-ready V1
+- [ ] Production Stripe test-mode/live-mode acceptance
+
+---
+
+# 6. Customer-job payments / Stripe Connect — 🟡 FOUNDATION BUILT
+
+This is separate from the owner SaaS subscription.
+
 - [x] Stripe Connect foundation
-- [x] Canonical booking checkout
-- [x] Webhook foundation
-- [x] Legacy unsafe payment exports retired
+- [x] Canonical booking checkout foundation
+- [x] Honest public return-state behavior
+- [x] Webhook-confirmed payment truth foundation
+- [x] Manual-payment separation
 - [ ] Production Connect verification
-- [ ] Production checkout verification
+- [ ] Production booking checkout verification
 - [ ] Webhook end-to-end verification
-- [ ] Success/cancel/return verification
 - [ ] Platform-fee verification
 - [ ] Payment tenant-isolation verification
-- [ ] Employee App payment integration
-- [ ] Tap to Pay verification
-- [ ] Failure/retry testing
+- [ ] Failure/retry acceptance
+
+Tap to Pay is tracked in the Employee App section and remains a later V1 mobile/payment phase.
 
 ---
 
-# 7. Customer / release hardening — 🟡 IN PROGRESS
+# 7. Job scope / extra-work flow — 🟡 FINAL EDGE VERIFICATION
 
-## Security
+- [x] Residential/commercial intake
+- [x] Customer-approved job scope control
+- [x] Canonical tenant add-on catalog
+- [x] Employee extra-work request submission
+- [x] Owner review foundation
+- [ ] Verify owner-approved extra work reaches a customer-approval-ready state correctly
+- [ ] Verify customer approval is captured before extra work becomes authoritative scope
+- [ ] Verify approved extra work updates the job packet/checklist/price/time contract safely
+- [ ] Verify declined requests do not change authoritative scope
+- [ ] Full owner → employee → owner → customer → job-scope integration test
 
+---
+
+# 8. Security / release hardening — 🟡 IN PROGRESS
+
+Do not claim these complete from old branch evidence. Re-run against the integrated current V1 branch.
+
+- [ ] Full current-head web test suite
+- [ ] Full current-head Cloud Functions suite
+- [ ] Employee App unit/auth suites
+- [ ] Firestore rules suite
+- [ ] Storage rules suite
+- [ ] Lint
+- [ ] Production build
 - [ ] Customer identity ownership verification
 - [ ] Customer-to-tenant matching
-- [ ] Role validation
-- [ ] Duplicate `authUid` detection/check
+- [ ] Duplicate/cross-tenant `authUid` checks
 - [ ] Customer privacy smoke
-- [ ] Cross-tenant denial
-- [ ] Internal-note denial
-- [ ] Field-data denial
-- [ ] Payment-internal denial
-- [ ] Photo authorization denial
-
-## Firebase / production
-
-- [x] Verify deployed Firestore rules
-- [ ] Verify deployed Storage rules
-- [ ] Capture final rules hashes
-- [x] Production artifact review
-- [x] Production deploy verification
-- [x] Rollback readiness
-
-## Customer experience
-
-- [ ] Decide/finalize Customer Portal persistence requirements
-- [ ] Email production smoke — production `sendCustomerEmail` deployment is currently absent and remains a release-hardening item
-- [ ] CORS production smoke
-- [ ] Loading/error/empty-state pass
-- [ ] Major viewport pass
-- [ ] GrowthAI abandoned/stuck credit-reservation reconciliation or expiry review so a stale reservation cannot defer monthly renewal indefinitely
-- [ ] Fix known stale fixed-date test
-- [ ] Update current-state/release documentation
+- [ ] Cross-tenant denial smoke
+- [ ] Employee assignment/authorization smoke
+- [ ] Field-photo authorization smoke
+- [ ] Current payment/security integration smoke
+- [ ] Fix known stale fixed-date/JSDOM test if it still reproduces
+- [ ] Update deployment/release evidence after current-head validation
 
 ---
 
-# 8. Wife beta — ⬜ UPCOMING
+# 9. Wife V1 acceptance — ⬜ NOT YET AVAILABLE
 
-- [ ] GrowthAI testing
-- [ ] Owner workflow testing
-- [ ] Estimate testing
-- [ ] Booking testing
-- [ ] Customer testing
-- [ ] Field workflow testing
-- [ ] Employee App testing
-- [ ] Payments testing
-- [ ] Onboarding testing
-- [ ] Record friction/confusion
-- [ ] Fix beta-critical findings
+The original wife beta has already served as discovery/UX validation and helped define this V1. Do not re-test solved beta issues merely because the old build is still deployed.
+
+After the current V1 branch passes integration/release validation and is deployed to a controlled test environment:
+
+- [ ] Give outcome-based tasks, not click-by-click instructions
+- [ ] New-owner onboarding
+- [ ] Business setup
+- [ ] Customer / estimate / booking workflow
+- [ ] Customer-approved scope
+- [ ] Add-on / extra-work workflow
+- [ ] Employee field workflow
+- [ ] Payments
+- [ ] GrowthAI / SLAI Assistant
+- [ ] Record hesitation/confusion/blockers
+- [ ] Fix V1-specific findings
 - [ ] Re-test
 
 ---
 
-# 9. Customer-ready ServicesOS V1 — ⬜ FINAL TARGET
+# 10. Customer-ready ServicesOS V1 — ⬜ FINAL TARGET
 
+- [ ] Remaining V1 workflow edges complete
+- [ ] Full owner onboarding complete
+- [ ] Monthly + annual SaaS billing complete
+- [ ] Required post-activation subscription lifecycle complete
+- [ ] Employee App V1 complete, including Tap to Pay
+- [ ] Integrated security/tests/build green
+- [ ] Controlled V1 deployment green
+- [ ] Wife V1 acceptance critical findings closed
+- [ ] UI fine-tuning pass
+- [ ] Customer-facing release smoke green
 - [ ] Feature freeze
-- [ ] All V1-required tests green
-- [ ] Security gates green
-- [ ] Production payment smoke green
-- [ ] New owner can onboard without developer/founder help
-- [ ] Employee can operate from Employee App
-- [ ] GrowthAI V1 complete
-- [ ] Wife-beta critical findings closed
 - [ ] Final release candidate
 - [ ] Customer-facing ServicesOS V1
 
@@ -550,18 +365,24 @@ The old CleanOps onboarding is legacy/reference material, not the current produc
 
 # Deferred / not allowed to move the V1 finish line
 
-Unless explicitly brought into scope by Jamie, these do not become V1 blockers merely because code or ideas exist:
+Unless Jamie explicitly changes scope, these do not become V1 blockers merely because code or ideas exist:
 
 - legacy CleanOps flows
 - abandoned prototype endpoints
 - autonomous AI actions
 - unlimited/persistent general chat history
-- unrelated AI/model-training experiments
-- advanced offline mode beyond the locked V1 scope
-- payroll/break management unless explicitly re-scoped
+- broad data-import/migration platform
+- AI pricing authority
+- Training Library expansion
+- office messaging
+- push notifications
+- full offline queue
+- payroll/break management
+- route optimization beyond already-approved V1 needs
+- expenses and mileage
+- advanced employee management
+- photo deletion/retention automation
 - future standalone SLAI products
-
-Partially implemented legacy or future code must be classified based on whether the active customer-facing runtime actually depends on it.
 
 ---
 
@@ -575,4 +396,4 @@ After each validated GitHub push that changes ServicesOS V1 progress:
 4. identify the next locked-scope V1 task,
 5. do not add new V1 scope without Jamie's explicit decision.
 
-The concise chat progress view should be derived from this document; this repository document is the source of truth.
+The concise chat progress view should be derived from this document after confirming it still matches the actual active branch.
