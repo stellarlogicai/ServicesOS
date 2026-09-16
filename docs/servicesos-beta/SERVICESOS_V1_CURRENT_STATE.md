@@ -18,15 +18,19 @@ Active branch:
 
 `feature/owner-onboarding-v1`
 
-Current checkpoint:
+Latest application-code checkpoint before the documentation refresh:
 
 `8bce3919d8e26d2643a476e44b89ed34b7d34718` — `Add employee extra-work request review`
+
+Current remote branch head after the documentation refresh:
+
+`fd660527d97fc0475f09b2c926d0043106310ebf` — `Replace legacy onboarding plan with canonical V1 contract`
 
 The branch is backed up to:
 
 `origin/feature/owner-onboarding-v1`
 
-Do not merge to `master` until current-head integration/security/release validation passes.
+Jamie’s local branch was at the application checkpoint before these documentation-only remote commits, so pull/rebase the branch before the next coding session. Do not merge to `master` until current-head integration/security/release validation passes.
 
 ## What is already implemented on the current V1 branch
 
