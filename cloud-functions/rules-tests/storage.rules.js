@@ -12,7 +12,7 @@ const PROJECT_ID = 'demo-servicesos-rules';
 const TENANT_A = 'tenant-a';
 const TENANT_B = 'tenant-b';
 const PHOTO_PATH = `tenants/${TENANT_A}/bookings/booking-a/field-photos/before/photo-a.jpg`;
-const BRANDING_PATH = `tenants/${TENANT_A}/branding/logo_test.png`;
+const BRANDING_PATH = `tenants/${TENANT_A}/branding/logo_abcdefghijklmnop.png`;
 let testEnvironment;
 let storageRulesSource;
 
@@ -324,23 +324,28 @@ describe('tenant-scoped Field Mode Storage rules', () => {
     await assertFails(adminPhoto.delete());
   });
 
-  test('mounted branding storage is limited to active super-admin image uploads', async () => {
+  test('tenant admin and super-admin can create and read safe tenant branding assets', async () => {
     await assertSucceeds(upload('super-admin', BRANDING_PATH, 'image/png'));
-    await assertSucceeds(upload('super-admin', `tenants/${TENANT_A}/branding/favicon_test.ico`, 'image/x-icon'));
+    await assertSucceeds(upload('super-admin', `tenants/${TENANT_A}/branding/favicon_abcdefghijklmnop.ico`, 'image/x-icon'));
+    await assertSucceeds(upload('admin-a', `tenants/${TENANT_A}/branding/logo_adminabcdefghijkl.png`, 'image/png'));
     await assertSucceeds(storageFor('super-admin').ref(BRANDING_PATH).getDownloadURL());
+    await assertSucceeds(storageFor('admin-a').ref(BRANDING_PATH).getDownloadURL());
 
-    for (const uid of ['admin-a', 'employee-a', 'customer-a', 'admin-b']) {
-      await assertFails(upload(uid, `tenants/${TENANT_A}/branding/${uid}.png`, 'image/png'));
+    for (const uid of ['employee-a', 'customer-a', 'admin-b']) {
+      await assertFails(upload(uid, `tenants/${TENANT_A}/branding/logo_${uid}abcdefghijkl.png`, 'image/png'));
       await assertFails(storageFor(uid).ref(BRANDING_PATH).getDownloadURL());
     }
   });
 
-  test('branding uploads reject arbitrary documents, zero bytes, oversized objects, and DEFAULT tenant', async () => {
-    await assertFails(upload('super-admin', `tenants/${TENANT_A}/branding/logo.pdf`, 'application/pdf'));
-    await assertFails(upload('super-admin', `tenants/${TENANT_A}/branding/logo.svg`, 'image/svg+xml'));
-    await assertFails(upload('super-admin', `tenants/${TENANT_A}/branding/empty.png`, 'image/png', 0));
-    await assertFails(upload('super-admin', `tenants/${TENANT_A}/branding/large.png`, 'image/png', (5 * 1024 * 1024) + 1));
-    await assertFails(upload('super-admin', 'tenants/DEFAULT/branding/logo.png', 'image/png'));
+  test('branding uploads reject unsafe filenames, mismatched types, zero bytes, oversized objects, and DEFAULT tenant', async () => {
+    await assertFails(upload('admin-a', `tenants/${TENANT_A}/branding/logo_abcdefghijklmnop.pdf`, 'application/pdf'));
+    await assertFails(upload('admin-a', `tenants/${TENANT_A}/branding/logo_abcdefghijklmnop.svg`, 'image/svg+xml'));
+    await assertFails(upload('admin-a', `tenants/${TENANT_A}/branding/../../unsafe.png`, 'image/png'));
+    await assertFails(upload('admin-a', `tenants/${TENANT_A}/branding/logo_abcdefghijklmnop.png`, 'image/jpeg'));
+    await assertFails(upload('admin-a', `tenants/${TENANT_A}/branding/logo_abcdefghijklmnop.png`, 'image/png', 0));
+    await assertFails(upload('admin-a', `tenants/${TENANT_A}/branding/logo_abcdefghijklmnop.png`, 'image/png', (5 * 1024 * 1024) + 1));
+    await assertFails(upload('admin-a', 'tenants/DEFAULT/branding/logo_abcdefghijklmnop.png', 'image/png'));
+    await assertFails(upload('admin-b', `tenants/${TENANT_A}/branding/logo_abcdefghijklmnop.png`, 'image/png'));
   });
 
   test('persisted branding cannot be overwritten or deleted through client rules', async () => {
@@ -351,6 +356,8 @@ describe('tenant-scoped Field Mode Storage rules', () => {
 
     await assertFails(brandingObject.put(new Uint8Array(64), { contentType: 'image/png' }));
     await assertFails(brandingObject.delete());
+    await assertFails(storageFor('admin-b').ref(BRANDING_PATH).put(new Uint8Array(64), { contentType: 'image/png' }));
+    await assertFails(storageFor('admin-b').ref(BRANDING_PATH).delete());
   });
 
   test('missing, unknown-role, inactive, and unauthenticated profiles are denied', async () => {

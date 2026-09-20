@@ -15,10 +15,13 @@ const OPERATIONAL_STEPS = new Set([
   'saas_agreement',
   'subscription_billing',
   'services_pricing',
+  'availability',
+  'branding',
+  'team_setup',
   'operational_setup',
 ]);
 
-function operationalProgressFromState(onboardingState) {
+function operationalProgressFromState(onboardingState, operational = {}) {
   const progress = {
     business_profile_required: [[], 'business_profile', false],
     agreement_required: [['business_profile'], 'saas_agreement', false],
@@ -39,7 +42,28 @@ function operationalProgressFromState(onboardingState) {
       code: 'invalid_response',
     });
   }
-  return { completedSteps: [...progress[0]], nextStep: progress[1], operationalComplete: progress[2] };
+  if (onboardingState !== 'operational_setup_required') {
+    return { completedSteps: [...progress[0]], nextStep: progress[1], operationalComplete: progress[2] };
+  }
+  const completedSteps = [...progress[0]];
+  if (operational.servicesPricingComplete) {
+    completedSteps.push('services_pricing');
+    if (operational.availabilityComplete) {
+      completedSteps.push('availability');
+      if (operational.brandingComplete) completedSteps.push('branding');
+    }
+  }
+  return {
+    completedSteps,
+    nextStep: !operational.servicesPricingComplete
+      ? 'services_pricing'
+      : !operational.availabilityComplete
+        ? 'availability'
+        : !operational.brandingComplete
+          ? 'branding'
+          : 'team_setup',
+    operationalComplete: false,
+  };
 }
 
 export class OwnerOnboardingServiceError extends Error {
@@ -123,8 +147,13 @@ export function sanitizeOwnerOnboardingProjection(payload) {
   const onboardingState = source?.onboardingState === null ? null : optionalText(source?.onboardingState);
   const billingEntitlement = optionalText(source?.billingEntitlement);
   const progress = source?.operationalProgress;
+  const operational = {
+    servicesPricingComplete: source?.servicesPricingComplete === true,
+    availabilityComplete: source?.availabilityComplete === true,
+    brandingComplete: source?.brandingComplete === true,
+  };
   const expectedProgress = ONBOARDING_STATES.has(onboardingState)
-    ? operationalProgressFromState(onboardingState)
+    ? operationalProgressFromState(onboardingState, operational)
     : null;
   const progressIsValid = progress && typeof progress === 'object' && !Array.isArray(progress) &&
     Array.isArray(progress.completedSteps) &&
@@ -161,6 +190,7 @@ export function sanitizeOwnerOnboardingProjection(payload) {
     };
     if (typeof source.servicesPricingComplete === 'boolean') projection.servicesPricingComplete = source.servicesPricingComplete;
     if (typeof source.availabilityComplete === 'boolean') projection.availabilityComplete = source.availabilityComplete;
+    if (typeof source.brandingComplete === 'boolean') projection.brandingComplete = source.brandingComplete;
   }
   for (const field of ['businessName', 'businessEmail', 'businessPhone', 'businessAddress', 'timeZone']) {
     const value = optionalText(source[field]);

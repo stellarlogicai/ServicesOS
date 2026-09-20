@@ -15,6 +15,7 @@ const authState = {
 
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => authState }));
 vi.mock('../services/serviceCatalogService', () => ({ listOwnerServices: vi.fn().mockResolvedValue([]), listActiveServices: vi.fn().mockResolvedValue([]) }));
+vi.mock('../components/CompanySettings', () => ({ default: ({ onBrandingSaved }) => <button type="button" onClick={onBrandingSaved}>Save branding</button> }));
 
 import OwnerOnboardingEntry, { BillingStep } from '../components/OwnerOnboardingEntry';
 
@@ -183,7 +184,7 @@ describe('OwnerOnboardingEntry', () => {
     render(<OwnerOnboardingEntry />);
     expect(screen.getByRole('heading', { name: 'Continue setting up ServicesOS' })).toBeInTheDocument();
     expect(screen.getByText('Your subscription is active. Your business setup is still in progress.')).toBeInTheDocument();
-    expect(screen.getByText('3 setup steps complete. Services and pricing are next.')).toBeInTheDocument();
+    expect(screen.getByText('3 setup steps complete. Continue the next required setup step.')).toBeInTheDocument();
   });
 
   it('renders canonical services stage when the server reports it incomplete', async () => {
@@ -195,5 +196,33 @@ describe('OwnerOnboardingEntry', () => {
     render(<OwnerOnboardingEntry />);
     expect(screen.getAllByRole('heading', { name: 'Services and pricing' }).length).toBe(2);
     expect(await screen.findByText('No services configured. Existing estimate and booking behavior remains available until the first service is added.')).toBeInTheDocument();
+  });
+
+  it('renders branding remediation only when server-derived custom branding is invalid', () => {
+    authState.ownerOnboarding = {
+      lifecycleManaged: true, onboardingState: 'operational_setup_required', tenantId: 'tenant-a',
+      servicesPricingComplete: true, availabilityComplete: true, brandingComplete: false,
+      operationalProgress: {
+        completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing', 'services_pricing', 'availability'],
+        nextStep: 'branding', operationalComplete: false,
+      },
+    };
+    render(<OwnerOnboardingEntry />);
+    expect(screen.getByRole('heading', { name: 'Branding' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save branding' }));
+    expect(authState.refreshOwnerOnboarding).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves team setup unimplemented after valid default or custom branding', () => {
+    authState.ownerOnboarding = {
+      lifecycleManaged: true, onboardingState: 'operational_setup_required',
+      servicesPricingComplete: true, availabilityComplete: true, brandingComplete: true,
+      operationalProgress: {
+        completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing', 'services_pricing', 'availability', 'branding'],
+        nextStep: 'team_setup', operationalComplete: false,
+      },
+    };
+    render(<OwnerOnboardingEntry />);
+    expect(screen.getByText('6 setup steps complete. Team setup is next.')).toBeInTheDocument();
   });
 });

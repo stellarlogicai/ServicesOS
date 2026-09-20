@@ -28,8 +28,16 @@ function createAdmin({ documents = {}, token = {}, tokenError = null } = {}) {
       },
       limit() { return this; },
       async get() {
+        if (Object.hasOwn(state, path)) {
+          const value = state[path];
+          return { exists: true, id: path.split('/').pop(), data: () => value };
+        }
         const prefix = `${path}/`;
-        return { docs: Object.entries(state).filter(([key]) => key.startsWith(prefix) && !key.slice(prefix.length).includes('/')).map(([key, value]) => ({ id: key.slice(prefix.length), data: () => value })) };
+        return {
+          exists: false,
+          data: () => undefined,
+          docs: Object.entries(state).filter(([key]) => key.startsWith(prefix) && !key.slice(prefix.length).includes('/')).map(([key, value]) => ({ id: key.slice(prefix.length), data: () => value })),
+        };
       },
     };
   }
@@ -217,7 +225,7 @@ test('paid operationally incomplete tenant resumes at services and pricing', asy
   assert.equal(fixture.writes.length, 0);
 });
 
-test('operational progress derives services and availability from canonical tenant data', async () => {
+test('operational progress treats absent branding as a valid default and advances to team setup', async () => {
   const fixture = createAdmin({ documents: {
     'users/owner-a': ownerProfile(),
     'tenants/tenant-a': managedTenant({
@@ -231,9 +239,30 @@ test('operational progress derives services and availability from canonical tena
   const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
   assert.equal(result.onboarding.servicesPricingComplete, true);
   assert.equal(result.onboarding.availabilityComplete, true);
+  assert.equal(result.onboarding.brandingComplete, true);
+  assert.deepEqual(result.onboarding.operationalProgress, {
+    completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing', 'services_pricing', 'availability', 'branding'],
+    nextStep: 'team_setup', operationalComplete: false,
+  });
+});
+
+test('malformed custom branding blocks progression only at the branding stage', async () => {
+  const fixture = createAdmin({ documents: {
+    'users/owner-a': ownerProfile(),
+    'tenants/tenant-a': managedTenant({
+      onboardingState: 'operational_setup_required',
+      businessSettings: { availability: { availableDays: ['monday'] } },
+    }),
+    'tenants/tenant-a/serviceCatalog/standard': {
+      name: 'Standard clean', serviceType: 'standard', active: true, priceCents: 15000, durationMinutes: 120,
+    },
+    'tenants/tenant-a/branding/config': { mode: 'custom', colors: { primary: 'not-a-color' } },
+  } });
+  const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
+  assert.equal(result.onboarding.brandingComplete, false);
   assert.deepEqual(result.onboarding.operationalProgress, {
     completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing', 'services_pricing', 'availability'],
-    nextStep: 'operational_setup', operationalComplete: false,
+    nextStep: 'branding', operationalComplete: false,
   });
 });
 
@@ -357,7 +386,7 @@ test('safe response allowlists onboarding and known business identity only', asy
   assert.deepEqual(Object.keys(result.onboarding).sort(), [
     'billingEntitlement',
     'businessAddress', 'businessEmail', 'businessName', 'businessPhone',
-    'availabilityComplete', 'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'operationalProgress', 'servicesPricingComplete',
+    'availabilityComplete', 'brandingComplete', 'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'operationalProgress', 'servicesPricingComplete',
     'tenantId', 'timeZone',
   ].sort());
   assert.equal(JSON.stringify(result).includes('must-not-leak'), false);

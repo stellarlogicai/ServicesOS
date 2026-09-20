@@ -38,10 +38,15 @@ service firebase.storage {
 
     function canAccessBranding(tenantId) {
       let profile = userProfileDocument();
+      let tenant = firestore.get(/databases/(default)/documents/tenants/$(tenantId));
       return tenantExists(tenantId) &&
              profile != null &&
-             profile.data.role == 'super-admin' &&
-             profile.data.status == 'active';
+             tenant != null &&
+             profile.data.status == 'active' &&
+             (profile.data.role == 'super-admin' ||
+              (profile.data.role == 'admin' &&
+               profile.data.tenantId == tenantId &&
+               request.auth.uid in tenant.data.adminUsers));
     }
 
     function isAllowedPhase(phase) {
@@ -75,17 +80,15 @@ service firebase.storage {
              booking.data.fieldPhotoUploadReservations[fileName].status == 'reserved';
     }
 
-    function validBrandingObject() {
+    function validBrandingObject(fileName) {
       return request.resource != null &&
              request.resource.size > 0 &&
              request.resource.size <= 5 * 1024 * 1024 &&
-             request.resource.contentType in [
-               'image/jpeg',
-               'image/png',
-               'image/webp',
-               'image/gif',
-               'image/x-icon'
-             ];
+             ((request.resource.contentType == 'image/jpeg' && fileName.matches('^(logo|favicon|appIcon|emailBanner|watermark)_[A-Za-z0-9_-]{16,128}\\.jpg$')) ||
+              (request.resource.contentType == 'image/png' && fileName.matches('^(logo|favicon|appIcon|emailBanner|watermark)_[A-Za-z0-9_-]{16,128}\\.png$')) ||
+              (request.resource.contentType == 'image/webp' && fileName.matches('^(logo|emailBanner|watermark)_[A-Za-z0-9_-]{16,128}\\.webp$')) ||
+              (request.resource.contentType == 'image/gif' && fileName.matches('^(logo|emailBanner|watermark)_[A-Za-z0-9_-]{16,128}\\.gif$')) ||
+              (request.resource.contentType == 'image/x-icon' && fileName.matches('^favicon_[A-Za-z0-9_-]{16,128}\\.ico$')));
     }
 
     match /tenants/{tenantId}/bookings/{bookingId}/field-photos/{phase}/{fileName} {
@@ -101,13 +104,13 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
-    // Company Settings is a mounted super-admin compatibility surface.
+    // Tenant admins and super-admins may create immutable, tenant-scoped brand assets.
     match /tenants/{tenantId}/branding/{fileName} {
       allow read: if isAuthenticated() && canAccessBranding(tenantId);
       allow create: if isAuthenticated() &&
                        canAccessBranding(tenantId) &&
                        resource == null &&
-                       validBrandingObject();
+                       validBrandingObject(fileName);
       allow update, delete: if false;
     }
 

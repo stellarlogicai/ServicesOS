@@ -164,4 +164,22 @@ describe('owner onboarding web service', () => {
       },
     });
   });
+
+  it('accepts only server-derived branding and team-setup progress', () => {
+    const payload = {
+      success: true,
+      onboarding: {
+        tenantId: 'managed', onboardingState: 'operational_setup_required', lifecycleManaged: true,
+        businessProfileComplete: true, billingEntitlement: 'active',
+        servicesPricingComplete: true, availabilityComplete: true, brandingComplete: true,
+        operationalProgress: {
+          completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing', 'services_pricing', 'availability', 'branding'],
+          nextStep: 'team_setup', operationalComplete: false,
+        },
+      },
+    };
+    expect(sanitizeOwnerOnboardingProjection(payload).operationalProgress.nextStep).toBe('team_setup');
+    payload.onboarding.operationalProgress.nextStep = 'operational_setup';
+    expect(() => sanitizeOwnerOnboardingProjection(payload)).toThrow('Owner onboarding returned an invalid response.');
+  });
 });

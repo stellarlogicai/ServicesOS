@@ -7,7 +7,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import StripeConnectOnboarding from './StripeConnectOnboarding';
 
-export default function CompanySettings() {
+export default function CompanySettings({ onBrandingSaved }) {
   const { currentTenant } = useAuth();
   const [settings, setSettings] = useState(brandingConfig);
   const [activeTab, setActiveTab] = useState('branding');
@@ -71,6 +71,7 @@ export default function CompanySettings() {
     try {
       await saveBranding(currentTenant.id, settings);
       applyThemeToDOM(settings);
+      await onBrandingSaved?.();
       setMessage({ type: 'success', text: 'Settings saved successfully!' });
       setTimeout(() => setMessage({ type: '', text: '' }), 3000);
     } catch (error) {
@@ -84,6 +85,7 @@ export default function CompanySettings() {
     if (preset) {
       setSettings(prev => ({
         ...prev,
+        mode: 'custom',
         colors: preset.colors
       }));
       setSelectedPreset(presetKey);
@@ -96,13 +98,18 @@ export default function CompanySettings() {
     if (!file || !currentTenant?.id) return;
 
     try {
-      const fileName = `${assetType}_${Date.now()}_${file.name}`;
+      const extensions = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/x-icon': 'ico' };
+      const extension = extensions[file.type];
+      if (!extension || file.size < 1 || file.size > 5 * 1024 * 1024) throw new Error('Invalid brand asset');
+      const uploadId = crypto.randomUUID().replaceAll('-', '');
+      const fileName = `${assetType}_${uploadId}.${extension}`;
       const storageRef = ref(storage, `tenants/${currentTenant.id}/branding/${fileName}`);
-      await uploadBytes(storageRef, file);
+      await uploadBytes(storageRef, file, { contentType: file.type });
       const downloadURL = await getDownloadURL(storageRef);
       
       setSettings(prev => ({
         ...prev,
+        mode: 'custom',
         assets: {
           ...prev.assets,
           [assetType]: downloadURL
@@ -118,7 +125,7 @@ export default function CompanySettings() {
   };
 
   const handleReset = () => {
-    setSettings(brandingConfig);
+    setSettings({ ...brandingConfig, mode: 'default' });
     setMessage({ type: 'success', text: 'Settings reset to defaults' });
     setTimeout(() => setMessage({ type: '', text: '' }), 3000);
   };
@@ -153,6 +160,7 @@ export default function CompanySettings() {
   const updateSetting = (section, key, value) => {
     setSettings(prev => ({
       ...prev,
+      mode: 'custom',
       [section]: {
         ...prev[section],
         [key]: value

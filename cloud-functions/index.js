@@ -36,6 +36,7 @@ const { createJobScopeGatewayHandler } = require('./jobScopeGateway');
 const { createAddOnCatalogGatewayHandler } = require('./addOnCatalogGateway');
 const { createServiceCatalogGatewayHandler } = require('./serviceCatalogGateway');
 const { createExtraWorkGatewayHandler } = require('./extraWorkGateway');
+const { createBrandingGatewayHandler } = require('./brandingGateway');
 
 const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
@@ -168,6 +169,9 @@ exports.addOnCatalogGateway = functions.runWith({ minInstances: 0, maxInstances:
 
 exports.serviceCatalogGateway = functions.runWith({ minInstances: 0, maxInstances: 3 })
   .https.onRequest(createServiceCatalogGatewayHandler({ admin }));
+
+exports.brandingGateway = functions.runWith({ minInstances: 0, maxInstances: 3 })
+  .https.onRequest(createBrandingGatewayHandler({ admin }));
 
 exports.extraWorkGateway = functions.runWith({ minInstances: 0, maxInstances: 3 })
   .https.onRequest(createExtraWorkGatewayHandler({ admin }));

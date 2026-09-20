@@ -33,12 +33,19 @@ function onboardingProgressForState(onboardingState, operational = {}) {
   if (!progress) return null;
   if (onboardingState !== OPERATIONAL_SETUP_STATE) return { completedSteps: [...progress[0]], nextStep: progress[1], operationalComplete: progress[2] };
   const completedSteps = [...progress[0]];
-  if (operational.servicesPricingComplete) completedSteps.push('services_pricing');
-  if (operational.availabilityComplete) completedSteps.push('availability');
+  if (operational.servicesPricingComplete) {
+    completedSteps.push('services_pricing');
+    if (operational.availabilityComplete) {
+      completedSteps.push('availability');
+      if (operational.brandingComplete) completedSteps.push('branding');
+    }
+  }
   return {
     completedSteps,
     nextStep: operational.servicesPricingComplete
-      ? (operational.availabilityComplete ? 'operational_setup' : 'availability')
+      ? (operational.availabilityComplete
+        ? (operational.brandingComplete ? 'team_setup' : 'branding')
+        : 'availability')
       : 'services_pricing',
     operationalComplete: false,
   };
