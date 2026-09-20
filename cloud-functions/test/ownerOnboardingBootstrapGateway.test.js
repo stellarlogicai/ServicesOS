@@ -139,6 +139,10 @@ test('authenticated user with no profile gets one canonical tenant and admin pro
   });
   assert.equal(result.onboarding.tenantId, 'generated-1');
   assert.equal(result.onboarding.onboardingState, 'business_profile_required');
+  assert.equal(result.onboarding.billingEntitlement, 'inactive');
+  assert.deepEqual(result.onboarding.operationalProgress, {
+    completedSteps: [], nextStep: 'business_profile', operationalComplete: false,
+  });
   assert.deepEqual(fixture.state['users/owner-a'], {
     role: 'admin', status: 'active', tenantId: 'generated-1',
     createdAt: 'server-time', updatedAt: 'server-time',
@@ -189,6 +193,35 @@ test('valid existing managed tenant is resumed without advancing state', async (
   assert.equal(result.onboarding.onboardingState, 'agreement_required');
   assert.equal(fixture.generatedTenantCount, 1);
   assert.equal(fixture.writes.length, 0);
+});
+
+test('paid operationally incomplete tenant resumes at services and pricing', async () => {
+  const fixture = createAdmin({ documents: {
+    'users/owner-a': ownerProfile(),
+    'tenants/tenant-a': managedTenant({
+      status: 'active', onboardingState: 'operational_setup_required', subscriptionStatus: 'active',
+    }),
+  } });
+  const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
+  assert.equal(result.onboarding.billingEntitlement, 'active');
+  assert.deepEqual(result.onboarding.operationalProgress, {
+    completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing'],
+    nextStep: 'services_pricing',
+    operationalComplete: false,
+  });
+  assert.equal(fixture.writes.length, 0);
+});
+
+test('existing managed active tenant remains operationally complete', async () => {
+  const fixture = createAdmin({ documents: {
+    'users/owner-a': ownerProfile(),
+    'tenants/tenant-a': managedTenant({
+      status: 'active', onboardingState: 'active', subscriptionStatus: 'active',
+    }),
+  } });
+  const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
+  assert.equal(result.onboarding.operationalProgress.operationalComplete, true);
+  assert.equal(result.onboarding.operationalProgress.nextStep, null);
 });
 
 test('valid missing admin and general membership is repaired without changing lifecycle', async () => {
@@ -287,8 +320,10 @@ test('safe response allowlists onboarding and known business identity only', asy
   } });
   const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
   assert.deepEqual(Object.keys(result.onboarding).sort(), [
+    'billingEntitlement',
     'businessAddress', 'businessEmail', 'businessName', 'businessPhone',
-    'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'tenantId', 'timeZone',
+    'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'operationalProgress',
+    'tenantId', 'timeZone',
   ]);
   assert.equal(JSON.stringify(result).includes('must-not-leak'), false);
   assert.equal(result.onboarding.businessProfileComplete, true);

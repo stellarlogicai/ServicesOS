@@ -55,13 +55,23 @@ test('valid invoice.paid activates tenant and writes canonical billing facts', a
   const source = fixture();
   assert.deepEqual(await activate(source), { success: true, activated: true, stale: false });
   assert.deepEqual(source.state['tenants/tenant-a'], {
-    onboardingSchemaVersion: 1, onboardingOwnerUid: 'owner-a', onboardingState: 'active', status: 'active',
+    onboardingSchemaVersion: 1, onboardingOwnerUid: 'owner-a',
+    onboardingState: 'operational_setup_required', status: 'active',
     adminUsers: ['owner-a'], stripeCustomerId: 'cus_owner', stripeSubscriptionId: 'sub_owner',
     subscriptionStatus: 'active', subscriptionPriceId: PRICE_ID, currentPeriodEnd: 200,
     cancelAtPeriodEnd: false, latestInvoiceId: 'in_paid', latestInvoiceCreated: 100,
     billingUpdatedAt: 'server-time', ownerSubscriptionCheckout: null,
   });
   assert.equal('subscriptionTier' in source.state['tenants/tenant-a'], false);
+});
+
+test('active subscription entitlement does not complete operational onboarding', async () => {
+  const source = fixture();
+  await activate(source);
+  const tenant = source.state['tenants/tenant-a'];
+  assert.equal(tenant.subscriptionStatus, 'active');
+  assert.equal(tenant.status, 'active');
+  assert.equal(tenant.onboardingState, 'operational_setup_required');
 });
 
 test('current Stripe invoice.paid shape may omit the legacy paid boolean', async () => {
@@ -117,9 +127,20 @@ test('duplicate and exact already-active deliveries are idempotent', async () =>
 });
 
 test('conflicting active billing identity fails closed', async () => {
-  const source = fixture({ tenant: { status: 'active', onboardingState: 'active', stripeSubscriptionId: 'sub_other', subscriptionPriceId: PRICE_ID } });
+  const source = fixture({ tenant: { status: 'active', onboardingState: 'operational_setup_required', stripeSubscriptionId: 'sub_other', subscriptionPriceId: PRICE_ID } });
   await assert.rejects(activate(source), ActivationError);
   assert.equal(source.writes.length, 0);
+});
+
+test('renewal preserves incomplete or complete operational state', async () => {
+  for (const onboardingState of ['operational_setup_required', 'active']) {
+    const source = fixture({ tenant: {
+      status: 'active', onboardingState, stripeSubscriptionId: 'sub_owner',
+      subscriptionPriceId: PRICE_ID, subscriptionStatus: 'active',
+    } });
+    await activate(source);
+    assert.equal(source.state['tenants/tenant-a'].onboardingState, onboardingState);
+  }
 });
 
 test('stale paid invoice cannot regress active billing facts', async () => {

@@ -6,8 +6,41 @@ const ONBOARDING_STATES = new Set([
   'business_profile_required',
   'agreement_required',
   'billing_required',
+  'operational_setup_required',
   'active',
 ]);
+const BILLING_ENTITLEMENTS = new Set(['active', 'inactive']);
+const OPERATIONAL_STEPS = new Set([
+  'business_profile',
+  'saas_agreement',
+  'subscription_billing',
+  'services_pricing',
+  'operational_setup',
+]);
+
+function operationalProgressFromState(onboardingState) {
+  const progress = {
+    business_profile_required: [[], 'business_profile', false],
+    agreement_required: [['business_profile'], 'saas_agreement', false],
+    billing_required: [['business_profile', 'saas_agreement'], 'subscription_billing', false],
+    operational_setup_required: [
+      ['business_profile', 'saas_agreement', 'subscription_billing'],
+      'services_pricing',
+      false,
+    ],
+    active: [
+      ['business_profile', 'saas_agreement', 'subscription_billing', 'operational_setup'],
+      null,
+      true,
+    ],
+  }[onboardingState];
+  if (!progress) {
+    throw new OwnerOnboardingServiceError('Owner onboarding state is unavailable.', {
+      code: 'invalid_response',
+    });
+  }
+  return { completedSteps: [...progress[0]], nextStep: progress[1], operationalComplete: progress[2] };
+}
 
 export class OwnerOnboardingServiceError extends Error {
   constructor(message, { code = 'bootstrap_unavailable', status = 0 } = {}) {
@@ -88,11 +121,25 @@ export function sanitizeOwnerOnboardingProjection(payload) {
     : null;
   const tenantId = optionalText(source?.tenantId);
   const onboardingState = source?.onboardingState === null ? null : optionalText(source?.onboardingState);
+  const billingEntitlement = optionalText(source?.billingEntitlement);
+  const progress = source?.operationalProgress;
+  const expectedProgress = ONBOARDING_STATES.has(onboardingState)
+    ? operationalProgressFromState(onboardingState)
+    : null;
+  const progressIsValid = progress && typeof progress === 'object' && !Array.isArray(progress) &&
+    Array.isArray(progress.completedSteps) &&
+    progress.completedSteps.every(step => OPERATIONAL_STEPS.has(step)) &&
+    (progress.nextStep === null || OPERATIONAL_STEPS.has(progress.nextStep)) &&
+    typeof progress.operationalComplete === 'boolean' &&
+    JSON.stringify(progress.completedSteps) === JSON.stringify(expectedProgress?.completedSteps) &&
+    progress.nextStep === expectedProgress?.nextStep &&
+    progress.operationalComplete === expectedProgress?.operationalComplete;
   if (
     !source || !tenantId || typeof source.lifecycleManaged !== 'boolean' ||
     typeof source.businessProfileComplete !== 'boolean' ||
     (source.lifecycleManaged && !ONBOARDING_STATES.has(onboardingState)) ||
-    (!source.lifecycleManaged && onboardingState !== null)
+    (!source.lifecycleManaged && onboardingState !== null) ||
+    (source.lifecycleManaged && (!BILLING_ENTITLEMENTS.has(billingEntitlement) || !progressIsValid))
   ) {
     throw new OwnerOnboardingServiceError('Owner onboarding returned an invalid response.', {
       code: 'invalid_response',
@@ -105,6 +152,14 @@ export function sanitizeOwnerOnboardingProjection(payload) {
     lifecycleManaged: source.lifecycleManaged,
     businessProfileComplete: source.businessProfileComplete,
   };
+  if (source.lifecycleManaged) {
+    projection.billingEntitlement = billingEntitlement;
+    projection.operationalProgress = {
+      completedSteps: [...progress.completedSteps],
+      nextStep: progress.nextStep,
+      operationalComplete: progress.operationalComplete,
+    };
+  }
   for (const field of ['businessName', 'businessEmail', 'businessPhone', 'businessAddress', 'timeZone']) {
     const value = optionalText(source[field]);
     if (value !== undefined) projection[field] = value;
@@ -139,6 +194,8 @@ export function ownerOnboardingFromTenant(tenant) {
       optionalText(tenant.businessAddress) &&
       optionalText(tenant.businessSettings?.timeZone)
     ),
+    billingEntitlement: tenant.subscriptionStatus === 'active' ? 'active' : 'inactive',
+    operationalProgress: operationalProgressFromState(onboardingState),
   };
 }
 

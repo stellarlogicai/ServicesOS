@@ -1,6 +1,7 @@
 const { membershipContains, normalizedText } = require('./ownerOnboardingBootstrapGateway');
 const { BILLING_PURPOSE } = require('./ownerOnboardingBillingGateway');
 const { firestoreServerTimestamp } = require('./firebaseAdminCompat');
+const { OPERATIONAL_SETUP_STATE } = require('./ownerOnboardingState');
 
 const BILLING_SCHEMA_VERSION = '1';
 
@@ -88,7 +89,8 @@ async function activateOwnerSubscription({ admin, invoice, subscription, priceId
       tenant.stripeCustomerId !== facts.customerId) throw new ActivationError();
 
     const firstActivation = tenant.status === 'onboarding' && tenant.onboardingState === 'billing_required';
-    const alreadyActive = tenant.status === 'active' && tenant.onboardingState === 'active';
+    const alreadyActive = tenant.status === 'active' &&
+      [OPERATIONAL_SETUP_STATE, 'active'].includes(tenant.onboardingState);
     if (!firstActivation && !alreadyActive) throw new ActivationError();
     if (alreadyActive && (tenant.stripeSubscriptionId !== facts.subscriptionId ||
       tenant.subscriptionPriceId !== facts.subscriptionPriceId || tenant.stripeCustomerId !== facts.customerId)) {
@@ -98,7 +100,7 @@ async function activateOwnerSubscription({ admin, invoice, subscription, priceId
       return { success: true, activated: false, stale: true };
     }
 
-    transaction.update(tenantRef, {
+    const activationPatch = {
       stripeSubscriptionId: facts.subscriptionId,
       subscriptionStatus: facts.subscriptionStatus,
       subscriptionPriceId: facts.subscriptionPriceId,
@@ -108,9 +110,10 @@ async function activateOwnerSubscription({ admin, invoice, subscription, priceId
       latestInvoiceCreated: facts.latestInvoiceCreated,
       billingUpdatedAt: firestoreServerTimestamp(admin),
       status: 'active',
-      onboardingState: 'active',
       ownerSubscriptionCheckout: null,
-    });
+    };
+    if (firstActivation) activationPatch.onboardingState = OPERATIONAL_SETUP_STATE;
+    transaction.update(tenantRef, activationPatch);
     return { success: true, activated: firstActivation, stale: false };
   });
 }

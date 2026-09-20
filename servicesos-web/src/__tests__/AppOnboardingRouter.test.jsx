@@ -196,13 +196,21 @@ describe('App onboarding router context', () => {
   it.each([
     ['business_profile_required', 'Set up your business profile'],
     ['agreement_required', 'ServicesOS Software-as-a-Service Agreement'],
-      ['billing_required', 'ServicesOS subscription'],
+    ['billing_required', 'ServicesOS subscription'],
+    ['operational_setup_required', 'Continue setting up ServicesOS'],
   ])('keeps managed %s tenants inside owner onboarding', async (onboardingState, heading) => {
     authState.currentTenant = {
       id: 'tenant-test', onboardingSchemaVersion: 1, onboardingState, status: 'onboarding',
     };
     authState.ownerOnboarding = {
       tenantId: 'tenant-test', lifecycleManaged: true, onboardingState, businessProfileComplete: false,
+      billingEntitlement: onboardingState === 'operational_setup_required' ? 'active' : 'inactive',
+      operationalProgress: onboardingState === 'operational_setup_required'
+        ? {
+            completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing'],
+            nextStep: 'services_pricing', operationalComplete: false,
+          }
+        : { completedSteps: [], nextStep: 'business_profile', operationalComplete: false },
     };
     render(<App />);
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();

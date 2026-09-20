@@ -18,6 +18,10 @@ const validPayload = {
     onboardingState: 'business_profile_required',
     lifecycleManaged: true,
     businessProfileComplete: false,
+    billingEntitlement: 'inactive',
+    operationalProgress: {
+      completedSteps: [], nextStep: 'business_profile', operationalComplete: false,
+    },
   },
 };
 
@@ -62,7 +66,18 @@ describe('owner onboarding web service', () => {
     };
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ ...validPayload, onboarding: { ...validPayload.onboarding, onboardingState: 'agreement_required' } }),
+      json: async () => ({
+        ...validPayload,
+        onboarding: {
+          ...validPayload.onboarding,
+          onboardingState: 'agreement_required',
+          operationalProgress: {
+            completedSteps: ['business_profile'],
+            nextStep: 'saas_agreement',
+            operationalComplete: false,
+          },
+        },
+      }),
     });
     await saveOwnerBusinessProfile(payload, {
       user: { getIdToken: vi.fn().mockResolvedValue('fake-token') }, fetchImpl,
@@ -123,11 +138,30 @@ describe('owner onboarding web service', () => {
       tenantId: 'legacy', onboardingState: null, lifecycleManaged: false, businessProfileComplete: false,
     });
     expect(ownerOnboardingFromTenant({
-      id: 'managed', onboardingSchemaVersion: 1, onboardingState: 'active',
+      id: 'managed', onboardingSchemaVersion: 1, onboardingState: 'active', subscriptionStatus: 'active',
       businessName: 'A', businessEmail: 'a@example.test', businessPhone: '555',
       businessAddress: '10 Main', businessSettings: { timeZone: 'UTC' },
     })).toEqual({
-      tenantId: 'managed', onboardingState: 'active', lifecycleManaged: true, businessProfileComplete: true,
+      tenantId: 'managed', onboardingState: 'active', lifecycleManaged: true,
+      businessProfileComplete: true, billingEntitlement: 'active',
+      operationalProgress: {
+        completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing', 'operational_setup'],
+        nextStep: null, operationalComplete: true,
+      },
+    });
+  });
+
+  it('derives resumable paid operational progress without treating entitlement as completion', () => {
+    expect(ownerOnboardingFromTenant({
+      id: 'managed', onboardingSchemaVersion: 1,
+      onboardingState: 'operational_setup_required', subscriptionStatus: 'active',
+    })).toMatchObject({
+      billingEntitlement: 'active',
+      onboardingState: 'operational_setup_required',
+      operationalProgress: {
+        completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing'],
+        nextStep: 'services_pricing', operationalComplete: false,
+      },
     });
   });
 });

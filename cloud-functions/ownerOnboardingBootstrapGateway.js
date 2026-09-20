@@ -1,4 +1,11 @@
 const { firestoreServerTimestamp } = require('./firebaseAdminCompat');
+const {
+  INITIAL_ONBOARDING_STATE,
+  OWNER_ONBOARDING_SCHEMA_VERSION,
+  VALID_ONBOARDING_STATES,
+  billingEntitlementForTenant,
+  onboardingProgressForState,
+} = require('./ownerOnboardingState');
 
 const OWNER_ONBOARDING_ALLOWED_ORIGINS = new Set([
   'https://servicesos.netlify.app',
@@ -6,15 +13,6 @@ const OWNER_ONBOARDING_ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
   'http://127.0.0.1:5174',
   'http://localhost:5174',
-]);
-
-const OWNER_ONBOARDING_SCHEMA_VERSION = 1;
-const INITIAL_ONBOARDING_STATE = 'business_profile_required';
-const VALID_ONBOARDING_STATES = new Set([
-  INITIAL_ONBOARDING_STATE,
-  'agreement_required',
-  'billing_required',
-  'active',
 ]);
 
 class OwnerOnboardingBootstrapError extends Error {
@@ -86,15 +84,20 @@ function hasCompleteBusinessProfile(tenant) {
 }
 
 function safeProjection({ tenantId, tenant }) {
+  const lifecycleManaged = tenant.onboardingSchemaVersion === OWNER_ONBOARDING_SCHEMA_VERSION;
   const result = {
     success: true,
     onboarding: {
       tenantId,
       onboardingState: tenant.onboardingState || null,
-      lifecycleManaged: tenant.onboardingSchemaVersion === OWNER_ONBOARDING_SCHEMA_VERSION,
+      lifecycleManaged,
       businessProfileComplete: hasCompleteBusinessProfile(tenant),
     },
   };
+  if (lifecycleManaged) {
+    result.onboarding.billingEntitlement = billingEntitlementForTenant(tenant);
+    result.onboarding.operationalProgress = onboardingProgressForState(tenant.onboardingState);
+  }
   for (const field of ['businessName', 'businessEmail', 'businessPhone', 'businessAddress']) {
     const value = normalizedText(tenant[field]);
     if (value !== null) result.onboarding[field] = value;

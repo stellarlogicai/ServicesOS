@@ -19,6 +19,24 @@ const STEP_COPY = {
   },
 };
 
+function OperationalSetupPending({ onboarding }) {
+  const completedCount = onboarding.operationalProgress?.completedSteps?.length || 0;
+  return (
+    <div>
+      <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Continue setting up ServicesOS</h1>
+      <p style={{ color: '#475569' }}>
+        Your subscription is active. Your business setup is still in progress.
+      </p>
+      <p role="status" style={{ color: '#334155', fontWeight: 600 }}>
+        {completedCount} setup steps complete. Services and pricing are next.
+      </p>
+      <p style={{ margin: 0, color: '#64748b' }}>
+        Your progress is saved. You can safely return here later.
+      </p>
+    </div>
+  );
+}
+
 const fieldStyle = {
   width: '100%', boxSizing: 'border-box', padding: 10,
   border: '1px solid #cbd5e1', borderRadius: 6,
@@ -253,6 +271,8 @@ export default function OwnerOnboardingEntry() {
           <AgreementStep loadAgreement={loadOwnerAgreement} acceptAgreement={acceptOwnerAgreement} />
         ) : ownerOnboarding?.onboardingState === 'billing_required' ? (
           <BillingStep startCheckout={startOwnerSubscriptionCheckout} />
+        ) : ownerOnboarding?.onboardingState === 'operational_setup_required' ? (
+          <OperationalSetupPending onboarding={ownerOnboarding} />
         ) : copy ? (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>{copy.title}</h1>

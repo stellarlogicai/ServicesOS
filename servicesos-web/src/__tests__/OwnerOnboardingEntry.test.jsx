@@ -164,4 +164,21 @@ describe('OwnerOnboardingEntry', () => {
     render(<OwnerOnboardingEntry />);
     expect(screen.getByRole('heading', { name: 'Business setup is unavailable' })).toBeInTheDocument();
   });
+
+  it('keeps an entitled owner in truthful resumable operational setup', () => {
+    authState.ownerOnboarding = {
+      lifecycleManaged: true,
+      onboardingState: 'operational_setup_required',
+      billingEntitlement: 'active',
+      operationalProgress: {
+        completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing'],
+        nextStep: 'services_pricing',
+        operationalComplete: false,
+      },
+    };
+    render(<OwnerOnboardingEntry />);
+    expect(screen.getByRole('heading', { name: 'Continue setting up ServicesOS' })).toBeInTheDocument();
+    expect(screen.getByText('Your subscription is active. Your business setup is still in progress.')).toBeInTheDocument();
+    expect(screen.getByText('3 setup steps complete. Services and pricing are next.')).toBeInTheDocument();
+  });
 });
