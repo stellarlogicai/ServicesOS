@@ -5,6 +5,8 @@ const {
   VALID_ONBOARDING_STATES,
   billingEntitlementForTenant,
   onboardingProgressForState,
+  isValidAvailability,
+  isValidCanonicalService,
 } = require('./ownerOnboardingState');
 
 const OWNER_ONBOARDING_ALLOWED_ORIGINS = new Set([
@@ -83,7 +85,17 @@ function hasCompleteBusinessProfile(tenant) {
   );
 }
 
-function safeProjection({ tenantId, tenant }) {
+async function operationalProjection({ admin, tenantId, tenant }) {
+  if (tenant.onboardingState !== 'operational_setup_required') return { servicesPricingComplete: false, availabilityComplete: false };
+  const serviceSnapshot = await admin.firestore().collection('tenants').doc(tenantId).collection('serviceCatalog').limit(50).get();
+  const servicesPricingComplete = serviceSnapshot.docs.some(doc => isValidCanonicalService(doc.data() || {}));
+  return {
+    servicesPricingComplete,
+    availabilityComplete: isValidAvailability(tenant.businessSettings?.availability),
+  };
+}
+
+async function safeProjection({ admin, tenantId, tenant }) {
   const lifecycleManaged = tenant.onboardingSchemaVersion === OWNER_ONBOARDING_SCHEMA_VERSION;
   const result = {
     success: true,
@@ -95,8 +107,11 @@ function safeProjection({ tenantId, tenant }) {
     },
   };
   if (lifecycleManaged) {
+    const operational = await operationalProjection({ admin, tenantId, tenant });
     result.onboarding.billingEntitlement = billingEntitlementForTenant(tenant);
-    result.onboarding.operationalProgress = onboardingProgressForState(tenant.onboardingState);
+    result.onboarding.servicesPricingComplete = operational.servicesPricingComplete;
+    result.onboarding.availabilityComplete = operational.availabilityComplete;
+    result.onboarding.operationalProgress = onboardingProgressForState(tenant.onboardingState, operational);
   }
   for (const field of ['businessName', 'businessEmail', 'businessPhone', 'businessAddress']) {
     const value = normalizedText(tenant[field]);
@@ -164,7 +179,7 @@ async function bootstrapOwnerOnboarding({ admin, identity }) {
         patch.updatedAt = serverTimestamp();
         transaction.update(tenantRef, patch);
       }
-      return safeProjection({ tenantId: existingTenantId, tenant: { ...tenant, ...patch } });
+      return safeProjection({ admin, tenantId: existingTenantId, tenant: { ...tenant, ...patch } });
     }
 
     const tenantId = candidateTenantRef.id;
@@ -195,7 +210,7 @@ async function bootstrapOwnerOnboarding({ admin, identity }) {
 
     transaction.create(candidateTenantRef, tenant);
     transaction.set(userRef, user, { merge: true });
-    return safeProjection({ tenantId, tenant });
+    return safeProjection({ admin, tenantId, tenant });
   });
 }
 

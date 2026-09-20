@@ -159,6 +159,8 @@ export function sanitizeOwnerOnboardingProjection(payload) {
       nextStep: progress.nextStep,
       operationalComplete: progress.operationalComplete,
     };
+    if (typeof source.servicesPricingComplete === 'boolean') projection.servicesPricingComplete = source.servicesPricingComplete;
+    if (typeof source.availabilityComplete === 'boolean') projection.availabilityComplete = source.availabilityComplete;
   }
   for (const field of ['businessName', 'businessEmail', 'businessPhone', 'businessAddress', 'timeZone']) {
     const value = optionalText(source[field]);

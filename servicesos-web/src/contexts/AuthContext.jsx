@@ -117,6 +117,7 @@ export function AuthProvider({ children }) {
   const [tenantLoading, setTenantLoading] = useState(false);
   const [accessError, setAccessError] = useState('');
   const [ownerBootstrapCandidate, setOwnerBootstrapCandidate] = useState(false);
+  const [ownerOnboardingProjection, setOwnerOnboardingProjection] = useState(null);
   const tenantLoadRequestRef = useRef(0);
 
   // ── Load tenant helper ────────────────────────────────────────────────────
@@ -344,6 +345,7 @@ export function AuthProvider({ children }) {
       setUserProfile(null);
       setCurrentTenant(null);
       setOwnerBootstrapCandidate(false);
+      setOwnerOnboardingProjection(null);
       setTenantLoading(false);
       setAccessError('');
       clearCurrentTenantId();
@@ -381,6 +383,7 @@ export function AuthProvider({ children }) {
       throw new Error('Owner onboarding is unavailable.');
     }
     const projection = await bootstrapOwnerOnboarding({ user });
+    setOwnerOnboardingProjection(projection);
     const userSnap = await getDoc(doc(db, 'users', user.uid));
     if (!userSnap.exists()) throw new Error('Owner profile was not created.');
     const profile = { uid: user.uid, ...userSnap.data() };
@@ -400,11 +403,19 @@ export function AuthProvider({ children }) {
     return projection;
   };
 
+  const refreshOwnerOnboarding = async () => {
+    if (!user) throw new Error('Owner onboarding is unavailable.');
+    const projection = await bootstrapOwnerOnboarding({ user });
+    setOwnerOnboardingProjection(projection);
+    return projection;
+  };
+
   const completeOwnerBusinessProfile = async profile => {
     if (!user || ownerOnboarding?.onboardingState !== 'business_profile_required') {
       throw new Error('Business profile onboarding is unavailable.');
     }
     const projection = await saveOwnerBusinessProfile(profile, { user });
+    setOwnerOnboardingProjection(projection);
     const tenantResult = await loadTenant(projection.tenantId, 'admin');
     if (!tenantResult.success || tenantResult.tenant?.onboardingState !== 'agreement_required') {
       throw new Error('Business profile state could not be verified.');
@@ -459,6 +470,7 @@ export function AuthProvider({ children }) {
   const canAccessFieldMode = () => isEmployee() || isAdmin();
   const canAccessAdminArea = () => isAdmin();
   const ownerOnboarding = (() => {
+    if (ownerOnboardingProjection) return ownerOnboardingProjection;
     try {
       return ownerOnboardingFromTenant(currentTenant);
     } catch {
@@ -530,6 +542,7 @@ export function AuthProvider({ children }) {
       loadOwnerAgreement,
       acceptOwnerAgreement,
       startOwnerSubscriptionCheckout,
+      refreshOwnerOnboarding,
 
       // Tenant actions
       switchTenant,        // super-admin only

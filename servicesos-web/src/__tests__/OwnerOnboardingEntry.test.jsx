@@ -8,11 +8,13 @@ const authState = {
   loadOwnerAgreement: vi.fn(),
   acceptOwnerAgreement: vi.fn(),
   startOwnerSubscriptionCheckout: vi.fn(),
+  refreshOwnerOnboarding: vi.fn(),
   ownerBootstrapCandidate: false,
   ownerOnboarding: null,
 };
 
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => authState }));
+vi.mock('../services/serviceCatalogService', () => ({ listOwnerServices: vi.fn().mockResolvedValue([]), listActiveServices: vi.fn().mockResolvedValue([]) }));
 
 import OwnerOnboardingEntry, { BillingStep } from '../components/OwnerOnboardingEntry';
 
@@ -23,6 +25,8 @@ describe('OwnerOnboardingEntry', () => {
     authState.loadOwnerAgreement.mockReset();
     authState.acceptOwnerAgreement.mockReset();
     authState.startOwnerSubscriptionCheckout.mockReset();
+    authState.refreshOwnerOnboarding.mockReset();
+    authState.refreshOwnerOnboarding.mockResolvedValue(undefined);
     authState.ownerBootstrapCandidate = false;
     authState.ownerOnboarding = null;
   });
@@ -180,5 +184,16 @@ describe('OwnerOnboardingEntry', () => {
     expect(screen.getByRole('heading', { name: 'Continue setting up ServicesOS' })).toBeInTheDocument();
     expect(screen.getByText('Your subscription is active. Your business setup is still in progress.')).toBeInTheDocument();
     expect(screen.getByText('3 setup steps complete. Services and pricing are next.')).toBeInTheDocument();
+  });
+
+  it('renders canonical services stage when the server reports it incomplete', async () => {
+    authState.ownerOnboarding = {
+      lifecycleManaged: true, onboardingState: 'operational_setup_required', tenantId: 'tenant-a',
+      billingEntitlement: 'active', servicesPricingComplete: false, availabilityComplete: false,
+      operationalProgress: { completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing'], nextStep: 'services_pricing', operationalComplete: false },
+    };
+    render(<OwnerOnboardingEntry />);
+    expect(screen.getAllByRole('heading', { name: 'Services and pricing' }).length).toBe(2);
+    expect(await screen.findByText('No services configured. Existing estimate and booking behavior remains available until the first service is added.')).toBeInTheDocument();
   });
 });

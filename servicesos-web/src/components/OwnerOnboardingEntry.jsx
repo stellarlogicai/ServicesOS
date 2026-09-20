@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import ServiceCatalogSettings from './ServiceCatalogSettings';
+import { BUSINESS_DAYS, getBusinessSettings, saveBusinessSettings } from '../services/businessSettingsService';
 
 const STEP_COPY = {
   business_profile_required: {
@@ -35,6 +37,18 @@ function OperationalSetupPending({ onboarding }) {
       </p>
     </div>
   );
+}
+
+function ServicesPricingStep({ refresh }) {
+  return <div><h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Services and pricing</h1><p style={{ color: '#475569' }}>Configure at least one active service before continuing.</p><ServiceCatalogSettings onSaved={refresh} /></div>;
+}
+
+function AvailabilityStep({ refresh, tenantId }) {
+  const [days,setDays]=useState([]); const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false); const [error,setError]=useState('');
+  useEffect(()=>{let active=true;getBusinessSettings(tenantId).then(value=>{if(active)setDays(value.availability.availableDays);}).catch(()=>{if(active)setError('Availability could not be loaded. Try again.');}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[tenantId]);
+  const toggle=day=>setDays(current=>current.includes(day)?current.filter(value=>value!==day):[...current,day]);
+  const save=async()=>{if(!days.length){setError('Select at least one available day.');return;}setSaving(true);setError('');try{const current=await getBusinessSettings(tenantId);await saveBusinessSettings(tenantId,{...current,availability:{availableDays:days}});await refresh();}catch{setError('Availability could not be saved. Try again.');}finally{setSaving(false);}};
+  return <div><h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Availability</h1><p style={{ color: '#475569' }}>Choose at least one working day for current V1 booking behavior.</p>{loading?<p role="status">Loading availability...</p>:<><fieldset><legend>Available working days</legend>{BUSINESS_DAYS.map(day=><label key={day} style={{display:'block',margin:'8px 0'}}><input type="checkbox" checked={days.includes(day)} onChange={()=>toggle(day)} disabled={saving}/>{day}</label>)}</fieldset>{error&&<p role="alert">{error}</p>}<button type="button" onClick={save} disabled={saving||!days.length}>{saving?'Saving...':'Save availability'}</button></>}</div>;
 }
 
 const fieldStyle = {
@@ -212,6 +226,7 @@ export default function OwnerOnboardingEntry() {
     startOwnerSubscriptionCheckout,
     ownerBootstrapCandidate,
     ownerOnboarding,
+    refreshOwnerOnboarding,
   } = useAuth();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(ownerBootstrapCandidate === true);
@@ -249,6 +264,12 @@ export default function OwnerOnboardingEntry() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerBootstrapCandidate]);
 
+  useEffect(() => {
+    if (ownerBootstrapCandidate || typeof refreshOwnerOnboarding !== 'function' || ownerOnboarding?.onboardingState !== 'operational_setup_required' || typeof ownerOnboarding.servicesPricingComplete === 'boolean') return undefined;
+    Promise.resolve(refreshOwnerOnboarding()).catch(() => setError('ServicesOS could not verify setup progress. Try again.'));
+    return undefined;
+  }, [ownerBootstrapCandidate, ownerOnboarding?.onboardingState, ownerOnboarding?.servicesPricingComplete, refreshOwnerOnboarding]);
+
   const copy = STEP_COPY[ownerOnboarding?.onboardingState];
   return (
     <main style={{ minHeight: '100vh', background: '#f8fafc', display: 'grid', placeItems: 'center', padding: 24 }}>
@@ -272,7 +293,7 @@ export default function OwnerOnboardingEntry() {
         ) : ownerOnboarding?.onboardingState === 'billing_required' ? (
           <BillingStep startCheckout={startOwnerSubscriptionCheckout} />
         ) : ownerOnboarding?.onboardingState === 'operational_setup_required' ? (
-          <OperationalSetupPending onboarding={ownerOnboarding} />
+          typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'services_pricing' ? <ServicesPricingStep refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'availability' ? <AvailabilityStep tenantId={ownerOnboarding.tenantId} refresh={refreshOwnerOnboarding} /> : <OperationalSetupPending onboarding={ownerOnboarding} />
         ) : copy ? (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>{copy.title}</h1>

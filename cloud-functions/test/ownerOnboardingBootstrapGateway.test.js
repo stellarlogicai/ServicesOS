@@ -26,6 +26,11 @@ function createAdmin({ documents = {}, token = {}, tokenError = null } = {}) {
         }
         return ref(`${path}/${id}`);
       },
+      limit() { return this; },
+      async get() {
+        const prefix = `${path}/`;
+        return { docs: Object.entries(state).filter(([key]) => key.startsWith(prefix) && !key.slice(prefix.length).includes('/')).map(([key, value]) => ({ id: key.slice(prefix.length), data: () => value })) };
+      },
     };
   }
 
@@ -212,6 +217,36 @@ test('paid operationally incomplete tenant resumes at services and pricing', asy
   assert.equal(fixture.writes.length, 0);
 });
 
+test('operational progress derives services and availability from canonical tenant data', async () => {
+  const fixture = createAdmin({ documents: {
+    'users/owner-a': ownerProfile(),
+    'tenants/tenant-a': managedTenant({
+      onboardingState: 'operational_setup_required', status: 'active', subscriptionStatus: 'active',
+      businessSettings: { availability: { availableDays: ['monday'] } },
+    }),
+    'tenants/tenant-a/serviceCatalog/service-a': {
+      name: 'Standard clean', serviceType: 'standard', active: true, priceCents: 15000, durationMinutes: 120,
+    },
+  } });
+  const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
+  assert.equal(result.onboarding.servicesPricingComplete, true);
+  assert.equal(result.onboarding.availabilityComplete, true);
+  assert.deepEqual(result.onboarding.operationalProgress, {
+    completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing', 'services_pricing', 'availability'],
+    nextStep: 'operational_setup', operationalComplete: false,
+  });
+});
+
+test('legacy pricing profile alone cannot complete the schema-managed services stage', async () => {
+  const fixture = createAdmin({ documents: {
+    'users/owner-a': ownerProfile(),
+    'tenants/tenant-a': managedTenant({ onboardingState: 'operational_setup_required', pricingProfileId: 'aunt-bs-cleaning-services' }),
+  } });
+  const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
+  assert.equal(result.onboarding.servicesPricingComplete, false);
+  assert.equal(result.onboarding.operationalProgress.nextStep, 'services_pricing');
+});
+
 test('existing managed active tenant remains operationally complete', async () => {
   const fixture = createAdmin({ documents: {
     'users/owner-a': ownerProfile(),
@@ -322,9 +357,9 @@ test('safe response allowlists onboarding and known business identity only', asy
   assert.deepEqual(Object.keys(result.onboarding).sort(), [
     'billingEntitlement',
     'businessAddress', 'businessEmail', 'businessName', 'businessPhone',
-    'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'operationalProgress',
+    'availabilityComplete', 'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'operationalProgress', 'servicesPricingComplete',
     'tenantId', 'timeZone',
-  ]);
+  ].sort());
   assert.equal(JSON.stringify(result).includes('must-not-leak'), false);
   assert.equal(result.onboarding.businessProfileComplete, true);
 });
