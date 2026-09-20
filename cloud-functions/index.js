@@ -48,6 +48,7 @@ const CUSTOMER_EMAIL_RUNTIME_OPTIONS = Object.freeze({
 const growthAIProviderApiKey = defineSecret('GROWTHAI_PROVIDER_API_KEY');
 const growthAIProviderBaseUrl = defineString('GROWTHAI_PROVIDER_BASE_URL');
 const growthAIProviderModel = defineString('GROWTHAI_PROVIDER_MODEL');
+const growthAIProviderEnabled = defineBoolean('GROWTHAI_PROVIDER_ENABLED', { default: false });
 const customerEmailProviderEnabled = defineBoolean('CUSTOMER_EMAIL_PROVIDER_ENABLED', { default: false });
 const stripeSecretKey = defineSecret('STRIPE_SECRET_KEY');
 const ownerSubscriptionWebhookSecret = defineSecret('STRIPE_OWNER_SUBSCRIPTION_WEBHOOK_SECRET');
@@ -58,6 +59,7 @@ function createConfiguredGrowthAIProvider() {
   return createGrowthAIProviderFromFirebaseParameters({
     apiKeyParam: growthAIProviderApiKey,
     baseUrlParam: growthAIProviderBaseUrl,
+    enabledParam: growthAIProviderEnabled,
     modelParam: growthAIProviderModel,
   });
 }

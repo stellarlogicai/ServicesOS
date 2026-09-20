@@ -11,6 +11,7 @@ const {
 } = require('../employeeWorkAssistant');
 const { createEmployeeWorkAssistantGatewayHandler } = require('../employeeWorkAssistantGateway');
 const { currentChecklistScopeSignature } = require('../employeeJobPacketProjection');
+const { createUnavailableGrowthAIProvider } = require('../growthAIProvider');
 
 const NOW = new Date('2026-09-03T12:00:00.000Z');
 const EMPLOYEE = { uid: 'employee-a', tenantId: 'tenant-a', tenantTimeZone: 'UTC' };
@@ -188,6 +189,22 @@ describe('Work Assistant request and deterministic boundary', () => {
       assert.equal(result.answer.includes('1234'), false);
     }
     assert.equal(provider.calls.length, 0);
+    assert.equal(usage.calls.reserve, 0);
+  });
+
+  test('deterministic job questions remain available when the provider is disabled', async () => {
+    const usage = usageRecorder();
+    const result = await answerEmployeeWorkAssistant({
+      admin: createAdmin(),
+      employee: EMPLOYEE,
+      provider: createUnavailableGrowthAIProvider(),
+      request: request('What is my checklist progress?'),
+      now: NOW,
+      usage: usage.usage,
+    });
+
+    assert.equal(result.kind, 'deterministic');
+    assert.match(result.answer, /0 of 2/);
     assert.equal(usage.calls.reserve, 0);
   });
 

@@ -5,6 +5,7 @@ const providerSecretName = 'GROWTHAI_PROVIDER_API_KEY';
 const providerParameterNames = [
   providerSecretName,
   'GROWTHAI_PROVIDER_BASE_URL',
+  'GROWTHAI_PROVIDER_ENABLED',
   'GROWTHAI_PROVIDER_MODEL',
 ];
 
@@ -24,7 +25,7 @@ function endpointSecretNames(exportedFunction) {
 }
 
 describe('GrowthAI Function provider configuration', () => {
-  test('declares one secret and two durable non-secret Firebase parameters', () => {
+  test('declares the provider secret, durable configuration, and fail-closed switch', () => {
     const specs = declaredParams
       .filter(({ name }) => providerParameterNames.includes(name))
       .map((param) => param.toSpec())
@@ -33,6 +34,7 @@ describe('GrowthAI Function provider configuration', () => {
     assert.deepEqual(specs, [
       { name: 'GROWTHAI_PROVIDER_API_KEY', type: 'secret' },
       { name: 'GROWTHAI_PROVIDER_BASE_URL', type: 'string' },
+      { default: false, name: 'GROWTHAI_PROVIDER_ENABLED', type: 'boolean' },
       { name: 'GROWTHAI_PROVIDER_MODEL', type: 'string' },
     ]);
   });
