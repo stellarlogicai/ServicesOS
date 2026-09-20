@@ -51,6 +51,18 @@ describe('GrowthAI Function provider configuration', () => {
     assert.equal(functionsEntry.employeeWorkAssistantGateway.__endpoint.maxInstances, 3);
   });
 
+  test('bounds all current GrowthAI Functions without changing secret access', () => {
+    for (const name of [
+      'generateGrowthAIContent',
+      'getGrowthAICreditBalance',
+      'routeGrowthAIConversation',
+      'employeeWorkAssistantGateway',
+    ]) {
+      assert.equal(functionsEntry[name].__endpoint.minInstances, 0, name);
+      assert.equal(functionsEntry[name].__endpoint.maxInstances, 3, name);
+    }
+  });
+
   test('caps the field-photo gateway without granting provider secret access', () => {
     assert.equal(functionsEntry.fieldPhotoUploadGateway.__endpoint.minInstances, 0);
     assert.equal(functionsEntry.fieldPhotoUploadGateway.__endpoint.maxInstances, 3);

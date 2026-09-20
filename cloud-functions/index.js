@@ -44,6 +44,10 @@ const CUSTOMER_EMAIL_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
   minInstances: 0,
 });
+const GROWTHAI_RUNTIME_OPTIONS = Object.freeze({
+  maxInstances: 3,
+  minInstances: 0,
+});
 
 const growthAIProviderApiKey = defineSecret('GROWTHAI_PROVIDER_API_KEY');
 const growthAIProviderBaseUrl = defineString('GROWTHAI_PROVIDER_BASE_URL');
@@ -124,15 +128,18 @@ exports.employeeFieldExecutionGateway = functions.runWith({
 }).https.onRequest(createEmployeeFieldExecutionGatewayHandler({ admin }));
 
 exports.generateGrowthAIContent = functions.runWith({
+  ...GROWTHAI_RUNTIME_OPTIONS,
   secrets: [growthAIProviderApiKey],
 }).https.onRequest(createGrowthAIGenerationHandler({
   admin,
   provider: createConfiguredGrowthAIProvider(),
 }));
 
-exports.getGrowthAICreditBalance = functions.https.onRequest(createGrowthAICreditBalanceHandler({ admin }));
+exports.getGrowthAICreditBalance = functions.runWith(GROWTHAI_RUNTIME_OPTIONS)
+  .https.onRequest(createGrowthAICreditBalanceHandler({ admin }));
 
 exports.routeGrowthAIConversation = functions.runWith({
+  ...GROWTHAI_RUNTIME_OPTIONS,
   secrets: [growthAIProviderApiKey],
 }).https.onRequest(createGrowthAIConversationRouterHandler({
   admin,
