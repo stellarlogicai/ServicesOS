@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 
 const SCOPE_SCHEMA_VERSION = 1;
 const MAX_SCOPE_ITEMS = 500;
+const MAX_APPROVED_EXTRA_WORK = 50;
 
 function text(value, maximum = 1000) {
   return typeof value === 'string' ? value.trim().slice(0, maximum) : '';
@@ -31,9 +32,43 @@ function selectedAddOns(booking) {
   return Object.keys(scope).filter(key => scope[key] === true).sort().slice(0, 100);
 }
 
+function approvedExtraWork(booking) {
+  const source = booking.approvedJobScope?.snapshot?.extraWork;
+  return Array.isArray(source) ? source.slice(0, MAX_APPROVED_EXTRA_WORK) : [];
+}
+
+function extraWorkScopeItems(extraWork) {
+  return extraWork.flatMap(change => Array.isArray(change?.scopeItems) ? change.scopeItems : [])
+    .slice(0, MAX_SCOPE_ITEMS)
+    .map(item => ({
+      id: text(item?.id, 128),
+      label: text(item?.label, 160),
+      area: text(item?.area, 120),
+      required: item?.required === true,
+    }))
+    .filter(item => item.id && item.label);
+}
+
+function extraWorkAddOnIds(extraWork) {
+  return extraWork.flatMap(change => Array.isArray(change?.addOnIds) ? change.addOnIds : [])
+    .map(value => text(value, 128)).filter(Boolean);
+}
+
+function extraWorkTotal(extraWork, field) {
+  return extraWork.reduce((total, change) => {
+    const value = change?.[field];
+    return total + (Number.isInteger(value) && value >= 0 ? value : 0);
+  }, 0);
+}
+
 function canonicalJobScopeSnapshot(bookingId, booking = {}) {
   const customer = booking.customerSnapshot || {};
   const property = booking.propertySnapshot || {};
+  const extraWork = approvedExtraWork(booking);
+  const basePriceCents = Number.isFinite(Number(booking.agreedPrice))
+    ? Math.round(Number(booking.agreedPrice) * 100) : null;
+  const baseDuration = Number.isFinite(Number(booking.estimatedDuration))
+    ? Number(booking.estimatedDuration) : null;
   return {
     schemaVersion: SCOPE_SCHEMA_VERSION,
     bookingId,
@@ -47,13 +82,14 @@ function canonicalJobScopeSnapshot(bookingId, booking = {}) {
       endTime: text(booking.endTime, 8),
       scheduledAt: text(booking.scheduledAt, 40),
     },
-    serviceItems: checklistItems(booking),
-    selectedAddOns: selectedAddOns(booking),
-    price: Number.isFinite(Number(booking.agreedPrice)) ? Number(booking.agreedPrice) : null,
-    estimatedDuration: Number.isFinite(Number(booking.estimatedDuration)) ? Number(booking.estimatedDuration) : null,
+    serviceItems: [...checklistItems(booking), ...extraWorkScopeItems(extraWork)].slice(0, MAX_SCOPE_ITEMS),
+    selectedAddOns: [...new Set([...selectedAddOns(booking), ...extraWorkAddOnIds(extraWork)])].slice(0, 100),
+    price: basePriceCents === null ? null : (basePriceCents + extraWorkTotal(extraWork, 'priceDeltaCents')) / 100,
+    estimatedDuration: baseDuration === null ? null : baseDuration + extraWorkTotal(extraWork, 'durationDeltaMinutes'),
     accessInstructions: text(booking.accessInstructions || booking.requestSnapshot?.accessInstructions, 1000),
     scopeNotes: text(booking.requestSnapshot?.specialRequests || booking.commercialDetails?.areasToClean, 1000),
     exclusions: text(booking.scopeExclusions, 1000),
+    ...(extraWork.length ? { extraWork } : {}),
   };
 }
 

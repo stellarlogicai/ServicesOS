@@ -3,12 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CustomerJobScopeAgreements, OwnerJobScopeAgreement } from '../components/JobScopeAgreement';
 
-const mocks = vi.hoisted(() => ({ getOwner: vi.fn(), request: vi.fn(), list: vi.fn(), approve: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getOwner: vi.fn(), request: vi.fn(), list: vi.fn(), approve: vi.fn(), listExtra: vi.fn(), approveExtra: vi.fn() }));
 vi.mock('../services/jobScopeService', () => ({
   getOwnerJobScope: mocks.getOwner,
   requestCustomerScopeApproval: mocks.request,
   listCustomerJobScopes: mocks.list,
   approveCustomerJobScope: mocks.approve,
+  listCustomerExtraWork: mocks.listExtra,
+  approveCustomerExtraWork: mocks.approveExtra,
 }));
 
 const scope = (state = 'awaiting_approval') => ({
@@ -17,7 +19,7 @@ const scope = (state = 'awaiting_approval') => ({
 });
 
 describe('job scope agreement UI', () => {
-  beforeEach(() => { vi.clearAllMocks(); mocks.getOwner.mockResolvedValue(scope('draft')); mocks.list.mockResolvedValue([scope()]); });
+  beforeEach(() => { vi.clearAllMocks(); mocks.getOwner.mockResolvedValue(scope('draft')); mocks.list.mockResolvedValue([scope()]); mocks.listExtra.mockResolvedValue([]); });
   it('owner reviews canonical scope and requests customer approval without approving it', async () => {
     mocks.request.mockResolvedValue(scope());
     render(<OwnerJobScopeAgreement bookingId="booking-a" />);
@@ -32,5 +34,17 @@ describe('job scope agreement UI', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'I approve this service scope' }));
     expect(mocks.approve).toHaveBeenCalledWith('booking-a', 1);
     await waitFor(() => expect(screen.getByText('Approved')).toBeInTheDocument());
+  });
+
+  it('customer approves owner-reviewed extra work without supplying mutable terms', async () => {
+    const approvedScope = scope('approved');
+    const request = { id: 'request-a', bookingId: 'booking-a', status: 'approval_ready', items: [{ id: 'oven', label: 'Oven', quantity: 1, lineTotalCents: 4500, totalDurationMinutes: 45 }], customRequest: null, totalPriceCents: 4500, totalDurationMinutes: 45 };
+    mocks.list.mockResolvedValue([approvedScope]);
+    mocks.listExtra.mockResolvedValue([request]);
+    mocks.approveExtra.mockResolvedValue({ ...request, status: 'customer_approved', approvedRevisionVersion: 2 });
+    render(<CustomerJobScopeAgreements />);
+    await userEvent.click(await screen.findByRole('button', { name: 'I approve this extra work' }));
+    expect(mocks.approveExtra).toHaveBeenCalledWith('booking-a', 'request-a');
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2));
   });
 });

@@ -1,5 +1,6 @@
 const { membershipContains, normalizedText } = require('./ownerOnboardingBootstrapGateway');
 const { canonicalJobScopeSnapshot, scopeHash, scopeSummary } = require('./jobScopeControl');
+const { ExtraWorkApprovalError, approveCustomerExtraWork, listCustomerExtraWork } = require('./extraWorkApproval');
 
 const ORIGINS = new Set(['https://servicesos.netlify.app','http://127.0.0.1:5173','http://localhost:5173','http://127.0.0.1:5174','http://localhost:5174']);
 class JobScopeError extends Error { constructor(message, code = 'invalid_request', status = 400) { super(message); this.code = code; this.status = status; } }
@@ -8,12 +9,16 @@ const fail = (message, code, status) => { throw new JobScopeError(message, code,
 function parseRequest(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) fail('Invalid request');
   const action = body.action;
-  const shapes = { owner_get: ['action','bookingId'], owner_request: ['action','bookingId'], customer_list: ['action'], customer_approve: ['action','bookingId','version','affirmativeAcceptance'] };
+  const shapes = { owner_get: ['action','bookingId'], owner_request: ['action','bookingId'], customer_list: ['action'], customer_approve: ['action','bookingId','version','affirmativeAcceptance'], customer_extra_work_list: ['action','bookingId'], customer_extra_work_approve: ['action','bookingId','requestId','affirmativeAcceptance'] };
   if (!shapes[action] || Object.keys(body).sort().join('|') !== shapes[action].sort().join('|')) fail('Invalid request');
   if (action !== 'customer_list') {
     if (typeof body.bookingId !== 'string' || !body.bookingId.trim() || body.bookingId.length > 128 || body.bookingId.includes('/')) fail('Invalid request');
   }
   if (action === 'customer_approve' && (!Number.isInteger(body.version) || body.version < 1 || body.affirmativeAcceptance !== true)) fail('Approval is incomplete.', 'approval_incomplete', 422);
+  if (action === 'customer_extra_work_approve') {
+    if (typeof body.requestId !== 'string' || !body.requestId.trim() || body.requestId.length > 128 || body.requestId.includes('/') || body.affirmativeAcceptance !== true) fail('Approval is incomplete.', 'approval_incomplete', 422);
+    return { ...body, bookingId: body.bookingId.trim(), requestId: body.requestId.trim() };
+  }
   return { ...body, bookingId: body.bookingId?.trim() };
 }
 
@@ -104,12 +109,23 @@ async function customerApprove({ admin, context, bookingId, version }) {
   return approveScopeRecord({ admin, context, bookingId, version, customer });
 }
 
+async function customerExtraWorkList({ admin, context, bookingId }) {
+  const customer = await customerRecord(admin, context);
+  return { success: true, requests: await listCustomerExtraWork({ admin, context, bookingId, customer }) };
+}
+
+async function customerExtraWorkApprove({ admin, context, bookingId, requestId }) {
+  const customer = await customerRecord(admin, context);
+  const result = await approveCustomerExtraWork({ admin, context, bookingId, requestId, customer });
+  return { success: true, request: result.request };
+}
+
 function createJobScopeGatewayHandler({ admin }) { return async (req,res) => {
   const origin=req.headers?.origin; if(ORIGINS.has(origin)){res.set('Access-Control-Allow-Origin',origin);res.set('Vary','Origin');} res.set('Access-Control-Allow-Methods','POST, OPTIONS');res.set('Access-Control-Allow-Headers','Content-Type, Authorization');
   if(req.method==='OPTIONS') return res.status(204).send(''); if(req.method!=='POST') return res.status(405).json({error:'Method not allowed',code:'method_not_allowed'});
   const header=req.headers?.authorization||req.headers?.Authorization||''; const token=header.startsWith('Bearer ')?header.slice(7).trim():''; if(!token)return res.status(401).json({error:'Authentication required',code:'unauthenticated'});
-  try { const identity=await admin.auth().verifyIdToken(token); const context=await identityContext(admin,identity); const request=parseRequest(req.body); const args={admin,context,...request}; const handlers={owner_get:ownerGet,owner_request:ownerRequest,customer_list:customerList,customer_approve:customerApprove}; return res.status(200).json(await handlers[request.action](args)); }
-  catch(error){ if(error instanceof JobScopeError)return res.status(error.status).json({error:error.message,code:error.code}); return res.status(500).json({error:'Service agreement is temporarily unavailable.',code:'scope_service_unavailable'}); }
+  try { const identity=await admin.auth().verifyIdToken(token); const context=await identityContext(admin,identity); const request=parseRequest(req.body); const args={admin,context,...request}; const handlers={owner_get:ownerGet,owner_request:ownerRequest,customer_list:customerList,customer_approve:customerApprove,customer_extra_work_list:customerExtraWorkList,customer_extra_work_approve:customerExtraWorkApprove}; return res.status(200).json(await handlers[request.action](args)); }
+  catch(error){ if(error instanceof JobScopeError||error instanceof ExtraWorkApprovalError)return res.status(error.status).json({error:error.message,code:error.code}); return res.status(500).json({error:'Service agreement is temporarily unavailable.',code:'scope_service_unavailable'}); }
 }; }
 
-module.exports={ JobScopeError, approveScopeRecord, canonicalJobScopeSnapshot, createJobScopeGatewayHandler, customerApprove, customerList, ownerGet, ownerRequest, parseRequest };
+module.exports={ JobScopeError, approveScopeRecord, canonicalJobScopeSnapshot, createJobScopeGatewayHandler, customerApprove, customerExtraWorkApprove, customerExtraWorkList, customerList, ownerGet, ownerRequest, parseRequest };
