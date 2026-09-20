@@ -21,6 +21,8 @@
 
 import { auth } from '../firebase';
 
+const SERVICE_AGREEMENT_MAX_BYTES = 2 * 1024 * 1024;
+
 async function getAuthToken() {
   const user = auth.currentUser;
   if (!user) return null;
@@ -30,6 +32,63 @@ async function getAuthToken() {
     console.error('[EMAIL] Error getting auth token:', error);
     return null;
   }
+}
+
+export function createCustomerEmailIdempotencyKey() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return `email-${Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
+async function sendCustomerEmailRequest({ tenantId, idempotencyKey, ...payload }) {
+  if (typeof tenantId !== 'string' || !tenantId.trim() || tenantId === 'DEFAULT') {
+    return { success: false, code: 'invalid_request', error: 'Select a valid tenant before sending email.', idempotencyKey };
+  }
+  const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
+  if (!functionsUrl) {
+    return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.', idempotencyKey };
+  }
+  const token = await getAuthToken();
+  if (!token) {
+    return { success: false, code: 'unauthenticated', error: 'Sign in again before sending email.', idempotencyKey };
+  }
+  let response;
+  try {
+    response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ tenantId, idempotencyKey, ...payload }),
+    });
+  } catch {
+    return {
+      success: false,
+      code: 'send_uncertain',
+      error: 'Email delivery could not be confirmed. Retry this same email attempt.',
+      idempotencyKey,
+    };
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return {
+      success: false,
+      code: data.code || 'email_failed',
+      error: data.error || 'Failed to send email',
+      idempotencyKey,
+    };
+  }
+  return { success: true, ...data, idempotencyKey };
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  for (let start = 0; start < bytes.length; start += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
+  }
+  return btoa(binary);
 }
 
 function serviceLabel(cleaningType) {
@@ -227,39 +286,25 @@ export function buildConfirmationEmailHTML(lead, booking) {
  * @param {object} estimate - Calculated estimate
  * @returns {Promise<{success: boolean, id?: string, error?: string}>}
  */
-export async function sendQuoteEmail(lead, estimate) {
+export async function sendQuoteEmail(tenantId, lead, estimate, { idempotencyKey = createCustomerEmailIdempotencyKey() } = {}) {
   try {
-    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
-    if (!functionsUrl) {
-      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
-      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
-    }
-
     const html = buildQuoteEmailHTML(lead, estimate);
-    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${await getAuthToken()}`
-      },
-      body: JSON.stringify({
-        emailType: 'quote',
-        recipientEmail: lead.email,
-        subject: `Your cleaning estimate: $${estimate.priceLow}–$${estimate.priceHigh}`,
-        html,
-        relatedEntityId: lead.id
-      })
+    const result = await sendCustomerEmailRequest({
+      tenantId,
+      idempotencyKey,
+      emailType: 'quote',
+      recipientEmail: lead.email,
+      subject: `Your cleaning estimate: $${estimate.priceLow}–$${estimate.priceHigh}`,
+      html,
+      relatedEntityId: lead.id,
     });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to send email');
-
+    if (!result.success) return result;
     console.log(`[EMAIL] Quote sent to ${lead.email} via cloud function`);
-    return { success: true, id: data.id };
+    return result;
 
   } catch (err) {
     console.error('[EMAIL] sendQuoteEmail failed:', err.message);
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, idempotencyKey };
   }
 }
 
@@ -369,39 +414,25 @@ export function buildPaymentConfirmationHTML(lead, payment) {
  * @param {object} payment - Payment details (amount, type, paymentId, remainingBalance)
  * @returns {Promise<{success: boolean, id?: string, error?: string}>}
  */
-export async function sendPaymentConfirmationEmail(lead, payment) {
+export async function sendPaymentConfirmationEmail(tenantId, lead, payment, { idempotencyKey = createCustomerEmailIdempotencyKey() } = {}) {
   try {
-    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
-    if (!functionsUrl) {
-      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
-      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
-    }
-
     const html = buildPaymentConfirmationHTML(lead, payment);
-    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${await getAuthToken()}`
-      },
-      body: JSON.stringify({
-        emailType: 'payment_confirmation',
-        recipientEmail: lead.email,
-        subject: `Payment Confirmed: ${payment.type || 'Deposit'}`,
-        html,
-        relatedEntityId: payment.paymentId
-      })
+    const result = await sendCustomerEmailRequest({
+      tenantId,
+      idempotencyKey,
+      emailType: 'payment_confirmation',
+      recipientEmail: lead.email,
+      subject: `Payment Confirmed: ${payment.type || 'Deposit'}`,
+      html,
+      relatedEntityId: payment.paymentId,
     });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to send email');
-
+    if (!result.success) return result;
     console.log(`[EMAIL] Payment confirmation sent to ${lead.email} via cloud function`);
-    return { success: true, id: data.id };
+    return result;
 
   } catch (err) {
     console.error('[EMAIL] sendPaymentConfirmationEmail failed:', err.message);
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, idempotencyKey };
   }
 }
 
@@ -412,40 +443,26 @@ export async function sendPaymentConfirmationEmail(lead, payment) {
  * @param {object} booking - Booking record (scheduledAt, agreedPrice)
  * @returns {Promise<{success: boolean, id?: string, error?: string}>}
  */
-export async function sendBookingConfirmationEmail(lead, booking) {
+export async function sendBookingConfirmationEmail(tenantId, lead, booking, { idempotencyKey = createCustomerEmailIdempotencyKey() } = {}) {
   try {
-    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
-    if (!functionsUrl) {
-      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
-      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
-    }
-
     const html = buildConfirmationEmailHTML(lead, booking);
     const date = new Date(booking.scheduledAt).toLocaleDateString('en-US', { month:'long', day:'numeric' });
-    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${await getAuthToken()}`
-      },
-      body: JSON.stringify({
-        emailType: 'booking_confirmation',
-        recipientEmail: lead.email,
-        subject: `Booking Confirmed: ${date}`,
-        html,
-        relatedEntityId: booking.id
-      })
+    const result = await sendCustomerEmailRequest({
+      tenantId,
+      idempotencyKey,
+      emailType: 'booking_confirmation',
+      recipientEmail: lead.email,
+      subject: `Booking Confirmed: ${date}`,
+      html,
+      relatedEntityId: booking.id,
     });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to send email');
-
+    if (!result.success) return result;
     console.log(`[EMAIL] Confirmation sent to ${lead.email} via cloud function`);
-    return { success: true, id: data.id };
+    return result;
 
   } catch (err) {
     console.error('[EMAIL] sendBookingConfirmationEmail failed:', err.message);
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, idempotencyKey };
   }
 }
 
@@ -508,39 +525,25 @@ export function buildFollowUpEmailHTML(lead, estimate) {
  * @param {object} estimate - Calculated estimate
  * @returns {Promise<{success: boolean, id?: string, error?: string}>}
  */
-export async function sendFollowUpEmail(lead, estimate) {
+export async function sendFollowUpEmail(tenantId, lead, estimate, { idempotencyKey = createCustomerEmailIdempotencyKey() } = {}) {
   try {
-    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
-    if (!functionsUrl) {
-      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
-      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
-    }
-
     const html = buildFollowUpEmailHTML(lead, estimate);
-    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${await getAuthToken()}`
-      },
-      body: JSON.stringify({
-        emailType: 'follow_up',
-        recipientEmail: lead.email,
-        subject: `Following up on your cleaning estimate`,
-        html,
-        relatedEntityId: lead.id
-      })
+    const result = await sendCustomerEmailRequest({
+      tenantId,
+      idempotencyKey,
+      emailType: 'follow_up',
+      recipientEmail: lead.email,
+      subject: 'Following up on your cleaning estimate',
+      html,
+      relatedEntityId: lead.id,
     });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to send email');
-
+    if (!result.success) return result;
     console.log(`[EMAIL] Follow-up sent to ${lead.email} via cloud function`);
-    return { success: true, id: data.id };
+    return result;
 
   } catch (err) {
     console.error('[EMAIL] sendFollowUpEmail failed:', err.message);
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, idempotencyKey };
   }
 }
 
@@ -616,39 +619,25 @@ export function buildAppointmentReminderHTML(lead, booking) {
  * @param {object} booking - Booking record (scheduledAt)
  * @returns {Promise<{success: boolean, id?: string, error?: string}>}
  */
-export async function sendAppointmentReminderEmail(lead, booking) {
+export async function sendAppointmentReminderEmail(tenantId, lead, booking, { idempotencyKey = createCustomerEmailIdempotencyKey() } = {}) {
   try {
-    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
-    if (!functionsUrl) {
-      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
-      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
-    }
-
     const html = buildAppointmentReminderHTML(lead, booking);
-    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${await getAuthToken()}`
-      },
-      body: JSON.stringify({
-        emailType: 'appointment_reminder',
-        recipientEmail: lead.email,
-        subject: `Appointment Reminder: ${new Date(booking.scheduledAt).toLocaleDateString('en-US', { month:'long', day:'numeric' })}`,
-        html,
-        relatedEntityId: booking.id
-      })
+    const result = await sendCustomerEmailRequest({
+      tenantId,
+      idempotencyKey,
+      emailType: 'appointment_reminder',
+      recipientEmail: lead.email,
+      subject: `Appointment Reminder: ${new Date(booking.scheduledAt).toLocaleDateString('en-US', { month:'long', day:'numeric' })}`,
+      html,
+      relatedEntityId: booking.id,
     });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to send email');
-
+    if (!result.success) return result;
     console.log(`[EMAIL] Reminder sent to ${lead.email} via cloud function`);
-    return { success: true, id: data.id };
+    return result;
 
   } catch (err) {
     console.error('[EMAIL] sendAppointmentReminderEmail failed:', err.message);
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, idempotencyKey };
   }
 }
 
@@ -734,50 +723,44 @@ export function buildServiceAgreementHTML(lead, estimate, contract) {
  * @param {Blob} pdfBlob   - PDF blob of the signed agreement
  * @returns {Promise<{success: boolean, id?: string, error?: string}>}
  */
-export async function sendServiceAgreementEmail(lead, estimate, contract, pdfBlob) {
+export async function sendServiceAgreementEmail(
+  tenantId,
+  lead,
+  estimate,
+  contract,
+  pdfBlob,
+  { idempotencyKey = createCustomerEmailIdempotencyKey() } = {},
+) {
   try {
-    const functionsUrl = import.meta.env.VITE_FUNCTIONS_URL;
-    if (!functionsUrl) {
-      console.log('[EMAIL] Skipping email (no FUNCTIONS_URL configured)');
-      return { success: false, status: 'not_configured', message: 'Email sending is not configured yet.' };
+    if (!(pdfBlob instanceof Blob) || pdfBlob.type !== 'application/pdf' ||
+        pdfBlob.size <= 0 || pdfBlob.size > SERVICE_AGREEMENT_MAX_BYTES) {
+      return { success: false, code: 'invalid_request', error: 'The service agreement PDF is invalid.', idempotencyKey };
     }
-
     const html = buildServiceAgreementHTML(lead, estimate, contract);
-    
-    // Convert blob to base64 for attachment
     const arrayBuffer = await pdfBlob.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-
-    const response = await fetch(`${functionsUrl}/sendCustomerEmail`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${await getAuthToken()}`
-      },
-      body: JSON.stringify({
-        emailType: 'service_agreement',
-        recipientEmail: lead.email,
-        subject: 'Service Agreement Signed',
-        html,
-        relatedEntityId: contract.id,
-        attachments: [
-          {
-            filename: `Service_Agreement_${lead.lastName}_${Date.now()}.pdf`,
-            content: base64,
-            type: 'application/pdf'
-          }
-        ]
-      })
+    if (arrayBuffer.byteLength > SERVICE_AGREEMENT_MAX_BYTES) {
+      return { success: false, code: 'invalid_request', error: 'The service agreement PDF is too large.', idempotencyKey };
+    }
+    const result = await sendCustomerEmailRequest({
+      tenantId,
+      idempotencyKey,
+      emailType: 'service_agreement',
+      recipientEmail: lead.email,
+      subject: 'Service Agreement Signed',
+      html,
+      relatedEntityId: contract.id,
+      attachments: [{
+        filename: 'Service_Agreement.pdf',
+        content: bytesToBase64(new Uint8Array(arrayBuffer)),
+        type: 'application/pdf',
+      }],
     });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Failed to send email');
-
+    if (!result.success) return result;
     console.log(`[EMAIL] Service agreement sent to ${lead.email} via cloud function`);
-    return { success: true, id: data.id };
+    return result;
 
   } catch (err) {
     console.error('[EMAIL] sendServiceAgreementEmail failed:', err.message);
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, idempotencyKey };
   }
 }
