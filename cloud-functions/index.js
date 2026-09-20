@@ -37,6 +37,7 @@ const { createAddOnCatalogGatewayHandler } = require('./addOnCatalogGateway');
 const { createServiceCatalogGatewayHandler } = require('./serviceCatalogGateway');
 const { createExtraWorkGatewayHandler } = require('./extraWorkGateway');
 const { createBrandingGatewayHandler } = require('./brandingGateway');
+const { createEmployeeTeamGatewayHandler, createResendActivationSender } = require('./employeeTeamGateway');
 
 const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
@@ -175,6 +176,17 @@ exports.brandingGateway = functions.runWith({ minInstances: 0, maxInstances: 3 }
 
 exports.extraWorkGateway = functions.runWith({ minInstances: 0, maxInstances: 3 })
   .https.onRequest(createExtraWorkGatewayHandler({ admin }));
+
+exports.employeeTeamGateway = functions.runWith({ minInstances: 0, maxInstances: 3 })
+  .https.onRequest(createEmployeeTeamGatewayHandler({
+    admin,
+    sendActivationEmail: createResendActivationSender({
+      apiKey: () => process.env.RESEND_API_KEY,
+      providerEnabled: () => customerEmailProviderEnabled.value(),
+      senderEmail: functions.config().email?.sender_email || 'notifications@servicesos.com',
+      senderName: functions.config().email?.sender_name || 'ServicesOS',
+    }),
+  }));
 
 // Platform fee percentage by subscription tier
 const PLATFORM_FEE_PERCENTAGE = {
