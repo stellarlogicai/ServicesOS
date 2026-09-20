@@ -372,6 +372,46 @@ test('malformed existing membership state fails closed instead of being replaced
   }
 });
 
+test('owner-only workforce mode completes team setup without creating an employee', async () => {
+  const fixture = createAdmin({ documents: {
+    'users/owner-a': ownerProfile(),
+    'tenants/tenant-a': managedTenant({ onboardingState: 'operational_setup_required', workforceMode: 'owner_only', status: 'active', subscriptionStatus: 'active', businessSettings: { availability: { availableDays: ['monday'] } } }),
+    'tenants/tenant-a/serviceCatalog/service-a': { name: 'Standard', serviceType: 'standard', active: true, priceCents: 100, durationMinutes: 60 },
+  } });
+  const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
+  assert.equal(result.onboarding.teamSetupComplete, true);
+  assert.equal(result.onboarding.operationalProgress.nextStep, 'stripe_connect');
+  assert.equal(Object.keys(fixture.state).some(path => path.includes('/employees/')), false);
+});
+
+test('employees workforce mode requires a canonical delivered employee', async () => {
+  const fixture = createAdmin({ documents: {
+    'users/owner-a': ownerProfile(),
+    'tenants/tenant-a': managedTenant({ onboardingState: 'operational_setup_required', workforceMode: 'employees', status: 'active', subscriptionStatus: 'active', users: ['owner-a', 'employee-a'], businessSettings: { availableDays: ['monday'], availability: { availableDays: ['monday'] } } }),
+    'tenants/tenant-a/serviceCatalog/service-a': { name: 'Standard', serviceType: 'standard', active: true, priceCents: 100, durationMinutes: 60 },
+    'tenants/tenant-a/employees/employee-a': { authUid: 'employee-a', email: 'employee@example.test', activationStatus: 'email_sent' },
+    'users/employee-a': { tenantId: 'tenant-a', role: 'employee', status: 'active', email: 'employee@example.test' },
+  } });
+  const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
+  assert.equal(result.onboarding.teamSetupComplete, true);
+  assert.equal(result.onboarding.operationalProgress.nextStep, 'stripe_connect');
+});
+
+test('pending, failed, mismatched, and unset workforce modes do not complete team setup', async () => {
+  for (const [mode, activationStatus, email] of [['employees', 'pending', 'employee@example.test'], ['employees', 'delivery_failed', 'employee@example.test'], ['employees', 'email_sent', 'other@example.test'], [undefined, 'email_sent', 'employee@example.test']]) {
+    const fixture = createAdmin({ documents: {
+      'users/owner-a': ownerProfile(),
+      'tenants/tenant-a': managedTenant({ onboardingState: 'operational_setup_required', ...(mode ? { workforceMode: mode } : {}), status: 'active', subscriptionStatus: 'active', users: ['owner-a', 'employee-a'], businessSettings: { availability: { availableDays: ['monday'] } } }),
+      'tenants/tenant-a/serviceCatalog/service-a': { name: 'Standard', serviceType: 'standard', active: true, priceCents: 100, durationMinutes: 60 },
+      'tenants/tenant-a/employees/employee-a': { authUid: 'employee-a', email, activationStatus },
+      'users/employee-a': { tenantId: 'tenant-a', role: 'employee', status: 'active', email: 'employee@example.test' },
+    } });
+    const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
+    assert.equal(result.onboarding.teamSetupComplete, false, mode || 'unset');
+    assert.equal(result.onboarding.operationalProgress.nextStep, 'team_setup', mode || 'unset');
+  }
+});
+
 test('safe response allowlists onboarding and known business identity only', async () => {
   const fixture = createAdmin({ documents: {
     'users/owner-a': ownerProfile(),
@@ -386,7 +426,7 @@ test('safe response allowlists onboarding and known business identity only', asy
   assert.deepEqual(Object.keys(result.onboarding).sort(), [
     'billingEntitlement',
     'businessAddress', 'businessEmail', 'businessName', 'businessPhone',
-    'availabilityComplete', 'brandingComplete', 'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'operationalProgress', 'servicesPricingComplete',
+    'availabilityComplete', 'brandingComplete', 'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'operationalProgress', 'servicesPricingComplete', 'teamSetupComplete',
     'tenantId', 'timeZone',
   ].sort());
   assert.equal(JSON.stringify(result).includes('must-not-leak'), false);

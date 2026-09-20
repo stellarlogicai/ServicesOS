@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import ServiceCatalogSettings from './ServiceCatalogSettings';
 import CompanySettings from './CompanySettings';
+import EmployeeManagement from './EmployeeManagement';
+import { setWorkforceMode } from '../services/employeeTeamService';
 import { BUSINESS_DAYS, getBusinessSettings, saveBusinessSettings } from '../services/businessSettingsService';
 
 const STEP_COPY = {
@@ -59,6 +61,21 @@ function BrandingStep({ refresh }) {
     <p style={{ color: '#475569' }}>Your saved custom branding needs attention. You can restore the ServicesOS default or save supported optional branding.</p>
     <CompanySettings onBrandingSaved={refresh} />
   </div>;
+}
+
+function TeamSetupStep({ onboarding, refresh }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const chooseMode = async workforceMode => {
+    if (saving) return;
+    setSaving(true); setError('');
+    try { await setWorkforceMode(workforceMode); await refresh(); }
+    catch { setError('Team setup could not be saved. Try again.'); }
+    finally { setSaving(false); }
+  };
+  if (onboarding.teamSetupComplete) return <div><h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Team setup complete</h1><p role="status">Your team setup is complete. The next setup stage will be available here later.</p></div>;
+  if (onboarding.workforceMode === 'employees') return <div><h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Set up your team</h1><p style={{ color: '#475569' }}>Add at least one active employee to continue.</p>{error && <p role="alert">{error}</p>}<EmployeeManagement onChanged={refresh} /></div>;
+  return <div><h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Set up your team</h1><p style={{ color: '#475569' }}>Choose whether you work alone or with employees.</p>{error && <p role="alert">{error}</p>}<div style={{ display: 'flex', gap: 10 }}><button type="button" onClick={() => chooseMode('owner_only')} disabled={saving}>I work alone</button><button type="button" onClick={() => chooseMode('employees')} disabled={saving}>I have employees</button></div></div>;
 }
 
 const fieldStyle = {
@@ -303,7 +320,7 @@ export default function OwnerOnboardingEntry() {
         ) : ownerOnboarding?.onboardingState === 'billing_required' ? (
           <BillingStep startCheckout={startOwnerSubscriptionCheckout} />
         ) : ownerOnboarding?.onboardingState === 'operational_setup_required' ? (
-          typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'services_pricing' ? <ServicesPricingStep refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'availability' ? <AvailabilityStep tenantId={ownerOnboarding.tenantId} refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.brandingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'branding' ? <BrandingStep refresh={refreshOwnerOnboarding} /> : <OperationalSetupPending onboarding={ownerOnboarding} />
+          typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'services_pricing' ? <ServicesPricingStep refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'availability' ? <AvailabilityStep tenantId={ownerOnboarding.tenantId} refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.brandingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'branding' ? <BrandingStep refresh={refreshOwnerOnboarding} /> : ownerOnboarding.operationalProgress?.nextStep === 'team_setup' ? <TeamSetupStep onboarding={ownerOnboarding} refresh={refreshOwnerOnboarding} /> : <OperationalSetupPending onboarding={ownerOnboarding} />
         ) : copy ? (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>{copy.title}</h1>

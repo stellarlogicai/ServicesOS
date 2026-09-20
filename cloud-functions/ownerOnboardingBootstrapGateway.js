@@ -7,6 +7,7 @@ const {
   onboardingProgressForState,
   isValidAvailability,
   isValidCanonicalService,
+  hasQualifyingEmployee,
 } = require('./ownerOnboardingState');
 const { isValidCustomBrandingState } = require('./brandingGateway');
 
@@ -91,10 +92,14 @@ async function operationalProjection({ admin, tenantId, tenant }) {
   const serviceSnapshot = await admin.firestore().collection('tenants').doc(tenantId).collection('serviceCatalog').limit(50).get();
   const brandingSnapshot = await admin.firestore().collection('tenants').doc(tenantId).collection('branding').doc('config').get();
   const servicesPricingComplete = serviceSnapshot.docs.some(doc => isValidCanonicalService(doc.data() || {}));
+  const teamSetupComplete = tenant.workforceMode === 'owner_only' || (
+    tenant.workforceMode === 'employees' && await hasQualifyingEmployee({ admin, tenantId, tenant })
+  );
   return {
     servicesPricingComplete,
     availabilityComplete: isValidAvailability(tenant.businessSettings?.availability),
     brandingComplete: !brandingSnapshot.exists || isValidCustomBrandingState(brandingSnapshot.data() || {}, tenantId),
+    teamSetupComplete,
   };
 }
 
@@ -115,6 +120,10 @@ async function safeProjection({ admin, tenantId, tenant }) {
     result.onboarding.servicesPricingComplete = operational.servicesPricingComplete;
     result.onboarding.availabilityComplete = operational.availabilityComplete;
     result.onboarding.brandingComplete = operational.brandingComplete;
+    result.onboarding.teamSetupComplete = operational.teamSetupComplete;
+    if (tenant.workforceMode === 'owner_only' || tenant.workforceMode === 'employees') {
+      result.onboarding.workforceMode = tenant.workforceMode;
+    }
     result.onboarding.operationalProgress = onboardingProgressForState(tenant.onboardingState, operational);
   }
   for (const field of ['businessName', 'businessEmail', 'businessPhone', 'businessAddress']) {

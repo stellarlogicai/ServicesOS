@@ -18,6 +18,7 @@ const OPERATIONAL_STEPS = new Set([
   'availability',
   'branding',
   'team_setup',
+  'stripe_connect',
   'operational_setup',
 ]);
 
@@ -50,7 +51,10 @@ function operationalProgressFromState(onboardingState, operational = {}) {
     completedSteps.push('services_pricing');
     if (operational.availabilityComplete) {
       completedSteps.push('availability');
-      if (operational.brandingComplete) completedSteps.push('branding');
+      if (operational.brandingComplete) {
+        completedSteps.push('branding');
+        if (operational.teamSetupComplete) completedSteps.push('team_setup');
+      }
     }
   }
   return {
@@ -61,7 +65,7 @@ function operationalProgressFromState(onboardingState, operational = {}) {
         ? 'availability'
         : !operational.brandingComplete
           ? 'branding'
-          : 'team_setup',
+          : operational.teamSetupComplete ? 'stripe_connect' : 'team_setup',
     operationalComplete: false,
   };
 }
@@ -146,11 +150,13 @@ export function sanitizeOwnerOnboardingProjection(payload) {
   const tenantId = optionalText(source?.tenantId);
   const onboardingState = source?.onboardingState === null ? null : optionalText(source?.onboardingState);
   const billingEntitlement = optionalText(source?.billingEntitlement);
+  const workforceMode = optionalText(source?.workforceMode);
   const progress = source?.operationalProgress;
   const operational = {
     servicesPricingComplete: source?.servicesPricingComplete === true,
     availabilityComplete: source?.availabilityComplete === true,
     brandingComplete: source?.brandingComplete === true,
+    teamSetupComplete: source?.teamSetupComplete === true,
   };
   const expectedProgress = ONBOARDING_STATES.has(onboardingState)
     ? operationalProgressFromState(onboardingState, operational)
@@ -191,6 +197,8 @@ export function sanitizeOwnerOnboardingProjection(payload) {
     if (typeof source.servicesPricingComplete === 'boolean') projection.servicesPricingComplete = source.servicesPricingComplete;
     if (typeof source.availabilityComplete === 'boolean') projection.availabilityComplete = source.availabilityComplete;
     if (typeof source.brandingComplete === 'boolean') projection.brandingComplete = source.brandingComplete;
+    if (typeof source.teamSetupComplete === 'boolean') projection.teamSetupComplete = source.teamSetupComplete;
+    if (workforceMode === 'owner_only' || workforceMode === 'employees') projection.workforceMode = workforceMode;
   }
   for (const field of ['businessName', 'businessEmail', 'businessPhone', 'businessAddress', 'timeZone']) {
     const value = optionalText(source[field]);

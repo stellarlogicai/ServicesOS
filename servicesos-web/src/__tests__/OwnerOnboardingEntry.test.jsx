@@ -213,7 +213,7 @@ describe('OwnerOnboardingEntry', () => {
     expect(authState.refreshOwnerOnboarding).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves team setup unimplemented after valid default or custom branding', () => {
+  it('shows team setup after valid default or custom branding', () => {
     authState.ownerOnboarding = {
       lifecycleManaged: true, onboardingState: 'operational_setup_required',
       servicesPricingComplete: true, availabilityComplete: true, brandingComplete: true,
@@ -223,6 +223,7 @@ describe('OwnerOnboardingEntry', () => {
       },
     };
     render(<OwnerOnboardingEntry />);
-    expect(screen.getByText('6 setup steps complete. Team setup is next.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Set up your team' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'I work alone' })).toBeInTheDocument();
   });
 });

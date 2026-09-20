@@ -3,7 +3,7 @@ import { listCanonicalEmployees, provisionEmployee, resendEmployeeActivation } f
 
 const EMPTY_FORM = Object.freeze({ name: '', email: '', phone: '' });
 
-export default function EmployeeManagement() {
+export default function EmployeeManagement({ onChanged }) {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -43,6 +43,7 @@ export default function EmployeeManagement() {
       setForm(EMPTY_FORM);
       setShowForm(false);
       await loadEmployees();
+      onChanged?.();
     } catch {
       setMessage({ type: 'error', text: 'Employee could not be added. Check the details and try again.' });
     } finally {
@@ -56,6 +57,7 @@ export default function EmployeeManagement() {
       await resendEmployeeActivation(employee.email);
       setMessage({ type: 'success', text: 'Activation email sent.' });
       await loadEmployees();
+      onChanged?.();
     } catch {
       setMessage({ type: 'error', text: 'Activation email could not be sent. Try again later.' });
     } finally {

@@ -4,6 +4,30 @@ const OPERATIONAL_SETUP_STATE = 'operational_setup_required';
 const VALID_SERVICE_TYPES = new Set(['standard', 'deep', 'moveout', 'construction']);
 const VALID_BUSINESS_DAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
 
+function membershipContains(membership, uid) {
+  if (Array.isArray(membership)) return membership.includes(uid);
+  return Boolean(membership && typeof membership === 'object' && Object.hasOwn(membership, uid) && membership[uid]);
+}
+
+function isQualifyingEmployee({ tenantId, tenant, uid, employee, profile }) {
+  if (!tenantId || !uid || !employee || !profile) return false;
+  if (employee.authUid !== uid || profile.tenantId !== tenantId || profile.role !== 'employee' || profile.status !== 'active') return false;
+  if (!membershipContains(tenant.users, uid)) return false;
+  if (typeof employee.email !== 'string' || typeof profile.email !== 'string' || employee.email.trim().toLowerCase() !== profile.email.trim().toLowerCase()) return false;
+  const activationStatus = typeof employee.activationStatus === 'string' ? employee.activationStatus.trim() : '';
+  return activationStatus === '' || activationStatus === 'email_sent';
+}
+
+async function hasQualifyingEmployee({ admin, tenantId, tenant }) {
+  const employeeSnapshot = await admin.firestore().collection('tenants').doc(tenantId).collection('employees').limit(100).get();
+  for (const employeeDocument of employeeSnapshot.docs) {
+    const uid = employeeDocument.id;
+    const profileSnapshot = await admin.firestore().collection('users').doc(uid).get();
+    if (profileSnapshot.exists && isQualifyingEmployee({ tenantId, tenant, uid, employee: employeeDocument.data() || {}, profile: profileSnapshot.data() || {} })) return true;
+  }
+  return false;
+}
+
 const VALID_ONBOARDING_STATES = new Set([
   INITIAL_ONBOARDING_STATE,
   'agreement_required',
@@ -37,14 +61,19 @@ function onboardingProgressForState(onboardingState, operational = {}) {
     completedSteps.push('services_pricing');
     if (operational.availabilityComplete) {
       completedSteps.push('availability');
-      if (operational.brandingComplete) completedSteps.push('branding');
+      if (operational.brandingComplete) {
+        completedSteps.push('branding');
+        if (operational.teamSetupComplete) completedSteps.push('team_setup');
+      }
     }
   }
   return {
     completedSteps,
     nextStep: operational.servicesPricingComplete
       ? (operational.availabilityComplete
-        ? (operational.brandingComplete ? 'team_setup' : 'branding')
+        ? (operational.brandingComplete
+          ? (operational.teamSetupComplete ? 'stripe_connect' : 'team_setup')
+          : 'branding')
         : 'availability')
       : 'services_pricing',
     operationalComplete: false,
@@ -74,5 +103,7 @@ module.exports = {
   billingEntitlementForTenant,
   isValidAvailability,
   isValidCanonicalService,
+  hasQualifyingEmployee,
+  isQualifyingEmployee,
   onboardingProgressForState,
 };
