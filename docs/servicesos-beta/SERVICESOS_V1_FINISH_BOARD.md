@@ -55,6 +55,18 @@ Documentation-only commits follow that application checkpoint on the same branch
 
 The deployed wife-beta build is older than this branch and cannot validate the newer V1 work.
 
+### Accepted selective PR #9 hardening checkpoint
+
+Selective PR #9 hardening is complete. The implementation record is the three
+accepted commits `b3014a5` (customer email boundary), `b760850` (GrowthAI
+provider kill switch), and `7337306` (Cloud Function deployment guardrails).
+The final reconciliation found no accepted-scope protection still missing.
+PR #9 and `hardening/firebase-cost-guardrails` are superseded reference
+material and must not be merged or cherry-picked wholesale. The five existing
+Stripe/Connect scaling exceptions remain intentional until payment/load
+acceptance evidence exists; `stripeWebhook` retains its public invoker policy.
+See `PR9_HARDENING_RECONCILIATION.md` for the detailed matrix.
+
 ## Overall status
 
 | Area | Status |
@@ -68,7 +80,7 @@ The deployed wife-beta build is older than this branch and cannot validate the n
 | Owner/business onboarding | 🟡 Partial — secure activation spine built; operational setup still incomplete |
 | Owner SaaS billing | 🟡 Partial — checkout + verified paid activation built; annual/lifecycle work remains |
 | Customer-job payments / Stripe Connect | 🟡 Foundation built; production verification remains |
-| Release hardening | 🟡 In progress |
+| Selective PR #9 hardening | ✅ Complete; broader current-head release validation remains |
 | Wife testing of current V1 | ⬜ Not yet deployed for testing |
 | Customer-ready release | ⬜ Final target |
 
@@ -403,6 +415,11 @@ Tap to Pay is tracked in the Employee App section and remains a later V1 mobile/
 # 8. Security / release hardening — 🟡 IN PROGRESS
 
 Do not claim these complete from old branch evidence. Re-run against the integrated current V1 branch.
+
+The selective PR #9 hardening checkpoint is complete. The next locked V1
+capability is customer approval of extra work -> immutable revised scope ->
+refreshed authoritative employee scope. Do not implement it as part of this
+documentation checkpoint.
 
 - [ ] Full current-head web test suite
 - [ ] Full current-head Cloud Functions suite

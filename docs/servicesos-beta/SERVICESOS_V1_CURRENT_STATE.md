@@ -30,6 +30,22 @@ The branch is backed up to:
 
 Do not merge to `master` until current-head integration/security/release validation passes.
 
+### Accepted selective PR #9 hardening checkpoint
+
+Selective PR #9 hardening is complete on the current V1 branch. The completed
+implementation record is:
+
+- `b3014a512684a7ab328c26377deededa805b2cdf` — Harden customer email boundary
+- `b7608505424d3698bf875df436f7fd53ac1bc947` — Add GrowthAI provider kill switch
+- `7337306def398df2b79ffdf4b7419679027acf80` — Add Cloud Function deployment guardrails
+
+The final reconciliation found no accepted-scope protection still missing.
+PR #9 and `hardening/firebase-cost-guardrails` are superseded reference
+material and must not be merged or cherry-picked wholesale. The five existing
+Stripe/Connect scaling exceptions remain intentional until payment/load
+acceptance evidence exists; `stripeWebhook` retains its public invoker policy.
+See `PR9_HARDENING_RECONCILIATION.md` for the matrix.
+
 ## V1 capability rule
 
 A V1 feature family means the smallest safe, useful, connected form of that capability — not the most advanced version that could eventually exist.
@@ -267,7 +283,7 @@ After the integrated branch is validated and deployed to a controlled V1 test en
 
 Current sequence:
 
-1. close remaining job-scope / extra-work edges
+1. complete customer approval of extra work -> immutable revised scope -> refreshed authoritative employee scope
 2. finish full owner onboarding
 3. update owner SaaS billing to monthly + annual and finish required lifecycle
 4. finish Employee App web-linked correspondence pieces
