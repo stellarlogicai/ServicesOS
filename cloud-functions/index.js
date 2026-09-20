@@ -34,6 +34,7 @@ const { createOwnerOnboardingBillingGatewayHandler } = require('./ownerOnboardin
 const { createOwnerSubscriptionActivationWebhookHandler } = require('./ownerSubscriptionActivationWebhook');
 const { createJobScopeGatewayHandler } = require('./jobScopeGateway');
 const { createAddOnCatalogGatewayHandler } = require('./addOnCatalogGateway');
+const { createServiceCatalogGatewayHandler } = require('./serviceCatalogGateway');
 const { createExtraWorkGatewayHandler } = require('./extraWorkGateway');
 
 const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
@@ -164,6 +165,9 @@ exports.jobScopeGateway = functions.runWith({ minInstances: 0, maxInstances: 3 }
 
 exports.addOnCatalogGateway = functions.runWith({ minInstances: 0, maxInstances: 3 })
   .https.onRequest(createAddOnCatalogGatewayHandler({ admin }));
+
+exports.serviceCatalogGateway = functions.runWith({ minInstances: 0, maxInstances: 3 })
+  .https.onRequest(createServiceCatalogGatewayHandler({ admin }));
 
 exports.extraWorkGateway = functions.runWith({ minInstances: 0, maxInstances: 3 })
   .https.onRequest(createExtraWorkGatewayHandler({ admin }));

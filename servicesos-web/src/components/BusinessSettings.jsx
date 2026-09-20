@@ -8,6 +8,7 @@ import {
 import StripeConnectOnboarding from './StripeConnectOnboarding';
 import CleaningProductsMethodsSection from './CleaningProductsMethodsSection';
 import AddOnCatalogSettings from './AddOnCatalogSettings';
+import ServiceCatalogSettings from './ServiceCatalogSettings';
 
 const emptyForm = {
   businessName: '',
@@ -220,6 +221,7 @@ export default function BusinessSettings() {
             actorUid={user?.uid}
             canManage={canManageCleaningMethods}
           />
+          {canManageCleaningMethods && <ServiceCatalogSettings />}
           {canManageCleaningMethods && <AddOnCatalogSettings />}
         </div>
       )}

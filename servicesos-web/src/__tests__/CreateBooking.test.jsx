@@ -2,10 +2,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ getCustomers: vi.fn(), createBooking: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getCustomers: vi.fn(), createBooking: vi.fn(), listActiveServices:vi.fn() }));
 
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ tenantId: 'tenant-a', user: { uid: 'admin-a' } }) }));
 vi.mock('../core/customers/customerService', () => ({ getCustomers: mocks.getCustomers }));
+vi.mock('../services/serviceCatalogService',()=>({listActiveServices:mocks.listActiveServices}));
 vi.mock('../services/existingCustomerBookingService', async importOriginal => ({
   ...(await importOriginal()),
   createExistingCustomerBooking: mocks.createBooking,
@@ -17,6 +18,17 @@ describe('Create Booking intake', () => {
   beforeEach(() => {
     mocks.getCustomers.mockReset().mockResolvedValue({ success: true, data: [{ id: 'customer-a', name: 'Ada Customer' }] });
     mocks.createBooking.mockReset().mockResolvedValue({ success: true, data: { id: 'booking-a' } });
+    mocks.listActiveServices.mockReset().mockResolvedValue([]);
+  });
+
+  it('uses canonical service name and price when the tenant catalog is configured',async()=>{
+    mocks.listActiveServices.mockResolvedValue([{id:'service-a',name:'Tenant Standard',serviceType:'standard',active:true,priceCents:17500,durationMinutes:120}]);
+    render(<CreateBooking/>);await screen.findByRole('option',{name:'Ada Customer'});
+    fireEvent.change(screen.getByLabelText('Saved customer *'),{target:{value:'customer-a'}});fireEvent.click(screen.getByRole('radio',{name:'Residential'}));
+    fireEvent.change(screen.getByLabelText('Service type or job title *'),{target:{name:'serviceCatalogId',value:'service-a'}});
+    expect(screen.getByLabelText('Approved price ($) *')).toHaveValue(175);
+    fireEvent.change(screen.getByLabelText('Scheduled date *'),{target:{value:'2026-10-01'}});fireEvent.change(screen.getByLabelText('Scheduled time *'),{target:{value:'09:00'}});fireEvent.click(screen.getByRole('button',{name:'Create booking'}));
+    await waitFor(()=>expect(mocks.createBooking).toHaveBeenCalledWith(expect.objectContaining({bookingInput:expect.objectContaining({serviceCatalogId:'service-a',serviceType:'Tenant Standard',agreedPrice:'175.00'})})));
   });
 
   it('requires an explicit Residential or Commercial choice', async () => {

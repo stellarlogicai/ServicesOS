@@ -7,6 +7,7 @@ import {
 } from '../services/existingCustomerBookingService';
 import { useAuth } from '../contexts/AuthContext';
 import BookingIntakeFields from './BookingIntakeFields';
+import { listActiveServices } from '../services/serviceCatalogService';
 import { emptyCommercialDetails } from './bookingIntakeModel';
 import {
   getCustomerPortalQuoteRequests,
@@ -650,6 +651,7 @@ function CustomerDetailPanel({ customer, onClose, onCreateEstimate, onBookNewJob
 }
 
 function ExistingCustomerBookingModal({ customer, tenantId, createdBy, onClose, onCreated }) {
+  const [services,setServices]=useState([]);
   const [form, setForm] = useState({
     bookingType: '', serviceType: '', date: '', startTime: '', agreedPrice: '', notes: '',
     commercialDetails: {
@@ -664,6 +666,7 @@ function ExistingCustomerBookingModal({ customer, tenantId, createdBy, onClose, 
   const [error, setError] = useState('');
   const [savingBooking, setSavingBooking] = useState(false);
   const submissionRef = useRef(false);
+  useEffect(()=>{let active=true;listActiveServices().then(values=>{if(active)setServices(values);}).catch(()=>{if(active)setServices([]);});return()=>{active=false;};},[tenantId]);
 
   const updateField = event => {
     setError('');
@@ -671,6 +674,9 @@ function ExistingCustomerBookingModal({ customer, tenantId, createdBy, onClose, 
     if (name.startsWith('commercialDetails.')) {
       const key = name.split('.')[1];
       setForm(current => ({ ...current, commercialDetails: { ...current.commercialDetails, [key]: value } }));
+    } else if(name==='serviceCatalogId'){
+      const service=services.find(item=>item.id===value);
+      setForm(current=>({...current,serviceCatalogId:value,serviceType:service?.name||'',agreedPrice:service?(service.priceCents/100).toFixed(2):''}));
     } else {
       setForm(current => ({ ...current, [name]: value }));
     }
@@ -718,7 +724,7 @@ function ExistingCustomerBookingModal({ customer, tenantId, createdBy, onClose, 
           <span><strong>Saved property:</strong> <SavedProperty customer={customer} /></span>
         </div>
         <form className="customers-form" onSubmit={handleSubmit}>
-          <BookingIntakeFields form={form} onChange={updateField} idPrefix="existing-customer" />
+          <BookingIntakeFields form={form} onChange={updateField} idPrefix="existing-customer" services={services} />
           {error && <div className="customers-form-alert" role="alert">{error}</div>}
           <div className="customers-modal-actions">
             <button className="v1-button v1-button-secondary" type="button" onClick={onClose} disabled={savingBooking}>Cancel</button>

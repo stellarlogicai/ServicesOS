@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { calculateEstimate } from "./lib/estimateEngine";
 import { saveQuote } from "./services/crmService";
 import { sendQuoteEmail } from "./services/emailService";
@@ -8,6 +8,7 @@ import { downloadQuotePDF } from "./services/pdfService";
 import { compressImages } from "./services/imageCompressionService";
 import { useAuth } from "./contexts/AuthContext";
 import { getPricingProfileForTenant } from "./core/estimates/pricingProfiles";
+import { listActiveServices } from './services/serviceCatalogService';
 import { formatLocalDateInputValue } from "./utils/dateOnly";
 
 const OWNER_EXTRA_KEYS = [
@@ -82,8 +83,10 @@ export default function AIPhotoEstimateSystem({
   const [estimate, setEstimate] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [tenantServices,setTenantServices]=useState([]);
   const [notificationStatus, setNotificationStatus] = useState(null);
   const [compressing, setCompressing] = useState(false);
+  useEffect(()=>{let active=true;listActiveServices().then(values=>{if(!active)return;setTenantServices(values);if(values.length)setFormData(current=>current.serviceCatalogId?current:{...current,serviceCatalogId:values[0].id,cleaningType:values[0].serviceType});}).catch(()=>{if(active)setTenantServices([]);});return()=>{active=false;};},[currentTenant]);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -160,7 +163,8 @@ export default function AIPhotoEstimateSystem({
 
     try {
       const pricingProfile = getPricingProfileForTenant(currentTenant);
-      const result = calculateEstimate(formData, aiAnalysis, pricingProfile);
+      const selectedService=tenantServices.find(service=>service.id===formData.serviceCatalogId) || null;
+      const result = calculateEstimate(formData, aiAnalysis, pricingProfile, selectedService);
       const tenantId = typeof currentTenant === "string" ? currentTenant : currentTenant?.id;
       let savedLead;
 
@@ -308,11 +312,13 @@ export default function AIPhotoEstimateSystem({
             <div className="create-estimate-field-grid create-estimate-field-grid-two">
               <div className="create-estimate-field">
                 <label htmlFor="estimate-cleaning-type">Service Type</label>
-                <select id="estimate-cleaning-type" className="create-estimate-control" name="cleaningType" value={formData.cleaningType} onChange={handleInputChange}>
+                <select id="estimate-cleaning-type" className="create-estimate-control" name={tenantServices.length?'serviceCatalogId':'cleaningType'} value={tenantServices.length?(formData.serviceCatalogId||''):formData.cleaningType} required onChange={event=>{if(!tenantServices.length){handleInputChange(event);return;}const service=tenantServices.find(item=>item.id===event.target.value);setFormData(current=>({...current,serviceCatalogId:event.target.value,cleaningType:service?.serviceType||'standard'}));}}>
+                  {tenantServices.length > 0 ? <><option value="">Select a service</option>{tenantServices.map(service=><option key={service.id} value={service.id}>{service.name}</option>)}</> : <>
                   <option value="standard">Standard Clean</option>
                   <option value="deep">Deep Clean</option>
                   <option value="moveout">Move-In / Move-Out</option>
                   <option value="construction">Post-Construction</option>
+                  </>}
                 </select>
               </div>
               <div className="create-estimate-field">

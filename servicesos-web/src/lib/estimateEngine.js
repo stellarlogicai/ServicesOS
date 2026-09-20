@@ -211,16 +211,14 @@ function estimateLaborHours(formData, aiAnalysis) {
   };
 }
 
-export function calculateEstimate(formData, aiAnalysis, pricingProfile = null) {
+export function calculateEstimate(formData, aiAnalysis, pricingProfile = null, canonicalService = null) {
   const legacyEstimate = estimateLaborHours(formData, aiAnalysis);
 
-  if (!pricingProfile) {
-    return legacyEstimate;
-  }
+  if (!pricingProfile) return applyCanonicalServiceFloor(legacyEstimate, canonicalService);
 
   const profileEstimate = calculatePricingProfileEstimate(formData, pricingProfile);
 
-  return {
+  return applyCanonicalServiceFloor({
     ...legacyEstimate,
     priceLow: profileEstimate.low,
     priceSuggested: profileEstimate.suggested,
@@ -234,5 +232,15 @@ export function calculateEstimate(formData, aiAnalysis, pricingProfile = null) {
     internalNotes: profileEstimate.internalNotes,
     lineItems: profileEstimate.lineItems,
     warnings: profileEstimate.warnings
-  };
+  }, canonicalService);
+}
+
+export function applyCanonicalServiceFloor(estimate, service) {
+  if (!service || !Number.isInteger(service.priceCents) || service.priceCents < 1) return estimate;
+  const floor = service.priceCents / 100;
+  const priceLow = Math.max(Number(estimate.priceLow) || 0, floor);
+  const priceHigh = Math.max(Number(estimate.priceHigh) || 0, priceLow, floor);
+  const result = { ...estimate, priceLow, priceHigh, serviceCatalogId:service.id, serviceName:service.name, serviceDurationMinutes:service.durationMinutes };
+  if (estimate.priceSuggested !== undefined) result.priceSuggested=Math.max(Number(estimate.priceSuggested)||0,priceLow);
+  return result;
 }

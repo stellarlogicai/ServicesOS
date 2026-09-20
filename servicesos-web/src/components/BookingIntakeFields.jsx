@@ -20,7 +20,7 @@ const commercialFields = [
   ['generalNotes', 'General notes', 'textarea'],
 ];
 
-export default function BookingIntakeFields({ form, onChange, idPrefix = 'booking' }) {
+export default function BookingIntakeFields({ form, onChange, idPrefix = 'booking', services = [] }) {
   const field = (name, label, type = 'text') => (
     <label className="create-booking-field" key={name} htmlFor={`${idPrefix}-${name}`}>
       <span>{label}</span>
@@ -46,10 +46,10 @@ export default function BookingIntakeFields({ form, onChange, idPrefix = 'bookin
     <section className="create-booking-section" aria-labelledby={`${idPrefix}-service-heading`}>
       <h2 id={`${idPrefix}-service-heading`}>Service and schedule</h2>
       <div className="create-booking-grid">
-        <label className="create-booking-field"><span>Service type or job title *</span><input name="serviceType" value={form.serviceType} onChange={onChange} required /></label>
+        <label className="create-booking-field"><span>Service type or job title *</span>{services.length > 0 ? <select name="serviceCatalogId" value={form.serviceCatalogId || ''} onChange={onChange} required><option value="">Choose a service</option>{services.map(service=><option key={service.id} value={service.id}>{service.name} (${(service.priceCents/100).toFixed(2)})</option>)}</select> : <input name="serviceType" value={form.serviceType} onChange={onChange} required />}</label>
         <label className="create-booking-field"><span>Scheduled date *</span><input className="booking-date-time-field" type="date" name="date" min={formatLocalDateInputValue()} value={form.date} onChange={onChange} required /></label>
         <label className="create-booking-field"><span>Scheduled time *</span><input className="booking-date-time-field" type="time" name="startTime" value={form.startTime} onChange={onChange} required /></label>
-        <label className="create-booking-field"><span>Approved price ($) *</span><input type="number" name="agreedPrice" min="0.01" step="0.01" value={form.agreedPrice} onChange={onChange} required /></label>
+        <label className="create-booking-field"><span>Approved price ($) *</span><input type="number" name="agreedPrice" min="0.01" step="0.01" value={form.agreedPrice} onChange={onChange} readOnly={services.length > 0} required /></label>
       </div>
       {form.bookingType === 'residential' && (
         <label className="create-booking-field create-booking-wide"><span>Service scope and notes</span><textarea name="notes" rows={3} value={form.notes} onChange={onChange} /></label>

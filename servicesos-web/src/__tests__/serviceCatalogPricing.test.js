@@ -1,0 +1,5 @@
+import {describe,expect,it} from 'vitest';
+import {calculateEstimate} from '../lib/estimateEngine';
+
+const form={bedroomCount:1,bathroomCount:1,cleaningType:'standard',frequency:'one-time'};
+describe('canonical service pricing',()=>{it('enforces the configured tenant service price as the estimate floor',()=>{const result=calculateEstimate(form,null,null,{id:'tenant-a-standard',name:'Tenant A Standard',priceCents:30000,durationMinutes:120});expect(result.priceLow).toBe(300);expect(result.priceHigh).toBeGreaterThanOrEqual(300);expect(result.serviceCatalogId).toBe('tenant-a-standard');});it('preserves legacy deterministic estimates without canonical configuration',()=>{expect(calculateEstimate(form,null,null)).toEqual(calculateEstimate(form,null,null,undefined));});it('does not mutate prior result objects',()=>{const legacy=calculateEstimate(form,null,null);const snapshot=structuredClone(legacy);calculateEstimate(form,null,null,{id:'service',name:'Service',priceCents:20000,durationMinutes:60});expect(legacy).toEqual(snapshot);});});

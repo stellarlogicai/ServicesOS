@@ -26,6 +26,7 @@ vi.mock('../services/imageCompressionService', () => ({
 }));
 vi.mock('../services/pdfService', () => ({ downloadQuotePDF: vi.fn() }));
 vi.mock('../components/PhotoGrid', () => ({ PhotoGrid: () => <div>Photo preview</div> }));
+vi.mock('../services/serviceCatalogService', () => ({ listActiveServices: vi.fn().mockResolvedValue([]) }));
 
 import AIPhotoEstimateSystem from '../AIPhotoEstimateSystem';
 

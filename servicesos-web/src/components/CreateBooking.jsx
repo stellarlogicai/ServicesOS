@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { getCustomers } from '../core/customers/customerService';
 import { createExistingCustomerBooking } from '../services/existingCustomerBookingService';
+import { listActiveServices } from '../services/serviceCatalogService';
 import BookingIntakeFields from './BookingIntakeFields';
 import { emptyCommercialDetails } from './bookingIntakeModel';
 
@@ -13,6 +14,7 @@ const initialForm = () => ({
 export default function CreateBooking({ onCreated }) {
   const { tenantId, user } = useAuth();
   const [customers, setCustomers] = useState([]);
+  const [services, setServices] = useState([]);
   const [customerId, setCustomerId] = useState('');
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(true);
@@ -22,9 +24,10 @@ export default function CreateBooking({ onCreated }) {
 
   const loadCustomers = useCallback(async () => {
     setLoading(true);
-    const result = await getCustomers(tenantId);
+    const [result, catalog] = await Promise.all([getCustomers(tenantId), listActiveServices().catch(()=>[])]);
     const active = result.success ? result.data.filter(customer => customer?.isArchived !== true) : [];
     setCustomers(active);
+    setServices(catalog);
     setError(result.success ? '' : 'Customers could not be loaded. Try again.');
     setLoading(false);
   }, [tenantId]);
@@ -41,6 +44,9 @@ export default function CreateBooking({ onCreated }) {
     if (name.startsWith('commercialDetails.')) {
       const key = name.split('.')[1];
       setForm(current => ({ ...current, commercialDetails: { ...current.commercialDetails, [key]: value } }));
+    } else if (name === 'serviceCatalogId') {
+      const service=services.find(item=>item.id===value);
+      setForm(current=>({...current,serviceCatalogId:value,serviceType:service?.name||'',agreedPrice:service?(service.priceCents/100).toFixed(2):''}));
     } else {
       setForm(current => ({ ...current, [name]: value }));
     }
@@ -73,7 +79,7 @@ export default function CreateBooking({ onCreated }) {
           </label>
           {!loading && customers.length === 0 && <p>No active customers are available. Add a customer first.</p>}
         </section>
-        <BookingIntakeFields form={form} onChange={updateField} idPrefix="create-booking" />
+        <BookingIntakeFields form={form} onChange={updateField} idPrefix="create-booking" services={services} />
         {error && <div className="customers-form-alert" role="alert">{error}</div>}
         <div className="create-booking-actions"><button className="v1-button v1-button-primary" type="submit" disabled={saving || loading}>{saving ? 'Creating booking...' : 'Create booking'}</button></div>
       </form>
