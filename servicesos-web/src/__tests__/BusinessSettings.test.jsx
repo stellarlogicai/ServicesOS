@@ -128,8 +128,6 @@ describe('BusinessSettings', () => {
     }));
     expect(mocks.generateOnboardingLink).toHaveBeenCalledWith({
       tenantId: 'tenant-a',
-      returnUrl: window.location.href,
-      refreshUrl: window.location.href,
     });
     expect(window.open).toHaveBeenCalledWith('https://connect.stripe.test/onboarding', '_self', 'noopener,noreferrer');
   });
@@ -147,8 +145,6 @@ describe('BusinessSettings', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Resume Stripe setup' }));
     await waitFor(() => expect(mocks.generateOnboardingLink).toHaveBeenCalledWith({
       tenantId: 'tenant-a',
-      returnUrl: window.location.href,
-      refreshUrl: window.location.href,
     }));
     expect(mocks.createConnectedAccount).not.toHaveBeenCalled();
   });
@@ -157,6 +153,7 @@ describe('BusinessSettings', () => {
     mocks.getConnectedAccountStatus.mockResolvedValue({
       connected: true,
       status: 'active',
+      ready: true,
       chargesEnabled: true,
       payoutsEnabled: true,
     });

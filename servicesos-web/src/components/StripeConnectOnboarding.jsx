@@ -21,7 +21,7 @@ export default function StripeConnectOnboarding({
   const chargesEnabled = accountStatus?.chargesEnabled === true;
   const payoutsEnabled = accountStatus?.payoutsEnabled === true;
   const statusKnown = accountStatus !== null;
-  const fullyReady = connected && chargesEnabled && payoutsEnabled;
+  const fullyReady = connected && accountStatus?.ready === true;
 
   const refreshStatus = useCallback(async () => {
     if (!tenantId) {
@@ -56,8 +56,6 @@ export default function StripeConnectOnboarding({
     try {
       const data = await generateOnboardingLink({
         tenantId,
-        returnUrl: window.location.href,
-        refreshUrl: window.location.href,
       });
       window.open(data.url, '_self', 'noopener,noreferrer');
     } catch {

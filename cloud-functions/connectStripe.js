@@ -1,3 +1,5 @@
+const crypto = require('node:crypto');
+
 const CONNECT_SETUP_ALLOWED_ORIGINS = new Set([
   'https://servicesos.netlify.app',
   'http://127.0.0.1:5173',
@@ -68,6 +70,51 @@ function isValidHttpUrl(value) {
   } catch {
     return false;
   }
+}
+
+function hasExactKeys(value, allowedKeys) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value)) &&
+    Object.keys(value).every(key => allowedKeys.has(key));
+}
+
+function trustedConnectUrls(appUrl) {
+  try {
+    const url = new URL(appUrl);
+    if (!CONNECT_SETUP_ALLOWED_ORIGINS.has(url.origin)) return null;
+    const destination = `${url.origin}/`;
+    return { refreshUrl: destination, returnUrl: destination };
+  } catch {
+    return null;
+  }
+}
+
+function connectAccountIdempotencyKey(tenantId) {
+  const digest = crypto.createHash('sha256').update(`servicesos-connect-account-v1:${tenantId}`).digest('hex');
+  return `servicesos-connect-account-v1-${digest}`;
+}
+
+function boundedRequirements(requirements = {}) {
+  const values = key => Array.isArray(requirements[key])
+    ? requirements[key].filter(value => typeof value === 'string').slice(0, 50).map(value => value.slice(0, 200))
+    : [];
+  return { currentlyDue: values('currently_due'), pastDue: values('past_due') };
+}
+
+function projectConnectAccount(account) {
+  const requirements = boundedRequirements(account?.requirements);
+  const chargesEnabled = account?.charges_enabled === true;
+  const payoutsEnabled = account?.payouts_enabled === true;
+  const ready = chargesEnabled && payoutsEnabled && requirements.currentlyDue.length === 0 && requirements.pastDue.length === 0;
+  return {
+    connected: true,
+    accountId: account.id,
+    status: ready ? 'active' : 'pending',
+    ready,
+    detailsSubmitted: account?.details_submitted === true,
+    chargesEnabled,
+    payoutsEnabled,
+    requirements,
+  };
 }
 
 function handleStripeConnectSetupError(error, res, context) {
@@ -172,7 +219,10 @@ function createConnectedAccountHandler({ admin, secretKey, stripe }) {
     }
 
     try {
-      const { tenantId, businessEmail, businessName } = req.body || {};
+      if (!hasExactKeys(req.body, new Set(['tenantId', 'businessEmail', 'businessName']))) {
+        return res.status(400).json({ error: 'Invalid request' });
+      }
+      const { tenantId, businessEmail, businessName } = req.body;
 
       if (!tenantId || !businessEmail) {
         return res.status(400).json({ error: 'tenantId and businessEmail are required' });
@@ -181,6 +231,12 @@ function createConnectedAccountHandler({ admin, secretKey, stripe }) {
       const access = await verifyHttpTenantAdmin(req, { admin, tenantId });
       if (!access.success) {
         return res.status(access.status).json({ error: access.error });
+      }
+
+      const existingAccountId = access.tenantData.stripeAccountId;
+      if (existingAccountId) {
+        const existingAccount = await stripe.accounts.retrieve(existingAccountId);
+        return res.json({ ...projectConnectAccount(existingAccount), reused: true });
       }
 
       const account = await stripe.accounts.create({
@@ -195,22 +251,31 @@ function createConnectedAccountHandler({ admin, secretKey, stripe }) {
           transfers: { requested: true },
           card_payments: { requested: true },
         },
-      });
+      }, { idempotencyKey: connectAccountIdempotencyKey(tenantId) });
 
-      await access.tenantDoc.ref.update({
-        stripeAccountId: account.id,
-        stripeAccountStatus: 'pending',
-        stripeAccountMode: stripeModeFromKey(secretKey),
-        chargesEnabled: false,
-        payoutsEnabled: false,
-        stripeAccountCreatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        stripeAccountUpdatedAt: admin.firestore.FieldValue.delete(),
+      const db = admin.firestore();
+      const canonicalAccountId = await db.runTransaction(async transaction => {
+        const freshTenant = await transaction.get(access.tenantDoc.ref);
+        const currentAccountId = freshTenant.data()?.stripeAccountId;
+        if (currentAccountId && currentAccountId !== account.id) return currentAccountId;
+        if (!currentAccountId) {
+          transaction.update(access.tenantDoc.ref, {
+            stripeAccountId: account.id,
+            stripeAccountStatus: 'pending',
+            stripeAccountMode: stripeModeFromKey(secretKey),
+            chargesEnabled: false,
+            payoutsEnabled: false,
+            stripeAccountCreatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            stripeAccountUpdatedAt: admin.firestore.FieldValue.delete(),
+          });
+        }
+        return currentAccountId || account.id;
       });
+      if (canonicalAccountId !== account.id) {
+        return res.status(409).json({ error: 'Stripe account setup changed while this request was running. Refresh and try again.' });
+      }
 
-      return res.json({
-        accountId: account.id,
-        status: account.status,
-      });
+      return res.json({ ...projectConnectAccount(account), reused: false });
     } catch (error) {
       return handleStripeConnectSetupError(error, res, 'Error creating connected account');
     }
@@ -226,7 +291,10 @@ function generateOnboardingLinkHandler({ admin, appUrl, stripe }) {
     }
 
     try {
-      const { tenantId, returnUrl, refreshUrl } = req.body || {};
+      if (!hasExactKeys(req.body, new Set(['tenantId']))) {
+        return res.status(400).json({ error: 'Invalid request' });
+      }
+      const { tenantId } = req.body;
 
       if (!tenantId) {
         return res.status(400).json({ error: 'tenantId is required' });
@@ -242,11 +310,8 @@ function generateOnboardingLinkHandler({ admin, appUrl, stripe }) {
       }
 
       const stripeAccountId = access.tenantData.stripeAccountId;
-      const fallbackUrl = `${appUrl}/settings/payments`;
-      const resolvedRefreshUrl = refreshUrl || fallbackUrl;
-      const resolvedReturnUrl = returnUrl || fallbackUrl;
-
-      if (!isValidHttpUrl(resolvedRefreshUrl) || !isValidHttpUrl(resolvedReturnUrl)) {
+      const trustedUrls = trustedConnectUrls(appUrl);
+      if (!trustedUrls) {
         return res.status(400).json({
           error: 'Stripe onboarding needs valid return and refresh URLs. Check APP_URL or the local app URL and try again.',
         });
@@ -256,8 +321,8 @@ function generateOnboardingLinkHandler({ admin, appUrl, stripe }) {
       try {
         accountLink = await stripe.accountLinks.create({
           account: stripeAccountId,
-          refresh_url: resolvedRefreshUrl,
-          return_url: resolvedReturnUrl,
+          refresh_url: trustedUrls.refreshUrl,
+          return_url: trustedUrls.returnUrl,
           type: 'account_onboarding',
         });
       } catch (error) {
@@ -311,22 +376,17 @@ function getConnectedAccountStatusHandler({ admin, stripe }) {
       }
 
       const account = await stripe.accounts.retrieve(stripeAccountId);
-      const status = account.details_submitted ? 'active' : 'pending';
+      const projection = projectConnectAccount(account);
 
       await access.tenantDoc.ref.update({
-        stripeAccountStatus: status,
-        chargesEnabled: account.charges_enabled,
-        payoutsEnabled: account.payouts_enabled,
+        stripeAccountStatus: projection.status,
+        chargesEnabled: projection.chargesEnabled,
+        payoutsEnabled: projection.payoutsEnabled,
         stripeAccountUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
       return res.json({
-        connected: true,
-        accountId: stripeAccountId,
-        status,
-        chargesEnabled: account.charges_enabled,
-        payoutsEnabled: account.payouts_enabled,
-        requirements: account.requirements,
+        ...projection,
       });
     } catch (error) {
       if (isStripeConnectNotEnabledError(error)) {
@@ -362,6 +422,9 @@ module.exports = {
   getConnectedAccountStatusHandler,
   handleConnectSetupPreflight,
   isValidHttpUrl,
+  connectAccountIdempotencyKey,
+  projectConnectAccount,
+  trustedConnectUrls,
   maskedAccountId,
   stripeModeFromKey,
   verifyHttpTenantAdmin,

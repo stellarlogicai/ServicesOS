@@ -4,6 +4,8 @@ const {
   createConnectedAccountHandler,
   generateOnboardingLinkHandler,
   getConnectedAccountStatusHandler,
+  projectConnectAccount,
+  trustedConnectUrls,
 } = require('../connectStripe');
 
 const DELETE_FIELD = Symbol('delete-field');
@@ -52,13 +54,24 @@ class MockCollectionRef {
 }
 
 function createMockAdmin(store) {
+  let transactionQueue = Promise.resolve();
+  const firestore = {
+    collection: name => new MockCollectionRef(name, store),
+    runTransaction(callback) {
+      const execute = () => callback({
+        get: ref => ref.get(),
+        update: (ref, patch) => ref.update(patch),
+      });
+      const result = transactionQueue.then(execute, execute);
+      transactionQueue = result.then(() => undefined, () => undefined);
+      return result;
+    },
+  };
   return {
     auth: () => ({
       verifyIdToken: async () => ({ uid: 'admin-1' }),
     }),
-    firestore: () => ({
-      collection: name => new MockCollectionRef(name, store),
-    }),
+    firestore: () => firestore,
   };
 }
 
@@ -265,10 +278,9 @@ test('createConnectedAccount POST still requires Firebase ID token auth', async 
   assert.equal(res.headers['Access-Control-Allow-Origin'], 'http://127.0.0.1:5174');
 });
 
-test('createConnectedAccount creates a fresh account and resets stale readiness fields', async () => {
+test('createConnectedAccount creates a fresh account with a stable idempotency key', async () => {
   const store = baseStore({
     'tenants/tenant-a': {
-      stripeAccountId: 'acct_old_mismatch',
       stripeAccountStatus: 'active',
       stripeAccountMode: 'test',
       stripeAccountUpdatedAt: 'old-time',
@@ -278,10 +290,16 @@ test('createConnectedAccount creates a fresh account and resets stale readiness 
       adminUsers: ['admin-1'],
     },
   });
+  let createOptions;
+  const stripe = createStripeMock();
+  stripe.accounts.create = async (_params, options) => {
+    createOptions = options;
+    return { id: 'acct_test_created', status: 'pending' };
+  };
   const handler = createConnectedAccountHandler({
     admin: createAdminWithFieldValue(store),
     secretKey: 'sk_test_1234',
-    stripe: createStripeMock(),
+    stripe,
   });
   const res = createResponseMock();
 
@@ -305,11 +323,76 @@ test('createConnectedAccount creates a fresh account and resets stale readiness 
   assert.equal(store['tenants/tenant-a'].chargesEnabled, false);
   assert.equal(store['tenants/tenant-a'].payoutsEnabled, false);
   assert.equal(store['tenants/tenant-a'].stripeAccountUpdatedAt, undefined);
+  assert.match(createOptions.idempotencyKey, /^servicesos-connect-account-v1-[a-f0-9]{64}$/);
+  assert.equal(res.body.reused, false);
+});
+
+test('repeated and concurrent account creation reuse one canonical account', async () => {
+  const store = baseStore({ 'tenants/tenant-a': { users: ['admin-1'], adminUsers: ['admin-1'] } });
+  let createCalls = 0;
+  const stripe = createStripeMock();
+  stripe.accounts.create = async () => { createCalls += 1; return { id: 'acct_test_created' }; };
+  stripe.accounts.retrieve = async id => ({ id, charges_enabled: false, payouts_enabled: false, requirements: {} });
+  const handler = createConnectedAccountHandler({ admin: createAdminWithFieldValue(store), secretKey: 'sk_test_1234', stripe });
+  const request = () => ({ body: { tenantId: 'tenant-a', businessEmail: 'owner@example.com' }, headers: { authorization: 'Bearer id-token' }, method: 'POST' });
+  const first = createResponseMock();
+  const second = createResponseMock();
+  await Promise.all([handler(request(), first), handler(request(), second)]);
+  assert.equal(store['tenants/tenant-a'].stripeAccountId, 'acct_test_created');
+  assert.equal(first.statusCode, undefined);
+  assert.equal(second.statusCode, undefined);
+  const third = createResponseMock();
+  await handler(request(), third);
+  assert.equal(third.body.accountId, 'acct_test_created');
+  assert.equal(third.body.reused, true);
+  assert.equal(createCalls, 2);
+  assert.equal(new Set([first.body.accountId, second.body.accountId, third.body.accountId]).size, 1);
+});
+
+test('concurrent canonical pointer conflict is reported without overwrite', async () => {
+  const store = baseStore({ 'tenants/tenant-a': { users: ['admin-1'], adminUsers: ['admin-1'] } });
+  const stripe = createStripeMock();
+  stripe.accounts.create = async () => {
+    store['tenants/tenant-a'].stripeAccountId = 'acct_concurrent_winner';
+    return { id: 'acct_late_result' };
+  };
+  const handler = createConnectedAccountHandler({ admin: createAdminWithFieldValue(store), stripe });
+  const res = createResponseMock();
+  await handler({ body: { tenantId: 'tenant-a', businessEmail: 'owner@example.com' }, headers: { authorization: 'Bearer id-token' }, method: 'POST' }, res);
+  assert.equal(res.statusCode, 409);
+  assert.equal(store['tenants/tenant-a'].stripeAccountId, 'acct_concurrent_winner');
+});
+
+test('client cannot supply connected account authority', async () => {
+  const stripe = createStripeMock();
+  let createCalls = 0;
+  stripe.accounts.create = async () => { createCalls += 1; };
+  const handler = createConnectedAccountHandler({ admin: createAdminWithFieldValue(baseStore()), stripe });
+  const res = createResponseMock();
+  await handler({ body: { tenantId: 'tenant-a', businessEmail: 'owner@example.com', accountId: 'acct_attacker' }, headers: { authorization: 'Bearer id-token' }, method: 'POST' }, res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(createCalls, 0);
+});
+
+test('wrong tenant and unauthorized roles cannot create or retrieve Connect accounts', async () => {
+  for (const [role, tenantId] of [['customer', 'tenant-a'], ['admin', 'tenant-b']]) {
+    const store = baseStore();
+    store['users/admin-1'] = { ...store['users/admin-1'], role };
+    let providerCalls = 0;
+    const stripe = createStripeMock();
+    stripe.accounts.create = async () => { providerCalls += 1; };
+    stripe.accounts.retrieve = async () => { providerCalls += 1; };
+    const handler = createConnectedAccountHandler({ admin: createAdminWithFieldValue(store), stripe });
+    const res = createResponseMock();
+    await handler({ body: { tenantId, businessEmail: 'owner@example.com' }, headers: { authorization: 'Bearer id-token' }, method: 'POST' }, res);
+    assert.equal(res.statusCode, 403);
+    assert.equal(providerCalls, 0);
+  }
 });
 
 test('createConnectedAccount returns clean actionable error when Stripe Connect is not enabled', async () => {
   const handler = createConnectedAccountHandler({
-    admin: createAdminWithFieldValue(baseStore()),
+    admin: createAdminWithFieldValue(baseStore({ 'tenants/tenant-a': { users: ['admin-1'], adminUsers: ['admin-1'] } })),
     stripe: createStripeConnectNotEnabledMock(),
   });
   const res = createResponseMock();
@@ -333,7 +416,7 @@ test('createConnectedAccount returns clean actionable error when Stripe Connect 
 
 test('createConnectedAccount maps Stripe invalid request setup failures to clean 409', async () => {
   const handler = createConnectedAccountHandler({
-    admin: createAdminWithFieldValue(baseStore()),
+    admin: createAdminWithFieldValue(baseStore({ 'tenants/tenant-a': { users: ['admin-1'], adminUsers: ['admin-1'] } })),
     stripe: createStripeInvalidRequestSetupMock(),
   });
   const res = createResponseMock();
@@ -381,6 +464,53 @@ test('generateOnboardingLink rejects invalid return or refresh URLs before calli
   assert.equal(res.statusCode, 400);
   assert.equal(res.body.error, 'Stripe onboarding needs valid return and refresh URLs. Check APP_URL or the local app URL and try again.');
   assert.equal(called, false);
+});
+
+test('onboarding link ignores no client redirects and uses fixed trusted application URLs', async () => {
+  let linkRequest;
+  const stripe = createStripeMock();
+  stripe.accountLinks.create = async value => { linkRequest = value; return { url: 'https://connect.stripe.test/onboarding', expires_at: 123 }; };
+  const handler = generateOnboardingLinkHandler({ admin: createAdminWithFieldValue(baseStore()), appUrl: 'https://servicesos.netlify.app/anything', stripe });
+  const rejected = createResponseMock();
+  await handler({ body: { tenantId: 'tenant-a', returnUrl: 'https://evil.example' }, headers: { authorization: 'Bearer id-token' }, method: 'POST' }, rejected);
+  assert.equal(rejected.statusCode, 400);
+  assert.equal(linkRequest, undefined);
+  const accepted = createResponseMock();
+  await handler({ body: { tenantId: 'tenant-a' }, headers: { authorization: 'Bearer id-token' }, method: 'POST' }, accepted);
+  assert.equal(linkRequest.account, 'acct_test_123');
+  assert.equal(linkRequest.return_url, 'https://servicesos.netlify.app/');
+  assert.equal(linkRequest.refresh_url, 'https://servicesos.netlify.app/');
+  assert.deepEqual(trustedConnectUrls('https://evil.example'), null);
+  assert.deepEqual(trustedConnectUrls('http://evil.example'), null);
+  assert.deepEqual(trustedConnectUrls('javascript:alert(1)'), null);
+  assert.deepEqual(trustedConnectUrls('data:text/html,unsafe'), null);
+  assert.deepEqual(trustedConnectUrls('http://127.0.0.1:5174/path'), {
+    refreshUrl: 'http://127.0.0.1:5174/', returnUrl: 'http://127.0.0.1:5174/',
+  });
+});
+
+test('unauthorized caller cannot receive an account-link capability', async () => {
+  const store = baseStore();
+  store['users/admin-1'].role = 'customer';
+  let linkCalls = 0;
+  const stripe = createStripeMock();
+  stripe.accountLinks.create = async () => { linkCalls += 1; };
+  const handler = generateOnboardingLinkHandler({ admin: createAdminWithFieldValue(store), appUrl: 'https://servicesos.netlify.app', stripe });
+  const res = createResponseMock();
+  await handler({ body: { tenantId: 'tenant-a' }, headers: { authorization: 'Bearer id-token' }, method: 'POST' }, res);
+  assert.equal(res.statusCode, 403);
+  assert.equal(linkCalls, 0);
+});
+
+test('fresh readiness requires charges, payouts, and no blocking requirements', () => {
+  const base = { id: 'acct_test', details_submitted: true, charges_enabled: true, payouts_enabled: true, requirements: { currently_due: [], past_due: [] } };
+  assert.equal(projectConnectAccount(base).ready, true);
+  for (const account of [
+    { ...base, details_submitted: false, charges_enabled: false },
+    { ...base, payouts_enabled: false },
+    { ...base, requirements: { currently_due: ['business_profile.url'], past_due: [] } },
+    { ...base, requirements: { currently_due: [], past_due: ['external_account'] } },
+  ]) assert.equal(projectConnectAccount(account).ready, false);
 });
 
 test('generateOnboardingLink maps Stripe account-link setup failures to clean 409', async () => {
@@ -448,7 +578,7 @@ test('getConnectedAccountStatus returns clean error when configured key cannot a
 });
 
 test('getConnectedAccountStatus refreshes Stripe-confirmed tenant readiness fields', async () => {
-  const store = baseStore();
+  const store = baseStore({ 'tenants/tenant-a': { stripeAccountId: 'acct_test_123', users: ['admin-1'], adminUsers: ['admin-1'], stripeAccountStatus: 'active', chargesEnabled: true, payoutsEnabled: true } });
   const handler = getConnectedAccountStatusHandler({
     admin: createAdminWithFieldValue(store),
     stripe: createStripeMock(),
@@ -467,8 +597,21 @@ test('getConnectedAccountStatus refreshes Stripe-confirmed tenant readiness fiel
   assert.equal(res.statusCode, undefined);
   assert.equal(res.body.connected, true);
   assert.equal(res.body.chargesEnabled, true);
-  assert.equal(store['tenants/tenant-a'].stripeAccountStatus, 'active');
+  assert.equal(store['tenants/tenant-a'].stripeAccountStatus, 'pending');
   assert.equal(store['tenants/tenant-a'].chargesEnabled, true);
   assert.equal(store['tenants/tenant-a'].payoutsEnabled, false);
+  assert.equal(res.body.ready, false);
   assert.equal(store['tenants/tenant-a'].stripeAccountUpdatedAt, 'mock-server-time');
+  assert.equal(JSON.stringify(res.body).includes('sk_test_'), false);
+});
+
+test('fresh Stripe retrieval failure cannot return stale ready state', async () => {
+  const store = baseStore({ 'tenants/tenant-a': { stripeAccountId: 'acct_test_123', users: ['admin-1'], adminUsers: ['admin-1'], stripeAccountStatus: 'active', chargesEnabled: true, payoutsEnabled: true } });
+  const stripe = createStripeMock();
+  stripe.accounts.retrieve = async () => { throw new Error('provider unavailable'); };
+  const handler = getConnectedAccountStatusHandler({ admin: createAdminWithFieldValue(store), stripe });
+  const res = createResponseMock();
+  await handler({ headers: { authorization: 'Bearer id-token' }, method: 'GET', query: { tenantId: 'tenant-a' } }, res);
+  assert.equal(res.statusCode, 502);
+  assert.equal(res.body.ready, undefined);
 });

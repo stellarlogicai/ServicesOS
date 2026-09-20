@@ -380,14 +380,14 @@ export async function createConnectedAccount({ tenantId, businessEmail, business
   });
 }
 
-export async function generateOnboardingLink({ tenantId, returnUrl, refreshUrl }) {
+export async function generateOnboardingLink({ tenantId }) {
   if (!tenantId) {
     throw new Error('tenantId is required');
   }
 
   return authorizedFunctionFetch('generateOnboardingLink', {
     method: 'POST',
-    body: JSON.stringify({ tenantId, returnUrl, refreshUrl }),
+    body: JSON.stringify({ tenantId }),
   });
 }
 

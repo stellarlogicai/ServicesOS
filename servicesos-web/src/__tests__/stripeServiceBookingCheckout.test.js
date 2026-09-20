@@ -157,8 +157,6 @@ describe('Stripe Connect setup helpers', () => {
 
     await generateOnboardingLink({
       tenantId: 'tenant-a',
-      returnUrl: 'https://servicesos.netlify.app',
-      refreshUrl: 'https://servicesos.netlify.app',
     });
 
     expect(fetch).toHaveBeenCalledWith(
@@ -169,11 +167,7 @@ describe('Stripe Connect setup helpers', () => {
           'Authorization': 'Bearer id-token-123',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          tenantId: 'tenant-a',
-          returnUrl: 'https://servicesos.netlify.app',
-          refreshUrl: 'https://servicesos.netlify.app',
-        }),
+        body: JSON.stringify({ tenantId: 'tenant-a' }),
       }
     );
     expect(fetch.mock.calls[0][0]).not.toContain('/api/stripe-connect');
