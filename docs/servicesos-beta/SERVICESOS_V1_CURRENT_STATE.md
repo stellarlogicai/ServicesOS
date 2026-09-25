@@ -1,6 +1,6 @@
 # ServicesOS V1 Current State
 
-Updated: 2026-07-26
+Updated: 2026-09-22
 
 This file contains the changing ServicesOS checkpoint. Keep durable repository rules in `AGENTS.md` files and update this document when the active branch, blocker, completed gate, or next task changes.
 
@@ -153,6 +153,17 @@ Do not begin customer identity remediation before the photo path is proven and t
 - Cohesive Field Job Workspace redesign centered on the real checklist.
 - Required employee assignment index, real employee setup/assignment, and production employee smoke before claiming the employee workflow production-ready.
 - Controlled release integration, production deployment, and final customer-facing smoke.
+- Full defensive pre-launch security gate after wife-beta-critical fixes and release-candidate freeze, as defined in `SERVICESOS_V1_PRELAUNCH_SECURITY_GATE.md`.
+
+## Pre-launch security decision
+
+Jamie explicitly added a full defensive security review to customer-facing V1 scope on 2026-09-22. This is a release gate, not a new product feature.
+
+The review must run against the frozen intended release candidate after wife-beta-critical fixes and before public launch. It covers architecture/threat modeling, identity and authorization, tenant isolation, Firestore/Storage, backend Functions/APIs, Stripe/Connect/payment integrity, SLAI Assistant/AI boundaries, public/customer input, Employee App authorization, secrets/configuration/dependencies, logging/privacy, and abuse/failure behavior.
+
+Preferred AI-assisted review path: OpenAI Daybreak Blue when available and approved for the workflow. The gate must remain executable without dependence on that specific tool. AI findings require independent validation; Critical/High validated findings block launch until remediated and re-verified, subject to the detailed gate's safe-disable rule for High findings. Jamie retains final release approval.
+
+Detailed contract: `docs/servicesos-beta/SERVICESOS_V1_PRELAUNCH_SECURITY_GATE.md`
 
 ## Release-track distinction
 
