@@ -113,6 +113,7 @@ Target Industries:
 * Pool Service
 * Home Services
 * Specialty Retail
+* Event Planning & Corporate Events (future vertical)
 
 ---
 
@@ -317,3 +318,67 @@ Technology should simplify complexity, not create it.
 The goal is not simply to build software.
 
 The goal is to build systems that improve outcomes.
+
+---
+
+# Future Vertical Candidate: Event Planning & Corporate Events
+
+Status: PARKED / FUTURE PLANNING — not part of ServicesOS V1.
+
+ServicesOS V1 remains focused on cleaning businesses. This candidate should not add scope, implementation work, or launch requirements until the cleaning-business product is stable and Jamie explicitly authorizes vertical expansion.
+
+## Why It Fits the ServicesOS Model
+
+Event operations map closely to the existing service-business workflow:
+
+Customer -> proposal/estimate -> event/booking -> schedule/timeline -> staff/vendors -> tasks/checklists -> files/media -> payment -> follow-up
+
+Much of the ServicesOS foundation may therefore be reusable. The primary domain shift is from a cleaning job to an event, with event-specific operational context layered on top.
+
+## Possible Event-Specific Requirements
+
+Future discovery should validate, rather than assume, needs such as:
+
+* Venues and locations
+* Guest counts
+* Event packages and add-ons
+* Vendors and external partners
+* Deposits and staged payment schedules
+* Contracts and event documents
+* Multiple client/stakeholder contacts
+* Event timelines and run-of-show
+* Staff roles and assignments
+* Equipment and resource tracking
+* Setup and tear-down workflows
+* Multi-day events
+* Last-minute change communication
+
+## SLAI Assistant Opportunity
+
+The owner/admin assistant could combine event, staff, vendor, task, document, and payment context to answer operational questions such as:
+
+“What still needs attention for Saturday’s corporate event?”
+
+The assistant should support human decisions rather than autonomously make important operational commitments.
+
+## SLAI Work Assistant Opportunity
+
+A field/event worker primarily needs bounded operational context:
+
+* Where to go
+* When to arrive
+* Assigned role
+* Setup/run-of-show information
+* Assigned tasks
+* Approved contacts
+* Changes relevant to their work
+
+This is conceptually similar to the bounded employee experience already planned for ServicesOS field work.
+
+## Discovery Strategy
+
+Before building this vertical, interview experienced event-industry operators and validate which ServicesOS primitives transfer cleanly and which require new architecture. Existing industry relationships may be useful for research, but no individual company should be treated as validation of the market by itself.
+
+## Expansion Rule
+
+Do not build event-specific functionality into cleaning V1. First stabilize ServicesOS for cleaning businesses, gather production evidence, and then evaluate whether event planning can be delivered primarily as an industry module on the shared SLAI/ServicesOS foundation.
