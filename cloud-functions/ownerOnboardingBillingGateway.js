@@ -1,5 +1,6 @@
 const { membershipContains, normalizedText } = require('./ownerOnboardingBootstrapGateway');
 const { firestoreServerTimestamp } = require('./firebaseAdminCompat');
+const { configuredOwnerSubscriptionPrices, ownerSubscriptionPriceForInterval } = require('./ownerSubscriptionPrices');
 
 const BILLING_PURPOSE = 'servicesos_owner_subscription';
 const BILLING_SCHEMA_VERSION = '1';
@@ -25,12 +26,14 @@ function failClosed() {
 }
 
 function validateRequest(body) {
-  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 0) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) ||
+    Object.keys(body).length !== 1 || !['monthly', 'annual'].includes(body.billingInterval)) {
     throw new BillingError('Invalid subscription checkout request.', {
       code: 'invalid_request',
       status: 400,
     });
   }
+  return body.billingInterval;
 }
 
 function canonicalMetadata(tenantId) {
@@ -60,22 +63,25 @@ function normalizeAppUrl(value) {
   return url.origin;
 }
 
-function validateConfig({ priceId, appUrl }) {
-  const canonicalPriceId = normalizedText(priceId);
-  if (!canonicalPriceId || !/^price_[A-Za-z0-9]+$/.test(canonicalPriceId)) {
+function validateConfig({ priceIds, appUrl }) {
+  try {
+    return { priceIds: configuredOwnerSubscriptionPrices(priceIds), appUrl: normalizeAppUrl(appUrl) };
+  } catch {
     throw new BillingError('Subscription checkout configuration is unavailable.', { status: 503 });
   }
-  return { priceId: canonicalPriceId, appUrl: normalizeAppUrl(appUrl) };
 }
 
 function customerMatches(customer, tenantId) {
   return customer && customer.deleted !== true && metadataMatches(customer.metadata, tenantId);
 }
 
-function sessionMatches(session, { tenantId, customerId, priceId }) {
+function sessionMatches(session, { tenantId, customerId, priceId, billingInterval }) {
   const customer = typeof session?.customer === 'string' ? session.customer : session?.customer?.id;
+  const sessionIntervalMatches = session?.metadata?.billingInterval === billingInterval ||
+    (billingInterval === 'monthly' && session?.metadata?.billingInterval === undefined);
   return session?.status === 'open' && normalizedText(session.url) && customer === customerId &&
-    session?.metadata?.priceId === priceId && metadataMatches(session.metadata, tenantId);
+    session?.metadata?.priceId === priceId && sessionIntervalMatches &&
+    metadataMatches(session.metadata, tenantId);
 }
 
 async function authorizeOwner({ admin, identity }) {
@@ -129,32 +135,36 @@ async function ensureCustomer({ stripe, access, admin }) {
   return customerId;
 }
 
-async function createCheckout({ admin, identity, stripe, priceId, appUrl, body }) {
-  validateRequest(body);
-  const config = validateConfig({ priceId, appUrl });
+async function createCheckout({ admin, identity, stripe, priceIds, appUrl, body }) {
+  const billingInterval = validateRequest(body);
+  const config = validateConfig({ priceIds, appUrl });
+  const priceId = ownerSubscriptionPriceForInterval(config.priceIds, billingInterval);
   const access = await authorizeOwner({ admin, identity });
   const customerId = await ensureCustomer({ stripe, access, admin });
   const latestTenant = (await access.tenantRef.get()).data() || {};
   const prior = latestTenant.ownerSubscriptionCheckout;
-  if (prior?.sessionId && prior.customerId === customerId && prior.priceId === config.priceId) {
+  const priorInterval = prior?.billingInterval || (prior?.priceId === config.priceIds.monthly ? 'monthly' : null);
+  if (prior?.sessionId && prior.customerId === customerId && prior.priceId === priceId && priorInterval === billingInterval) {
     const existingSession = await stripe.checkout.sessions.retrieve(prior.sessionId);
-    if (sessionMatches(existingSession, { tenantId: access.tenantId, customerId, priceId: config.priceId })) {
+    if (sessionMatches(existingSession, { tenantId: access.tenantId, customerId, priceId, billingInterval })) {
       return { success: true, checkout: { sessionId: existingSession.id, checkoutUrl: existingSession.url } };
     }
   }
 
   const attempt = Number.isSafeInteger(prior?.attempt) && prior.attempt >= 0 ? prior.attempt + 1 : 1;
-  const metadata = { ...canonicalMetadata(access.tenantId), priceId: config.priceId };
+  const metadata = { ...canonicalMetadata(access.tenantId), priceId, billingInterval };
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     customer: customerId,
-    line_items: [{ price: config.priceId, quantity: 1 }],
+    line_items: [{ price: priceId, quantity: 1 }],
     success_url: `${config.appUrl}/?servicesos_owner_checkout=returned&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${config.appUrl}/?servicesos_owner_checkout=cancelled`,
     metadata,
-    subscription_data: { metadata: canonicalMetadata(access.tenantId) },
-  }, { idempotencyKey: `servicesos-owner-checkout-${access.tenantId}-${attempt}` });
-  if (!sessionMatches(session, { tenantId: access.tenantId, customerId, priceId: config.priceId })) {
+    subscription_data: { metadata: { ...canonicalMetadata(access.tenantId), priceId, billingInterval } },
+  }, { idempotencyKey: billingInterval === 'monthly'
+    ? `servicesos-owner-checkout-${access.tenantId}-${attempt}`
+    : `servicesos-owner-checkout-${access.tenantId}-annual-${attempt}` });
+  if (!sessionMatches(session, { tenantId: access.tenantId, customerId, priceId, billingInterval })) {
     throw new BillingError('Subscription checkout could not be created.', { status: 503 });
   }
   await access.db.runTransaction(async transaction => {
@@ -167,7 +177,8 @@ async function createCheckout({ admin, identity, stripe, priceId, appUrl, body }
       ownerSubscriptionCheckout: {
         sessionId: session.id,
         customerId,
-        priceId: config.priceId,
+        priceId,
+        billingInterval,
         status: 'open',
         attempt,
       },
@@ -185,7 +196,7 @@ function applyCors(req, res) {
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
-function createOwnerOnboardingBillingGatewayHandler({ admin, getStripe, getPriceId, getAppUrl }) {
+function createOwnerOnboardingBillingGatewayHandler({ admin, getStripe, getPriceIds, getAppUrl }) {
   return async (req, res) => {
     applyCors(req, res);
     if (req.method === 'OPTIONS') return res.status(204).send('');
@@ -197,7 +208,7 @@ function createOwnerOnboardingBillingGatewayHandler({ admin, getStripe, getPrice
     catch { return res.status(401).json({ error: 'Invalid authentication token', code: 'unauthenticated' }); }
     try {
       const stripe = getStripe();
-      const result = await createCheckout({ admin, identity, stripe, priceId: getPriceId(), appUrl: getAppUrl(), body: req.body });
+      const result = await createCheckout({ admin, identity, stripe, priceIds: getPriceIds(), appUrl: getAppUrl(), body: req.body });
       return res.status(200).json(result);
     } catch (error) {
       if (error instanceof BillingError) return res.status(error.status).json({ error: error.message, code: error.code });

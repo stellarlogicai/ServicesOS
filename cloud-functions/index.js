@@ -61,7 +61,15 @@ const customerEmailProviderEnabled = defineBoolean('CUSTOMER_EMAIL_PROVIDER_ENAB
 const stripeSecretKey = defineSecret('STRIPE_SECRET_KEY');
 const ownerSubscriptionWebhookSecret = defineSecret('STRIPE_OWNER_SUBSCRIPTION_WEBHOOK_SECRET');
 const ownerSubscriptionPriceId = defineString('SERVICESOS_OWNER_SUBSCRIPTION_PRICE_ID');
+const ownerSubscriptionAnnualPriceId = defineString('SERVICESOS_OWNER_SUBSCRIPTION_ANNUAL_PRICE_ID');
 const servicesosAppUrl = defineString('SERVICESOS_APP_URL');
+
+function getOwnerSubscriptionPriceIds() {
+  return {
+    monthlyPriceId: ownerSubscriptionPriceId.value(),
+    annualPriceId: ownerSubscriptionAnnualPriceId.value(),
+  };
+}
 
 function createConfiguredGrowthAIProvider() {
   return createGrowthAIProviderFromFirebaseParameters({
@@ -102,7 +110,7 @@ exports.ownerOnboardingBillingGateway = functions.runWith({
 }).https.onRequest(createOwnerOnboardingBillingGatewayHandler({
   admin,
   getStripe: () => require('stripe')(stripeSecretKey.value()),
-  getPriceId: () => ownerSubscriptionPriceId.value(),
+  getPriceIds: getOwnerSubscriptionPriceIds,
   getAppUrl: () => servicesosAppUrl.value(),
 }));
 
@@ -113,7 +121,7 @@ exports.ownerOnboardingFinalizeGateway = functions.runWith({
 }).https.onRequest(createOwnerOnboardingFinalizeGatewayHandler({
   admin,
   getStripe: () => require('stripe')(stripeSecretKey.value()),
-  getPriceId: () => ownerSubscriptionPriceId.value(),
+  getPriceIds: getOwnerSubscriptionPriceIds,
 }));
 
 exports.ownerSubscriptionActivationWebhook = functions.runWith({
@@ -124,7 +132,7 @@ exports.ownerSubscriptionActivationWebhook = functions.runWith({
   admin,
   getStripe: () => require('stripe')(stripeSecretKey.value()),
   getWebhookSecret: () => ownerSubscriptionWebhookSecret.value(),
-  getPriceId: () => ownerSubscriptionPriceId.value(),
+  getPriceIds: getOwnerSubscriptionPriceIds,
 }));
 
 // Keep this gateway in the bounded-Function inventory when reconciling cost guardrails.

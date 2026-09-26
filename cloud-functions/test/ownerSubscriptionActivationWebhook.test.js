@@ -9,6 +9,8 @@ const {
 } = require('../ownerSubscriptionActivationWebhook');
 
 const PRICE_ID = 'price_servicesos100';
+const ANNUAL_PRICE_ID = 'price_servicesos1000year';
+const PRICE_IDS = { monthlyPriceId: PRICE_ID, annualPriceId: ANNUAL_PRICE_ID };
 
 function fixture({ tenant = {}, owner = {} } = {}) {
   const state = {
@@ -50,7 +52,7 @@ function subscription(overrides = {}) {
 }
 
 const activate = (source, invoiceValue = invoice(), subscriptionValue = subscription()) =>
-  activateOwnerSubscription({ admin: source.admin, invoice: invoiceValue, subscription: subscriptionValue, priceId: PRICE_ID });
+  activateOwnerSubscription({ admin: source.admin, invoice: invoiceValue, subscription: subscriptionValue, priceIds: PRICE_IDS });
 
 test('valid invoice.paid activates tenant and writes canonical billing facts', async () => {
   const source = fixture();
@@ -83,6 +85,34 @@ test('current Stripe invoice.paid shape may omit the legacy paid boolean', async
     { success: true, activated: true, stale: false },
   );
   assert.equal(source.state['tenants/tenant-a'].status, 'active');
+});
+
+test('annual Price activates canonically and keeps renewal failure, recovery, and cancellation semantics', async () => {
+  const source = fixture();
+  const annual = subscription({
+    current_period_end: 1000 + 366 * 86400,
+    metadata: { tenantId: 'tenant-a', billingPurpose: 'servicesos_owner_subscription', onboardingSchemaVersion: '1',
+      priceId: ANNUAL_PRICE_ID, billingInterval: 'annual' },
+    items: { data: [{ price: { id: ANNUAL_PRICE_ID }, quantity: 1 }] },
+  });
+  await activate(source, invoice(), annual);
+  assert.equal(source.state['tenants/tenant-a'].subscriptionPriceId, ANNUAL_PRICE_ID);
+  assert.equal(source.state['tenants/tenant-a'].currentPeriodEnd, annual.current_period_end);
+
+  const failed = invoice({ id: 'in_annual_failed', status: 'open', paid: false, created: 101 });
+  await lifecycle(source, 'invoice.payment_failed', annual, failed, 1000);
+  assert.equal(source.state['tenants/tenant-a'].subscriptionStatus, 'past_due');
+  assert.equal(source.state['tenants/tenant-a'].cureDeadline, 1000 + 7 * 86400);
+
+  await activate(source, invoice({ id: 'in_annual_recovered', created: 102 }), annual);
+  assert.equal(source.state['tenants/tenant-a'].subscriptionStatus, 'active');
+  assert.equal(source.state['tenants/tenant-a'].subscriptionPriceId, ANNUAL_PRICE_ID);
+  assert.equal(source.state['tenants/tenant-a'].paymentFailureAt, null);
+  assert.equal(source.state['tenants/tenant-a'].cureDeadline, null);
+
+  await lifecycle(source, 'customer.subscription.deleted', { ...annual, status: 'canceled' });
+  assert.equal(source.state['tenants/tenant-a'].subscriptionStatus, 'canceled');
+  assert.equal(source.state['tenants/tenant-a'].subscriptionPriceId, ANNUAL_PRICE_ID);
 });
 
 test('supports current parent subscription correlation and rejects non-subscription parent', () => {
@@ -171,7 +201,7 @@ test('handler verifies signature, retrieves subscription independently, and igno
     webhooks: { constructEvent: (raw, signature, secret) => { calls.push(['signature', raw, signature, secret]); return event; } },
     subscriptions: { retrieve: async id => { calls.push(['retrieve', id]); return subscription(); } },
   };
-  const handler = createOwnerSubscriptionActivationWebhookHandler({ admin: source.admin, getStripe: () => stripe, getWebhookSecret: () => 'whsec_test', getPriceId: () => PRICE_ID });
+  const handler = createOwnerSubscriptionActivationWebhookHandler({ admin: source.admin, getStripe: () => stripe, getWebhookSecret: () => 'whsec_test', getPriceIds: () => PRICE_IDS });
   const invoke = async () => {
     const res = { statusCode: 0, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
     await handler({ method: 'POST', rawBody: Buffer.from('signed'), headers: { 'stripe-signature': 'sig' } }, res);
@@ -188,7 +218,7 @@ test('handler verifies signature, retrieves subscription independently, and igno
 test('signature and validation failures expose no Stripe or tenant detail', async () => {
   const source = fixture();
   const invoke = async stripe => {
-    const handler = createOwnerSubscriptionActivationWebhookHandler({ admin: source.admin, getStripe: () => stripe, getWebhookSecret: () => 'secret', getPriceId: () => PRICE_ID });
+    const handler = createOwnerSubscriptionActivationWebhookHandler({ admin: source.admin, getStripe: () => stripe, getWebhookSecret: () => 'secret', getPriceIds: () => PRICE_IDS });
     const res = { statusCode: 0, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
     await handler({ method: 'POST', rawBody: Buffer.from('x'), headers: {} }, res);
     return res;
@@ -203,7 +233,7 @@ test('signature and validation failures expose no Stripe or tenant detail', asyn
 
 const lifecycle = (source, eventType, subscriptionValue = subscription(), invoiceValue = undefined, nowSeconds = 1000) =>
   applyOwnerSubscriptionLifecycle({ admin: source.admin, subscription: subscriptionValue,
-    priceId: PRICE_ID, eventType, invoice: invoiceValue, nowSeconds });
+    priceIds: PRICE_IDS, eventType, invoice: invoiceValue, nowSeconds });
 
 test('renewal failure creates a server-owned fixed seven-day cure and duplicate does not extend it', async () => {
   const source = fixture();
@@ -263,7 +293,7 @@ test('invalid configured Price and forged invoice correlation cannot mutate bill
   await activate(source);
   const before = source.writes.length;
   await assert.rejects(applyOwnerSubscriptionLifecycle({ admin: source.admin, subscription: subscription(),
-    priceId: '', eventType: 'customer.subscription.updated' }), ActivationError);
+    priceIds: {}, eventType: 'customer.subscription.updated' }), ActivationError);
   await assert.rejects(lifecycle(source, 'invoice.payment_failed', subscription(),
     invoice({ id: 'in_failed', status: 'open', paid: false, created: 101, customer: 'cus_other' })), ActivationError);
   assert.equal(source.writes.length, before);
@@ -293,7 +323,7 @@ test('fresh paid invoice suppresses delayed failure webhook', async () => {
     invoices: { retrieve: async () => invoice() },
   };
   const handler = createOwnerSubscriptionActivationWebhookHandler({ admin: source.admin, getStripe: () => stripe,
-    getWebhookSecret: () => 'test', getPriceId: () => PRICE_ID });
+    getWebhookSecret: () => 'test', getPriceIds: () => PRICE_IDS });
   const res = { statusCode: 0, status(code) { this.statusCode = code; return this; }, json() { return this; } };
   await handler({ method: 'POST', rawBody: Buffer.from('signed'), headers: {} }, res);
   assert.equal(res.statusCode, 200);
@@ -313,7 +343,7 @@ test('signed failure and provider cancellation events update only the canonical 
     invoices: { retrieve: async () => event.data.object },
   };
   const handler = createOwnerSubscriptionActivationWebhookHandler({ admin: source.admin, getStripe: () => stripe,
-    getWebhookSecret: () => 'test', getPriceId: () => PRICE_ID });
+    getWebhookSecret: () => 'test', getPriceIds: () => PRICE_IDS });
   const invoke = async () => {
     const res = { statusCode: 0, status(code) { this.statusCode = code; return this; }, json() { return this; } };
     await handler({ method: 'POST', rawBody: Buffer.from('signed'), headers: {} }, res);

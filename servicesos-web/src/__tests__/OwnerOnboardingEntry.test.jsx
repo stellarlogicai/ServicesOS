@@ -48,19 +48,21 @@ describe('OwnerOnboardingEntry', () => {
     expect(authState.bootstrapOwner).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the fixed no-trial subscription and redirects only after the gateway returns', async () => {
+  it('offers exactly monthly and annual billing and redirects using the selected interval only after gateway response', async () => {
     let resolveCheckout;
     const startCheckout = vi.fn(() => new Promise(resolve => { resolveCheckout = resolve; }));
     const assign = vi.fn();
     render(<BillingStep startCheckout={startCheckout} redirectToCheckout={assign} />);
     expect(screen.getByRole('heading', { name: 'ServicesOS subscription' })).toBeInTheDocument();
-    expect(screen.getByText('$100/month')).toBeInTheDocument();
-    expect(screen.getByText('Monthly subscription')).toBeInTheDocument();
-    expect(screen.getByText('No trial')).toBeInTheDocument();
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Monthly - \$100\/month/)).toBeChecked();
+    expect(screen.getByLabelText(/Annual - \$1,000\/year/)).not.toBeChecked();
+    expect(screen.getByText('No trial.')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/Annual - \$1,000\/year/));
+    expect(screen.getByLabelText(/Annual - \$1,000\/year/)).toBeChecked();
     const button = screen.getByRole('button', { name: 'Continue to Secure Checkout' });
     fireEvent.click(button); fireEvent.click(button);
     expect(startCheckout).toHaveBeenCalledTimes(1);
+    expect(startCheckout).toHaveBeenCalledWith('annual');
     expect(screen.getByRole('button', { name: 'Opening Secure Checkout…' })).toBeDisabled();
     resolveCheckout({ checkoutUrl: 'https://checkout.stripe.com/c/pay/test' });
     await waitFor(() => expect(assign).toHaveBeenCalledWith('https://checkout.stripe.com/c/pay/test'));

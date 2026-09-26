@@ -12,6 +12,7 @@ const {
 const { isValidCustomBrandingState } = require('./brandingGateway');
 const { projectConnectAccount } = require('./connectStripe');
 const { ownerSubscriptionEntitlement } = require('./ownerSubscriptionEntitlement');
+const { configuredOwnerSubscriptionPrices } = require('./ownerSubscriptionPrices');
 const { AGREEMENT_ID, AGREEMENT_TYPE, AGREEMENT_VERSION_DATE, CONTRACT_ID, termsHash, termsMarkdown } = require('./ownerSaasAgreement');
 
 const ALLOWED_ORIGINS = new Set(['https://servicesos.netlify.app', 'http://127.0.0.1:5173', 'http://localhost:5173', 'http://127.0.0.1:5174', 'http://localhost:5174']);
@@ -55,9 +56,11 @@ function accountReadiness(account, expectedId) {
   return projectConnectAccount(account).ready === true;
 }
 
-function billingReadiness(tenant, subscription, configuredPriceId) {
-  if (!tenant || !subscription || !configuredPriceId || tenant.subscriptionPriceId !== configuredPriceId) return false;
-  return ownerSubscriptionEntitlement(tenant, Math.floor(Date.now() / 1000), subscription).finalAcceptanceEligible === true;
+function billingReadiness(tenant, subscription, configuredPriceIds) {
+  let prices;
+  try { prices = configuredOwnerSubscriptionPrices(configuredPriceIds); } catch { return false; }
+  if (!tenant || !subscription || !Object.values(prices).includes(tenant.subscriptionPriceId)) return false;
+  return ownerSubscriptionEntitlement(tenant, Math.floor(Date.now() / 1000), subscription, Object.values(prices)).finalAcceptanceEligible === true;
 }
 
 async function collectTransactionFacts({ transaction, db, tenantId, uid, identityEmail }) {
@@ -122,12 +125,14 @@ async function authorizeOwner({ admin, uid }) {
   return { db, tenantId, tenant };
 }
 
-async function finalizeOwnerOnboarding({ admin, getStripe, getPriceId, identity }) {
+async function finalizeOwnerOnboarding({ admin, getStripe, getPriceIds, identity }) {
   const uid = normalizedText(identity?.uid);
   const access = await authorizeOwner({ admin, uid });
   const { db, tenantId, tenant } = access;
   if (tenant.onboardingState === 'active') return { success: true, completed: true, idempotent: true, tenantId };
   if (tenant.onboardingState !== 'operational_setup_required') failClosed();
+  let priceIds;
+  try { priceIds = configuredOwnerSubscriptionPrices(getPriceIds()); } catch { priceIds = null; }
 
   let subscription = null;
   let account = null;
@@ -142,7 +147,6 @@ async function finalizeOwnerOnboarding({ admin, getStripe, getPriceId, identity 
   } catch {
     // Provider failures remain false readiness and are reported as a bounded blocking stage.
   }
-  const priceId = normalizedText(getPriceId());
   const result = await db.runTransaction(async transaction => {
     const facts = await collectTransactionFacts({ transaction, db, tenantId, uid, identityEmail: identity.email });
     if (facts.tenant.onboardingState === 'active') return { completed: true, idempotent: true };
@@ -152,7 +156,7 @@ async function finalizeOwnerOnboarding({ admin, getStripe, getPriceId, identity 
       facts.tenant.subscriptionPriceId !== tenant.subscriptionPriceId ||
       facts.tenant.stripeAccountId !== tenant.stripeAccountId) failClosed();
     const blockingStage = firstBlockingStage(facts, {
-      billing: billingReadiness(facts.tenant, subscription, priceId),
+      billing: billingReadiness(facts.tenant, subscription, priceIds),
       connect: accountReadiness(account, facts.tenant.stripeAccountId),
     });
     if (blockingStage) return { completed: false, blockingStage };
@@ -168,7 +172,7 @@ async function finalizeOwnerOnboarding({ admin, getStripe, getPriceId, identity 
   return { success: true, tenantId, ...result };
 }
 
-function createOwnerOnboardingFinalizeGatewayHandler({ admin, getStripe, getPriceId }) {
+function createOwnerOnboardingFinalizeGatewayHandler({ admin, getStripe, getPriceIds }) {
   return async (req, res) => {
     applyCors(req, res);
     if (req.method === 'OPTIONS') return res.status(204).send('');
@@ -183,7 +187,7 @@ function createOwnerOnboardingFinalizeGatewayHandler({ admin, getStripe, getPric
     try { identity = await admin.auth().verifyIdToken(token); }
     catch { return res.status(401).json({ error: 'Authentication required.', code: 'unauthenticated' }); }
     try {
-      const result = await finalizeOwnerOnboarding({ admin, getStripe, getPriceId, identity });
+      const result = await finalizeOwnerOnboarding({ admin, getStripe, getPriceIds, identity });
       if (!result.completed) return res.status(409).json({ error: 'Setup requirements changed. Review the current setup step.', code: 'prerequisite_incomplete', blockingStage: result.blockingStage });
       return res.status(200).json(result);
     } catch (error) {

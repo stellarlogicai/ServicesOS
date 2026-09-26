@@ -2,6 +2,7 @@ const { membershipContains, normalizedText } = require('./ownerOnboardingBootstr
 const { BILLING_PURPOSE } = require('./ownerOnboardingBillingGateway');
 const { firestoreServerTimestamp } = require('./firebaseAdminCompat');
 const { OPERATIONAL_SETUP_STATE } = require('./ownerOnboardingState');
+const { configuredOwnerSubscriptionPrices, ownerSubscriptionIntervalForPrice } = require('./ownerSubscriptionPrices');
 
 const BILLING_SCHEMA_VERSION = '1';
 const CURE_SECONDS = 7 * 24 * 60 * 60;
@@ -27,8 +28,9 @@ function subscriptionIdFromInvoice(invoice) {
   return objectId(invoice?.subscription);
 }
 
-function verifiedSubscriptionFacts({ invoice, subscription, priceId }) {
-  if (!/^price_[A-Za-z0-9]+$/.test(priceId)) throw new ActivationError();
+function verifiedSubscriptionFacts({ invoice, subscription, priceIds }) {
+  let canonicalPrices;
+  try { canonicalPrices = configuredOwnerSubscriptionPrices(priceIds); } catch { throw new ActivationError(); }
   if (!invoice || invoice.status !== 'paid' || (invoice.paid !== undefined && invoice.paid !== true)) {
     throw new ActivationError();
   }
@@ -44,7 +46,11 @@ function verifiedSubscriptionFacts({ invoice, subscription, priceId }) {
   const customerId = objectId(subscription.customer);
   if (!customerId || objectId(invoice.customer) !== customerId) throw new ActivationError();
   const items = subscription.items?.data;
-  if (!Array.isArray(items) || items.length !== 1 || objectId(items[0]?.price) !== priceId || items[0]?.quantity !== 1) {
+  const priceId = objectId(items?.[0]?.price);
+  const billingInterval = ownerSubscriptionIntervalForPrice(canonicalPrices, priceId);
+  if (!Array.isArray(items) || items.length !== 1 || !billingInterval || items[0]?.quantity !== 1 ||
+    (subscription.metadata?.priceId !== undefined && subscription.metadata.priceId !== priceId) ||
+    (subscription.metadata?.billingInterval !== undefined && subscription.metadata.billingInterval !== billingInterval)) {
     throw new ActivationError();
   }
   const currentPeriodEnd = Number.isSafeInteger(subscription.current_period_end)
@@ -59,6 +65,7 @@ function verifiedSubscriptionFacts({ invoice, subscription, priceId }) {
     subscriptionId: subscription.id,
     subscriptionStatus: subscription.status,
     subscriptionPriceId: priceId,
+    billingInterval,
     currentPeriodEnd,
     cancelAtPeriodEnd: subscription.cancel_at_period_end === true,
     latestInvoiceId: invoice.id,
@@ -73,25 +80,29 @@ function ownerRelationshipIsValid({ tenant, owner }) {
     membershipContains(tenant.adminUsers, ownerUid));
 }
 
-function lifecycleFacts(subscription, priceId) {
-  if (!/^price_[A-Za-z0-9]+$/.test(priceId)) throw new ActivationError();
+function lifecycleFacts(subscription, priceIds) {
+  let canonicalPrices;
+  try { canonicalPrices = configuredOwnerSubscriptionPrices(priceIds); } catch { throw new ActivationError(); }
   const tenantId = normalizedText(subscription?.metadata?.tenantId);
   const customerId = objectId(subscription?.customer);
   const items = subscription?.items?.data;
+  const priceId = objectId(items?.[0]?.price);
+  const billingInterval = ownerSubscriptionIntervalForPrice(canonicalPrices, priceId);
   if (!tenantId || tenantId === 'DEFAULT' || !customerId || !normalizedText(subscription?.id) ||
     subscription.metadata?.billingPurpose !== BILLING_PURPOSE ||
     subscription.metadata?.onboardingSchemaVersion !== BILLING_SCHEMA_VERSION ||
-    !Array.isArray(items) || items.length !== 1 || objectId(items[0]?.price) !== priceId ||
-    items[0]?.quantity !== 1) throw new ActivationError();
+    !Array.isArray(items) || items.length !== 1 || !billingInterval || items[0]?.quantity !== 1 ||
+    (subscription.metadata?.priceId !== undefined && subscription.metadata.priceId !== priceId) ||
+    (subscription.metadata?.billingInterval !== undefined && subscription.metadata.billingInterval !== billingInterval)) throw new ActivationError();
   const currentPeriodEnd = Number.isSafeInteger(subscription.current_period_end)
     ? subscription.current_period_end : items[0]?.current_period_end;
   if (!Number.isSafeInteger(currentPeriodEnd) || currentPeriodEnd <= 0) throw new ActivationError();
-  return { tenantId, customerId, subscriptionId: subscription.id, currentPeriodEnd,
+  return { tenantId, customerId, subscriptionId: subscription.id, subscriptionPriceId: priceId, billingInterval, currentPeriodEnd,
     cancelAtPeriodEnd: subscription.cancel_at_period_end === true };
 }
 
-async function applyOwnerSubscriptionLifecycle({ admin, subscription, priceId, eventType, invoice, nowSeconds = Math.floor(Date.now() / 1000) }) {
-  const facts = lifecycleFacts(subscription, priceId);
+async function applyOwnerSubscriptionLifecycle({ admin, subscription, priceIds, eventType, invoice, nowSeconds = Math.floor(Date.now() / 1000) }) {
+  const facts = lifecycleFacts(subscription, priceIds);
   if (eventType === 'invoice.payment_failed' &&
     (subscriptionIdFromInvoice(invoice) !== facts.subscriptionId ||
       objectId(invoice?.customer) !== facts.customerId ||
@@ -103,7 +114,7 @@ async function applyOwnerSubscriptionLifecycle({ admin, subscription, priceId, e
     if (!snapshot.exists) throw new ActivationError();
     const tenant = snapshot.data() || {};
     if (tenant.onboardingSchemaVersion !== 1 || tenant.stripeCustomerId !== facts.customerId ||
-      tenant.stripeSubscriptionId !== facts.subscriptionId || tenant.subscriptionPriceId !== priceId ||
+      tenant.stripeSubscriptionId !== facts.subscriptionId || tenant.subscriptionPriceId !== facts.subscriptionPriceId ||
       tenant.status !== 'active' || ![OPERATIONAL_SETUP_STATE, 'active'].includes(tenant.onboardingState)) {
       throw new ActivationError();
     }
@@ -145,8 +156,8 @@ async function applyOwnerSubscriptionLifecycle({ admin, subscription, priceId, e
   });
 }
 
-async function activateOwnerSubscription({ admin, invoice, subscription, priceId }) {
-  const facts = verifiedSubscriptionFacts({ invoice, subscription, priceId });
+async function activateOwnerSubscription({ admin, invoice, subscription, priceIds }) {
+  const facts = verifiedSubscriptionFacts({ invoice, subscription, priceIds });
   const db = admin.firestore();
   const tenantRef = db.collection('tenants').doc(facts.tenantId);
 
@@ -195,7 +206,7 @@ async function activateOwnerSubscription({ admin, invoice, subscription, priceId
   });
 }
 
-function createOwnerSubscriptionActivationWebhookHandler({ admin, getStripe, getWebhookSecret, getPriceId }) {
+function createOwnerSubscriptionActivationWebhookHandler({ admin, getStripe, getWebhookSecret, getPriceIds }) {
   return async (req, res) => {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
     let event;
@@ -210,7 +221,7 @@ function createOwnerSubscriptionActivationWebhookHandler({ admin, getStripe, get
       if (!subscriptionId) return res.status(200).json({ received: true });
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
       if (event.type === 'invoice.paid') {
-        await activateOwnerSubscription({ admin, invoice: eventObject, subscription, priceId: normalizedText(getPriceId()) });
+        await activateOwnerSubscription({ admin, invoice: eventObject, subscription, priceIds: getPriceIds() });
       } else {
         let failureInvoice = event.type === 'invoice.payment_failed' ? eventObject : undefined;
         if (failureInvoice) {
@@ -219,7 +230,7 @@ function createOwnerSubscriptionActivationWebhookHandler({ admin, getStripe, get
           if (failureInvoice?.status !== 'open' || failureInvoice?.id !== eventObject.id ||
             objectId(subscription.latest_invoice) !== failureInvoice.id) throw new ActivationError();
         }
-        await applyOwnerSubscriptionLifecycle({ admin, subscription, priceId: normalizedText(getPriceId()),
+        await applyOwnerSubscriptionLifecycle({ admin, subscription, priceIds: getPriceIds(),
           eventType: event.type, invoice: failureInvoice });
       }
       return res.status(200).json({ received: true });

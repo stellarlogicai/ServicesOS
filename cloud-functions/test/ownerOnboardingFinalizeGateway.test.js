@@ -8,9 +8,11 @@ const { bootstrapOwnerOnboarding } = require('../ownerOnboardingBootstrapGateway
 const { AGREEMENT_ID, AGREEMENT_TYPE, AGREEMENT_VERSION_DATE, CONTRACT_ID, termsHash, termsMarkdown } = require('../ownerSaasAgreement');
 
 const PRICE_ID = 'price_servicesos100';
+const ANNUAL_PRICE_ID = 'price_servicesos1000year';
+const PRICE_IDS = { monthlyPriceId: PRICE_ID, annualPriceId: ANNUAL_PRICE_ID };
 const NOW = Math.floor(Date.now() / 1000);
 
-function fixture({ tenant = {}, profile = {}, service = {}, agreement = {}, branding = { mode: 'default' }, extraDocuments = {} } = {}) {
+function fixture({ tenant = {}, profile = {}, service = {}, agreement = {}, branding = { mode: 'default' }, extraDocuments = {}, providerSubscription = null } = {}) {
   const state = {
     'users/owner-a': { role: 'admin', status: 'active', tenantId: 'tenant-a', email: 'owner@example.test', ...profile },
     'tenants/tenant-a': {
@@ -65,7 +67,7 @@ function fixture({ tenant = {}, profile = {}, service = {}, agreement = {}, bran
     return { uid: 'owner-a', email: 'owner@example.test' };
   } }) };
   admin.firestore.FieldValue = { serverTimestamp: () => 'server-time' };
-  const subscription = {
+  const subscription = providerSubscription || {
     id: 'sub_owner', status: 'active', customer: 'cus_owner', current_period_end: NOW + 3600,
     cancel_at_period_end: false, latest_invoice: { id: 'in_paid', status: 'paid' },
     metadata: { tenantId: 'tenant-a', billingPurpose: 'servicesos_owner_subscription', onboardingSchemaVersion: '1' },
@@ -82,7 +84,7 @@ function fixture({ tenant = {}, profile = {}, service = {}, agreement = {}, bran
 }
 
 const finalize = source => finalizeOwnerOnboarding({ admin: source.admin, identity: { uid: 'owner-a' },
-  getStripe: () => source.stripe, getPriceId: () => PRICE_ID });
+  getStripe: () => source.stripe, getPriceIds: () => PRICE_IDS });
 
 test('explicit finalization revalidates and records the operational transition once', async () => {
   const source = fixture();
@@ -204,6 +206,21 @@ test('Connect readiness must be fresh and fully ready', async () => {
   assert.equal((await finalize(source)).blockingStage, 'stripe_connect');
 });
 
+test('fresh annual canonical Price remains final-acceptance eligible', async () => {
+  const source = fixture({
+    tenant: { subscriptionPriceId: ANNUAL_PRICE_ID },
+    providerSubscription: {
+      id: 'sub_owner', status: 'active', customer: 'cus_owner', current_period_end: NOW + 366 * 86400,
+      cancel_at_period_end: false, latest_invoice: { id: 'in_paid', status: 'paid' },
+      metadata: { tenantId: 'tenant-a', billingPurpose: 'servicesos_owner_subscription', onboardingSchemaVersion: '1',
+        priceId: ANNUAL_PRICE_ID, billingInterval: 'annual' },
+      items: { data: [{ price: ANNUAL_PRICE_ID, quantity: 1 }] },
+    },
+  });
+  assert.equal((await finalize(source)).completed, true);
+  assert.equal(source.state['tenants/tenant-a'].subscriptionPriceId, ANNUAL_PRICE_ID);
+});
+
 test('authorization rejects non-owner and cross-tenant identity without Stripe calls', async () => {
   for (const [uid, changes] of [
     ['employee-a', {}], ['owner-a', { profile: { role: 'employee' } }],
@@ -211,7 +228,7 @@ test('authorization rejects non-owner and cross-tenant identity without Stripe c
     ['owner-a', { tenant: { adminUsers: [] } }],
   ]) {
     const source = fixture(changes);
-    await assert.rejects(finalizeOwnerOnboarding({ admin: source.admin, identity: { uid }, getStripe: () => source.stripe, getPriceId: () => PRICE_ID }));
+    await assert.rejects(finalizeOwnerOnboarding({ admin: source.admin, identity: { uid }, getStripe: () => source.stripe, getPriceIds: () => PRICE_IDS }));
     assert.equal(source.providerCalls, 0);
     assert.equal(source.writes.length, 0);
   }
@@ -219,7 +236,7 @@ test('authorization rejects non-owner and cross-tenant identity without Stripe c
 
 test('gateway requires authentication and rejects client authority fields', async () => {
   const source = fixture();
-  const handler = createOwnerOnboardingFinalizeGatewayHandler({ admin: source.admin, getStripe: () => source.stripe, getPriceId: () => PRICE_ID });
+  const handler = createOwnerOnboardingFinalizeGatewayHandler({ admin: source.admin, getStripe: () => source.stripe, getPriceIds: () => PRICE_IDS });
   const invoke = async ({ token = '', body = {} } = {}) => {
     const response = { statusCode: 0, body: null, status(code) { this.statusCode = code; return this; }, json(value) { this.body = value; return this; }, set() { return this; } };
     await handler({ method: 'POST', headers: token ? { authorization: `Bearer ${token}` } : {}, body }, response);

@@ -23,6 +23,18 @@ test('only valid current paid period is final-acceptance eligible', () => {
   assert.equal(ownerSubscriptionEntitlement({ subscriptionStatus: 'active', currentPeriodEnd: 200, paymentFailureAt: 50 }, 100).finalAcceptanceEligible, false);
 });
 
+test('fresh final acceptance accepts either configured canonical interval Price only', () => {
+  const prices = ['price_monthly', 'price_annual'];
+  const tenant = { id: 'tenant-a', status: 'active', subscriptionStatus: 'active', currentPeriodEnd: 200,
+    stripeSubscriptionId: 'sub_a', stripeCustomerId: 'cus_a', subscriptionPriceId: 'price_annual', latestInvoiceId: 'in_paid' };
+  const provider = { id: 'sub_a', customer: 'cus_a', status: 'active', current_period_end: 200,
+    metadata: { tenantId: 'tenant-a', billingPurpose: 'servicesos_owner_subscription', onboardingSchemaVersion: '1' },
+    latest_invoice: { id: 'in_paid', status: 'paid' },
+    items: { data: [{ price: 'price_annual', quantity: 1 }] } };
+  assert.equal(ownerSubscriptionEntitlement(tenant, 100, provider, prices).finalAcceptanceEligible, true);
+  assert.equal(ownerSubscriptionEntitlement(tenant, 100, { ...provider, items: { data: [{ price: 'price_unrelated', quantity: 1 }] } }, prices).finalAcceptanceEligible, false);
+});
+
 test('cure is access-valid only within seven-day deadline, never final-acceptance eligible', () => {
   const tenant = { subscriptionStatus: 'past_due', paymentFailureAt: 100, cureDeadline: 100 + 7 * 86400 };
   assert.equal(ownerSubscriptionEntitlement(tenant, 101).paidAccess, true);

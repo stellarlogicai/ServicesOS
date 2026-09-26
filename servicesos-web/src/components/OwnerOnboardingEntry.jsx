@@ -281,12 +281,13 @@ function AgreementStep({ loadAgreement, acceptAgreement }) {
 export function BillingStep({ startCheckout, redirectToCheckout = url => window.location.assign(url) }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [billingInterval, setBillingInterval] = useState('monthly');
   const submit = async () => {
     if (submitting) return;
     setSubmitting(true);
     setError('');
     try {
-      const checkout = await startCheckout();
+      const checkout = await startCheckout(billingInterval);
       redirectToCheckout(checkout.checkoutUrl);
     } catch {
       setError('Secure checkout could not be opened. Try again.');
@@ -297,11 +298,18 @@ export function BillingStep({ startCheckout, redirectToCheckout = url => window.
     <div>
       <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>ServicesOS subscription</h1>
       <p style={{ color: '#475569' }}>Complete secure billing setup to activate your business account.</p>
-      <dl aria-label="ServicesOS subscription summary" style={{ display: 'grid', gap: 8, margin: '22px 0' }}>
-        <div><dt style={{ fontWeight: 700 }}>ServicesOS</dt><dd style={{ margin: 0 }}>$100/month</dd></div>
-        <div><dt style={{ fontWeight: 700 }}>Billing</dt><dd style={{ margin: 0 }}>Monthly subscription</dd></div>
-        <div><dt style={{ fontWeight: 700 }}>Trial</dt><dd style={{ margin: 0 }}>No trial</dd></div>
-      </dl>
+      <fieldset disabled={submitting} style={{ border: 0, padding: 0, margin: '22px 0' }}>
+        <legend style={{ fontWeight: 700, marginBottom: 10 }}>Choose billing interval</legend>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+          <input type="radio" name="billingInterval" value="monthly" checked={billingInterval === 'monthly'} onChange={() => setBillingInterval('monthly')} />
+          <span>Monthly - $100/month</span>
+        </label>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input type="radio" name="billingInterval" value="annual" checked={billingInterval === 'annual'} onChange={() => setBillingInterval('annual')} />
+          <span>Annual - $1,000/year</span>
+        </label>
+      </fieldset>
+      <p>No trial.</p>
       {error ? <p role="alert" style={{ color: '#991b1b' }}>{error}</p> : null}
       <button type="button" disabled={submitting} onClick={submit}>
         {submitting ? 'Opening Secure Checkout…' : 'Continue to Secure Checkout'}

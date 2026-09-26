@@ -449,11 +449,11 @@ export function AuthProvider({ children }) {
     }
     return agreement;
   };
-  const startOwnerSubscriptionCheckout = async () => {
+  const startOwnerSubscriptionCheckout = async billingInterval => {
     if (!user || ownerOnboarding?.onboardingState !== 'billing_required') {
       throw new Error('Subscription checkout is unavailable.');
     }
-    return createOwnerSubscriptionCheckout({ user });
+    return createOwnerSubscriptionCheckout({ user, billingInterval });
   };
 
   // ── Tenant switching (super-admin only) ───────────────────────────────────

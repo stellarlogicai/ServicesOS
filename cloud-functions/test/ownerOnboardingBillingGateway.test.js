@@ -5,6 +5,9 @@ const {
   createCheckout,
   createOwnerOnboardingBillingGatewayHandler,
 } = require('../ownerOnboardingBillingGateway');
+const MONTHLY_PRICE_ID = 'price_servicesos100';
+const ANNUAL_PRICE_ID = 'price_servicesos1000year';
+const PRICE_IDS = { monthlyPriceId: MONTHLY_PRICE_ID, annualPriceId: ANNUAL_PRICE_ID };
 
 function fixture({ user = {}, tenant = {}, customer = null, session = null, stripeError = null } = {}) {
   const state = {
@@ -36,7 +39,7 @@ function fixture({ user = {}, tenant = {}, customer = null, session = null, stri
   const defaultCustomer = customer || { id: 'cus_owner', metadata: { tenantId: 'tenant-a', billingPurpose: BILLING_PURPOSE, onboardingSchemaVersion: '1' } };
   const defaultSession = session || {
     id: 'cs_owner', url: 'https://checkout.stripe.com/c/pay/test', status: 'open', customer: 'cus_owner',
-    metadata: { tenantId: 'tenant-a', billingPurpose: BILLING_PURPOSE, onboardingSchemaVersion: '1', priceId: 'price_servicesos100' },
+    metadata: { tenantId: 'tenant-a', billingPurpose: BILLING_PURPOSE, onboardingSchemaVersion: '1', priceId: MONTHLY_PRICE_ID },
   };
   const stripe = {
     customers: {
@@ -44,16 +47,16 @@ function fixture({ user = {}, tenant = {}, customer = null, session = null, stri
       retrieve: async id => { calls.customersRetrieve.push(id); if (stripeError) throw stripeError; return structuredClone(defaultCustomer); },
     },
     checkout: { sessions: {
-      create: async (...args) => { calls.sessionsCreate.push(args); if (stripeError) throw stripeError; return structuredClone(defaultSession); },
+      create: async (...args) => { calls.sessionsCreate.push(args); if (stripeError) throw stripeError; return { ...structuredClone(defaultSession), metadata: structuredClone(args[0].metadata) }; },
       retrieve: async id => { calls.sessionsRetrieve.push(id); if (stripeError) throw stripeError; return structuredClone(defaultSession); },
     } },
   };
   return { admin, calls, state, stripe, writes };
 }
 
-const run = source => createCheckout({
+const run = (source, billingInterval = 'monthly') => createCheckout({
   admin: source.admin, identity: { uid: 'owner-a' }, stripe: source.stripe,
-  priceId: 'price_servicesos100', appUrl: 'https://servicesos.netlify.app', body: {},
+  priceIds: PRICE_IDS, appUrl: 'https://servicesos.netlify.app', body: { billingInterval },
 });
 
 test('valid owner creates tenant-bound customer and fixed subscription Checkout without activation', async () => {
@@ -66,11 +69,14 @@ test('valid owner creates tenant-bound customer and fixed subscription Checkout 
   assert.equal(customerOptions.idempotencyKey, 'servicesos-owner-customer-tenant-a');
   const [params, options] = source.calls.sessionsCreate[0];
   assert.equal(params.mode, 'subscription');
-  assert.deepEqual(params.line_items, [{ price: 'price_servicesos100', quantity: 1 }]);
+  assert.deepEqual(params.line_items, [{ price: MONTHLY_PRICE_ID, quantity: 1 }]);
   assert.equal(params.customer, 'cus_owner');
   assert.equal(params.subscription_data.trial_period_days, undefined);
   assert.equal(params.subscription_data.metadata.billingPurpose, BILLING_PURPOSE);
-  assert.equal(params.metadata.priceId, 'price_servicesos100');
+  assert.equal(params.metadata.priceId, MONTHLY_PRICE_ID);
+  assert.equal(params.metadata.billingInterval, 'monthly');
+  assert.deepEqual(params.subscription_data.metadata, { tenantId: 'tenant-a', billingPurpose: BILLING_PURPOSE,
+    onboardingSchemaVersion: '1', priceId: MONTHLY_PRICE_ID, billingInterval: 'monthly' });
   assert.equal(params.transfer_data, undefined);
   assert.equal(params.application_fee_amount, undefined);
   assert.equal(params.payment_method_types, undefined);
@@ -110,12 +116,12 @@ test('open matching Checkout is reused and Customer creation retry is stable', a
 
 test('terminal prior Checkout produces a replacement with incremented idempotency attempt', async () => {
   const source = fixture({
-    tenant: { stripeCustomerId: 'cus_owner', ownerSubscriptionCheckout: { sessionId: 'cs_old', customerId: 'cus_owner', priceId: 'price_servicesos100', status: 'open', attempt: 2 } },
-    session: { id: 'cs_owner', url: 'https://checkout.stripe.com/c/pay/new', status: 'expired', customer: 'cus_owner', metadata: { tenantId: 'tenant-a', billingPurpose: BILLING_PURPOSE, onboardingSchemaVersion: '1', priceId: 'price_servicesos100' } },
+    tenant: { stripeCustomerId: 'cus_owner', ownerSubscriptionCheckout: { sessionId: 'cs_old', customerId: 'cus_owner', priceId: MONTHLY_PRICE_ID, status: 'open', attempt: 2 } },
+    session: { id: 'cs_owner', url: 'https://checkout.stripe.com/c/pay/new', status: 'expired', customer: 'cus_owner', metadata: { tenantId: 'tenant-a', billingPurpose: BILLING_PURPOSE, onboardingSchemaVersion: '1', priceId: MONTHLY_PRICE_ID } },
   });
   source.stripe.checkout.sessions.create = async (...args) => {
     source.calls.sessionsCreate.push(args);
-    return { ...source.stripeSession, id: 'cs_new', url: 'https://checkout.stripe.com/c/pay/new', status: 'open', customer: 'cus_owner', metadata: { tenantId: 'tenant-a', billingPurpose: BILLING_PURPOSE, onboardingSchemaVersion: '1', priceId: 'price_servicesos100' } };
+    return { ...source.stripeSession, id: 'cs_new', url: 'https://checkout.stripe.com/c/pay/new', status: 'open', customer: 'cus_owner', metadata: args[0].metadata };
   };
   await run(source);
   assert.equal(source.calls.sessionsCreate[0][1].idempotencyKey, 'servicesos-owner-checkout-tenant-a-3');
@@ -129,28 +135,69 @@ test('identity, lifecycle, legacy, membership, active, and injected authority fa
     fixture({ tenant: { onboardingSchemaVersion: undefined } }),
   ];
   for (const source of sources) await assert.rejects(run(source), error => error.code === 'billing_unavailable');
-  for (const body of [{ tenantId: 'tenant-b' }, { priceId: 'price_other' }, { tier: 'pro' }, { customerId: 'cus_other' }, { status: 'active' }]) {
+  for (const body of [{}, { billingInterval: 'weekly' }, { billingInterval: 'monthly', priceId: 'price_other' },
+    { billingInterval: 'monthly', amount: 1 }, { billingInterval: 'monthly', tenantId: 'tenant-b' },
+    { billingInterval: 'annual', customerId: 'cus_other' }, { billingInterval: 'monthly', quantity: 9 }]) {
     const source = fixture();
-    await assert.rejects(createCheckout({ admin: source.admin, identity: { uid: 'owner-a' }, stripe: source.stripe, priceId: 'price_servicesos100', appUrl: 'https://servicesos.netlify.app', body }), error => error.code === 'invalid_request');
+    await assert.rejects(createCheckout({ admin: source.admin, identity: { uid: 'owner-a' }, stripe: source.stripe, priceIds: PRICE_IDS, appUrl: 'https://servicesos.netlify.app', body }), error => error.code === 'invalid_request');
   }
 });
 
 test('missing or unsafe server configuration fails before Stripe use', async () => {
   for (const config of [
-    { priceId: '', appUrl: 'https://servicesos.netlify.app' },
-    { priceId: 'not-a-price', appUrl: 'https://servicesos.netlify.app' },
-    { priceId: 'price_ok', appUrl: 'http://servicesos.netlify.app' },
+    { priceIds: { monthlyPriceId: '', annualPriceId: ANNUAL_PRICE_ID }, appUrl: 'https://servicesos.netlify.app' },
+    { priceIds: { monthlyPriceId: 'not-a-price', annualPriceId: ANNUAL_PRICE_ID }, appUrl: 'https://servicesos.netlify.app' },
+    { priceIds: { monthlyPriceId: MONTHLY_PRICE_ID, annualPriceId: MONTHLY_PRICE_ID }, appUrl: 'https://servicesos.netlify.app' },
+    { priceIds: PRICE_IDS, appUrl: 'http://servicesos.netlify.app' },
   ]) {
     const source = fixture();
-    await assert.rejects(createCheckout({ admin: source.admin, identity: { uid: 'owner-a' }, stripe: source.stripe, body: {}, ...config }), error => error.status === 503);
+    await assert.rejects(createCheckout({ admin: source.admin, identity: { uid: 'owner-a' }, stripe: source.stripe, body: { billingInterval: 'monthly' }, ...config }), error => error.status === 503);
     assert.equal(source.calls.customersCreate.length, 0);
   }
+});
+
+test('annual selection uses only the configured annual Price and quantity one', async () => {
+  const source = fixture();
+  await run(source, 'annual');
+  const [params, options] = source.calls.sessionsCreate[0];
+  assert.deepEqual(params.line_items, [{ price: ANNUAL_PRICE_ID, quantity: 1 }]);
+  assert.equal(params.metadata.priceId, ANNUAL_PRICE_ID);
+  assert.equal(params.metadata.billingInterval, 'annual');
+  assert.equal(params.subscription_data.metadata.priceId, ANNUAL_PRICE_ID);
+  assert.equal(options.idempotencyKey, 'servicesos-owner-checkout-tenant-a-annual-1');
+  assert.equal(params.subscription_data.trial_period_days, undefined);
+  assert.equal(params.transfer_data, undefined);
+  assert.equal(params.application_fee_amount, undefined);
+});
+
+test('open Checkout reuse respects interval and preserves legacy monthly reuse', async () => {
+  const monthly = fixture({ tenant: { stripeCustomerId: 'cus_owner', ownerSubscriptionCheckout: {
+    sessionId: 'cs_month', customerId: 'cus_owner', priceId: MONTHLY_PRICE_ID, billingInterval: 'monthly', attempt: 1,
+  } } });
+  await run(monthly, 'monthly');
+  assert.equal(monthly.calls.sessionsCreate.length, 0);
+
+  const annualSession = { id: 'cs_annual', url: 'https://checkout.stripe.com/c/pay/annual', status: 'open', customer: 'cus_owner',
+    metadata: { tenantId: 'tenant-a', billingPurpose: BILLING_PURPOSE, onboardingSchemaVersion: '1', priceId: ANNUAL_PRICE_ID, billingInterval: 'annual' } };
+  const annualPrior = fixture({ tenant: { stripeCustomerId: 'cus_owner', ownerSubscriptionCheckout: {
+    sessionId: 'cs_annual', customerId: 'cus_owner', priceId: ANNUAL_PRICE_ID, billingInterval: 'annual', attempt: 1,
+  } }, session: annualSession });
+  await run(annualPrior, 'monthly');
+  assert.equal(annualPrior.calls.sessionsRetrieve.length, 0);
+  assert.equal(annualPrior.calls.sessionsCreate.length, 1);
+  assert.deepEqual(annualPrior.calls.sessionsCreate[0][0].line_items, [{ price: MONTHLY_PRICE_ID, quantity: 1 }]);
+
+  const legacyMonthly = fixture({ tenant: { stripeCustomerId: 'cus_owner', ownerSubscriptionCheckout: {
+    sessionId: 'cs_legacy', customerId: 'cus_owner', priceId: MONTHLY_PRICE_ID, attempt: 1,
+  } } });
+  await run(legacyMonthly, 'monthly');
+  assert.equal(legacyMonthly.calls.sessionsCreate.length, 0);
 });
 
 test('handler requires auth, controls methods, and projects Stripe failures safely', async () => {
   const invoke = async ({ method = 'POST', token, source = fixture() } = {}) => {
     const res = { statusCode: 0, body: null, headers: {}, set(k, v) { this.headers[k] = v; return this; }, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; }, send(body) { this.body = body; return this; } };
-    await createOwnerOnboardingBillingGatewayHandler({ admin: source.admin, getStripe: () => source.stripe, getPriceId: () => 'price_servicesos100', getAppUrl: () => 'https://servicesos.netlify.app' })({ method, headers: token ? { authorization: `Bearer ${token}` } : {}, body: {} }, res);
+    await createOwnerOnboardingBillingGatewayHandler({ admin: source.admin, getStripe: () => source.stripe, getPriceIds: () => PRICE_IDS, getAppUrl: () => 'https://servicesos.netlify.app' })({ method, headers: token ? { authorization: `Bearer ${token}` } : {}, body: { billingInterval: 'monthly' } }, res);
     return res;
   };
   assert.equal((await invoke()).statusCode, 401);

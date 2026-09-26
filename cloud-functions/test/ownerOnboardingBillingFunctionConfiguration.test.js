@@ -14,6 +14,12 @@ test('owner billing gateway is bounded and explicitly receives only the Stripe s
   assert.equal(gateway.__endpoint.maxInstances, 3);
   assert.deepEqual(gateway.__endpoint.secretEnvironmentVariables, [{ key: 'STRIPE_SECRET_KEY' }]);
 });
+test('monthly and annual Price configuration remains server-side in the existing parameter contract', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
+  assert.match(source, /defineString\('SERVICESOS_OWNER_SUBSCRIPTION_PRICE_ID'\)/);
+  assert.match(source, /defineString\('SERVICESOS_OWNER_SUBSCRIPTION_ANNUAL_PRICE_ID'\)/);
+  assert.match(source, /getPriceIds:\s*getOwnerSubscriptionPriceIds/);
+});
 test('unsafe legacy subscription webhook is no longer exported', () => {
   const indexSource = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
   assert.doesNotMatch(indexSource, /exports\.subscriptionWebhook\s*=/);

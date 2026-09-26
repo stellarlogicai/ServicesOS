@@ -18,15 +18,18 @@ export function sanitizeOwnerCheckout(payload) {
   return { sessionId: value.sessionId.trim(), checkoutUrl: url.toString() };
 }
 
-export async function createOwnerSubscriptionCheckout({ user = auth.currentUser, fetchImpl = fetch } = {}) {
+export async function createOwnerSubscriptionCheckout({ billingInterval, user = auth.currentUser, fetchImpl = fetch } = {}) {
   if (!user || typeof user.getIdToken !== 'function') {
     throw new OwnerOnboardingServiceError('Sign in to continue owner onboarding.', { code: 'unauthenticated', status: 401 });
+  }
+  if (!['monthly', 'annual'].includes(billingInterval)) {
+    throw new OwnerOnboardingServiceError('Choose a valid billing interval.', { code: 'invalid_request', status: 400 });
   }
   const token = await user.getIdToken();
   const response = await fetchImpl(resolveOwnerOnboardingGatewayUrl(import.meta.env, FUNCTION_NAME), {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ billingInterval }),
   });
   let payload;
   try { payload = await response.json(); }

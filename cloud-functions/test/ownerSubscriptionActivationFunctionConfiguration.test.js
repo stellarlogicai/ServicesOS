@@ -19,6 +19,12 @@ test('owner activation webhook is bounded and receives only required Stripe secr
     { key: 'STRIPE_OWNER_SUBSCRIPTION_WEBHOOK_SECRET' },
   ]);
 });
+test('activation webhook receives both server-configured canonical Price IDs', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
+  assert.match(source, /SERVICESOS_OWNER_SUBSCRIPTION_PRICE_ID/);
+  assert.match(source, /SERVICESOS_OWNER_SUBSCRIPTION_ANNUAL_PRICE_ID/);
+  assert.match(source, /getPriceIds:\s*getOwnerSubscriptionPriceIds/);
+});
 
 test('legacy subscription webhook stays retired and booking/Connect exports remain present', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
