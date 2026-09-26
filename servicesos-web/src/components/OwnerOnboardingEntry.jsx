@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import ServiceCatalogSettings from './ServiceCatalogSettings';
 import CompanySettings from './CompanySettings';
 import EmployeeManagement from './EmployeeManagement';
+import StripeConnectOnboarding from './StripeConnectOnboarding';
 import { setWorkforceMode } from '../services/employeeTeamService';
 import { BUSINESS_DAYS, getBusinessSettings, saveBusinessSettings } from '../services/businessSettingsService';
 
@@ -76,6 +77,30 @@ function TeamSetupStep({ onboarding, refresh }) {
   if (onboarding.teamSetupComplete) return <div><h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Team setup complete</h1><p role="status">Your team setup is complete. The next setup stage will be available here later.</p></div>;
   if (onboarding.workforceMode === 'employees') return <div><h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Set up your team</h1><p style={{ color: '#475569' }}>Add at least one active employee to continue.</p>{error && <p role="alert">{error}</p>}<EmployeeManagement onChanged={refresh} /></div>;
   return <div><h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Set up your team</h1><p style={{ color: '#475569' }}>Choose whether you work alone or with employees.</p>{error && <p role="alert">{error}</p>}<div style={{ display: 'flex', gap: 10 }}><button type="button" onClick={() => chooseMode('owner_only')} disabled={saving}>I work alone</button><button type="button" onClick={() => chooseMode('employees')} disabled={saving}>I have employees</button></div></div>;
+}
+
+function StripeConnectStep({ onboarding, refresh }) {
+  return <div>
+    <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Connect customer payments</h1>
+    <p style={{ color: '#475569' }}>Connect Stripe before ServicesOS can activate online customer payments.</p>
+    {onboarding.stripeConnectStatus === 'unavailable' ? (
+      <p role="alert" style={{ color: '#991b1b' }}>Stripe status could not be verified. Refresh status and try again.</p>
+    ) : null}
+    <StripeConnectOnboarding
+      tenantId={onboarding.tenantId}
+      initialBusinessEmail={onboarding.businessEmail || ''}
+      initialBusinessName={onboarding.businessName || ''}
+      onStatusConfirmed={refresh}
+    />
+    <p style={{ color: '#64748b' }}>You can leave and return later. Stripe setup remains required until ServicesOS verifies it is ready.</p>
+  </div>;
+}
+
+function FinalAcceptancePending() {
+  return <div>
+    <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Final setup review</h1>
+    <p role="status" style={{ color: '#475569' }}>Stripe Connect is ready. Final operational acceptance is the next setup stage and is not available yet.</p>
+  </div>;
 }
 
 const fieldStyle = {
@@ -320,7 +345,7 @@ export default function OwnerOnboardingEntry() {
         ) : ownerOnboarding?.onboardingState === 'billing_required' ? (
           <BillingStep startCheckout={startOwnerSubscriptionCheckout} />
         ) : ownerOnboarding?.onboardingState === 'operational_setup_required' ? (
-          typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'services_pricing' ? <ServicesPricingStep refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'availability' ? <AvailabilityStep tenantId={ownerOnboarding.tenantId} refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.brandingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'branding' ? <BrandingStep refresh={refreshOwnerOnboarding} /> : ownerOnboarding.operationalProgress?.nextStep === 'team_setup' ? <TeamSetupStep onboarding={ownerOnboarding} refresh={refreshOwnerOnboarding} /> : <OperationalSetupPending onboarding={ownerOnboarding} />
+          typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'services_pricing' ? <ServicesPricingStep refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'availability' ? <AvailabilityStep tenantId={ownerOnboarding.tenantId} refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.brandingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'branding' ? <BrandingStep refresh={refreshOwnerOnboarding} /> : ownerOnboarding.operationalProgress?.nextStep === 'team_setup' ? <TeamSetupStep onboarding={ownerOnboarding} refresh={refreshOwnerOnboarding} /> : ownerOnboarding.operationalProgress?.nextStep === 'stripe_connect' ? <StripeConnectStep onboarding={ownerOnboarding} refresh={refreshOwnerOnboarding} /> : ownerOnboarding.operationalProgress?.nextStep === 'final_acceptance' ? <FinalAcceptancePending /> : <OperationalSetupPending onboarding={ownerOnboarding} />
         ) : copy ? (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>{copy.title}</h1>

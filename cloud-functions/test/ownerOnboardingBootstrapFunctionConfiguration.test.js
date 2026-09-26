@@ -13,5 +13,5 @@ before(() => {
 test('owner onboarding bootstrap gateway stays within V1 runtime bounds', () => {
   assert.equal(ownerOnboardingBootstrapGateway.__endpoint.minInstances, 0);
   assert.equal(ownerOnboardingBootstrapGateway.__endpoint.maxInstances, 3);
-  assert.deepEqual(ownerOnboardingBootstrapGateway.__endpoint.secretEnvironmentVariables || [], []);
+  assert.deepEqual(ownerOnboardingBootstrapGateway.__endpoint.secretEnvironmentVariables || [], [{ key: 'STRIPE_SECRET_KEY' }]);
 });

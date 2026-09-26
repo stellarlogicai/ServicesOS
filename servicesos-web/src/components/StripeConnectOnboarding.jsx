@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createConnectedAccount,
   generateOnboardingLink,
@@ -9,6 +9,7 @@ export default function StripeConnectOnboarding({
   tenantId,
   initialBusinessEmail = '',
   initialBusinessName = '',
+  onStatusConfirmed,
 }) {
   const [accountStatus, setAccountStatus] = useState(null);
   const [businessEmail, setBusinessEmail] = useState(initialBusinessEmail);
@@ -16,6 +17,11 @@ export default function StripeConnectOnboarding({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const statusConfirmedRef = useRef(onStatusConfirmed);
+
+  useEffect(() => {
+    statusConfirmedRef.current = onStatusConfirmed;
+  }, [onStatusConfirmed]);
 
   const connected = Boolean(accountStatus?.connected);
   const chargesEnabled = accountStatus?.chargesEnabled === true;
@@ -33,7 +39,9 @@ export default function StripeConnectOnboarding({
     setLoading(true);
     setError('');
     try {
-      setAccountStatus(await getConnectedAccountStatus(tenantId));
+      const status = await getConnectedAccountStatus(tenantId);
+      setAccountStatus(status);
+      if (typeof statusConfirmedRef.current === 'function') await statusConfirmedRef.current(status);
     } catch {
       setError('Stripe Connect status could not be refreshed.');
     } finally {

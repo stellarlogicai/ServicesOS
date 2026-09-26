@@ -182,4 +182,27 @@ describe('owner onboarding web service', () => {
     payload.onboarding.operationalProgress.nextStep = 'operational_setup';
     expect(() => sanitizeOwnerOnboardingProjection(payload)).toThrow('Owner onboarding returned an invalid response.');
   });
+
+  it('accepts only server-derived Stripe completion and final-acceptance progression', () => {
+    const payload = {
+      success: true,
+      onboarding: {
+        tenantId: 'managed', onboardingState: 'operational_setup_required', lifecycleManaged: true,
+        businessProfileComplete: true, billingEntitlement: 'active',
+        servicesPricingComplete: true, availabilityComplete: true, brandingComplete: true,
+        teamSetupComplete: true, stripeConnectComplete: true, stripeConnectStatus: 'ready',
+        operationalProgress: {
+          completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing', 'services_pricing', 'availability', 'branding', 'team_setup', 'stripe_connect'],
+          nextStep: 'final_acceptance', operationalComplete: false,
+        },
+      },
+    };
+    expect(sanitizeOwnerOnboardingProjection(payload)).toMatchObject({
+      stripeConnectComplete: true,
+      stripeConnectStatus: 'ready',
+      operationalProgress: { nextStep: 'final_acceptance', operationalComplete: false },
+    });
+    payload.onboarding.stripeConnectComplete = false;
+    expect(() => sanitizeOwnerOnboardingProjection(payload)).toThrow('Owner onboarding returned an invalid response.');
+  });
 });

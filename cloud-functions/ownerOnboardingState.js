@@ -63,7 +63,10 @@ function onboardingProgressForState(onboardingState, operational = {}) {
       completedSteps.push('availability');
       if (operational.brandingComplete) {
         completedSteps.push('branding');
-        if (operational.teamSetupComplete) completedSteps.push('team_setup');
+        if (operational.teamSetupComplete) {
+          completedSteps.push('team_setup');
+          if (operational.stripeConnectComplete) completedSteps.push('stripe_connect');
+        }
       }
     }
   }
@@ -72,7 +75,9 @@ function onboardingProgressForState(onboardingState, operational = {}) {
     nextStep: operational.servicesPricingComplete
       ? (operational.availabilityComplete
         ? (operational.brandingComplete
-          ? (operational.teamSetupComplete ? 'stripe_connect' : 'team_setup')
+          ? (operational.teamSetupComplete
+            ? (operational.stripeConnectComplete ? 'final_acceptance' : 'stripe_connect')
+            : 'team_setup')
           : 'branding')
         : 'availability')
       : 'services_pricing',

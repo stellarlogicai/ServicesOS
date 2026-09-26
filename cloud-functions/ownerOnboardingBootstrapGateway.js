@@ -10,6 +10,7 @@ const {
   hasQualifyingEmployee,
 } = require('./ownerOnboardingState');
 const { isValidCustomBrandingState } = require('./brandingGateway');
+const { projectConnectAccount } = require('./connectStripe');
 
 const OWNER_ONBOARDING_ALLOWED_ORIGINS = new Set([
   'https://servicesos.netlify.app',
@@ -87,23 +88,55 @@ function hasCompleteBusinessProfile(tenant) {
   );
 }
 
-async function operationalProjection({ admin, tenantId, tenant }) {
-  if (tenant.onboardingState !== 'operational_setup_required') return { servicesPricingComplete: false, availabilityComplete: false, brandingComplete: false };
+async function operationalProjection({ admin, getStripe, tenantId, tenant }) {
+  if (tenant.onboardingState !== 'operational_setup_required') {
+    return {
+      servicesPricingComplete: false,
+      availabilityComplete: false,
+      brandingComplete: false,
+      teamSetupComplete: false,
+      stripeConnectComplete: false,
+      stripeConnectStatus: 'not_checked',
+    };
+  }
   const serviceSnapshot = await admin.firestore().collection('tenants').doc(tenantId).collection('serviceCatalog').limit(50).get();
   const brandingSnapshot = await admin.firestore().collection('tenants').doc(tenantId).collection('branding').doc('config').get();
   const servicesPricingComplete = serviceSnapshot.docs.some(doc => isValidCanonicalService(doc.data() || {}));
   const teamSetupComplete = tenant.workforceMode === 'owner_only' || (
     tenant.workforceMode === 'employees' && await hasQualifyingEmployee({ admin, tenantId, tenant })
   );
+  let stripeConnectComplete = false;
+  let stripeConnectStatus = 'not_checked';
+  if (servicesPricingComplete && isValidAvailability(tenant.businessSettings?.availability) &&
+      (!brandingSnapshot.exists || isValidCustomBrandingState(brandingSnapshot.data() || {}, tenantId)) &&
+      teamSetupComplete) {
+    if (!normalizedText(tenant.stripeAccountId)) {
+      stripeConnectStatus = 'not_connected';
+    } else {
+      try {
+        const stripe = typeof getStripe === 'function' ? getStripe() : null;
+        if (!stripe?.accounts || typeof stripe.accounts.retrieve !== 'function') throw new Error('Stripe unavailable');
+        const account = await stripe.accounts.retrieve(tenant.stripeAccountId);
+        const projection = projectConnectAccount(account);
+        if (projection.accountId !== tenant.stripeAccountId) throw new Error('Stripe account mismatch');
+        stripeConnectComplete = projection.ready === true;
+        stripeConnectStatus = stripeConnectComplete ? 'ready' : 'incomplete';
+      } catch {
+        stripeConnectStatus = 'unavailable';
+      }
+    }
+  }
   return {
     servicesPricingComplete,
     availabilityComplete: isValidAvailability(tenant.businessSettings?.availability),
     brandingComplete: !brandingSnapshot.exists || isValidCustomBrandingState(brandingSnapshot.data() || {}, tenantId),
     teamSetupComplete,
+    stripeConnectComplete,
+    stripeConnectStatus,
   };
 }
 
-async function safeProjection({ admin, tenantId, tenant }) {
+async function safeProjection({ admin, getStripe, tenantId, tenant }) {
   const lifecycleManaged = tenant.onboardingSchemaVersion === OWNER_ONBOARDING_SCHEMA_VERSION;
   const result = {
     success: true,
@@ -115,12 +148,14 @@ async function safeProjection({ admin, tenantId, tenant }) {
     },
   };
   if (lifecycleManaged) {
-    const operational = await operationalProjection({ admin, tenantId, tenant });
+    const operational = await operationalProjection({ admin, getStripe, tenantId, tenant });
     result.onboarding.billingEntitlement = billingEntitlementForTenant(tenant);
     result.onboarding.servicesPricingComplete = operational.servicesPricingComplete;
     result.onboarding.availabilityComplete = operational.availabilityComplete;
     result.onboarding.brandingComplete = operational.brandingComplete;
     result.onboarding.teamSetupComplete = operational.teamSetupComplete;
+    result.onboarding.stripeConnectComplete = operational.stripeConnectComplete;
+    result.onboarding.stripeConnectStatus = operational.stripeConnectStatus;
     if (tenant.workforceMode === 'owner_only' || tenant.workforceMode === 'employees') {
       result.onboarding.workforceMode = tenant.workforceMode;
     }
@@ -158,7 +193,7 @@ function validateExistingOwnerRelationship({ profile, tenant, uid }) {
   }
 }
 
-async function bootstrapOwnerOnboarding({ admin, identity }) {
+async function bootstrapOwnerOnboarding({ admin, getStripe, identity }) {
   const uid = normalizedText(identity?.uid);
   if (!uid || uid === 'DEFAULT') failClosed();
 
@@ -167,7 +202,7 @@ async function bootstrapOwnerOnboarding({ admin, identity }) {
   const candidateTenantRef = db.collection('tenants').doc();
   const serverTimestamp = () => firestoreServerTimestamp(admin);
 
-  return db.runTransaction(async transaction => {
+  const projectionSource = await db.runTransaction(async transaction => {
     const userSnapshot = await transaction.get(userRef);
     const profile = userSnapshot.exists ? (userSnapshot.data() || {}) : null;
     const existingTenantId = normalizedText(profile?.tenantId);
@@ -192,7 +227,7 @@ async function bootstrapOwnerOnboarding({ admin, identity }) {
         patch.updatedAt = serverTimestamp();
         transaction.update(tenantRef, patch);
       }
-      return safeProjection({ admin, tenantId: existingTenantId, tenant: { ...tenant, ...patch } });
+      return { tenantId: existingTenantId, tenant: { ...tenant, ...patch } };
     }
 
     const tenantId = candidateTenantRef.id;
@@ -223,11 +258,12 @@ async function bootstrapOwnerOnboarding({ admin, identity }) {
 
     transaction.create(candidateTenantRef, tenant);
     transaction.set(userRef, user, { merge: true });
-    return safeProjection({ admin, tenantId, tenant });
+    return { tenantId, tenant };
   });
+  return safeProjection({ admin, getStripe, ...projectionSource });
 }
 
-function createOwnerOnboardingBootstrapGatewayHandler({ admin }) {
+function createOwnerOnboardingBootstrapGatewayHandler({ admin, getStripe }) {
   return async (req, res) => {
     applyCors(req, res);
     if (req.method === 'OPTIONS') return res.status(204).send('');
@@ -252,7 +288,7 @@ function createOwnerOnboardingBootstrapGatewayHandler({ admin }) {
     }
 
     try {
-      return res.status(200).json(await bootstrapOwnerOnboarding({ admin, identity }));
+      return res.status(200).json(await bootstrapOwnerOnboarding({ admin, getStripe, identity }));
     } catch (error) {
       if (error instanceof OwnerOnboardingBootstrapError) {
         return res.status(error.status).json({ error: error.message, code: error.code });

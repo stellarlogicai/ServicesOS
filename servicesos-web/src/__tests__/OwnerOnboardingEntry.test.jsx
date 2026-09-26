@@ -16,6 +16,12 @@ const authState = {
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => authState }));
 vi.mock('../services/serviceCatalogService', () => ({ listOwnerServices: vi.fn().mockResolvedValue([]), listActiveServices: vi.fn().mockResolvedValue([]) }));
 vi.mock('../components/CompanySettings', () => ({ default: ({ onBrandingSaved }) => <button type="button" onClick={onBrandingSaved}>Save branding</button> }));
+vi.mock('../components/StripeConnectOnboarding', () => ({
+  default: ({ onStatusConfirmed, tenantId }) => <div>
+    <p>Reused Stripe Connect for {tenantId}</p>
+    <button type="button" onClick={() => onStatusConfirmed({ ready: true })}>Confirm fresh Stripe readiness</button>
+  </div>,
+}));
 
 import OwnerOnboardingEntry, { BillingStep } from '../components/OwnerOnboardingEntry';
 
@@ -225,5 +231,50 @@ describe('OwnerOnboardingEntry', () => {
     render(<OwnerOnboardingEntry />);
     expect(screen.getByRole('heading', { name: 'Set up your team' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'I work alone' })).toBeInTheDocument();
+  });
+
+  it('reuses Stripe Connect and advances only after fresh ready confirmation', async () => {
+    authState.ownerOnboarding = {
+      lifecycleManaged: true, onboardingState: 'operational_setup_required', tenantId: 'tenant-a',
+      businessEmail: 'owner@example.test', servicesPricingComplete: true, availabilityComplete: true,
+      brandingComplete: true, teamSetupComplete: true, stripeConnectComplete: false,
+      stripeConnectStatus: 'incomplete',
+      operationalProgress: {
+        completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing', 'services_pricing', 'availability', 'branding', 'team_setup'],
+        nextStep: 'stripe_connect', operationalComplete: false,
+      },
+    };
+    render(<OwnerOnboardingEntry />);
+    expect(screen.getByText('Reused Stripe Connect for tenant-a')).toBeInTheDocument();
+    expect(screen.getByText(/leave and return later/i)).toBeInTheDocument();
+    expect(authState.refreshOwnerOnboarding).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm fresh Stripe readiness' }));
+    await waitFor(() => expect(authState.refreshOwnerOnboarding).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps provider failure on Stripe Connect and renders final acceptance as pending only', () => {
+    authState.ownerOnboarding = {
+      lifecycleManaged: true, onboardingState: 'operational_setup_required', tenantId: 'tenant-a',
+      servicesPricingComplete: true, availabilityComplete: true, brandingComplete: true,
+      teamSetupComplete: true, stripeConnectComplete: false, stripeConnectStatus: 'unavailable',
+      operationalProgress: {
+        completedSteps: ['business_profile', 'saas_agreement', 'subscription_billing', 'services_pricing', 'availability', 'branding', 'team_setup'],
+        nextStep: 'stripe_connect', operationalComplete: false,
+      },
+    };
+    const { rerender } = render(<OwnerOnboardingEntry />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Stripe status could not be verified.');
+    authState.ownerOnboarding = {
+      ...authState.ownerOnboarding,
+      stripeConnectComplete: true,
+      stripeConnectStatus: 'ready',
+      operationalProgress: {
+        completedSteps: [...authState.ownerOnboarding.operationalProgress.completedSteps, 'stripe_connect'],
+        nextStep: 'final_acceptance', operationalComplete: false,
+      },
+    };
+    rerender(<OwnerOnboardingEntry />);
+    expect(screen.getByRole('heading', { name: 'Final setup review' })).toBeInTheDocument();
+    expect(screen.getByText(/not available yet/i)).toBeInTheDocument();
   });
 });

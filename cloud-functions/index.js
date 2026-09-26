@@ -77,7 +77,11 @@ admin.initializeApp();
 exports.ownerOnboardingBootstrapGateway = functions.runWith({
   minInstances: 0,
   maxInstances: 3,
-}).https.onRequest(createOwnerOnboardingBootstrapGatewayHandler({ admin }));
+  secrets: [stripeSecretKey],
+}).https.onRequest(createOwnerOnboardingBootstrapGatewayHandler({
+  admin,
+  getStripe: () => require('stripe')(stripeSecretKey.value()),
+}));
 
 // Keep this gateway in the bounded-Function inventory when reconciling cost guardrails.
 exports.ownerOnboardingBusinessProfileGateway = functions.runWith({

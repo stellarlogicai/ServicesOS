@@ -19,6 +19,7 @@ const OPERATIONAL_STEPS = new Set([
   'branding',
   'team_setup',
   'stripe_connect',
+  'final_acceptance',
   'operational_setup',
 ]);
 
@@ -53,7 +54,10 @@ function operationalProgressFromState(onboardingState, operational = {}) {
       completedSteps.push('availability');
       if (operational.brandingComplete) {
         completedSteps.push('branding');
-        if (operational.teamSetupComplete) completedSteps.push('team_setup');
+        if (operational.teamSetupComplete) {
+          completedSteps.push('team_setup');
+          if (operational.stripeConnectComplete) completedSteps.push('stripe_connect');
+        }
       }
     }
   }
@@ -65,7 +69,9 @@ function operationalProgressFromState(onboardingState, operational = {}) {
         ? 'availability'
         : !operational.brandingComplete
           ? 'branding'
-          : operational.teamSetupComplete ? 'stripe_connect' : 'team_setup',
+          : operational.teamSetupComplete
+            ? (operational.stripeConnectComplete ? 'final_acceptance' : 'stripe_connect')
+            : 'team_setup',
     operationalComplete: false,
   };
 }
@@ -157,6 +163,7 @@ export function sanitizeOwnerOnboardingProjection(payload) {
     availabilityComplete: source?.availabilityComplete === true,
     brandingComplete: source?.brandingComplete === true,
     teamSetupComplete: source?.teamSetupComplete === true,
+    stripeConnectComplete: source?.stripeConnectComplete === true,
   };
   const expectedProgress = ONBOARDING_STATES.has(onboardingState)
     ? operationalProgressFromState(onboardingState, operational)
@@ -198,6 +205,10 @@ export function sanitizeOwnerOnboardingProjection(payload) {
     if (typeof source.availabilityComplete === 'boolean') projection.availabilityComplete = source.availabilityComplete;
     if (typeof source.brandingComplete === 'boolean') projection.brandingComplete = source.brandingComplete;
     if (typeof source.teamSetupComplete === 'boolean') projection.teamSetupComplete = source.teamSetupComplete;
+    if (typeof source.stripeConnectComplete === 'boolean') projection.stripeConnectComplete = source.stripeConnectComplete;
+    if (['not_checked', 'not_connected', 'incomplete', 'ready', 'unavailable'].includes(source.stripeConnectStatus)) {
+      projection.stripeConnectStatus = source.stripeConnectStatus;
+    }
     if (workforceMode === 'owner_only' || workforceMode === 'employees') projection.workforceMode = workforceMode;
   }
   for (const field of ['businessName', 'businessEmail', 'businessPhone', 'businessAddress', 'timeZone']) {

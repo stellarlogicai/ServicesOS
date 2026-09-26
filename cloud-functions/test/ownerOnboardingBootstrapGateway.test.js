@@ -96,9 +96,9 @@ function responseRecorder() {
   };
 }
 
-async function callHandler({ fixture = createAdmin(), method = 'POST', headers, body = {} } = {}) {
+async function callHandler({ fixture = createAdmin(), getStripe, method = 'POST', headers, body = {} } = {}) {
   const response = responseRecorder();
-  await createOwnerOnboardingBootstrapGatewayHandler({ admin: fixture.admin })({
+  await createOwnerOnboardingBootstrapGatewayHandler({ admin: fixture.admin, getStripe })({
     method,
     headers: headers || { authorization: 'Bearer valid' },
     body,
@@ -122,6 +122,23 @@ function ownerProfile(overrides = {}) {
   return { role: 'admin', status: 'active', tenantId: 'tenant-a', ...overrides };
 }
 
+function operationalDocuments(tenant = {}) {
+  return {
+    'users/owner-a': ownerProfile(),
+    'tenants/tenant-a': managedTenant({
+      onboardingState: 'operational_setup_required',
+      status: 'active',
+      subscriptionStatus: 'active',
+      workforceMode: 'owner_only',
+      businessSettings: { availability: { availableDays: ['monday'] } },
+      ...tenant,
+    }),
+    'tenants/tenant-a/serviceCatalog/service-a': {
+      name: 'Standard', serviceType: 'standard', active: true, priceCents: 100, durationMinutes: 60,
+    },
+  };
+}
+
 test('missing and invalid authentication are denied', async () => {
   assert.equal((await callHandler({ headers: {} })).statusCode, 401);
   const fixture = createAdmin({ tokenError: new Error('invalid') });
@@ -137,7 +154,7 @@ test('gateway accepts only POST and controlled OPTIONS', async () => {
 });
 
 test('caller-supplied identity, membership, tenant, role, and state are rejected', async () => {
-  for (const field of ['uid', 'tenantId', 'role', 'adminUsers', 'status', 'onboardingState']) {
+  for (const field of ['uid', 'tenantId', 'role', 'adminUsers', 'status', 'onboardingState', 'accountId', 'chargesEnabled', 'payoutsEnabled', 'stripeConnectComplete']) {
     const response = await callHandler({ body: { [field]: 'attacker-controlled' } });
     assert.equal(response.statusCode, 400, field);
     assert.equal(response.body.code, 'invalid_request', field);
@@ -397,6 +414,54 @@ test('employees workforce mode requires a canonical delivered employee', async (
   assert.equal(result.onboarding.operationalProgress.nextStep, 'stripe_connect');
 });
 
+test('Stripe Connect remains incomplete without a canonical account', async () => {
+  const fixture = createAdmin({ documents: operationalDocuments() });
+  const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
+  assert.equal(result.onboarding.stripeConnectComplete, false);
+  assert.equal(result.onboarding.stripeConnectStatus, 'not_connected');
+  assert.equal(result.onboarding.operationalProgress.nextStep, 'stripe_connect');
+});
+
+test('fresh canonical Stripe readiness alone advances to final acceptance', async () => {
+  for (const [name, account, expectedReady] of [
+    ['details only', { details_submitted: true, charges_enabled: false, payouts_enabled: false, requirements: {} }, false],
+    ['charges disabled', { charges_enabled: false, payouts_enabled: true, requirements: {} }, false],
+    ['payouts disabled', { charges_enabled: true, payouts_enabled: false, requirements: {} }, false],
+    ['currently due', { charges_enabled: true, payouts_enabled: true, requirements: { currently_due: ['business_profile.url'] } }, false],
+    ['past due', { charges_enabled: true, payouts_enabled: true, requirements: { past_due: ['external_account'] } }, false],
+    ['ready', { charges_enabled: true, payouts_enabled: true, requirements: { currently_due: [], past_due: [] } }, true],
+  ]) {
+    const fixture = createAdmin({ documents: operationalDocuments({
+      stripeAccountId: 'acct_canonical', stripeAccountStatus: 'active', chargesEnabled: true, payoutsEnabled: true,
+    }) });
+    const getStripe = () => ({ accounts: { retrieve: async id => ({ id, ...account }) } });
+    const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, getStripe, identity: { uid: 'owner-a' } });
+    assert.equal(result.onboarding.stripeConnectComplete, expectedReady, name);
+    assert.equal(result.onboarding.stripeConnectStatus, expectedReady ? 'ready' : 'incomplete', name);
+    assert.equal(result.onboarding.operationalProgress.nextStep, expectedReady ? 'final_acceptance' : 'stripe_connect', name);
+    assert.equal(result.onboarding.operationalProgress.operationalComplete, false, name);
+  }
+});
+
+test('fresh Stripe failure or account mismatch cannot advance stale ready-like tenant state', async () => {
+  for (const retrieve of [
+    async () => { throw new Error('provider unavailable'); },
+    async () => ({ id: 'acct_other', charges_enabled: true, payouts_enabled: true, requirements: {} }),
+  ]) {
+    const fixture = createAdmin({ documents: operationalDocuments({
+      stripeAccountId: 'acct_canonical', stripeAccountStatus: 'active', chargesEnabled: true, payoutsEnabled: true,
+    }) });
+    const result = await bootstrapOwnerOnboarding({
+      admin: fixture.admin,
+      getStripe: () => ({ accounts: { retrieve } }),
+      identity: { uid: 'owner-a' },
+    });
+    assert.equal(result.onboarding.stripeConnectComplete, false);
+    assert.equal(result.onboarding.stripeConnectStatus, 'unavailable');
+    assert.equal(result.onboarding.operationalProgress.nextStep, 'stripe_connect');
+  }
+});
+
 test('pending, failed, mismatched, and unset workforce modes do not complete team setup', async () => {
   for (const [mode, activationStatus, email] of [['employees', 'pending', 'employee@example.test'], ['employees', 'delivery_failed', 'employee@example.test'], ['employees', 'email_sent', 'other@example.test'], [undefined, 'email_sent', 'employee@example.test']]) {
     const fixture = createAdmin({ documents: {
@@ -426,7 +491,7 @@ test('safe response allowlists onboarding and known business identity only', asy
   assert.deepEqual(Object.keys(result.onboarding).sort(), [
     'billingEntitlement',
     'businessAddress', 'businessEmail', 'businessName', 'businessPhone',
-    'availabilityComplete', 'brandingComplete', 'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'operationalProgress', 'servicesPricingComplete', 'teamSetupComplete',
+    'availabilityComplete', 'brandingComplete', 'businessProfileComplete', 'lifecycleManaged', 'onboardingState', 'operationalProgress', 'servicesPricingComplete', 'stripeConnectComplete', 'stripeConnectStatus', 'teamSetupComplete',
     'tenantId', 'timeZone',
   ].sort());
   assert.equal(JSON.stringify(result).includes('must-not-leak'), false);
