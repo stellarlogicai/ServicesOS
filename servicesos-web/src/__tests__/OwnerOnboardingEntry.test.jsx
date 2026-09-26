@@ -9,6 +9,7 @@ const authState = {
   acceptOwnerAgreement: vi.fn(),
   startOwnerSubscriptionCheckout: vi.fn(),
   refreshOwnerOnboarding: vi.fn(),
+  finishOwnerOperationalSetup: vi.fn(),
   ownerBootstrapCandidate: false,
   ownerOnboarding: null,
 };
@@ -33,6 +34,7 @@ describe('OwnerOnboardingEntry', () => {
     authState.acceptOwnerAgreement.mockReset();
     authState.startOwnerSubscriptionCheckout.mockReset();
     authState.refreshOwnerOnboarding.mockReset();
+    authState.finishOwnerOperationalSetup.mockReset();
     authState.refreshOwnerOnboarding.mockResolvedValue(undefined);
     authState.ownerBootstrapCandidate = false;
     authState.ownerOnboarding = null;
@@ -275,6 +277,11 @@ describe('OwnerOnboardingEntry', () => {
     };
     rerender(<OwnerOnboardingEntry />);
     expect(screen.getByRole('heading', { name: 'Final setup review' })).toBeInTheDocument();
-    expect(screen.getByText(/not available yet/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Finish setup' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Setup readiness' })).toHaveTextContent('Services and pricing: Ready');
+    expect(screen.getByRole('list', { name: 'Setup readiness' })).toHaveTextContent('SaaS subscription: Needs attention');
+    expect(authState.finishOwnerOperationalSetup).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+    return waitFor(() => expect(authState.finishOwnerOperationalSetup).toHaveBeenCalledTimes(1));
   });
 });

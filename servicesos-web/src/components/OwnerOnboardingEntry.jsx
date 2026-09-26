@@ -96,10 +96,51 @@ function StripeConnectStep({ onboarding, refresh }) {
   </div>;
 }
 
-function FinalAcceptancePending() {
+function FinalAcceptanceStep({ onboarding, finish, refresh }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const items = [
+    ['Services and pricing', onboarding.servicesPricingComplete],
+    ['Availability', onboarding.availabilityComplete],
+    ['Branding', onboarding.brandingComplete],
+    ['Team', onboarding.teamSetupComplete],
+    ['Stripe Connect', onboarding.stripeConnectComplete],
+    ['SaaS subscription', onboarding.billingEntitlement === 'active'],
+  ];
+  const submit = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError('');
+    try {
+      await finish();
+    } catch (failure) {
+      try {
+        await refresh();
+      } catch {
+        setError('Setup could not be refreshed. Review the current setup and try again.');
+        return;
+      }
+      if (failure?.blockingStage === 'subscription_billing') {
+        setError('Your SaaS subscription needs attention before setup can be finished.');
+      } else if (failure?.blockingStage === 'stripe_connect') {
+        setError('Stripe Connect readiness changed. Review payment setup and try again.');
+      } else {
+        setError('Setup requirements changed or could not be verified. Review the current setup and try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
   return <div>
     <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>Final setup review</h1>
-    <p role="status" style={{ color: '#475569' }}>Stripe Connect is ready. Final operational acceptance is the next setup stage and is not available yet.</p>
+    <p style={{ color: '#475569' }}>Review your setup before activating your ServicesOS workspace.</p>
+    <ul aria-label="Setup readiness" style={{ paddingLeft: 20, lineHeight: 1.9 }}>
+      {items.map(([label, ready]) => <li key={label}>{label}: {ready ? 'Ready' : 'Needs attention'}</li>)}
+    </ul>
+    {error && <p role="alert" style={{ color: '#991b1b' }}>{error}</p>}
+    <button type="button" onClick={submit} disabled={saving}>
+      {saving ? 'Verifying setup...' : 'Finish setup'}
+    </button>
   </div>;
 }
 
@@ -279,6 +320,7 @@ export default function OwnerOnboardingEntry() {
     ownerBootstrapCandidate,
     ownerOnboarding,
     refreshOwnerOnboarding,
+    finishOwnerOperationalSetup,
   } = useAuth();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(ownerBootstrapCandidate === true);
@@ -345,7 +387,7 @@ export default function OwnerOnboardingEntry() {
         ) : ownerOnboarding?.onboardingState === 'billing_required' ? (
           <BillingStep startCheckout={startOwnerSubscriptionCheckout} />
         ) : ownerOnboarding?.onboardingState === 'operational_setup_required' ? (
-          typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'services_pricing' ? <ServicesPricingStep refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'availability' ? <AvailabilityStep tenantId={ownerOnboarding.tenantId} refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.brandingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'branding' ? <BrandingStep refresh={refreshOwnerOnboarding} /> : ownerOnboarding.operationalProgress?.nextStep === 'team_setup' ? <TeamSetupStep onboarding={ownerOnboarding} refresh={refreshOwnerOnboarding} /> : ownerOnboarding.operationalProgress?.nextStep === 'stripe_connect' ? <StripeConnectStep onboarding={ownerOnboarding} refresh={refreshOwnerOnboarding} /> : ownerOnboarding.operationalProgress?.nextStep === 'final_acceptance' ? <FinalAcceptancePending /> : <OperationalSetupPending onboarding={ownerOnboarding} />
+          typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'services_pricing' ? <ServicesPricingStep refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.servicesPricingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'availability' ? <AvailabilityStep tenantId={ownerOnboarding.tenantId} refresh={refreshOwnerOnboarding} /> : typeof ownerOnboarding.brandingComplete === 'boolean' && ownerOnboarding.operationalProgress?.nextStep === 'branding' ? <BrandingStep refresh={refreshOwnerOnboarding} /> : ownerOnboarding.operationalProgress?.nextStep === 'team_setup' ? <TeamSetupStep onboarding={ownerOnboarding} refresh={refreshOwnerOnboarding} /> : ownerOnboarding.operationalProgress?.nextStep === 'stripe_connect' ? <StripeConnectStep onboarding={ownerOnboarding} refresh={refreshOwnerOnboarding} /> : ownerOnboarding.operationalProgress?.nextStep === 'final_acceptance' ? <FinalAcceptanceStep onboarding={ownerOnboarding} finish={finishOwnerOperationalSetup} refresh={refreshOwnerOnboarding} /> : <OperationalSetupPending onboarding={ownerOnboarding} />
         ) : copy ? (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 24 }}>{copy.title}</h1>

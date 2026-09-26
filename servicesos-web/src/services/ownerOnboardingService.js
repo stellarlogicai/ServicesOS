@@ -77,11 +77,12 @@ function operationalProgressFromState(onboardingState, operational = {}) {
 }
 
 export class OwnerOnboardingServiceError extends Error {
-  constructor(message, { code = 'bootstrap_unavailable', status = 0 } = {}) {
+  constructor(message, { code = 'bootstrap_unavailable', status = 0, blockingStage = null } = {}) {
     super(message);
     this.name = 'OwnerOnboardingServiceError';
     this.code = code;
     this.status = status;
+    this.blockingStage = blockingStage;
   }
 }
 
@@ -309,4 +310,30 @@ export async function bootstrapOwnerOnboarding({ user = auth.currentUser, fetchI
     });
   }
   return sanitizeOwnerOnboardingProjection(body);
+}
+
+export async function finalizeOwnerOnboarding({ user = auth.currentUser, fetchImpl = fetch } = {}) {
+  if (!user || typeof user.getIdToken !== 'function') {
+    throw new OwnerOnboardingServiceError('Sign in to finish business setup.', { code: 'unauthenticated', status: 401 });
+  }
+  const token = await user.getIdToken();
+  const response = await fetchImpl(resolveOwnerOnboardingGatewayUrl(import.meta.env, 'ownerOnboardingFinalizeGateway'), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  let body;
+  try { body = await response.json(); }
+  catch { throw new OwnerOnboardingServiceError('Setup could not be verified. Try again.'); }
+  if (!response.ok) {
+    throw new OwnerOnboardingServiceError('Setup requirements changed. Review the current setup and try again.', {
+      code: typeof body?.code === 'string' ? body.code : 'finalize_failed',
+      status: response.status,
+      blockingStage: typeof body?.blockingStage === 'string' ? body.blockingStage : null,
+    });
+  }
+  if (body?.success !== true || body?.completed !== true) {
+    throw new OwnerOnboardingServiceError('Setup could not be verified. Try again.', { code: 'invalid_response' });
+  }
+  return { success: true, completed: true };
 }

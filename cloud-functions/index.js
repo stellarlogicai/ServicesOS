@@ -31,6 +31,7 @@ const { createOwnerOnboardingBootstrapGatewayHandler } = require('./ownerOnboard
 const { createOwnerOnboardingBusinessProfileGatewayHandler } = require('./ownerOnboardingBusinessProfileGateway');
 const { createOwnerOnboardingSaasAgreementGatewayHandler } = require('./ownerOnboardingSaasAgreementGateway');
 const { createOwnerOnboardingBillingGatewayHandler } = require('./ownerOnboardingBillingGateway');
+const { createOwnerOnboardingFinalizeGatewayHandler } = require('./ownerOnboardingFinalizeGateway');
 const { createOwnerSubscriptionActivationWebhookHandler } = require('./ownerSubscriptionActivationWebhook');
 const { createJobScopeGatewayHandler } = require('./jobScopeGateway');
 const { createAddOnCatalogGatewayHandler } = require('./addOnCatalogGateway');
@@ -103,6 +104,16 @@ exports.ownerOnboardingBillingGateway = functions.runWith({
   getStripe: () => require('stripe')(stripeSecretKey.value()),
   getPriceId: () => ownerSubscriptionPriceId.value(),
   getAppUrl: () => servicesosAppUrl.value(),
+}));
+
+exports.ownerOnboardingFinalizeGateway = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+  secrets: [stripeSecretKey],
+}).https.onRequest(createOwnerOnboardingFinalizeGatewayHandler({
+  admin,
+  getStripe: () => require('stripe')(stripeSecretKey.value()),
+  getPriceId: () => ownerSubscriptionPriceId.value(),
 }));
 
 exports.ownerSubscriptionActivationWebhook = functions.runWith({

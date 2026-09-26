@@ -21,6 +21,7 @@ describe('selective Function deployment guardrails', () => {
       'ownerOnboardingBootstrapGateway',
       'ownerOnboardingBusinessProfileGateway',
       'ownerOnboardingSaasAgreementGateway',
+      'ownerOnboardingFinalizeGateway',
       'employeeSessionGateway',
       'employeeJobPacketGateway',
       'employeeFieldExecutionGateway',

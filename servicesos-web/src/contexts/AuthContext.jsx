@@ -33,6 +33,7 @@ import { getTenant } from '../services/tenantService';
 import { completeUserOnboarding } from '../services/onboardingService';
 import {
   bootstrapOwnerOnboarding,
+  finalizeOwnerOnboarding,
   ownerOnboardingFromTenant,
   saveOwnerBusinessProfile,
 } from '../services/ownerOnboardingService';
@@ -410,6 +411,21 @@ export function AuthProvider({ children }) {
     return projection;
   };
 
+  const finishOwnerOperationalSetup = async () => {
+    if (!user || ownerOnboarding?.onboardingState !== 'operational_setup_required') {
+      throw new Error('Owner setup is not ready to finish.');
+    }
+    await finalizeOwnerOnboarding({ user });
+    const projection = await bootstrapOwnerOnboarding({ user });
+    if (projection.onboardingState !== 'active') throw new Error('Completed setup could not be verified.');
+    const tenantResult = await loadTenant(projection.tenantId, 'admin');
+    if (!tenantResult.success || tenantResult.tenant?.onboardingState !== 'active') {
+      throw new Error('Completed setup could not be verified.');
+    }
+    setOwnerOnboardingProjection(projection);
+    return projection;
+  };
+
   const completeOwnerBusinessProfile = async profile => {
     if (!user || ownerOnboarding?.onboardingState !== 'business_profile_required') {
       throw new Error('Business profile onboarding is unavailable.');
@@ -543,6 +559,7 @@ export function AuthProvider({ children }) {
       acceptOwnerAgreement,
       startOwnerSubscriptionCheckout,
       refreshOwnerOnboarding,
+      finishOwnerOperationalSetup,
 
       // Tenant actions
       switchTenant,        // super-admin only

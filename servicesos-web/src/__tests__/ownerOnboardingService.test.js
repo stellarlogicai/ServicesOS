@@ -5,6 +5,7 @@ vi.mock('../firebase', () => ({ auth: { currentUser: null } }));
 import {
   OwnerOnboardingServiceError,
   bootstrapOwnerOnboarding,
+  finalizeOwnerOnboarding,
   ownerOnboardingFromTenant,
   resolveOwnerOnboardingGatewayUrl,
   saveOwnerBusinessProfile,
@@ -57,6 +58,24 @@ describe('owner onboarding web service', () => {
 
   it('requires an authenticated Firebase user locally', async () => {
     await expect(bootstrapOwnerOnboarding({ user: null })).rejects.toMatchObject({ code: 'unauthenticated' });
+  });
+
+  it('posts only an authenticated empty finalization request and accepts server completion', async () => {
+    const user = { getIdToken: vi.fn().mockResolvedValue('owner-token') };
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ success: true, completed: true }) });
+    await expect(finalizeOwnerOnboarding({ user, fetchImpl })).resolves.toEqual({ success: true, completed: true });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'http://127.0.0.1:5001/demo-servicesos-v1-smoke-local/us-central1/ownerOnboardingFinalizeGateway',
+      { method: 'POST', headers: { Authorization: 'Bearer owner-token', 'Content-Type': 'application/json' }, body: '{}' }
+    );
+  });
+
+  it('preserves only a bounded blocking stage from server errors', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({
+      code: 'prerequisite_incomplete', blockingStage: 'stripe_connect', tenantId: 'must-not-propagate',
+    }) });
+    await expect(finalizeOwnerOnboarding({ user: { getIdToken: async () => 'owner-token' }, fetchImpl }))
+      .rejects.toMatchObject({ code: 'prerequisite_incomplete', blockingStage: 'stripe_connect' });
   });
 
   it('submits only canonical business fields to the business profile gateway', async () => {
