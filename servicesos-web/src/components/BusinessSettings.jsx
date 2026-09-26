@@ -9,6 +9,7 @@ import StripeConnectOnboarding from './StripeConnectOnboarding';
 import CleaningProductsMethodsSection from './CleaningProductsMethodsSection';
 import AddOnCatalogSettings from './AddOnCatalogSettings';
 import ServiceCatalogSettings from './ServiceCatalogSettings';
+import OwnerBillingPortalSection from './OwnerBillingPortalSection';
 
 const emptyForm = {
   businessName: '',
@@ -142,6 +143,7 @@ export default function BusinessSettings() {
       {!loading && loadError && tenantId && <button type="button" onClick={load}>Try again</button>}
       {!loading && !loadError && (
         <div style={{ display: 'grid', gap: 24 }}>
+          {role === 'admin' && <OwnerBillingPortalSection user={user} />}
           <form className="v1-card business-settings-form" aria-label="Business settings form" onSubmit={save} style={{ display: 'grid', gap: 20, padding: 24 }}>
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Basic business details</div>

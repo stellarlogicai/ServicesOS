@@ -193,6 +193,12 @@ describe('App onboarding router context', () => {
     expect(screen.getByRole('heading', { name: 'Wife Beta Dashboard' })).toBeInTheDocument();
   });
 
+  it('returns an authenticated owner from Stripe billing to Business Settings', () => {
+    window.history.pushState({}, '', '/?servicesos_owner_billing=returned');
+    render(<App />);
+    expect(screen.getByRole('heading', { name: 'Business Settings Screen' })).toBeInTheDocument();
+  });
+
   it.each([
     ['business_profile_required', 'Set up your business profile'],
     ['agreement_required', 'ServicesOS Software-as-a-Service Agreement'],

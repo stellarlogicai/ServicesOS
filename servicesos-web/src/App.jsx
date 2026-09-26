@@ -333,6 +333,8 @@ function AuthenticatedApp() {
   const visibleNav = NAV_ITEMS.filter(canView);
 
   const [page, setPage] = useState(() => {
+    if (role === 'admin' && new URLSearchParams(window.location.search).get('servicesos_owner_billing') === 'returned' &&
+      visibleNav.some(n => n.id === 'business-settings')) return 'business-settings';
     const def = defaultPage(role);
     return visibleNav.some(n => n.id === def) ? def : (visibleNav[0]?.id ?? "intake");
   });

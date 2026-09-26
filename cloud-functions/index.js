@@ -31,6 +31,7 @@ const { createOwnerOnboardingBootstrapGatewayHandler } = require('./ownerOnboard
 const { createOwnerOnboardingBusinessProfileGatewayHandler } = require('./ownerOnboardingBusinessProfileGateway');
 const { createOwnerOnboardingSaasAgreementGatewayHandler } = require('./ownerOnboardingSaasAgreementGateway');
 const { createOwnerOnboardingBillingGatewayHandler } = require('./ownerOnboardingBillingGateway');
+const { createOwnerBillingPortalGatewayHandler } = require('./ownerBillingPortalGateway');
 const { createOwnerOnboardingFinalizeGatewayHandler } = require('./ownerOnboardingFinalizeGateway');
 const { createOwnerSubscriptionActivationWebhookHandler } = require('./ownerSubscriptionActivationWebhook');
 const { createJobScopeGatewayHandler } = require('./jobScopeGateway');
@@ -62,6 +63,7 @@ const stripeSecretKey = defineSecret('STRIPE_SECRET_KEY');
 const ownerSubscriptionWebhookSecret = defineSecret('STRIPE_OWNER_SUBSCRIPTION_WEBHOOK_SECRET');
 const ownerSubscriptionPriceId = defineString('SERVICESOS_OWNER_SUBSCRIPTION_PRICE_ID');
 const ownerSubscriptionAnnualPriceId = defineString('SERVICESOS_OWNER_SUBSCRIPTION_ANNUAL_PRICE_ID');
+const ownerBillingPortalConfigurationId = defineString('SERVICESOS_OWNER_BILLING_PORTAL_CONFIGURATION_ID');
 const servicesosAppUrl = defineString('SERVICESOS_APP_URL');
 
 function getOwnerSubscriptionPriceIds() {
@@ -111,6 +113,17 @@ exports.ownerOnboardingBillingGateway = functions.runWith({
   admin,
   getStripe: () => require('stripe')(stripeSecretKey.value()),
   getPriceIds: getOwnerSubscriptionPriceIds,
+  getAppUrl: () => servicesosAppUrl.value(),
+}));
+
+exports.ownerBillingPortalGateway = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+  secrets: [stripeSecretKey],
+}).https.onRequest(createOwnerBillingPortalGatewayHandler({
+  admin,
+  getStripe: () => require('stripe')(stripeSecretKey.value()),
+  getConfigurationId: () => ownerBillingPortalConfigurationId.value(),
   getAppUrl: () => servicesosAppUrl.value(),
 }));
 

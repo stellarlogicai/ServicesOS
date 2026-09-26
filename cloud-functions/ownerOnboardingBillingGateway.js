@@ -224,6 +224,7 @@ module.exports = {
   createCheckout,
   createOwnerOnboardingBillingGatewayHandler,
   metadataMatches,
+  normalizeAppUrl,
   sessionMatches,
   validateConfig,
   validateRequest,

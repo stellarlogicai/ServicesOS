@@ -87,6 +87,7 @@ describe('BusinessSettings', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading');
     expect(await screen.findByDisplayValue('Aunt B Cleaning')).toBeInTheDocument();
     expect(mocks.getBusinessSettings).toHaveBeenCalledWith('tenant-a');
+    expect(screen.getByRole('button', { name: 'Manage billing' })).toBeInTheDocument();
     expect(screen.getByDisplayValue('555-0100')).toBeInTheDocument();
     expect(screen.getByDisplayValue('owner@example.com')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Bolivar, MO')).toBeInTheDocument();
