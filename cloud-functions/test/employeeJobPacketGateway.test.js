@@ -386,7 +386,7 @@ describe('employee-safe JobPacket projection', () => {
     const packet = employeeJobPacket('booking-a', baseBooking(), 'UTC');
     assert.deepEqual(Object.keys(packet), [
       'id', 'schedule', 'serviceType', 'customer', 'location', 'status', 'fieldStatus',
-      'instructions', 'safety', 'accessSecurity', 'checklist', 'fieldNotes', 'fieldIssue', 'approvedScope',
+      'instructions', 'safety', 'accessSecurity', 'businessPhone', 'checklist', 'fieldNotes', 'fieldIssue', 'approvedScope',
     ]);
     assert.deepEqual(Object.keys(packet.customer), ['name', 'phone']);
     assert.deepEqual(Object.keys(packet.location), ['address']);

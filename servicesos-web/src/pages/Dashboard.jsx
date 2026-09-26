@@ -19,6 +19,7 @@ import {
   isPendingOwnerReview
 } from "../services/quoteLeadDisplay";
 import { calculateDashboardRevenueSnapshot } from "../services/dashboardRevenueSnapshot";
+import SafetyAlertsPanel from "../components/SafetyAlertsPanel";
 
 // Helper function to safely access form data from both old and new structures
 function getFormData(lead) {
@@ -637,6 +638,8 @@ export default function Dashboard() {
             Review new quote requests, watch upcoming booked jobs, and track what has been paid.
           </p>
         </div>
+
+        <SafetyAlertsPanel key={currentTenant?.id || 'no-tenant'} tenantId={currentTenant?.id} />
 
         {/* Stats row */}
         <div style={{ marginBottom: 40 }}>

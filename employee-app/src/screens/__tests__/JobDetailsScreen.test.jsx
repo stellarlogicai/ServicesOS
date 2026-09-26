@@ -61,6 +61,10 @@ jest.mock("../../components/ExtraWorkRequestSection", () => {
   const { Text } = require("react-native");
   return function ExtraWorkRequestSection() { return <Text>Extra work request test section</Text>; };
 });
+jest.mock("../../components/FieldSafetyActions", () => {
+  const { Text } = require("react-native");
+  return function FieldSafetyActions() { return <Text>Safety actions</Text>; };
+});
 jest.mock("../../context/AuthContext", () => {
   const ReactModule = require("react");
   return { AuthContext: ReactModule.createContext(null) };

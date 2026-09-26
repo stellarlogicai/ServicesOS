@@ -507,7 +507,15 @@ function employeeJobSummary(id, booking, timeZone) {
   };
 }
 
-function employeeJobPacket(id, booking, timeZone) {
+function safeBusinessPhone(value) {
+  if (typeof value !== 'string') return null;
+  const phone = value.trim();
+  const digits = phone.replace(/\D/g, '');
+  return phone.length <= 40 && digits.length >= 7 && digits.length <= 15 && /^\+?[0-9 ()-]+$/.test(phone)
+    ? phone : null;
+}
+
+function employeeJobPacket(id, booking, timeZone, businessPhone = null) {
   return {
     id: safeJobId(id),
     schedule: scheduleProjection(booking, timeZone),
@@ -522,6 +530,7 @@ function employeeJobPacket(id, booking, timeZone) {
     instructions: fieldInstructions(booking),
     safety: safetyProjection(booking),
     accessSecurity: accessSecurityProjection(booking),
+    businessPhone: safeBusinessPhone(businessPhone),
     checklist: checklistProjection(booking),
     fieldNotes: boundedText(booking.fieldNotes, 1000),
     fieldIssue: boundedText(booking.fieldIssue, 750),
@@ -558,5 +567,6 @@ module.exports = {
   accessSecurityProjection,
   isApprovedChecklistCurrent,
   localDateKey,
+  safeBusinessPhone,
   safetyProjection,
 };

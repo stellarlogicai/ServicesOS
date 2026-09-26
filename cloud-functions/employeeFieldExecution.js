@@ -277,7 +277,7 @@ function safeMutationResult(bookingIdValue, booking, employee) {
   return {
     success: true,
     schemaVersion: JOB_PACKET_SCHEMA_VERSION,
-    job: employeeJobPacket(bookingIdValue, booking, employee.tenantTimeZone),
+    job: employeeJobPacket(bookingIdValue, booking, employee.tenantTimeZone, employee.businessPhone),
   };
 }
 

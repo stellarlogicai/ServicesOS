@@ -52,6 +52,7 @@ async function verifyCanonicalEmployee({ admin, uid }) {
     tenantId,
     profile,
     tenantTimeZone: resolveTenantTimeZone(tenant),
+    businessPhone: typeof tenant.businessPhone === 'string' ? tenant.businessPhone : null,
   };
 }
 

@@ -225,6 +225,17 @@ test("unready checklist cannot place stale task content in mobile state", () => 
   assert.deepEqual(sanitizeEmployeeJobPacket(unsafe).checklist.items, []);
 });
 
+test("business contact phone is the only tenant contact value admitted to mobile state", () => {
+  const safe = sanitizeEmployeeJobPacket(packet({
+    businessPhone: '(555) 123-4567',
+    tenant: { businessPhone: 'private', adminUsers: ['private'] },
+  }));
+  assert.equal(safe.businessPhone, '(555) 123-4567');
+  assert.equal(Object.hasOwn(safe, 'tenant'), false);
+  assert.equal(sanitizeEmployeeJobPacket(packet({ businessPhone: 'javascript:call()' })).businessPhone, null);
+  assert.equal(sanitizeEmployeeJobPacket(packet({ businessPhone: ' '.repeat(100) })).businessPhone, null);
+});
+
 test("malformed and oversized payloads fail safely", () => {
   assert.throws(
     () => validateEmployeeJobListPayload({ success: true, schemaVersion: 1, todayDate: "2026-09-03", jobs: [summary({ id: "" })] }),

@@ -82,6 +82,13 @@ function safeAccessSecurity(value) {
   return { instructions: text(accessSecurity.instructions) };
 }
 
+function safeBusinessPhone(value) {
+  if (value == null || typeof value !== 'string' || value.length > 40) return null;
+  const phone = value.trim();
+  const digits = phone.replace(/\D/g, '');
+  return digits.length >= 7 && digits.length <= 15 && /^\+?[0-9 ()-]+$/.test(phone) ? phone : null;
+}
+
 function safeJobAidStep(value) {
   const step = objectValue(value);
   return {
@@ -157,6 +164,7 @@ function sanitizeEmployeeJobPacket(value) {
     instructions: text(job.instructions),
     safety: safeSafety(job.safety),
     accessSecurity: safeAccessSecurity(job.accessSecurity),
+    businessPhone: safeBusinessPhone(job.businessPhone),
     checklist: {
       ready: checklist.ready,
       items,

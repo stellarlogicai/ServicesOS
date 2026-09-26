@@ -126,6 +126,7 @@ function buildSeedDocuments(now = new Date()) {
 
   add(`tenants/${TENANT_A}`, {
     businessName: 'Aunt B Smoke Cleaning A',
+    businessPhone: '555-0101',
     status: 'active',
     ownerId: adminA,
     users: [adminA, employeeA, OTHER_EMPLOYEE_A_UID],
@@ -148,6 +149,7 @@ function buildSeedDocuments(now = new Date()) {
   });
   add(`tenants/${TENANT_B}`, {
     businessName: 'ServicesOS Smoke Cleaning B',
+    businessPhone: '555-0202',
     status: 'active',
     ownerId: adminB,
     users: [adminB],

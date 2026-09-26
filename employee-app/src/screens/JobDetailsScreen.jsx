@@ -25,6 +25,7 @@ import {
 } from "../api/employeePhotoEvidence";
 import { getEmployeeMethodsByIds } from "../api/employeeMethods";
 import FieldPhotoCapture from "../components/FieldPhotoCapture";
+import FieldSafetyActions from "../components/FieldSafetyActions";
 import {
   hasEmployeeJobDirections,
   openEmployeeJobDirections,
@@ -537,6 +538,15 @@ export default function JobDetailsScreen({ route, navigation }) {
       <DetailSection title="Job">
         <Text style={styles.text}>Booking status: {humanize(job.status)}</Text>
         <Text style={styles.text}>Field status: {humanize(job.fieldStatus)}</Text>
+      </DetailSection>
+
+      <DetailSection title="Safety">
+        <FieldSafetyActions
+          bookingId={job.id}
+          businessPhone={job.businessPhone}
+          employeeUid={employeeUid}
+          onAccessLost={() => leaveUnavailable(requestKey)}
+        />
       </DetailSection>
 
       <DetailSection title="Schedule">

@@ -120,7 +120,7 @@ async function getEmployeeJob({ admin, employee, bookingId, now = new Date() }) 
   return {
     success: true,
     schemaVersion: JOB_PACKET_SCHEMA_VERSION,
-    job: employeeJobPacket(snapshot.id || bookingId, booking, employee.tenantTimeZone),
+    job: employeeJobPacket(snapshot.id || bookingId, booking, employee.tenantTimeZone, employee.businessPhone),
   };
 }
 

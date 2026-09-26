@@ -69,6 +69,8 @@ describe('V1 smoke emulator seed safety', () => {
 
     assert.equal(tenantA.businessSettings.businessName, 'Aunt B Smoke Cleaning A');
     assert.equal(tenantB.businessSettings.businessName, 'ServicesOS Smoke Cleaning B');
+    assert.equal(tenantA.businessPhone, '555-0101');
+    assert.equal(tenantB.businessPhone, '555-0202');
     assert.notDeepEqual(tenantA.adminUsers, tenantB.adminUsers);
     assert.deepEqual(
       { address: customer.address, city: customer.city, state: customer.state, zip: customer.zip },

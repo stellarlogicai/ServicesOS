@@ -813,6 +813,25 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     }));
   });
 
+  test('safety alerts remain server-only for every client role', async () => {
+    const pathParts = ['tenants', TENANT_A, 'safetyAlerts', 'event-a'];
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), ...pathParts), { type: 'safety_alert' });
+    });
+    for (const database of [
+      authenticatedDatabase('employee-a'),
+      authenticatedDatabase('admin-a'),
+      authenticatedDatabase('super-admin'),
+      testEnvironment.unauthenticatedContext().firestore(),
+    ]) {
+      await assertFails(getDoc(doc(database, ...pathParts)));
+      await assertFails(getDocs(collection(database, 'tenants', TENANT_A, 'safetyAlerts')));
+      await assertFails(setDoc(doc(database, ...pathParts), { type: 'safety_alert' }));
+      await assertFails(updateDoc(doc(database, ...pathParts), { type: 'edited' }));
+      await assertFails(deleteDoc(doc(database, ...pathParts)));
+    }
+  });
+
   test('employee cannot read unassigned or another employee booking', async () => {
     const database = authenticatedDatabase('employee-a');
     await assertFails(getDoc(doc(database, 'tenants', TENANT_A, 'bookings', 'unassigned-booking')));

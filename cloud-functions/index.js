@@ -25,6 +25,8 @@ const { createGrowthAIProviderFromFirebaseParameters } = require('./growthAIProv
 const { createEmployeeSessionGatewayHandler } = require('./employeeSessionGateway');
 const { createEmployeeJobPacketGatewayHandler } = require('./employeeJobPacketGateway');
 const { createEmployeeFieldExecutionGatewayHandler } = require('./employeeFieldExecutionGateway');
+const { createEmployeeSafetyGatewayHandler } = require('./employeeSafetyGateway');
+const { createOwnerSafetyAlertsGatewayHandler } = require('./ownerSafetyAlertsGateway');
 const { createFieldPhotoUploadGatewayHandler } = require('./fieldPhotoUploadGateway');
 const { createEmployeeWorkAssistantGatewayHandler } = require('./employeeWorkAssistantGateway');
 const { createOwnerOnboardingBootstrapGatewayHandler } = require('./ownerOnboardingBootstrapGateway');
@@ -165,6 +167,16 @@ exports.employeeFieldExecutionGateway = functions.runWith({
   minInstances: 0,
   maxInstances: 3,
 }).https.onRequest(createEmployeeFieldExecutionGatewayHandler({ admin }));
+
+exports.employeeSafetyGateway = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+}).https.onRequest(createEmployeeSafetyGatewayHandler({ admin }));
+
+exports.ownerSafetyAlertsGateway = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+}).https.onRequest(createOwnerSafetyAlertsGatewayHandler({ admin }));
 
 exports.generateGrowthAIContent = functions.runWith({
   ...GROWTHAI_RUNTIME_OPTIONS,

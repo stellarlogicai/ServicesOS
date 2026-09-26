@@ -25,6 +25,8 @@ describe('selective Function deployment guardrails', () => {
       'employeeSessionGateway',
       'employeeJobPacketGateway',
       'employeeFieldExecutionGateway',
+      'employeeSafetyGateway',
+      'ownerSafetyAlertsGateway',
       'generateGrowthAIContent',
       'getGrowthAICreditBalance',
       'routeGrowthAIConversation',
