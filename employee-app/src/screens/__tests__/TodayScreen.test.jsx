@@ -18,7 +18,11 @@ jest.mock("../../context/AuthContext", () => {
 });
 
 import { AuthContext } from "../../context/AuthContext";
-import TodayScreen, { groupEmployeeJobs } from "../TodayScreen";
+import TodayScreen, {
+  deriveDayProgression,
+  groupEmployeeJobs,
+  isActionableEmployeeJob,
+} from "../TodayScreen";
 
 function job(id, date, overrides = {}) {
   return {
@@ -71,6 +75,94 @@ test("tenant todayDate overrides a mismatched device-local date for grouping", (
   const grouped = groupEmployeeJobs(jobs, "2026-09-03");
   expect(grouped.today.map(item => item.id)).toEqual(["tenant-today"]);
   expect(grouped.upcoming.map(item => item.id)).toEqual(["future"]);
+});
+
+test("orders today jobs by canonical schedule with booking ID as a stable tie-breaker", () => {
+  const grouped = groupEmployeeJobs([
+    job("same-time-b", "2026-09-03", { schedule: { date: "2026-09-03", startTime: "10:00", endTime: "11:00" } }),
+    job("early", "2026-09-03", { schedule: { date: "2026-09-03", startTime: "08:00", endTime: "09:00" } }),
+    job("same-time-a", "2026-09-03", { schedule: { date: "2026-09-03", startTime: "10:00", endTime: "11:00" } }),
+    job("future", "2026-09-04"),
+  ], "2026-09-03");
+
+  expect(grouped.today.map(item => item.id)).toEqual(["early", "same-time-a", "same-time-b"]);
+  expect(grouped.upcoming.map(item => item.id)).toEqual(["future"]);
+});
+
+test("derives current work first, then the earliest actionable job as next", () => {
+  const jobs = [
+    job("next", "2026-09-03", { schedule: { date: "2026-09-03", startTime: "08:00", endTime: "09:00" } }),
+    job("current", "2026-09-03", { schedule: { date: "2026-09-03", startTime: "10:00", endTime: "11:00" }, fieldStatus: "in_progress" }),
+    job("completed", "2026-09-03", { fieldStatus: "completed" }),
+    job("future", "2026-09-04"),
+  ];
+  const day = deriveDayProgression(jobs, "2026-09-03");
+
+  expect(day.current.id).toBe("current");
+  expect(day.next.id).toBe("current");
+  expect(day.completed.map(item => item.id)).toEqual(["completed"]);
+});
+
+test("completion or removal of the leading job advances to the next valid job", () => {
+  const firstComplete = job("first", "2026-09-03", { fieldStatus: "completed" });
+  const next = job("next", "2026-09-03", { schedule: { date: "2026-09-03", startTime: "10:00", endTime: "11:00" } });
+  const day = deriveDayProgression([firstComplete, next], "2026-09-03");
+
+  expect(day.current).toBeNull();
+  expect(day.next.id).toBe("next");
+  expect(isActionableEmployeeJob(firstComplete)).toBe(false);
+  expect(isActionableEmployeeJob({ ...next, status: "cancelled" })).toBe(false);
+});
+
+test("shows an obvious next-job action and does not make completed work actionable", async () => {
+  const navigation = { navigate: jest.fn() };
+  mockListEmployeeJobs.mockResolvedValue(jobList([
+    job("completed", "2026-09-03", { fieldStatus: "completed" }),
+    job("next", "2026-09-03", { schedule: { date: "2026-09-03", startTime: "10:00", endTime: "11:00" } }),
+  ]));
+  renderToday({ navigation });
+
+  fireEvent.press(await screen.findByText("Open next job"));
+  expect(navigation.navigate).toHaveBeenCalledWith("JobDetails", { bookingId: "next" });
+  expect(screen.getAllByText("Completed").length).toBeGreaterThan(0);
+  expect(screen.queryByLabelText("Open Standard Cleaning job for Customer completed")).toBeNull();
+});
+
+test("shows the current job and a finished-day state from authoritative field status", async () => {
+  mockListEmployeeJobs.mockResolvedValueOnce(jobList([
+    job("current", "2026-09-03", { fieldStatus: "in_progress" }),
+  ]));
+  const first = renderToday();
+  expect((await screen.findAllByText("Current job")).length).toBeGreaterThan(0);
+  fireEvent.press(screen.getByText("Open current job"));
+  expect(first.navigation.navigate).toHaveBeenCalledWith("JobDetails", { bookingId: "current" });
+  first.unmount();
+
+  mockListEmployeeJobs.mockResolvedValueOnce(jobList([
+    job("done", "2026-09-03", { fieldStatus: "completed" }),
+  ]));
+  renderToday();
+  expect(await screen.findByText("Today is complete")).toBeTruthy();
+  expect(screen.getByText("No more active jobs are scheduled for today.")).toBeTruthy();
+});
+
+test("a normal refresh marks changed safe summaries and reports removed work generically", async () => {
+  mockListEmployeeJobs
+    .mockResolvedValueOnce(jobList([job("changed", "2026-09-03"), job("removed", "2026-09-03")]))
+    .mockResolvedValueOnce(jobList([
+      job("changed", "2026-09-03", { address: "Updated Example Ave" }),
+      job("new", "2026-09-03"),
+    ]));
+  renderToday();
+  await screen.findByText("Customer changed");
+
+  const list = screen.getByTestId("employee-job-list");
+  await act(async () => list.props.refreshControl.props.onRefresh());
+
+  expect(screen.getByText("Updated")).toBeTruthy();
+  expect(screen.getByText("New assignment")).toBeTruthy();
+  expect(screen.getByText("Your workday was updated. Review your remaining jobs.")).toBeTruthy();
+  expect(screen.queryByText("Customer removed")).toBeNull();
 });
 
 test("shows loading, then renders real today and upcoming safe summaries", async () => {
