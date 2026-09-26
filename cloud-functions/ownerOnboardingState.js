@@ -1,4 +1,5 @@
 const OWNER_ONBOARDING_SCHEMA_VERSION = 1;
+const { ownerSubscriptionEntitlement } = require('./ownerSubscriptionEntitlement');
 const INITIAL_ONBOARDING_STATE = 'business_profile_required';
 const OPERATIONAL_SETUP_STATE = 'operational_setup_required';
 const VALID_SERVICE_TYPES = new Set(['standard', 'deep', 'moveout', 'construction']);
@@ -97,7 +98,7 @@ function isValidAvailability(value = {}) {
 }
 
 function billingEntitlementForTenant(tenant) {
-  return tenant?.subscriptionStatus === 'active' ? 'active' : 'inactive';
+  return ownerSubscriptionEntitlement(tenant).state === 'active' ? 'active' : 'inactive';
 }
 
 module.exports = {

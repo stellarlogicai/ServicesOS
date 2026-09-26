@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const {
   ActivationError,
   activateOwnerSubscription,
+  applyOwnerSubscriptionLifecycle,
   createOwnerSubscriptionActivationWebhookHandler,
   subscriptionIdFromInvoice,
 } = require('../ownerSubscriptionActivationWebhook');
@@ -61,6 +62,7 @@ test('valid invoice.paid activates tenant and writes canonical billing facts', a
     subscriptionStatus: 'active', subscriptionPriceId: PRICE_ID, currentPeriodEnd: 200,
     cancelAtPeriodEnd: false, latestInvoiceId: 'in_paid', latestInvoiceCreated: 100,
     billingUpdatedAt: 'server-time', ownerSubscriptionCheckout: null,
+    paymentFailureAt: null, cureDeadline: null,
   });
   assert.equal('subscriptionTier' in source.state['tenants/tenant-a'], false);
 });
@@ -197,4 +199,130 @@ test('signature and validation failures expose no Stripe or tenant detail', asyn
   const rejected = await invoke({ webhooks: { constructEvent: () => ({ type: 'invoice.paid', data: { object: invoice({ paid: false }) } }) }, subscriptions: { retrieve: async () => subscription() } });
   assert.equal(rejected.statusCode, 409);
   assert.equal(JSON.stringify(rejected.body).includes('tenant-a'), false);
+});
+
+const lifecycle = (source, eventType, subscriptionValue = subscription(), invoiceValue = undefined, nowSeconds = 1000) =>
+  applyOwnerSubscriptionLifecycle({ admin: source.admin, subscription: subscriptionValue,
+    priceId: PRICE_ID, eventType, invoice: invoiceValue, nowSeconds });
+
+test('renewal failure creates a server-owned fixed seven-day cure and duplicate does not extend it', async () => {
+  const source = fixture();
+  await activate(source);
+  const failed = invoice({ id: 'in_failed', status: 'open', paid: false, created: 101 });
+  await lifecycle(source, 'invoice.payment_failed', subscription(), failed);
+  const tenant = source.state['tenants/tenant-a'];
+  assert.equal(tenant.subscriptionStatus, 'past_due');
+  assert.equal(tenant.paymentFailureAt, 1000);
+  assert.equal(tenant.cureDeadline, 1000 + 7 * 86400);
+  assert.equal(tenant.onboardingState, 'operational_setup_required');
+  await lifecycle(source, 'invoice.payment_failed', subscription(), failed, 2000);
+  assert.equal(tenant.cureDeadline, 1000 + 7 * 86400);
+});
+
+test('valid later paid invoice recovers without altering operational onboarding', async () => {
+  const source = fixture();
+  await activate(source);
+  await lifecycle(source, 'invoice.payment_failed', subscription(), invoice({ id: 'in_failed', status: 'open', paid: false, created: 101 }));
+  await activate(source, invoice({ id: 'in_recovered', created: 102 }), subscription({ current_period_end: 500 }));
+  const tenant = source.state['tenants/tenant-a'];
+  assert.equal(tenant.subscriptionStatus, 'active');
+  assert.equal(tenant.paymentFailureAt, null);
+  assert.equal(tenant.cureDeadline, null);
+  assert.equal(tenant.latestInvoiceId, 'in_recovered');
+  assert.equal(tenant.currentPeriodEnd, 500);
+  assert.equal(tenant.onboardingState, 'operational_setup_required');
+});
+
+test('scheduled cancellation keeps paid state; termination removes it', async () => {
+  const source = fixture();
+  await activate(source);
+  await lifecycle(source, 'customer.subscription.updated', subscription({ cancel_at_period_end: true, current_period_end: 2000 }));
+  assert.equal(source.state['tenants/tenant-a'].subscriptionStatus, 'active');
+  assert.equal(source.state['tenants/tenant-a'].cancelAtPeriodEnd, true);
+  await lifecycle(source, 'customer.subscription.deleted', subscription({ status: 'canceled', current_period_end: 2000 }));
+  assert.equal(source.state['tenants/tenant-a'].subscriptionStatus, 'canceled');
+  await assert.rejects(activate(source, invoice({ created: 102 })), ActivationError);
+});
+
+test('lifecycle cannot mutate a wrong canonical customer, subscription, price or tenant', async () => {
+  for (const [tenant, provider] of [
+    [{ stripeCustomerId: 'cus_other' }, subscription()],
+    [{ stripeSubscriptionId: 'sub_other' }, subscription()],
+    [{ subscriptionPriceId: 'price_other' }, subscription()],
+    [{}, subscription({ metadata: { tenantId: 'tenant-b', billingPurpose: 'servicesos_owner_subscription', onboardingSchemaVersion: '1' } })],
+  ]) {
+    const source = fixture({ tenant: { status: 'active', onboardingState: 'operational_setup_required',
+      stripeSubscriptionId: 'sub_owner', subscriptionPriceId: PRICE_ID, ...tenant } });
+    await assert.rejects(lifecycle(source, 'customer.subscription.updated', provider), ActivationError);
+    assert.equal(source.writes.length, 0);
+  }
+});
+
+test('invalid configured Price and forged invoice correlation cannot mutate billing', async () => {
+  const source = fixture();
+  await activate(source);
+  const before = source.writes.length;
+  await assert.rejects(applyOwnerSubscriptionLifecycle({ admin: source.admin, subscription: subscription(),
+    priceId: '', eventType: 'customer.subscription.updated' }), ActivationError);
+  await assert.rejects(lifecycle(source, 'invoice.payment_failed', subscription(),
+    invoice({ id: 'in_failed', status: 'open', paid: false, created: 101, customer: 'cus_other' })), ActivationError);
+  assert.equal(source.writes.length, before);
+});
+
+test('fresh provider update does not clear an unresolved failure; duplicate cancellation is stable', async () => {
+  const source = fixture();
+  await activate(source);
+  await lifecycle(source, 'invoice.payment_failed', subscription(), invoice({ id: 'in_failed', status: 'open', paid: false, created: 101 }));
+  const deadline = source.state['tenants/tenant-a'].cureDeadline;
+  await lifecycle(source, 'customer.subscription.updated', subscription({ current_period_end: 500 }));
+  assert.equal(source.state['tenants/tenant-a'].subscriptionStatus, 'past_due');
+  assert.equal(source.state['tenants/tenant-a'].cureDeadline, deadline);
+  await lifecycle(source, 'customer.subscription.deleted', subscription({ status: 'canceled', current_period_end: 500 }));
+  const writes = source.writes.length;
+  await lifecycle(source, 'customer.subscription.deleted', subscription({ status: 'canceled', current_period_end: 500 }));
+  assert.equal(source.writes.length, writes);
+});
+
+test('fresh paid invoice suppresses delayed failure webhook', async () => {
+  const source = fixture();
+  await activate(source);
+  const staleFailure = invoice({ id: 'in_paid', status: 'open', paid: false });
+  const stripe = {
+    webhooks: { constructEvent: () => ({ type: 'invoice.payment_failed', data: { object: staleFailure } }) },
+    subscriptions: { retrieve: async () => subscription({ latest_invoice: 'in_paid' }) },
+    invoices: { retrieve: async () => invoice() },
+  };
+  const handler = createOwnerSubscriptionActivationWebhookHandler({ admin: source.admin, getStripe: () => stripe,
+    getWebhookSecret: () => 'test', getPriceId: () => PRICE_ID });
+  const res = { statusCode: 0, status(code) { this.statusCode = code; return this; }, json() { return this; } };
+  await handler({ method: 'POST', rawBody: Buffer.from('signed'), headers: {} }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(source.state['tenants/tenant-a'].subscriptionStatus, 'active');
+});
+
+test('signed failure and provider cancellation events update only the canonical tenant', async () => {
+  const source = fixture();
+  await activate(source);
+  let event = { type: 'invoice.payment_failed', data: { object: invoice({
+    id: 'in_failed', status: 'open', paid: false, created: 101,
+  }) } };
+  let provider = subscription({ latest_invoice: 'in_failed' });
+  const stripe = {
+    webhooks: { constructEvent: () => event },
+    subscriptions: { retrieve: async () => provider },
+    invoices: { retrieve: async () => event.data.object },
+  };
+  const handler = createOwnerSubscriptionActivationWebhookHandler({ admin: source.admin, getStripe: () => stripe,
+    getWebhookSecret: () => 'test', getPriceId: () => PRICE_ID });
+  const invoke = async () => {
+    const res = { statusCode: 0, status(code) { this.statusCode = code; return this; }, json() { return this; } };
+    await handler({ method: 'POST', rawBody: Buffer.from('signed'), headers: {} }, res);
+    return res.statusCode;
+  };
+  assert.equal(await invoke(), 200);
+  assert.equal(source.state['tenants/tenant-a'].subscriptionStatus, 'past_due');
+  event = { type: 'customer.subscription.deleted', data: { object: { id: 'sub_owner' } } };
+  provider = subscription({ status: 'canceled' });
+  assert.equal(await invoke(), 200);
+  assert.equal(source.state['tenants/tenant-a'].subscriptionStatus, 'canceled');
 });

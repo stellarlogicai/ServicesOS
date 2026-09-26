@@ -229,7 +229,7 @@ test('paid operationally incomplete tenant resumes at services and pricing', asy
   const fixture = createAdmin({ documents: {
     'users/owner-a': ownerProfile(),
     'tenants/tenant-a': managedTenant({
-      status: 'active', onboardingState: 'operational_setup_required', subscriptionStatus: 'active',
+      status: 'active', onboardingState: 'operational_setup_required', subscriptionStatus: 'active', currentPeriodEnd: 9999999999,
     }),
   } });
   const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
@@ -240,6 +240,20 @@ test('paid operationally incomplete tenant resumes at services and pricing', asy
     operationalComplete: false,
   });
   assert.equal(fixture.writes.length, 0);
+});
+
+test('expired paid period and cure do not appear as active billing entitlement', async () => {
+  for (const billing of [
+    { subscriptionStatus: 'active', currentPeriodEnd: 1 },
+    { subscriptionStatus: 'past_due', currentPeriodEnd: 9999999999, paymentFailureAt: 100, cureDeadline: 100 + 7 * 86400 },
+  ]) {
+    const fixture = createAdmin({ documents: {
+      'users/owner-a': ownerProfile(),
+      'tenants/tenant-a': managedTenant({ status: 'active', onboardingState: 'operational_setup_required', ...billing }),
+    } });
+    const result = await bootstrapOwnerOnboarding({ admin: fixture.admin, identity: { uid: 'owner-a' } });
+    assert.equal(result.onboarding.billingEntitlement, 'inactive');
+  }
 });
 
 test('operational progress treats absent branding as a valid default and advances to team setup', async () => {
