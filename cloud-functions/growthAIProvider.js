@@ -157,6 +157,9 @@ function createGrowthAIProviderFromEnvironment(env = process.env) {
   if (isLocalMockGrowthAIEnvironment(env)) {
     return createLocalMockGrowthAIProvider();
   }
+  if (env.GROWTHAI_PROVIDER_ENABLED !== 'true') {
+    return createUnavailableGrowthAIProvider();
+  }
   return createOpenAICompatibleGrowthAIProvider({
     apiKey: env.GROWTHAI_PROVIDER_API_KEY,
     baseUrl: env.GROWTHAI_PROVIDER_BASE_URL,
@@ -167,18 +170,23 @@ function createGrowthAIProviderFromEnvironment(env = process.env) {
 function createGrowthAIProviderFromFirebaseParameters({
   apiKeyParam,
   baseUrlParam,
+  enabledParam,
   env = process.env,
+  fetchImpl = global.fetch,
   modelParam,
 } = {}) {
   if (isLocalMockGrowthAIEnvironment(env)) {
     return createLocalMockGrowthAIProvider();
   }
 
-  const resolveProvider = () => createOpenAICompatibleGrowthAIProvider({
-    apiKey: apiKeyParam?.value?.(),
-    baseUrl: baseUrlParam?.value?.(),
-    model: modelParam?.value?.(),
-  });
+  const resolveProvider = () => enabledParam?.value?.() === true
+    ? createOpenAICompatibleGrowthAIProvider({
+        apiKey: apiKeyParam?.value?.(),
+        baseUrl: baseUrlParam?.value?.(),
+        fetchImpl,
+        model: modelParam?.value?.(),
+      })
+    : createUnavailableGrowthAIProvider();
 
   return {
     get configured() {

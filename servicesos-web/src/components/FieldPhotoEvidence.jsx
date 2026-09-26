@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  createFieldPhotoClientUploadId,
+  FIELD_PHOTO_MAX_PER_BOOKING,
   FIELD_PHOTO_PHASES,
   listFieldPhotos,
   listFieldPhotosForMarketing,
@@ -179,13 +181,21 @@ export function FieldPhotoUploadPanel({ tenantId, bookingId, onEvidenceChange })
 
   const selectFile = (phase, file) => {
     setPhaseMessage(current => ({ ...current, [phase]: '' }));
+    if (photos.length >= FIELD_PHOTO_MAX_PER_BOOKING) {
+      setPending(current => ({ ...current, [phase]: null }));
+      setPhaseMessage(current => ({ ...current, [phase]: 'This booking has reached the 20-photo limit.' }));
+      return;
+    }
     const validation = validateFieldPhoto(file);
     if (!validation.success) {
       setPending(current => ({ ...current, [phase]: null }));
       setPhaseMessage(current => ({ ...current, [phase]: validation.message }));
       return;
     }
-    setPending(current => ({ ...current, [phase]: { file, status: 'ready' } }));
+    setPending(current => ({
+      ...current,
+      [phase]: { file, status: 'ready', clientUploadId: createFieldPhotoClientUploadId() },
+    }));
   };
 
   const updateDetails = (phase, patch) => {
@@ -213,12 +223,16 @@ export function FieldPhotoUploadPanel({ tenantId, bookingId, onEvidenceChange })
       roomLabel: detailValidation.roomLabel,
       note: detailValidation.note,
       file: selected.file,
+      clientUploadId: selected.clientUploadId,
+      recoverExisting: selected.status === 'failed',
     });
     if (!result.success) {
       setPending(current => ({ ...current, [phase]: { ...selected, status: 'failed' } }));
       return;
     }
-    const updated = [...photos, result.data];
+    const updated = photos.some(photo => photo.id === result.data.id)
+      ? photos
+      : [...photos, result.data];
     setPhotos(updated);
     setPending(current => ({ ...current, [phase]: null }));
     setDetails(current => ({ ...current, [phase]: { roomLabel: '', note: '' } }));
@@ -232,6 +246,9 @@ export function FieldPhotoUploadPanel({ tenantId, bookingId, onEvidenceChange })
         <h3 id="field-photo-upload-title">Field photos</h3>
         <p>Before and after photos are optional job evidence.</p>
       </div>
+      {!loading && photos.length >= FIELD_PHOTO_MAX_PER_BOOKING && (
+        <p className="field-photo-error" role="status">This booking has reached the 20-photo limit.</p>
+      )}
       {loading && <p role="status">Loading photo evidence...</p>}
       {loadError && <div className="field-photo-load-error" role="alert">{loadError}</div>}
       {FIELD_PHOTO_PHASES.map(phase => (
@@ -244,6 +261,7 @@ export function FieldPhotoUploadPanel({ tenantId, bookingId, onEvidenceChange })
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 capture="environment"
+                disabled={loading || photos.length >= FIELD_PHOTO_MAX_PER_BOOKING}
                 onChange={event => {
                   const file = event.target.files?.[0];
                   if (file) selectFile(phase, file);

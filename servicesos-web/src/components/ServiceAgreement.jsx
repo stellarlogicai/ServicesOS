@@ -69,6 +69,7 @@ export default function ServiceAgreement({ tenantId, lead, estimate, onSigned, o
       // Generate PDF and send email
       try {
         const contractData = {
+          id: contractId,
           signed: true,
           signedAt: new Date().toISOString(),
           signatureUrl: null, // Will be set by service
@@ -77,7 +78,7 @@ export default function ServiceAgreement({ tenantId, lead, estimate, onSigned, o
           }
         };
         const pdfBlob = await generateServiceAgreementBlob(lead, estimate, contractData);
-        await sendServiceAgreementEmail(lead, estimate, contractData, pdfBlob);
+        await sendServiceAgreementEmail(tenantId, lead, estimate, contractData, pdfBlob);
       } catch (emailError) {
         console.error('Failed to send agreement email:', emailError);
         // Don't fail the whole process if email fails

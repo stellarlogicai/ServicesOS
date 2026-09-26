@@ -931,7 +931,7 @@ service cloud.firestore {
 
         match /fieldPhotos/{photoId} {
           allow read: if isBookingManager(tenantId) || isAssignedFieldPhotoUser(tenantId, bookingId);
-          allow create: if isValidFieldPhotoMetadataCreate(tenantId, bookingId, photoId);
+          allow create: if false;
           allow update, delete: if false;
 
           match /marketingReview/{reviewId} {
@@ -944,6 +944,14 @@ service cloud.firestore {
                              isValidFieldPhotoMarketingReviewUpdate(tenantId, bookingId, photoId);
             allow delete: if false;
           }
+        }
+
+        match /fieldPhotoUploadControl/{controlId} {
+          allow read, write: if false;
+        }
+
+        match /fieldPhotoUploadSlots/{slotId} {
+          allow read, write: if false;
         }
       }
 
@@ -1092,6 +1100,18 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      match /emailSendLedger/{operationId} {
+        allow read, write: if false;
+      }
+
+      match /emailSendUsage/{usageId} {
+        allow read, write: if false;
+      }
+
+      match /emailSendActorUsage/{usageId} {
+        allow read, write: if false;
+      }
+
       match /payments/{paymentId} {
         allow read: if tenantExists(tenantId) &&
                        (isSuperAdmin() || isTenantAdmin(tenantId));
@@ -1167,6 +1187,10 @@ service cloud.firestore {
       match /{unprovenPath=**} {
         allow read, write: if false;
       }
+    }
+
+    match /platformEmailUsage/{usageId} {
+      allow read, write: if false;
     }
 
     match /tenant_usage/{tenantId} {

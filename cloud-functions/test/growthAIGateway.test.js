@@ -9,7 +9,10 @@ const {
   normalizeGenerationRequest,
 } = require('../growthAIGateway');
 const { growthAICreditPeriodForTenant } = require('../growthAICreditEntitlement');
-const { GrowthAIProviderError } = require('../growthAIProvider');
+const {
+  GrowthAIProviderError,
+  createGrowthAIProviderFromFirebaseParameters,
+} = require('../growthAIProvider');
 
 function clone(value) {
   return value == null ? value : structuredClone(value);
@@ -853,6 +856,34 @@ describe('GrowthAI server gateway', () => {
     assert.equal(balance.reservedCredits, 0);
     assert.equal(ledger.status, 'restored');
     assert.equal([...db.documents.keys()].some(path => path.includes('/growthAIDrafts/ai-')), false);
+  });
+
+  test('disabled external provider restores the reserved credit without a fetch', async () => {
+    const { admin, db } = fakeAdmin(seed());
+    let fetchCalls = 0;
+    const provider = createGrowthAIProviderFromFirebaseParameters({
+      apiKeyParam: { value: () => 'server-secret' },
+      baseUrlParam: { value: () => 'https://provider.example/v1' },
+      enabledParam: { value: () => false },
+      fetchImpl: async () => { fetchCalls += 1; },
+      modelParam: { value: () => 'controlled-model' },
+    });
+    await assert.rejects(
+      generateGrowthAIContent({
+        admin,
+        provider,
+        requestBody: request({ idempotencyKey: 'disabled-provider' }),
+        uid: 'admin-a',
+      }),
+      error => error.code === 'provider_unavailable',
+    );
+    const balance = db.documents.get('tenants/tenant-a/growthAICreditBalances/current');
+    const [[, ledger]] = ledgerEntries(db);
+    assert.equal(fetchCalls, 0);
+    assert.deepEqual(balance.buckets, { monthly: 5, promotional: 0, purchased: 0 });
+    assert.equal(balance.reservedCredits, 0);
+    assert.equal(ledger.status, 'restored');
+    assert.equal(ledger.failureCode, 'provider_unavailable');
   });
 
   test('does not call the provider when credits are insufficient', async () => {

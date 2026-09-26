@@ -5,6 +5,7 @@ const {
   parseRouterResult,
   routeGrowthAIConversation,
 } = require('../growthAIConversationRouter');
+const { createGrowthAIProviderFromFirebaseParameters } = require('../growthAIProvider');
 
 class Snapshot {
   constructor(value) {
@@ -90,5 +91,26 @@ describe('GrowthAI conversation router', () => {
       error => error.code === 'forbidden',
     );
     assert.equal(calls, 0);
+  });
+
+  test('disabled external provider returns unavailable without a fetch or fabricated route', async () => {
+    let fetchCalls = 0;
+    const provider = createGrowthAIProviderFromFirebaseParameters({
+      apiKeyParam: { value: () => 'server-secret' },
+      baseUrlParam: { value: () => 'https://provider.example/v1' },
+      enabledParam: { value: () => false },
+      fetchImpl: async () => { fetchCalls += 1; },
+      modelParam: { value: () => 'controlled-model' },
+    });
+    await assert.rejects(
+      routeGrowthAIConversation({
+        admin: fakeAdmin(seed()),
+        uid: 'admin-a',
+        requestBody: { tenantId: 'tenant-a', message: 'Help me grow this week' },
+        provider,
+      }),
+      error => error.code === 'provider_unavailable',
+    );
+    assert.equal(fetchCalls, 0);
   });
 });

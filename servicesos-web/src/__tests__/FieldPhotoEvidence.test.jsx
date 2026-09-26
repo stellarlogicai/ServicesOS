@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../services/fieldPhotoService', () => ({
+  createFieldPhotoClientUploadId: vi.fn(() => 'client-upload-stable'),
+  FIELD_PHOTO_MAX_PER_BOOKING: 20,
   FIELD_PHOTO_PHASES: ['before', 'after'],
   listFieldPhotos: mocks.listFieldPhotos,
   listFieldPhotosForMarketing: mocks.listFieldPhotosForMarketing,
@@ -110,6 +112,8 @@ describe('FieldPhotoEvidence', () => {
       roomLabel: 'Kitchen',
       note: 'Grease behind stove',
       file: expect.any(File),
+      clientUploadId: 'client-upload-stable',
+      recoverExisting: false,
     });
     expect(screen.getByText('Kitchen')).toBeInTheDocument();
     expect(screen.getByText('Grease behind stove')).toBeInTheDocument();
@@ -145,7 +149,9 @@ describe('FieldPhotoEvidence', () => {
     expect(mocks.uploadFieldPhoto).toHaveBeenCalledTimes(2);
     expect(mocks.uploadFieldPhoto).toHaveBeenLastCalledWith({
       tenantId: 'tenant-a', bookingId: 'booking-a', phase: 'after', roomLabel: 'Bathroom', note: 'Mirror finished', file: expect.any(File),
+      clientUploadId: 'client-upload-stable', recoverExisting: true,
     });
+    expect(mocks.uploadFieldPhoto.mock.calls[0][0].clientUploadId).toBe('client-upload-stable');
     expect(screen.queryByAltText('Selected after photo preview')).not.toBeInTheDocument();
   });
 
@@ -156,6 +162,19 @@ describe('FieldPhotoEvidence', () => {
     await screen.findByAltText('Selected before photo preview');
     unmount();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:field-photo');
+  });
+
+  it('shows the soft 20-photo limit and disables new selections', async () => {
+    mocks.listFieldPhotos.mockResolvedValue(Array.from({ length: 20 }, (_, index) => ({
+      id: `photo-${index}`, phase: index % 2 ? 'after' : 'before', roomLabel: 'Kitchen',
+      storagePath: `safe/photo-${index}.jpg`, uploadedAt: new Date(),
+    })));
+    render(<FieldPhotoUploadPanel tenantId="tenant-a" bookingId="booking-a" />);
+
+    expect(await screen.findByText(/reached the 20-photo limit/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Add before photo')).toBeDisabled();
+    expect(screen.getByLabelText('Add after photo')).toBeDisabled();
+    expect(mocks.uploadFieldPhoto).not.toHaveBeenCalled();
   });
 
   it('renders owner review as read-only and shows unavailable persisted content honestly', async () => {

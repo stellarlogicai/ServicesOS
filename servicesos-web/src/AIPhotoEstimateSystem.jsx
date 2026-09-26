@@ -162,15 +162,16 @@ export default function AIPhotoEstimateSystem({
       const pricingProfile = getPricingProfileForTenant(currentTenant);
       const result = calculateEstimate(formData, aiAnalysis, pricingProfile);
       const tenantId = typeof currentTenant === "string" ? currentTenant : currentTenant?.id;
+      let savedLead;
 
       if (onLeadSaved) {
         if (existingCustomerContext?.customerId) {
-          await onLeadSaved(formData, result, aiAnalysis, existingCustomerContext);
+          savedLead = await onLeadSaved(formData, result, aiAnalysis, existingCustomerContext);
         } else {
-          await onLeadSaved(formData, result, aiAnalysis);
+          savedLead = await onLeadSaved(formData, result, aiAnalysis);
         }
       } else {
-        await saveQuote(tenantId, formData, result, aiAnalysis);
+        savedLead = await saveQuote(tenantId, formData, result, aiAnalysis);
       }
       setEstimate(result);
       setStep("results");
@@ -180,7 +181,7 @@ export default function AIPhotoEstimateSystem({
         message: "Estimate saved successfully. Customer notification status could not be confirmed. Please contact the customer manually if needed."
       });
 
-      void Promise.resolve(sendQuoteEmail(formData, result))
+      void Promise.resolve(sendQuoteEmail(tenantId, { ...formData, id: savedLead?.id }, result))
         .then(emailResult => {
           if (emailResult?.success === true) {
             setNotificationStatus({

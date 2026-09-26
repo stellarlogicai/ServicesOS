@@ -1,5 +1,5 @@
 const functions = require('firebase-functions');
-const { defineSecret, defineString } = require('firebase-functions/params');
+const { defineBoolean, defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors')({ origin: true });
@@ -22,15 +22,24 @@ const {
 } = require('./growthAIGateway');
 const { createGrowthAIConversationRouterHandler } = require('./growthAIConversationRouter');
 const { createGrowthAIProviderFromFirebaseParameters } = require('./growthAIProvider');
+const { createFieldPhotoUploadGatewayHandler } = require('./fieldPhotoUploadGateway');
+
+const V1_FUNCTION_RUNTIME_OPTIONS = Object.freeze({
+  maxInstances: 3,
+  minInstances: 0,
+});
 
 const growthAIProviderApiKey = defineSecret('GROWTHAI_PROVIDER_API_KEY');
 const growthAIProviderBaseUrl = defineString('GROWTHAI_PROVIDER_BASE_URL');
 const growthAIProviderModel = defineString('GROWTHAI_PROVIDER_MODEL');
+const growthAIProviderEnabled = defineBoolean('GROWTHAI_PROVIDER_ENABLED', { default: false });
+const customerEmailProviderEnabled = defineBoolean('CUSTOMER_EMAIL_PROVIDER_ENABLED', { default: false });
 
 function createConfiguredGrowthAIProvider() {
   return createGrowthAIProviderFromFirebaseParameters({
     apiKeyParam: growthAIProviderApiKey,
     baseUrlParam: growthAIProviderBaseUrl,
+    enabledParam: growthAIProviderEnabled,
     modelParam: growthAIProviderModel,
   });
 }
@@ -38,20 +47,26 @@ function createConfiguredGrowthAIProvider() {
 admin.initializeApp();
 
 exports.generateGrowthAIContent = functions.runWith({
+  ...V1_FUNCTION_RUNTIME_OPTIONS,
   secrets: [growthAIProviderApiKey],
 }).https.onRequest(createGrowthAIGenerationHandler({
   admin,
   provider: createConfiguredGrowthAIProvider(),
 }));
 
-exports.getGrowthAICreditBalance = functions.https.onRequest(createGrowthAICreditBalanceHandler({ admin }));
+exports.getGrowthAICreditBalance = functions.runWith(V1_FUNCTION_RUNTIME_OPTIONS)
+  .https.onRequest(createGrowthAICreditBalanceHandler({ admin }));
 
 exports.routeGrowthAIConversation = functions.runWith({
+  ...V1_FUNCTION_RUNTIME_OPTIONS,
   secrets: [growthAIProviderApiKey],
 }).https.onRequest(createGrowthAIConversationRouterHandler({
   admin,
   provider: createConfiguredGrowthAIProvider(),
 }));
+
+exports.fieldPhotoUploadGateway = functions.runWith(V1_FUNCTION_RUNTIME_OPTIONS)
+  .https.onRequest(createFieldPhotoUploadGatewayHandler({ admin }));
 
 // Platform fee percentage by subscription tier
 const PLATFORM_FEE_PERCENTAGE = {
@@ -65,7 +80,7 @@ const getPlatformFee = (subscriptionTier) => {
   return PLATFORM_FEE_PERCENTAGE[subscriptionTier] || PLATFORM_FEE_PERCENTAGE.professional;
 };
 
-exports.createBookingCheckoutSession = functions.https.onRequest(createBookingCheckoutSessionHandler({
+exports.createBookingCheckoutSession = functions.runWith(V1_FUNCTION_RUNTIME_OPTIONS).https.onRequest(createBookingCheckoutSessionHandler({
   admin,
   appUrl: process.env.APP_URL || 'http://localhost:5173',
   cors,
@@ -393,7 +408,10 @@ const confirmPayment = functions.https.onRequest(async (req, res) => {
  * Stripe Webhook Handler (with Stripe Connect support)
  * POST /api/webhooks/stripe
  */
-exports.stripeWebhook = functions.runWith({ invoker: 'public' }).https.onRequest(async (req, res) => {
+exports.stripeWebhook = functions.runWith({
+  ...V1_FUNCTION_RUNTIME_OPTIONS,
+  invoker: 'public',
+}).https.onRequest(async (req, res) => {
   const sig = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -806,7 +824,7 @@ const getSubscription = functions.https.onRequest((req, res) => {
  * Stripe Connect: Create a connected account for a tenant
  * POST /createConnectedAccount
  */
-exports.createConnectedAccount = functions.https.onRequest((req, res) => {
+exports.createConnectedAccount = functions.runWith(V1_FUNCTION_RUNTIME_OPTIONS).https.onRequest((req, res) => {
   return createConnectedAccountHandler({
     admin,
     secretKey: process.env.STRIPE_SECRET_KEY,
@@ -818,7 +836,7 @@ exports.createConnectedAccount = functions.https.onRequest((req, res) => {
  * Stripe Connect: Generate onboarding link for connected account
  * POST /generateOnboardingLink
  */
-exports.generateOnboardingLink = functions.https.onRequest((req, res) => {
+exports.generateOnboardingLink = functions.runWith(V1_FUNCTION_RUNTIME_OPTIONS).https.onRequest((req, res) => {
   return generateOnboardingLinkHandler({
     admin,
     appUrl: process.env.APP_URL || 'http://localhost:5173',
@@ -830,7 +848,7 @@ exports.generateOnboardingLink = functions.https.onRequest((req, res) => {
  * Stripe Connect: Get connected account status
  * GET /getConnectedAccountStatus?tenantId=xxx
  */
-exports.getConnectedAccountStatus = functions.https.onRequest((req, res) => {
+exports.getConnectedAccountStatus = functions.runWith(V1_FUNCTION_RUNTIME_OPTIONS).https.onRequest((req, res) => {
   return getConnectedAccountStatusHandler({ admin, stripe })(req, res);
 });
 
@@ -838,14 +856,20 @@ exports.getConnectedAccountStatus = functions.https.onRequest((req, res) => {
  * Send customer email via Resend
  * POST /sendCustomerEmail
  */
-exports.sendCustomerEmail = functions.https.onRequest(
-  createSendCustomerEmailHandler({ admin, cors })
+exports.sendCustomerEmail = functions.runWith(V1_FUNCTION_RUNTIME_OPTIONS).https.onRequest(
+  createSendCustomerEmailHandler({
+    admin,
+    cors,
+    providerEnabled: () => customerEmailProviderEnabled.value(),
+    senderEmail: functions.config().email?.sender_email || 'notifications@servicesos.com',
+    senderName: functions.config().email?.sender_name || 'ServicesOS',
+  })
 );
 
 /**
  * Stripe webhook handler for subscription events
  */
-exports.subscriptionWebhook = functions.https.onRequest(async (req, res) => {
+exports.subscriptionWebhook = functions.runWith(V1_FUNCTION_RUNTIME_OPTIONS).https.onRequest(async (req, res) => {
   const sig = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_SUBSCRIPTION_WEBHOOK_SECRET;
 
