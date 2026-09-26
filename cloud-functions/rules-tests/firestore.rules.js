@@ -1689,12 +1689,12 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     }
   });
 
-  test('manual booking payment updates require the acting admin and cannot fabricate Stripe confirmation', async () => {
+  test('booking payment summaries and ledger records are server-owned; ordinary booking edits remain allowed', async () => {
     const database = authenticatedDatabase('admin-a');
     const booking = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking');
     const updatedAt = '2026-07-22T14:00:00.000Z';
 
-    await assertSucceeds(updateDoc(booking, {
+    await assertFails(updateDoc(booking, {
       paymentStatus: 'paid_cash',
       paymentStatusUpdatedAt: updatedAt,
       paymentMethod: 'cash',
@@ -1705,13 +1705,19 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       updatedAt
     }));
 
-    const persistedBooking = (await assertSucceeds(getDoc(booking))).data();
-    assert.equal(persistedBooking.paymentStatus, 'paid_cash');
-    assert.equal(persistedBooking.paymentMethod, 'cash');
-    assert.equal(persistedBooking.amountReceived, 185);
-    assert.equal(persistedBooking.receivedAt, '2026-07-22');
-    assert.equal(persistedBooking.paymentStatusUpdatedAt, updatedAt);
-    assert.equal(persistedBooking.paymentStatusUpdatedBy, 'admin-a');
+    await assertSucceeds(updateDoc(booking, { notes: 'Ordinary booking note', updatedAt }));
+    assert.equal((await assertSucceeds(getDoc(booking))).data().notes, 'Ordinary booking note');
+    for (const patch of [
+      { paymentStatus: 'paid_in_full' }, { amountReceived: 185 },
+      { paymentAccounting: { version: 1 } }, { remainingBalanceCents: 0 },
+      { paymentMethod: 'cash' }, { receivedAt: updatedAt },
+      { paymentStatusUpdatedAt: updatedAt }, { paymentStatusUpdatedBy: 'admin-a' },
+    ]) await assertFails(updateDoc(booking, patch));
+    const record = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', 'paymentRecords', 'fake');
+    await assertFails(setDoc(record, { amountCents: 18500, status: 'confirmed' }));
+    await assertFails(getDoc(record));
+    await assertFails(setDoc(doc(database, 'tenants', TENANT_A, 'bookingPaymentIdentities', 'fake'),
+      { bookingId: 'field-booking' }));
 
     await assertFails(updateDoc(
       doc(authenticatedDatabase('admin-b'), 'tenants', TENANT_A, 'bookings', 'field-booking'),
@@ -1742,6 +1748,14 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     await assertFails(updateDoc(booking, { stripePaymentIntentId: 'pi_test_spoofed' }));
     await assertFails(updateDoc(booking, { platformFee: 20 }));
     await assertFails(updateDoc(booking, { refundStatus: 'succeeded' }));
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      await updateDoc(doc(context.firestore(), 'tenants', TENANT_A, 'bookings', 'field-booking'), {
+        paymentAccounting: { version: 1 },
+      });
+    });
+    await assertFails(updateDoc(booking, { agreedPrice: 185 }));
+    await assertFails(deleteDoc(booking));
+    await assertSucceeds(updateDoc(booking, { notes: 'Unrelated note after cutover' }));
   });
 
   test('tenant admins persist GrowthAI profiles and transaction-linked drafts with immutable audit', async () => {

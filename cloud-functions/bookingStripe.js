@@ -1,5 +1,9 @@
+const { randomUUID, createHash } = require('node:crypto');
 const BOOKING_PAYMENT_SOURCE = 'servicesos_booking_payment';
 const DEFAULT_CURRENCY = 'usd';
+const {
+  AccountingError, balance, canonicalTotalCents, cutoverBooking, reconcilePayment, reconcileReduction, recordId,
+} = require('./bookingPaymentAccounting');
 const BOOKING_CHECKOUT_ALLOWED_ORIGINS = new Set([
   'https://servicesos.netlify.app',
   'http://127.0.0.1:5173',
@@ -22,20 +26,9 @@ function applyBookingCheckoutCors(req, res) {
   res.set('Access-Control-Allow-Headers', BOOKING_CHECKOUT_ALLOWED_HEADERS);
 }
 
-function centsFromDollars(value) {
-  const amount = Number(value);
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-  return Math.round(amount * 100);
-}
-
-function dollarsFromCents(value) {
-  const amount = Number(value);
-  if (!Number.isFinite(amount) || amount < 0) return null;
-  return amount / 100;
-}
-
 function bookingAmountCents(booking = {}) {
-  return centsFromDollars(booking.agreedPrice ?? booking.price);
+  const amount = canonicalTotalCents(booking);
+  return amount > 0 ? amount : null;
 }
 
 function tenantMembershipIncludes(membership, uid) {
@@ -57,7 +50,14 @@ function bookingPaymentMetadata(tenantId, bookingId) {
     source: BOOKING_PAYMENT_SOURCE,
     tenantId,
     bookingId,
+    paymentChannel: 'online_checkout',
   };
+}
+
+function paymentChannel(metadata) {
+  if (!metadata.paymentChannel) return 'online_checkout'; // pre-cutover Checkout metadata
+  if (['online_checkout', 'card_present'].includes(metadata.paymentChannel)) return metadata.paymentChannel;
+  throw new AccountingError('invalid_payment_channel', 400);
 }
 
 function isBookingPaymentMetadata(metadata = {}) {
@@ -68,12 +68,9 @@ function isBookingPaymentMetadata(metadata = {}) {
 
 function buildCheckoutCreatedPatch(session, { nowIso }) {
   return {
-    paymentStatus: 'final_due',
     stripeCheckoutSessionId: session.id,
     stripePaymentStatus: 'checkout_created',
     stripeMode: session.livemode ? 'live' : 'test',
-    paymentStatusUpdatedAt: nowIso,
-    paymentStatusUpdatedBy: 'stripe_checkout_created',
   };
 }
 
@@ -114,72 +111,6 @@ function stripeSetupFailureResult(error) {
   return null;
 }
 
-function buildStripeConfirmedBookingPatch(paymentIntent, { nowIso }) {
-  const amountReceived = dollarsFromCents(paymentIntent.amount_received ?? paymentIntent.amount);
-  const paidAt = paymentIntent.created
-    ? new Date(paymentIntent.created * 1000).toISOString()
-    : nowIso;
-  const latestCharge = typeof paymentIntent.latest_charge === 'object' && paymentIntent.latest_charge
-    ? paymentIntent.latest_charge
-    : null;
-
-  const patch = {
-    paymentStatus: 'paid_in_full',
-    paymentMethod: 'stripe',
-    amountReceived,
-    receivedAt: paidAt,
-    stripePaymentIntentId: paymentIntent.id,
-    stripePaymentStatus: paymentIntent.status || 'succeeded',
-    stripePaidAt: paidAt,
-    stripeAmountReceived: paymentIntent.amount_received ?? paymentIntent.amount,
-    stripeCurrency: paymentIntent.currency || DEFAULT_CURRENCY,
-    stripeMode: paymentIntent.livemode ? 'live' : 'test',
-    paymentStatusUpdatedAt: nowIso,
-    paymentStatusUpdatedBy: 'stripe_webhook',
-  };
-
-  if (latestCharge.receipt_url) {
-    patch.stripeReceiptUrl = latestCharge.receipt_url;
-  }
-
-  if (isNonEmptyString(paymentIntent.metadata?.checkoutSessionId)) {
-    patch.stripeCheckoutSessionId = paymentIntent.metadata.checkoutSessionId;
-  }
-
-  return patch;
-}
-
-function buildStripeConfirmedCheckoutSessionPatch(session, { nowIso }) {
-  const amountReceived = dollarsFromCents(session.amount_total ?? session.amount_subtotal);
-  const paidAt = session.created
-    ? new Date(session.created * 1000).toISOString()
-    : nowIso;
-  const paymentIntentId = typeof session.payment_intent === 'string'
-    ? session.payment_intent
-    : session.payment_intent?.id;
-
-  const patch = {
-    paymentStatus: 'paid_in_full',
-    paymentMethod: 'stripe',
-    amountReceived,
-    receivedAt: paidAt,
-    stripeCheckoutSessionId: session.id,
-    stripePaymentStatus: session.payment_status || 'paid',
-    stripePaidAt: paidAt,
-    stripeAmountReceived: session.amount_total ?? session.amount_subtotal,
-    stripeCurrency: session.currency || DEFAULT_CURRENCY,
-    stripeMode: session.livemode ? 'live' : 'test',
-    paymentStatusUpdatedAt: nowIso,
-    paymentStatusUpdatedBy: 'stripe_webhook',
-  };
-
-  if (paymentIntentId) {
-    patch.stripePaymentIntentId = paymentIntentId;
-  }
-
-  return patch;
-}
-
 async function verifyRequestAuth(req, admin) {
   const authHeader = req.headers?.authorization || req.headers?.Authorization || '';
   if (!authHeader.startsWith('Bearer ')) {
@@ -215,7 +146,7 @@ async function verifyTenantAdminAccess(db, uid, tenantId) {
   const tenantData = tenantDoc.data() || {};
   const inAdminUsers = tenantMembershipIncludes(tenantData.adminUsers, uid);
   const inUsers = tenantMembershipIncludes(tenantData.users, uid);
-  if ((tenantData.adminUsers && !inAdminUsers) || (tenantData.users && !inUsers)) {
+  if (!inAdminUsers || !inUsers) {
     return { success: false, status: 403, error: 'User is not authorized for this tenant' };
   }
 
@@ -282,6 +213,9 @@ async function createBookingCheckoutSessionCore({
   if (!isNonEmptyString(tenantId) || !isNonEmptyString(bookingId)) {
     return { success: false, status: 400, error: 'tenantId and bookingId are required' };
   }
+  if (currency !== DEFAULT_CURRENCY) {
+    return { success: false, status: 400, error: 'Unsupported booking currency' };
+  }
 
   const db = admin.firestore();
   const access = await verifyTenantAdminAccess(db, uid, tenantId);
@@ -299,8 +233,35 @@ async function createBookingCheckoutSessionCore({
     return { success: false, status: 404, error: 'Booking not found' };
   }
 
-  const booking = bookingDoc.data() || {};
-  const amountCents = bookingAmountCents(booking);
+  await cutoverBooking({ admin, tenantId, bookingId, nowIso });
+  const nowMs = Date.parse(nowIso);
+  const reservationId = randomUUID();
+  const reservation = await db.runTransaction(async tx => {
+    const fresh = await tx.get(bookingRef);
+    const booking = fresh.data() || {};
+    const currentBalance = balance(booking);
+    if (!currentBalance.collectible) return { invalid: true };
+    const amountCents = currentBalance.remainingCents;
+    if (booking.stripePaymentStatus === 'checkout_created' && booking.stripeCheckoutSessionId) {
+      const expiresAt = booking.stripeCheckoutSessionExpiresAt;
+      if (!Number.isSafeInteger(expiresAt)) return { conflict: true };
+      if (expiresAt * 1000 > nowMs) {
+        if (booking.stripeCheckoutSessionAmountCents !== amountCents || !booking.stripeCheckoutSessionUrl) {
+          return { conflict: true };
+        }
+        return { reused: true, booking, amountCents,
+          session: { id: booking.stripeCheckoutSessionId, url: booking.stripeCheckoutSessionUrl } };
+      }
+    }
+    if (booking.stripeCheckoutReservation?.expiresAtMs > nowMs) return { conflict: true };
+    tx.update(bookingRef, { stripeCheckoutReservation: { id: reservationId,
+      amountCents, expiresAtMs: nowMs + 10 * 60 * 1000 } });
+    return { booking, amountCents };
+  });
+  if (reservation.conflict) return { success: false, status: 409,
+    error: 'An existing booking checkout is still open. Refresh or try again after it expires.' };
+  const { booking } = reservation;
+  const amountCents = reservation.invalid ? 0 : reservation.amountCents;
   if (!Number.isInteger(amountCents) || amountCents <= 0) {
     return { success: false, status: 400, error: 'Booking amount must be a positive number' };
   }
@@ -322,30 +283,49 @@ async function createBookingCheckoutSessionCore({
     appUrl,
   });
 
-  let session;
-  try {
-    session = await stripe.checkout.sessions.create(
-      sessionParams,
-      { stripeAccount: stripeAccountId }
-    );
-  } catch (error) {
-    const setupFailure = stripeSetupFailureResult(error);
-    if (setupFailure) return setupFailure;
-
-    console.error('[Booking Stripe] Checkout session Stripe error:', {
-      type: error?.type || error?.rawType || 'unknown',
-      code: error?.code,
-      statusCode: error?.statusCode || error?.raw?.statusCode,
-      requestId: error?.requestId || error?.raw?.requestId,
-    });
-    return {
-      success: false,
-      status: 502,
-      error: 'Stripe checkout could not be created. Check Stripe test-mode setup and try again.',
-    };
+  let session = reservation.session;
+  if (!reservation.reused) {
+    try {
+      const idempotencyKey = createHash('sha256')
+        .update(`booking-checkout-v1:${tenantId}:${bookingId}:${reservationId}`).digest('hex');
+      session = await stripe.checkout.sessions.create(sessionParams,
+        { stripeAccount: stripeAccountId, idempotencyKey });
+      if (!Number.isSafeInteger(session.expires_at) || session.expires_at * 1000 <= nowMs || !session.url) {
+        throw new AccountingError('invalid_checkout_session');
+      }
+      const finalized = await db.runTransaction(async tx => {
+        const fresh = await tx.get(bookingRef);
+        const current = fresh.data() || {};
+        if (current.stripeCheckoutReservation?.id !== reservationId ||
+            balance(current).remainingCents !== amountCents) return false;
+        tx.update(bookingRef, { ...buildCheckoutCreatedPatch(session, { nowIso }),
+          stripeCheckoutSessionUrl: session.url,
+          stripeCheckoutSessionExpiresAt: session.expires_at,
+          stripeCheckoutSessionAmountCents: amountCents,
+          stripeCheckoutReservation: null });
+        return true;
+      });
+      if (!finalized) throw new AccountingError('checkout_balance_changed');
+    } catch (error) {
+      if (session?.id && stripe.checkout.sessions.expire) {
+        try { await stripe.checkout.sessions.expire(session.id, { stripeAccount: stripeAccountId }); }
+        catch (expireError) { console.error('[Booking Stripe] Could not expire unused session:', expireError?.code); }
+      }
+      await db.runTransaction(async tx => {
+        const fresh = await tx.get(bookingRef);
+        if (fresh.data()?.stripeCheckoutReservation?.id === reservationId) {
+          tx.update(bookingRef, { stripeCheckoutReservation: null });
+        }
+      });
+      const setupFailure = stripeSetupFailureResult(error);
+      if (setupFailure) return setupFailure;
+      console.error('[Booking Stripe] Checkout session error:', {
+        type: error?.type || error?.rawType || 'unknown', code: error?.code,
+        statusCode: error?.statusCode || error?.raw?.statusCode,
+      });
+      return { success: false, status: 502, error: 'Stripe checkout could not be created. Please try again.' };
+    }
   }
-
-  await bookingRef.update(buildCheckoutCreatedPatch(session, { nowIso }));
 
   return {
     success: true,
@@ -404,26 +384,28 @@ function createBookingCheckoutSessionHandler({ admin, appUrl, getPlatformFee, se
   };
 }
 
-async function handleBookingPaymentSucceeded(paymentIntent, { admin, nowIso }) {
+async function handleBookingPaymentSucceeded(paymentIntent, { admin, nowIso, connectedAccountId }) {
   const metadata = paymentIntent.metadata || {};
   if (!isBookingPaymentMetadata(metadata)) {
     return { handled: false };
   }
-
-  const db = admin.firestore();
-  const bookingRef = db.collection('tenants').doc(metadata.tenantId).collection('bookings').doc(metadata.bookingId);
-  const bookingDoc = await bookingRef.get();
-  if (!bookingDoc.exists) {
-    console.log(`Booking payment succeeded for missing booking ${metadata.tenantId}/${metadata.bookingId}`);
-    return { handled: true, missingBooking: true };
-  }
-
-  const patch = buildStripeConfirmedBookingPatch(paymentIntent, { nowIso });
-  await bookingRef.update(patch);
-  return { handled: true, patch };
+  if (paymentIntent.status !== 'succeeded' || !Number.isSafeInteger(paymentIntent.amount_received) ||
+      paymentIntent.amount_received <= 0) return { handled: true, unconfirmed: true };
+  await cutoverBooking({ admin, tenantId: metadata.tenantId, bookingId: metadata.bookingId,
+    nowIso, connectedAccountId, requireConnectedAccount: true });
+  const result = await reconcilePayment({
+    admin, tenantId: metadata.tenantId, bookingId: metadata.bookingId,
+    connectedAccountId, providerPaymentId: paymentIntent.id,
+    amountCents: paymentIntent.amount_received, currency: paymentIntent.currency,
+    channel: paymentChannel(metadata), nowIso, livemode: paymentIntent.livemode,
+    checkoutSessionId: paymentIntent.metadata.checkoutSessionId,
+    receiptUrl: paymentIntent.latest_charge?.receipt_url,
+    paymentCreatedAt: paymentIntent.created,
+  });
+  return { handled: true, ...result };
 }
 
-async function handleBookingCheckoutCompleted(session, { admin, nowIso }) {
+async function handleBookingCheckoutCompleted(session, { admin, nowIso, connectedAccountId }) {
   const metadata = session.metadata || {};
   if (!isBookingPaymentMetadata(metadata)) {
     return { handled: false };
@@ -433,17 +415,61 @@ async function handleBookingCheckoutCompleted(session, { admin, nowIso }) {
     return { handled: true, unpaid: true };
   }
 
-  const db = admin.firestore();
-  const bookingRef = db.collection('tenants').doc(metadata.tenantId).collection('bookings').doc(metadata.bookingId);
-  const bookingDoc = await bookingRef.get();
-  if (!bookingDoc.exists) {
-    console.log(`Booking checkout completed for missing booking ${metadata.tenantId}/${metadata.bookingId}`);
-    return { handled: true, missingBooking: true };
+  const paymentIntentId = typeof session.payment_intent === 'string'
+    ? session.payment_intent : session.payment_intent?.id;
+  if (!paymentIntentId || !Number.isSafeInteger(session.amount_total) || session.amount_total <= 0) {
+    throw new Error('Paid booking Checkout session lacks canonical payment identity or amount');
   }
+  await cutoverBooking({ admin, tenantId: metadata.tenantId, bookingId: metadata.bookingId,
+    nowIso, connectedAccountId, requireConnectedAccount: true });
+  const result = await reconcilePayment({
+    admin, tenantId: metadata.tenantId, bookingId: metadata.bookingId,
+    connectedAccountId, providerPaymentId: paymentIntentId, amountCents: session.amount_total,
+    currency: session.currency, channel: paymentChannel(metadata), nowIso, livemode: session.livemode,
+    checkoutSessionId: session.id,
+    paymentCreatedAt: session.created,
+  });
+  return { handled: true, ...result };
+}
 
-  const patch = buildStripeConfirmedCheckoutSessionPatch(session, { nowIso });
-  await bookingRef.update(patch);
-  return { handled: true, patch };
+async function handleBookingChargeRefunded(charge, { admin, stripe, connectedAccountId, nowIso }) {
+  if (!connectedAccountId || !charge.payment_intent) return { handled: false };
+  const paymentIntentId = typeof charge.payment_intent === 'string'
+    ? charge.payment_intent : charge.payment_intent.id;
+  const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId, { stripeAccount: connectedAccountId });
+  const metadata = paymentIntent.metadata || {};
+  if (!isBookingPaymentMetadata(metadata)) return { handled: false };
+  if (charge.currency !== DEFAULT_CURRENCY) throw new Error('Booking refund charge currency mismatch');
+  if (paymentIntent.currency !== DEFAULT_CURRENCY) throw new Error('Booking refund payment currency mismatch');
+  await cutoverBooking({ admin, tenantId: metadata.tenantId, bookingId: metadata.bookingId,
+    nowIso, connectedAccountId, requireConnectedAccount: true });
+  if (paymentIntent.status === 'succeeded' && Number.isSafeInteger(paymentIntent.amount_received) &&
+      paymentIntent.amount_received > 0) {
+    await reconcilePayment({
+      admin, tenantId: metadata.tenantId, bookingId: metadata.bookingId,
+      connectedAccountId, providerPaymentId: paymentIntentId,
+      amountCents: paymentIntent.amount_received, currency: paymentIntent.currency,
+      channel: paymentChannel(metadata), nowIso, livemode: paymentIntent.livemode,
+      paymentCreatedAt: paymentIntent.created,
+    });
+  }
+  const refunds = await stripe.refunds.list({ charge: charge.id, limit: 100 },
+    { stripeAccount: connectedAccountId });
+  if (refunds.has_more) throw new Error('Booking refund list is incomplete');
+  for (const refund of refunds.data || []) {
+    if (refund.status !== 'succeeded') continue;
+    if (refund.charge && refund.charge !== charge.id) throw new Error('Refund charge mismatch');
+    if (refund.currency !== DEFAULT_CURRENCY ||
+        (refund.payment_intent && refund.payment_intent !== paymentIntentId)) {
+      throw new Error('Booking refund payment context mismatch');
+    }
+    await reconcileReduction({
+      admin, tenantId: metadata.tenantId, bookingId: metadata.bookingId,
+      originalPaymentId: recordId('stripe_pi', paymentIntentId), reductionId: refund.id,
+      amountCents: refund.amount, kind: 'refund', connectedAccountId, nowIso,
+    });
+  }
+  return { handled: true };
 }
 
 module.exports = {
@@ -453,11 +479,10 @@ module.exports = {
   bookingPaymentMetadata,
   buildBookingCheckoutSessionParams,
   buildCheckoutCreatedPatch,
-  buildStripeConfirmedCheckoutSessionPatch,
-  buildStripeConfirmedBookingPatch,
   createBookingCheckoutSessionCore,
   createBookingCheckoutSessionHandler,
   handleBookingCheckoutCompleted,
+  handleBookingChargeRefunded,
   handleBookingPaymentSucceeded,
   isBookingPaymentMetadata,
   verifyRequestAuth,

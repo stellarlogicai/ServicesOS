@@ -1014,146 +1014,17 @@ describe('booking manual payment status whitelist helper', () => {
   });
 });
 
-describe('booking manual payment status write wrapper', () => {
-  beforeEach(() => {
-    Object.values(firestoreMocks).forEach(mock => mock.mockReset());
-    loggingMocks.logError.mockReset();
-    firestoreMocks.doc.mockImplementation((db, ...path) => ({ db, path }));
-    firestoreMocks.updateDoc.mockResolvedValue(undefined);
-  });
-
-  it('requires tenantId before validating or writing', async () => {
-    const result = await updateBookingManualPaymentStatus('', 'booking-1', { paymentStatus: 'not_paid' }, { now });
-
-    expect(result).toMatchObject({
-      success: false,
-      error: 'VALIDATION_ERROR',
-      message: 'Tenant ID is required',
-    });
-    expect(firestoreMocks.doc).not.toHaveBeenCalled();
-    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
-  });
-
-  it('requires bookingId before validating or writing', async () => {
-    const result = await updateBookingManualPaymentStatus('tenant-a', '', { paymentStatus: 'not_paid' }, { now });
-
-    expect(result).toMatchObject({
-      success: false,
-      error: 'VALIDATION_ERROR',
-      message: 'Booking ID is required',
-    });
-    expect(firestoreMocks.doc).not.toHaveBeenCalled();
-    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
-  });
-
-  it('writes only sanitized manual payment status payload to the tenant-scoped booking document path', async () => {
+describe('retired direct booking payment write wrapper', () => {
+  it('fails closed without writing to Firestore', async () => {
     const result = await updateBookingManualPaymentStatus('tenant-a', 'booking-1', {
-      paymentStatus: 'deposit_paid',
-      paymentMethod: 'cash',
-      amountReceived: '100',
-      receivedAt: '2026-07-07',
-      paymentNote: '  Cash deposit.  ',
-    }, { now, updatedBy: ' admin-uid ' });
-
-    expect(result).toMatchObject({
-      success: true,
-      data: {
-        id: 'booking-1',
-        paymentStatus: 'deposit_paid',
-        paymentMethod: 'cash',
-        amountReceived: 100,
-        receivedAt: '2026-07-07',
-        paymentNote: 'Cash deposit.',
-        paymentStatusUpdatedAt: now,
-        paymentStatusUpdatedBy: 'admin-uid',
-      },
-    });
-    expect(firestoreMocks.doc).toHaveBeenCalledWith(
-      { id: 'db-test' },
-      'tenants',
-      'tenant-a',
-      'bookings',
-      'booking-1'
-    );
-    expect(firestoreMocks.updateDoc).toHaveBeenCalledWith(
-      { db: { id: 'db-test' }, path: ['tenants', 'tenant-a', 'bookings', 'booking-1'] },
-      {
-        paymentStatus: 'deposit_paid',
-        paymentMethod: 'cash',
-        amountReceived: 100,
-        receivedAt: '2026-07-07',
-        paymentNote: 'Cash deposit.',
-        paymentStatusUpdatedAt: now,
-        paymentStatusUpdatedBy: 'admin-uid',
-      }
-    );
-    expect(JSON.stringify(firestoreMocks.updateDoc.mock.calls)).not.toMatch(/lead|customer|employee|stripe|route|refund|paymentLink|paymentIntent/i);
-  });
-
-  it('does not call doc or updateDoc on validation failure', async () => {
-    const result = await updateBookingManualPaymentStatus('tenant-a', 'booking-1', {
-      paymentStatus: 'not_paid',
-      paidAmount: 100,
+      paymentStatus: 'paid_cash',
+      amountReceived: 100,
     }, { now, updatedBy: 'admin-uid' });
 
     expect(result).toMatchObject({
       success: false,
-      error: 'VALIDATION_ERROR',
-      message: 'Unsupported booking manual payment status field: paidAmount.',
-    });
-    expect(firestoreMocks.doc).not.toHaveBeenCalled();
-    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
-  });
-
-  it('does not call global collections, payment, delete, assignment, lead, or customer paths', async () => {
-    await updateBookingManualPaymentStatus('tenant-a', 'booking-1', { paymentStatus: 'paid_external_app' }, { now, updatedBy: 'admin-uid' });
-
-    expect(firestoreMocks.collection).not.toHaveBeenCalled();
-    expect(firestoreMocks.addDoc).not.toHaveBeenCalled();
-    expect(firestoreMocks.deleteDoc).not.toHaveBeenCalled();
-    expect(firestoreMocks.getDoc).not.toHaveBeenCalled();
-    expect(firestoreMocks.getDocs).not.toHaveBeenCalled();
-    expect(firestoreMocks.doc.mock.calls).toEqual([[
-      { id: 'db-test' },
-      'tenants',
-      'tenant-a',
-      'bookings',
-      'booking-1',
-    ]]);
-  });
-
-  it('requires the authenticated actor option before creating a Firestore write', async () => {
-    const result = await updateBookingManualPaymentStatus(
-      'tenant-a',
-      'booking-1',
-      { paymentStatus: 'paid_cash' },
-      { now }
-    );
-
-    expect(result).toMatchObject({
-      success: false,
-      error: 'VALIDATION_ERROR',
-      message: 'Authenticated user ID is required to update booking manual payment status.',
-    });
-    expect(firestoreMocks.doc).not.toHaveBeenCalled();
-    expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();
-  });
-
-  it('rejects a forged actor field instead of trusting caller-provided payment data', async () => {
-    const result = await updateBookingManualPaymentStatus(
-      'tenant-a',
-      'booking-1',
-      {
-        paymentStatus: 'paid_cash',
-        paymentStatusUpdatedBy: 'admin-b',
-      },
-      { now, updatedBy: 'admin-a' }
-    );
-
-    expect(result).toMatchObject({
-      success: false,
-      error: 'VALIDATION_ERROR',
-      message: 'Booking manual payment status actor is managed by the authenticated session.',
+      error: 'PAYMENT_GATEWAY_REQUIRED',
+      message: 'Direct booking payment edits are no longer supported.',
     });
     expect(firestoreMocks.doc).not.toHaveBeenCalled();
     expect(firestoreMocks.updateDoc).not.toHaveBeenCalled();

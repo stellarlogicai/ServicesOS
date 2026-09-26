@@ -136,6 +136,10 @@ export function bookingAmountReceived(booking = {}) {
 }
 
 export function bookingStillOwed(booking = {}) {
+  if (booking.paymentAccounting?.version === 1 &&
+      Number.isSafeInteger(booking.remainingBalanceCents) && booking.remainingBalanceCents >= 0) {
+    return currency(booking.remainingBalanceCents / 100);
+  }
   const agreedPrice = Number(booking.agreedPrice ?? booking.price);
   if (!Number.isFinite(agreedPrice)) return 'Unavailable';
 

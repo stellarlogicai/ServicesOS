@@ -5,6 +5,7 @@ const {
   createBookingCheckoutSessionHandler,
   createBookingCheckoutSessionCore,
   handleBookingCheckoutCompleted,
+  handleBookingChargeRefunded,
   handleBookingPaymentSucceeded,
   isBookingPaymentMetadata,
 } = require('../bookingStripe');
@@ -14,6 +15,7 @@ const nowIso = '2026-07-07T18:00:00.000Z';
 class MockDocRef {
   constructor(path, store) {
     this.path = path;
+    this.id = path.split('/').at(-1);
     this.store = store;
     this.updates = [];
   }
@@ -34,6 +36,15 @@ class MockDocRef {
     };
   }
 
+  async create(value) {
+    if (this.store[this.path] !== undefined) throw new Error('Already exists');
+    this.store[this.path] = value;
+  }
+
+  async set(value) {
+    this.store[this.path] = value;
+  }
+
   collection(name) {
     return new MockCollectionRef(`${this.path}/${name}`, this.store);
   }
@@ -51,14 +62,27 @@ class MockCollectionRef {
 }
 
 function createMockAdmin(store) {
-  return {
-    auth: () => ({
-      verifyIdToken: async () => ({ uid: 'admin-1' }),
-    }),
-    firestore: () => ({
-      collection: name => new MockCollectionRef(name, store),
-    }),
+  let queue = Promise.resolve();
+  const firestore = {
+    collection: name => new MockCollectionRef(name, store),
+    runTransaction(callback) {
+      const run = () => callback({
+        get: ref => ref.get(),
+        update: (ref, patch) => ref.update(patch),
+        create: (ref, value) => ref.create(value),
+        set: (ref, value) => ref.set(value),
+      });
+      const result = queue.then(run, run);
+      queue = result.then(() => undefined, () => undefined);
+      return result;
+    },
   };
+  const admin = {
+    auth: () => ({ verifyIdToken: async () => ({ uid: 'admin-1' }) }),
+    firestore: () => firestore,
+  };
+  admin.firestore.FieldValue = { serverTimestamp: () => 'mock-server-time' };
+  return admin;
 }
 
 function createResponseMock() {
@@ -121,6 +145,7 @@ function createStripeMock(session = {}) {
           return {
             id: 'cs_test_booking',
             url: 'https://checkout.stripe.test/session',
+            expires_at: 1893456000,
             livemode: false,
             ...session,
           };
@@ -253,6 +278,24 @@ test('createBookingCheckoutSessionCore rejects missing booking', async () => {
   assert.equal(result.status, 404);
 });
 
+test('createBookingCheckoutSessionCore requires canonical tenant admin membership', async () => {
+  const store = baseStore({
+    'tenants/tenant-a': {
+      stripeAccountId: 'acct_123', chargesEnabled: true, subscriptionTier: 'professional',
+      users: ['admin-1'], adminUsers: [],
+    },
+  });
+  const stripe = createStripeMock();
+  const result = await createBookingCheckoutSessionCore({
+    admin: createMockAdmin(store), appUrl: 'http://localhost:5173', bookingId: 'booking-1',
+    getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123', stripe,
+    tenantId: 'tenant-a', uid: 'admin-1',
+  });
+  assert.equal(result.success, false);
+  assert.equal(result.status, 403);
+  assert.equal(stripe.calls.length, 0);
+});
+
 test('createBookingCheckoutSessionCore rejects invalid booking amount', async () => {
   const result = await createBookingCheckoutSessionCore({
     admin: createMockAdmin(baseStore({
@@ -294,13 +337,80 @@ test('createBookingCheckoutSessionCore creates checkout metadata and does not ma
     source: BOOKING_PAYMENT_SOURCE,
     tenantId: 'tenant-a',
     bookingId: 'booking-1',
+    paymentChannel: 'online_checkout',
     stripeMode: 'test',
   });
   assert.deepEqual(stripe.calls[0].params.payment_intent_data.metadata, stripe.calls[0].params.metadata);
   assert.equal(stripe.calls[0].params.payment_intent_data.application_fee_amount, 570);
-  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentStatus, 'final_due');
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentStatus, 'not_paid');
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].stripePaymentStatus, 'checkout_created');
-  assert.equal(store['tenants/tenant-a/bookings/booking-1'].amountReceived, undefined);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].amountReceived, 0);
+});
+
+test('Checkout uses remaining balance and reuses one open direct-charge session', async () => {
+  const store = baseStore({
+    'tenants/tenant-a/bookings/booking-1': { agreedPrice: 190, amountReceived: 40 },
+  });
+  const admin = createMockAdmin(store);
+  const stripe = createStripeMock();
+  const args = { admin, appUrl: 'http://localhost:5173', bookingId: 'booking-1',
+    getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123', stripe,
+    tenantId: 'tenant-a', uid: 'admin-1' };
+  const first = await createBookingCheckoutSessionCore(args);
+  const second = await createBookingCheckoutSessionCore(args);
+  assert.equal(first.success, true);
+  assert.equal(second.success, true);
+  assert.equal(first.data.sessionId, second.data.sessionId);
+  assert.equal(stripe.calls.length, 1);
+  assert.equal(stripe.calls[0].params.line_items[0].price_data.unit_amount, 15000);
+  assert.equal(stripe.calls[0].params.payment_intent_data.application_fee_amount, 450);
+  assert.equal(stripe.calls[0].options.stripeAccount, 'acct_123');
+});
+
+test('fully paid booking cannot create another Checkout session', async () => {
+  const store = baseStore({
+    'tenants/tenant-a/bookings/booking-1': { agreedPrice: 190, amountReceived: 190 },
+  });
+  const stripe = createStripeMock();
+  const result = await createBookingCheckoutSessionCore({
+    admin: createMockAdmin(store), appUrl: 'http://localhost:5173', bookingId: 'booking-1',
+    getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123', stripe,
+    tenantId: 'tenant-a', uid: 'admin-1',
+  });
+  assert.equal(result.success, false);
+  assert.equal(result.status, 400);
+  assert.equal(stripe.calls.length, 0);
+});
+
+test('failed Checkout creation clears its reservation so a later attempt can proceed', async () => {
+  const store = baseStore();
+  const args = { admin: createMockAdmin(store), appUrl: 'http://localhost:5173', bookingId: 'booking-1',
+    getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123',
+    tenantId: 'tenant-a', uid: 'admin-1' };
+  const failed = await createBookingCheckoutSessionCore({
+    ...args, stripe: createStripeCheckoutErrorMock(new Error('temporary provider failure')),
+  });
+  assert.equal(failed.success, false);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].stripeCheckoutReservation, null);
+  const stripe = createStripeMock();
+  const retried = await createBookingCheckoutSessionCore({ ...args, stripe });
+  assert.equal(retried.success, true);
+  assert.equal(stripe.calls.length, 1);
+});
+
+test('concurrent Checkout requests cannot create two open sessions', async () => {
+  const store = baseStore();
+  const admin = createMockAdmin(store);
+  const stripe = createStripeMock();
+  const args = { admin, appUrl: 'http://localhost:5173', bookingId: 'booking-1',
+    getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123', stripe,
+    tenantId: 'tenant-a', uid: 'admin-1' };
+  const results = await Promise.all([
+    createBookingCheckoutSessionCore(args), createBookingCheckoutSessionCore(args),
+  ]);
+  assert.equal(results.filter(result => result.success).length, 1);
+  assert.equal(results.filter(result => result.status === 409).length, 1);
+  assert.equal(stripe.calls.length, 1);
 });
 
 test('createBookingCheckoutSessionCore returns clean error for non-platform Stripe key', async () => {
@@ -326,9 +436,9 @@ test('createBookingCheckoutSessionCore returns clean error for non-platform Stri
   assert.equal(result.status, 409);
   assert.equal(result.error.includes('Stripe Connect platform setup is not ready'), true);
   assert.equal(result.error.includes('sk_'), false);
-  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentStatus, undefined);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentStatus, 'not_paid');
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].stripePaymentStatus, undefined);
-  assert.equal(store['tenants/tenant-a/bookings/booking-1'].amountReceived, undefined);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].amountReceived, 0);
 });
 
 test('createBookingCheckoutSessionCore returns clean error for inaccessible connected account', async () => {
@@ -354,7 +464,7 @@ test('createBookingCheckoutSessionCore returns clean error for inaccessible conn
   assert.equal(result.status, 409);
   assert.equal(result.error.includes('not accessible'), true);
   assert.equal(result.error.includes('sk_'), false);
-  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentStatus, undefined);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentStatus, 'not_paid');
 });
 
 test('booking webhook metadata guard ignores unrelated metadata', () => {
@@ -382,7 +492,7 @@ test('handleBookingPaymentSucceeded updates booking from Stripe-confirmed paymen
   const result = await handleBookingPaymentSucceeded({
     id: 'pi_123',
     amount_received: 19000,
-    created: 1783274400,
+    created: Math.floor(Date.parse(nowIso) / 1000) + 1,
     currency: 'usd',
     latest_charge: { receipt_url: 'https://receipt.stripe.test/r' },
     livemode: false,
@@ -395,6 +505,7 @@ test('handleBookingPaymentSucceeded updates booking from Stripe-confirmed paymen
   }, {
     admin: createMockAdmin(store),
     nowIso,
+    connectedAccountId: 'acct_123',
   });
 
   assert.equal(result.handled, true);
@@ -407,12 +518,32 @@ test('handleBookingPaymentSucceeded updates booking from Stripe-confirmed paymen
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentStatusUpdatedBy, 'stripe_webhook');
 });
 
+test('booking payment from a different connected account cannot cut over or mutate the booking', async () => {
+  const store = baseStore();
+  await assert.rejects(handleBookingPaymentSucceeded({
+    id: 'pi_wrong', amount_received: 19000, currency: 'usd', status: 'succeeded',
+    metadata: { source: BOOKING_PAYMENT_SOURCE, tenantId: 'tenant-a', bookingId: 'booking-1' },
+  }, { admin: createMockAdmin(store), nowIso, connectedAccountId: 'acct_other' }),
+  { code: 'connected_account_mismatch' });
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentAccounting, undefined);
+});
+
+test('unconfirmed booking PaymentIntent does not increase paid amount', async () => {
+  const store = baseStore();
+  const result = await handleBookingPaymentSucceeded({
+    id: 'pi_pending', amount_received: 0, currency: 'usd', status: 'requires_payment_method',
+    metadata: { source: BOOKING_PAYMENT_SOURCE, tenantId: 'tenant-a', bookingId: 'booking-1' },
+  }, { admin: createMockAdmin(store), nowIso, connectedAccountId: 'acct_123' });
+  assert.equal(result.unconfirmed, true);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentAccounting, undefined);
+});
+
 test('handleBookingCheckoutCompleted updates booking and is safe for duplicate events', async () => {
   const store = baseStore();
   const session = {
     id: 'cs_test_booking',
     amount_total: 19000,
-    created: 1783274400,
+    created: Math.floor(Date.parse(nowIso) / 1000) + 1,
     currency: 'usd',
     livemode: false,
     metadata: {
@@ -427,10 +558,12 @@ test('handleBookingCheckoutCompleted updates booking and is safe for duplicate e
   const first = await handleBookingCheckoutCompleted(session, {
     admin: createMockAdmin(store),
     nowIso,
+    connectedAccountId: 'acct_123',
   });
   const second = await handleBookingCheckoutCompleted(session, {
     admin: createMockAdmin(store),
     nowIso,
+    connectedAccountId: 'acct_123',
   });
 
   assert.equal(first.handled, true);
@@ -440,4 +573,44 @@ test('handleBookingCheckoutCompleted updates booking and is safe for duplicate e
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].amountReceived, 190);
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].stripeCheckoutSessionId, 'cs_test_booking');
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].stripePaymentIntentId, 'pi_123');
+});
+
+test('charge.refunded maps through the connected account and reconciles each refund once', async () => {
+  const store = baseStore();
+  const stripe = {
+    paymentIntents: { retrieve: async (id, options) => {
+      assert.equal(id, 'pi_123');
+      assert.equal(options.stripeAccount, 'acct_123');
+      return { id, status: 'succeeded', amount_received: 19000, currency: 'usd',
+        created: Math.floor(Date.parse(nowIso) / 1000) + 1,
+        metadata: { source: BOOKING_PAYMENT_SOURCE, tenantId: 'tenant-a', bookingId: 'booking-1' } };
+    } },
+    refunds: { list: async () => ({ has_more: false, data: [{
+      id: 're_123', charge: 'ch_123', payment_intent: 'pi_123',
+      amount: 5000, currency: 'usd', status: 'succeeded',
+    }] }) },
+  };
+  const charge = { id: 'ch_123', payment_intent: 'pi_123', currency: 'usd' };
+  const options = { admin: createMockAdmin(store), stripe, connectedAccountId: 'acct_123', nowIso };
+  assert.equal((await handleBookingChargeRefunded(charge, options)).handled, true);
+  assert.equal((await handleBookingChargeRefunded(charge, options)).handled, true);
+  const booking = store['tenants/tenant-a/bookings/booking-1'];
+  assert.equal(booking.amountReceived, 140);
+  assert.equal(booking.paymentStatus, 'partial');
+  assert.equal(booking.paymentAccounting.confirmedRefundCents, 5000);
+});
+
+test('wrong connected account cannot reconcile a booking refund', async () => {
+  const store = baseStore();
+  const stripe = {
+    paymentIntents: { retrieve: async () => ({ id: 'pi_123', status: 'succeeded',
+      amount_received: 19000, currency: 'usd',
+      metadata: { source: BOOKING_PAYMENT_SOURCE, tenantId: 'tenant-a', bookingId: 'booking-1' } }) },
+  };
+  await assert.rejects(handleBookingChargeRefunded(
+    { id: 'ch_123', payment_intent: 'pi_123', currency: 'usd' },
+    { admin: createMockAdmin(store), stripe, connectedAccountId: 'acct_other', nowIso },
+  ), { code: 'connected_account_mismatch' });
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].amountReceived, undefined);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentAccounting, undefined);
 });

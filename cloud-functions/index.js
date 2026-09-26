@@ -6,6 +6,7 @@ const cors = require('cors')({ origin: true });
 const {
   createBookingCheckoutSessionHandler,
   handleBookingCheckoutCompleted,
+  handleBookingChargeRefunded,
   handleBookingPaymentSucceeded,
 } = require('./bookingStripe');
 const {
@@ -42,6 +43,7 @@ const { createServiceCatalogGatewayHandler } = require('./serviceCatalogGateway'
 const { createExtraWorkGatewayHandler } = require('./extraWorkGateway');
 const { createBrandingGatewayHandler } = require('./brandingGateway');
 const { createEmployeeTeamGatewayHandler, createResendActivationSender } = require('./employeeTeamGateway');
+const { createBookingManualPaymentGatewayHandler } = require('./bookingManualPaymentGateway');
 
 const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
@@ -256,6 +258,9 @@ exports.createBookingCheckoutSession = functions.https.onRequest(createBookingCh
   secretKey: process.env.STRIPE_SECRET_KEY,
   stripe,
 }));
+
+exports.bookingManualPaymentGateway = functions.runWith({ maxInstances: 3, minInstances: 0 })
+  .https.onRequest(createBookingManualPaymentGatewayHandler({ admin }));
 
 /**
  * AI/ML Backend: Analyze cleaning photos for condition assessment
@@ -602,13 +607,14 @@ exports.stripeWebhook = functions.runWith({ invoker: 'public' }).https.onRequest
         await handleBookingCheckoutCompleted(session, {
           admin,
           nowIso: new Date().toISOString(),
+          connectedAccountId: event.account,
         });
         break;
       }
 
       case 'payment_intent.succeeded': {
         const paymentIntent = event.data.object;
-        await handlePaymentSucceeded(paymentIntent);
+        await handlePaymentSucceeded(paymentIntent, event.account);
         break;
       }
 
@@ -620,7 +626,22 @@ exports.stripeWebhook = functions.runWith({ invoker: 'public' }).https.onRequest
 
       case 'charge.refunded': {
         const charge = event.data.object;
-        await handleRefund(charge);
+        const bookingRefund = await handleBookingChargeRefunded(charge, {
+          admin, stripe, connectedAccountId: event.account, nowIso: new Date().toISOString(),
+        });
+        if (!bookingRefund.handled) await handleRefund(charge);
+        break;
+      }
+
+      case 'refund.updated': {
+        const refund = event.data.object;
+        if (event.account && refund.charge) {
+          const chargeId = typeof refund.charge === 'string' ? refund.charge : refund.charge.id;
+          const charge = await stripe.charges.retrieve(chargeId, { stripeAccount: event.account });
+          await handleBookingChargeRefunded(charge, {
+            admin, stripe, connectedAccountId: event.account, nowIso: new Date().toISOString(),
+          });
+        }
         break;
       }
 
@@ -645,10 +666,11 @@ exports.stripeWebhook = functions.runWith({ invoker: 'public' }).https.onRequest
 /**
  * Handle successful payment
  */
-async function handlePaymentSucceeded(paymentIntent) {
+async function handlePaymentSucceeded(paymentIntent, connectedAccountId) {
   const bookingPaymentResult = await handleBookingPaymentSucceeded(paymentIntent, {
     admin,
     nowIso: new Date().toISOString(),
+    connectedAccountId,
   });
   if (bookingPaymentResult.handled) {
     return;

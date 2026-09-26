@@ -89,13 +89,6 @@ service cloud.firestore {
         'status',
         'notes',
         'agreedPrice',
-        'paymentStatus',
-        'paymentStatusUpdatedAt',
-        'paymentMethod',
-        'amountReceived',
-        'receivedAt',
-        'paymentNote',
-        'paymentStatusUpdatedBy',
         'fieldStatus',
         'fieldStatusUpdatedAt',
         'fieldStartedAt',
@@ -135,55 +128,12 @@ service cloud.firestore {
              ]);
     }
 
-    function bookingPaymentFieldsChanged() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'paymentStatus',
-        'paymentStatusUpdatedAt',
-        'paymentMethod',
-        'amountReceived',
-        'receivedAt',
-        'paymentNote',
-        'paymentStatusUpdatedBy'
-      ]);
-    }
-
-    function validManualPaymentState() {
-      return request.resource.data.paymentStatus in [
-               'not_paid',
-               'deposit_requested',
-               'deposit_paid',
-               'final_due',
-               'partial',
-               'paid_in_full',
-               'paid_cash',
-               'paid_check',
-               'paid_external_app',
-               'waived_family_discount',
-               'payment_issue'
-             ] &&
-             request.resource.data.paymentStatusUpdatedBy == request.auth.uid &&
-             (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['paymentMethod']) ||
-              request.resource.data.paymentMethod in [
-                '',
-                'cash',
-                'check',
-                'venmo',
-                'cash_app',
-                'zelle',
-                'facebook_pay',
-                'paypal',
-                'card',
-                'stripe_manual_reference',
-                'waived',
-                'other'
-              ]);
-    }
-
     function isSafeBookingManagerUpdate(tenantId) {
       return isBookingManager(tenantId) &&
              bookingManagerUpdateKeysOnly() &&
              (!bookingAssignmentChanged() || validRequestedBookingAssignment(tenantId)) &&
-             (!bookingPaymentFieldsChanged() || validManualPaymentState());
+             (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['agreedPrice']) ||
+              !('paymentAccounting' in resource.data));
     }
 
     function bookingCreateKeysOnly() {
@@ -887,6 +837,10 @@ service cloud.firestore {
       allow update: if isSuperAdmin() || isSafeBusinessSettingsUpdate(tenantId);
       allow delete: if isSuperAdmin();
 
+      match /bookingPaymentIdentities/{identityId} {
+        allow read, write: if false;
+      }
+
       match /leads/{leadId} {
         allow read: if tenantExists(tenantId) &&
                        (isSuperAdmin() || isTenantAdmin(tenantId) || isOwnCustomerQuoteRequestRead(tenantId));
@@ -901,7 +855,15 @@ service cloud.firestore {
         allow create: if isSafeBookingCreate(tenantId);
         allow update: if isSafeBookingManagerUpdate(tenantId) ||
                          isSafeSuperAdminRouteUpdate(tenantId);
-        allow delete: if isBookingManager(tenantId);
+        allow delete: if isBookingManager(tenantId) && !('paymentAccounting' in resource.data);
+
+        match /paymentRecords/{recordId} {
+          allow read, write: if false;
+        }
+
+        match /paymentReductionState/{recordId} {
+          allow read, write: if false;
+        }
 
         match /fieldPhotos/{photoId} {
           allow read: if isBookingManager(tenantId) || isAssignedFieldPhotoUser(tenantId, bookingId);

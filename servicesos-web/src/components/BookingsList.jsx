@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BOOKING_FIELD_STATUS_LABELS,
-  BOOKING_MANUAL_PAYMENT_STATUS_LABELS,
   BOOKING_PAYMENT_METHOD_LABELS,
   getJobs,
   updateBookingAdminFields,
-  updateBookingManualPaymentStatus,
 } from '../core/scheduling/schedulingService';
+import { listBookingPayments, recordBookingManualPayment, reverseBookingManualPayment } from '../services/bookingPaymentService';
 import { useAuth } from '../contexts/AuthContext';
 import {
   bookingAddress,
@@ -58,6 +57,7 @@ export default function BookingsList() {
   const loadRequestRef = useRef(0);
   const employeeLoadRequestRef = useRef(0);
   const bookingDetailContentRef = useRef(null);
+  const manualPaymentAttemptRef = useRef('');
   const canManageAssignment = isAdmin?.() === true;
   const [bookings, setBookings] = useState([]);
   const [bookingsTenantId, setBookingsTenantId] = useState(null);
@@ -71,13 +71,12 @@ export default function BookingsList() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [isEditingPaymentStatus, setIsEditingPaymentStatus] = useState(false);
   const [paymentForm, setPaymentForm] = useState({
-    paymentStatus: 'not_paid',
-    paymentMethod: '',
+    paymentMethod: 'cash',
     amountReceived: '',
-    receivedAt: '',
     paymentNote: '',
   });
   const [paymentStatusError, setPaymentStatusError] = useState('');
+  const [manualPaymentRecords, setManualPaymentRecords] = useState([]);
   const [savingPaymentStatus, setSavingPaymentStatus] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [cancellingBooking, setCancellingBooking] = useState(false);
@@ -272,21 +271,14 @@ export default function BookingsList() {
     setEditForm(current => ({ ...current, [name]: value }));
   };
 
-  const startPaymentStatusEdit = () => {
+  const startPaymentStatusEdit = async () => {
+    manualPaymentAttemptRef.current = '';
     setCancellingBooking(false);
     setCancelError('');
-    const currentStatus = typeof selectedBooking?.paymentStatus === 'string' &&
-      BOOKING_MANUAL_PAYMENT_STATUS_LABELS[selectedBooking.paymentStatus]
-      ? selectedBooking.paymentStatus
-      : 'not_paid';
     setPaymentForm({
-      paymentStatus: currentStatus,
-      paymentMethod: typeof selectedBooking?.paymentMethod === 'string' ? selectedBooking.paymentMethod : '',
-      amountReceived: selectedBooking?.amountReceived !== null && selectedBooking?.amountReceived !== undefined
-        ? String(selectedBooking.amountReceived)
-        : '',
-      receivedAt: paymentDateInputValue(selectedBooking?.receivedAt),
-      paymentNote: typeof selectedBooking?.paymentNote === 'string' ? selectedBooking.paymentNote : '',
+      paymentMethod: 'cash',
+      amountReceived: '',
+      paymentNote: '',
     });
     setPaymentStatusError('');
     setEditError('');
@@ -294,32 +286,23 @@ export default function BookingsList() {
     setCustomerMessageStatus('');
     setIsEditingBooking(false);
     setIsEditingPaymentStatus(true);
+    try {
+      const result = await listBookingPayments(selectedBooking.id);
+      setManualPaymentRecords(result.records || []);
+    } catch (error) {
+      setPaymentStatusError(error.message || 'Payment history could not be loaded.');
+    }
   };
 
   const cancelPaymentStatusEdit = () => {
+    manualPaymentAttemptRef.current = '';
     setIsEditingPaymentStatus(false);
     setPaymentStatusError('');
   };
 
   const updatePaymentField = (event) => {
     const { name, value } = event.target;
-    setPaymentForm(current => {
-      const next = { ...current, [name]: value };
-      if (name === 'paymentStatus') {
-        if (isWaivedPaymentStatus(value) && next.amountReceived === '') {
-          next.amountReceived = '0';
-        } else if (isPaidPaymentStatus(value)) {
-          if (next.amountReceived === '') {
-            const agreedPrice = bookingAgreedPrice(selectedBooking);
-            if (Number.isFinite(agreedPrice)) next.amountReceived = String(agreedPrice);
-          }
-          if (next.receivedAt === '') {
-            next.receivedAt = todayDateInputValue();
-          }
-        }
-      }
-      return next;
-    });
+    setPaymentForm(current => ({ ...current, [name]: value }));
   };
 
   const savePaymentStatusEdit = async (event) => {
@@ -345,23 +328,56 @@ export default function BookingsList() {
       return;
     }
 
-    const result = await updateBookingManualPaymentStatus(
-      tenantId,
-      selectedBooking.id,
-      patch.data,
-      { updatedBy: authenticatedActorUid }
-    );
-    if (!result.success) {
+    let result;
+    try {
+      if (!manualPaymentAttemptRef.current) {
+        manualPaymentAttemptRef.current = globalThis.crypto.randomUUID().replaceAll('-', '');
+      }
+      result = await recordBookingManualPayment(selectedBooking.id, {
+        ...patch.data,
+        clientPaymentId: manualPaymentAttemptRef.current,
+      });
+    } catch (error) {
       setSavingPaymentStatus(false);
-      setPaymentStatusError(result.message || 'Booking payment details could not be updated. Please try again.');
+      setPaymentStatusError(error.message || 'Booking payment could not be recorded. Please try again.');
       return;
     }
 
     await loadBookings();
-    setSelectedBooking(current => current ? { ...current, ...result.data } : current);
+    setSelectedBooking(current => current ? {
+      ...current,
+      amountReceived: result.balance.netPaidCents / 100,
+      remainingBalanceCents: result.balance.remainingCents,
+      paymentStatus: result.balance.paymentStatus,
+      paymentMethod: patch.data.method,
+    } : current);
     setSavingPaymentStatus(false);
     setIsEditingPaymentStatus(false);
-    setSuccessMessage('Booking payment details updated.');
+    manualPaymentAttemptRef.current = '';
+    setSuccessMessage('Payment recorded.');
+  };
+
+  const reverseManualPayment = async (paymentRecordId) => {
+    if (!selectedBooking?.id) return;
+    setSavingPaymentStatus(true);
+    setPaymentStatusError('');
+    try {
+      const result = await reverseBookingManualPayment(selectedBooking.id, paymentRecordId);
+      const history = await listBookingPayments(selectedBooking.id);
+      setManualPaymentRecords(history.records || []);
+      await loadBookings();
+      setSelectedBooking(current => current ? {
+        ...current,
+        amountReceived: result.balance.netPaidCents / 100,
+        remainingBalanceCents: result.balance.remainingCents,
+        paymentStatus: result.balance.paymentStatus,
+      } : current);
+      setSuccessMessage('Manual payment reversed.');
+    } catch (error) {
+      setPaymentStatusError(error.message || 'Payment reversal failed.');
+    } finally {
+      setSavingPaymentStatus(false);
+    }
   };
 
   const createStripePaymentLink = async () => {
@@ -781,6 +797,11 @@ export default function BookingsList() {
                 <DetailItem label="Received date" value={bookingReceivedDate(selectedBooking) || 'Not recorded'} />
                 <DetailItem label="Payment note" value={bookingPaymentNote(selectedBooking) || 'No payment note'} />
               </dl>
+              {selectedBooking?.paymentAccounting?.issues?.length > 0 && (
+                <p role="alert" style={{ marginTop: 12, color: '#991b1b' }}>
+                  Payment history needs owner review before another payment can be collected.
+                </p>
+              )}
 
               {!isEditingBooking && !isEditingPaymentStatus && (
                 <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid #99f6e4' }}>
@@ -965,7 +986,7 @@ export default function BookingsList() {
                     cursor: 'pointer'
                   }}
                 >
-                  Edit Payment Details
+                  Record Manual Payment
                 </button>
                 {isBookingCancellable(selectedBooking) && (
                   <button
@@ -1130,24 +1151,10 @@ export default function BookingsList() {
 
             {isEditingPaymentStatus && (
               <form noValidate onSubmit={savePaymentStatusEdit} aria-label="Edit booking payment details" style={{ marginTop: 22, padding: 16, border: '1px solid #ccfbf1', background: '#f0fdfa', borderRadius: 10 }}>
-                <h3 style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 18 }}>Edit Payment Details</h3>
+                <h3 style={{ margin: '0 0 8px', color: '#0f172a', fontSize: 18 }}>Record manual payment</h3>
                 <p style={{ margin: '0 0 14px', color: '#0f766e', fontSize: 13 }}>
-                  Use this only for payments received outside ServicesOS. Stripe payments update automatically after Stripe confirms payment.
+                  Enter one payment already received outside ServicesOS. The server calculates the remaining balance and payment status.
                 </p>
-
-                <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
-                  Payment status
-                  <select
-                    name="paymentStatus"
-                    value={paymentForm.paymentStatus}
-                    onChange={updatePaymentField}
-                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #99f6e4', borderRadius: 8, background: '#fff' }}
-                  >
-                    {Object.entries(BOOKING_MANUAL_PAYMENT_STATUS_LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
-                </label>
 
                 <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
                   Payment method
@@ -1157,32 +1164,22 @@ export default function BookingsList() {
                     onChange={updatePaymentField}
                     style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #99f6e4', borderRadius: 8, background: '#fff' }}
                   >
-                    <option value="">Not recorded</option>
-                    {Object.entries(BOOKING_PAYMENT_METHOD_LABELS).map(([value, label]) => (
+                    {Object.entries(BOOKING_PAYMENT_METHOD_LABELS)
+                      .filter(([value]) => !['stripe_manual_reference', 'waived'].includes(value))
+                      .map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
                     ))}
                   </select>
                 </label>
 
                 <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
-                  Amount received
+                  New payment amount
                   <input
                     name="amountReceived"
                     type="number"
-                    min="0"
+                    min="0.01"
                     step="0.01"
                     value={paymentForm.amountReceived}
-                    onChange={updatePaymentField}
-                    style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #99f6e4', borderRadius: 8 }}
-                  />
-                </label>
-
-                <label style={{ display: 'block', marginBottom: 12, color: '#0f172a', fontWeight: 600 }}>
-                  Received date
-                  <input
-                    name="receivedAt"
-                    type="date"
-                    value={paymentForm.receivedAt}
                     onChange={updatePaymentField}
                     style={{ display: 'block', width: '100%', marginTop: 6, padding: 9, border: '1px solid #99f6e4', borderRadius: 8 }}
                   />
@@ -1206,6 +1203,27 @@ export default function BookingsList() {
                   </div>
                 )}
 
+                {manualPaymentRecords.map(record => {
+                  const reversed = manualPaymentRecords.some(entry =>
+                    entry.kind === 'manual_reversal' && entry.originalPaymentId === record.id && entry.status === 'confirmed');
+                  return (
+                    <div key={record.id} style={{ marginBottom: 10, fontSize: 13 }}>
+                      {record.kind === 'refund' ? 'Stripe refund' :
+                        record.kind === 'manual_reversal' ? 'Manual reversal' :
+                          record.provider === 'stripe' ? 'Stripe payment' : (record.method || 'Manual payment')}
+                      {' — '}${(record.amountCents / 100).toFixed(2)}
+                      {record.status === 'unresolved_legacy' ? ' — Needs review' : null}
+                      {reversed ? ' — Reversed' : null}
+                      {record.kind === 'payment' && record.provider === 'manual' &&
+                        record.status === 'confirmed' && !reversed ? (
+                        <button type="button" disabled={savingPaymentStatus}
+                          onClick={() => reverseManualPayment(record.id)}
+                          style={{ marginLeft: 10 }}>Reverse entry</button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   <button
                     type="submit"
@@ -1220,7 +1238,7 @@ export default function BookingsList() {
                       cursor: savingPaymentStatus ? 'not-allowed' : 'pointer'
                     }}
                   >
-                    {savingPaymentStatus ? 'Saving…' : 'Save payment details'}
+                    {savingPaymentStatus ? 'Recording…' : 'Record payment'}
                   </button>
                   <button
                     type="button"
@@ -1371,20 +1389,6 @@ function endTimeForBookingEdit(booking, startTime) {
   const startMinutes = timeToMinutes(startTime);
   if (startMinutes === null) return '';
   return minutesToTime(startMinutes + bookingDurationMinutes(booking));
-}
-
-function todayDateInputValue() {
-  const now = new Date();
-  return `${now.getFullYear()}-${padTime(now.getMonth() + 1)}-${padTime(now.getDate())}`;
-}
-
-function paymentDateInputValue(value) {
-  if (typeof value !== 'string' || !value.trim()) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const date = toDate(value);
-  return date
-    ? `${date.getFullYear()}-${padTime(date.getMonth() + 1)}-${padTime(date.getDate())}`
-    : '';
 }
 
 function bookingFieldStatus(booking = {}) {
@@ -1548,38 +1552,18 @@ function bookingAgreedPrice(booking = {}) {
   return Number.isFinite(agreedPrice) && agreedPrice >= 0 ? agreedPrice : null;
 }
 
-function isPaidPaymentStatus(status) {
-  return [
-    'deposit_paid',
-    'paid_in_full',
-    'paid_cash',
-    'paid_check',
-    'paid_external_app',
-    'waived_family_discount',
-  ].includes(status);
-}
-
-function isWaivedPaymentStatus(status) {
-  return status === 'waived_family_discount';
-}
-
 function buildPaymentDetailsPatch(form) {
-  const patch = { paymentStatus: form.paymentStatus };
-
-  patch.paymentMethod = form.paymentMethod;
-  if (form.amountReceived !== '') {
-    const amountReceived = Number(form.amountReceived);
-    if (!Number.isFinite(amountReceived) || amountReceived < 0) {
-      return { success: false, message: 'Amount received must be a non-negative number.' };
-    }
-    patch.amountReceived = amountReceived;
-  } else {
-    patch.amountReceived = '';
+  if (!/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(form.amountReceived) || Number(form.amountReceived) <= 0) {
+    return { success: false, message: 'Enter a positive payment amount in dollars and cents.' };
   }
-  patch.receivedAt = form.receivedAt;
-  patch.paymentNote = form.paymentNote.trim();
-
-  return { success: true, data: patch };
+  if (!form.paymentMethod || ['stripe_manual_reference', 'waived'].includes(form.paymentMethod)) {
+    return { success: false, message: 'Choose a manual payment method.' };
+  }
+  return { success: true, data: {
+    amount: form.amountReceived,
+    method: form.paymentMethod,
+    note: form.paymentNote.trim(),
+  } };
 }
 
 function DetailItem({ label, value }) {

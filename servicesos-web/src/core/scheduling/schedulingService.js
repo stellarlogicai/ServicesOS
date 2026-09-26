@@ -801,61 +801,9 @@ export async function updateBookingFieldExecution(tenantId, bookingId, proposedP
   }
 }
 
-export async function updateBookingManualPaymentStatus(tenantId, bookingId, proposedPatch, options = {}) {
-  try {
-    if (!tenantId) {
-      return errorResponse('Tenant ID is required', 'VALIDATION_ERROR');
-    }
-    if (!bookingId) {
-      return errorResponse('Booking ID is required', 'VALIDATION_ERROR');
-    }
-    const authenticatedUpdatedBy = typeof options?.updatedBy === 'string'
-      ? options.updatedBy.trim()
-      : '';
-    if (!authenticatedUpdatedBy) {
-      return errorResponse(
-        'Authenticated user ID is required to update booking manual payment status.',
-        'VALIDATION_ERROR'
-      );
-    }
-    if (
-      proposedPatch &&
-      typeof proposedPatch === 'object' &&
-      !Array.isArray(proposedPatch) &&
-      Object.hasOwn(proposedPatch, 'paymentStatusUpdatedBy')
-    ) {
-      return errorResponse(
-        'Booking manual payment status actor is managed by the authenticated session.',
-        'VALIDATION_ERROR'
-      );
-    }
-
-    const builtPatch = buildBookingManualPaymentStatusPatch(proposedPatch, {
-      ...options,
-      updatedBy: authenticatedUpdatedBy,
-    });
-    if (!builtPatch.success) {
-      return builtPatch;
-    }
-
-    const bookingRef = doc(db, 'tenants', tenantId, COLLECTION_NAME, bookingId);
-    await updateDoc(bookingRef, builtPatch.data);
-
-    return successResponse(
-      { id: bookingId, ...builtPatch.data },
-      'Booking manual payment status updated successfully'
-    );
-  } catch (error) {
-    logError({
-      message: 'Failed to update booking manual payment status',
-      module: 'core',
-      feature: 'scheduling',
-      severity: SEVERITY.HIGH,
-      tenantId,
-      error
-    });
-    return errorResponse('Failed to update booking manual payment status', ERROR_CODES.FIRESTORE_ERROR, error);
-  }
+export async function updateBookingManualPaymentStatus() {
+  // Retained only to fail closed for obsolete callers. New manual payments go through bookingPaymentService.
+  return errorResponse('Direct booking payment edits are no longer supported.', 'PAYMENT_GATEWAY_REQUIRED');
 }
 
 /**
