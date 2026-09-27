@@ -44,6 +44,7 @@ const { createExtraWorkGatewayHandler } = require('./extraWorkGateway');
 const { createBrandingGatewayHandler } = require('./brandingGateway');
 const { createEmployeeTeamGatewayHandler, createResendActivationSender } = require('./employeeTeamGateway');
 const { createBookingManualPaymentGatewayHandler } = require('./bookingManualPaymentGateway');
+const { createEmployeeTerminalPaymentGatewayHandler } = require('./employeeTerminalPaymentGateway');
 
 const FIELD_PHOTO_GATEWAY_RUNTIME_OPTIONS = Object.freeze({
   maxInstances: 3,
@@ -261,6 +262,20 @@ exports.createBookingCheckoutSession = functions.https.onRequest(createBookingCh
 
 exports.bookingManualPaymentGateway = functions.runWith({ maxInstances: 3, minInstances: 0 })
   .https.onRequest(createBookingManualPaymentGatewayHandler({ admin }));
+
+exports.employeeTerminalPaymentGateway = functions.runWith({
+  minInstances: 0,
+  maxInstances: 3,
+  secrets: [stripeSecretKey],
+}).https.onRequest(createEmployeeTerminalPaymentGatewayHandler({
+  admin,
+  getStripe: () => require('stripe')(stripeSecretKey.value()),
+  getStripeMode: () => {
+    const key = stripeSecretKey.value();
+    return key.startsWith('sk_live_') ? 'live' : key.startsWith('sk_test_') ? 'test' : '';
+  },
+  getPlatformFee,
+}));
 
 /**
  * AI/ML Backend: Analyze cleaning photos for condition assessment

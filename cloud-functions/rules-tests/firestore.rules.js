@@ -1720,6 +1720,19 @@ describe('tenant-scoped customer intake Firestore rules', () => {
       'paymentCollectionControl', 'current');
     await assertFails(setDoc(collectionLease, { status: 'reserved', amountCents: 18500 }));
     await assertFails(getDoc(collectionLease));
+    for (const configDatabase of [
+      database,
+      authenticatedDatabase('employee-a'),
+      authenticatedDatabase('customer-a-auth'),
+      authenticatedDatabase('super-admin'),
+      testEnvironment.unauthenticatedContext().firestore(),
+    ]) {
+      const terminalConfig = doc(configDatabase, 'tenants', TENANT_A,
+        'paymentProviderConfiguration', 'terminal');
+      await assertFails(setDoc(terminalConfig, { version: 1, active: true,
+        stripeAccountId: 'acct_forged', locationId: 'tml_forged', mode: 'test' }));
+      await assertFails(getDoc(terminalConfig));
+    }
     await assertFails(setDoc(doc(database, 'tenants', TENANT_A, 'bookingPaymentIdentities', 'fake'),
       { bookingId: 'field-booking' }));
 
