@@ -17,6 +17,7 @@ import TodayScreen from "../screens/TodayScreen";
 import JobDetailsScreen from "../screens/JobDetailsScreen";
 import WorkAssistantScreen from "../screens/WorkAssistantScreen";
 import ProfileScreen from "../screens/ProfileScreen";
+import SafetyAlertQueueSync from "../components/SafetyAlertQueueSync";
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -52,7 +53,12 @@ export default function AppNavigator() {
     );
   }
 
-  return employee ? <EmployeeTabs /> : <LoginScreen />;
+  return employee ? (
+    <>
+      <SafetyAlertQueueSync employeeUid={employee.uid} />
+      <EmployeeTabs />
+    </>
+  ) : <LoginScreen />;
 }
 
 const styles = StyleSheet.create({

@@ -1,12 +1,23 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { Linking } from 'react-native';
+import { AppState, Linking } from 'react-native';
 import FieldSafetyActions from '../FieldSafetyActions';
 
 const mockSend = jest.fn();
+const mockEnqueue = jest.fn();
+const mockGetQueued = jest.fn();
+const mockRemoveQueued = jest.fn();
 const mockPermission = jest.fn();
 const mockPosition = jest.fn();
-jest.mock('../../api/employeeSafety', () => ({ sendSafetyAlert: (...args) => mockSend(...args) }));
+jest.mock('../../api/employeeSafety', () => ({
+  sendSafetyAlert: (...args) => mockSend(...args),
+  isRetryableSafetyError: error => error?.retryable === true,
+}));
+jest.mock('../../api/employeeSafetyQueue', () => ({
+  enqueueSafetyAlert: (...args) => mockEnqueue(...args),
+  getQueuedSafetyAlertsForJob: (...args) => mockGetQueued(...args),
+  removeQueuedSafetyAlert: (...args) => mockRemoveQueued(...args),
+}));
 jest.mock('expo-location', () => ({
   Accuracy: { Balanced: 3 },
   requestForegroundPermissionsAsync: (...args) => mockPermission(...args),
@@ -18,6 +29,9 @@ beforeEach(() => {
   jest.spyOn(Linking, 'openURL').mockResolvedValue();
   mockPermission.mockResolvedValue({ status: 'denied' });
   mockSend.mockResolvedValue({ status: 'sent' });
+  mockEnqueue.mockImplementation(async event => event);
+  mockGetQueued.mockResolvedValue([]);
+  mockRemoveQueued.mockResolvedValue();
 });
 
 afterEach(() => jest.restoreAllMocks());
@@ -51,14 +65,73 @@ test('location denial does not block send and status waits for server confirmati
   expect(screen.getByText('Safety alert sent to ServicesOS.')).toBeTruthy();
 });
 
-test('failure permits explicit retry with the same event ID', async () => {
-  mockSend.mockRejectedValueOnce(new Error('offline'));
+test('retryable failure queues and explicit retry uses the same event and payload', async () => {
+  mockPermission.mockResolvedValue({ status: 'granted' });
+  mockPosition.mockResolvedValue({ coords: { latitude: 41.8, longitude: -87.6 }, timestamp: Date.now() });
+  mockSend.mockRejectedValueOnce(Object.assign(new Error('offline'), { retryable: true }));
   render(<FieldSafetyActions bookingId="job-a" employeeUid="employee-a" />);
   await act(async () => fireEvent.press(screen.getByText('Send Safety Alert')));
-  expect(screen.getByText('Safety alert failed. Try again.')).toBeTruthy();
+  expect(screen.getByText(/queued on this device/)).toBeTruthy();
+  expect(mockEnqueue).toHaveBeenCalledWith(expect.objectContaining({ employeeUid: 'employee-a', bookingId: 'job-a' }));
   await act(async () => fireEvent.press(screen.getByText('Retry Safety Alert')));
   expect(mockSend.mock.calls[1][0].eventId).toBe(mockSend.mock.calls[0][0].eventId);
+  expect(mockSend.mock.calls[1][0].location).toEqual(mockSend.mock.calls[0][0].location);
   expect(mockPermission).toHaveBeenCalledTimes(1);
+  expect(mockRemoveQueued).toHaveBeenCalledWith('employee-a', mockSend.mock.calls[0][0].eventId);
+});
+
+test('permanent authorization failure is Failed and never queued', async () => {
+  mockSend.mockRejectedValue(Object.assign(new Error('forbidden'), { status: 403, retryable: false }));
+  const onAccessLost = jest.fn();
+  render(<FieldSafetyActions bookingId="job-a" employeeUid="employee-a" onAccessLost={onAccessLost} />);
+  await act(async () => fireEvent.press(screen.getByText('Send Safety Alert')));
+  expect(screen.getByText('Safety alert failed. Try again.')).toBeTruthy();
+  expect(mockEnqueue).not.toHaveBeenCalled();
+  expect(onAccessLost).toHaveBeenCalledTimes(1);
+});
+
+test('persisted queued event retries on mount without recollecting location', async () => {
+  const queued = {
+    eventId: 'safety_event_queued_123', bookingId: 'job-a',
+    location: { latitude: 41.8, longitude: -87.6, capturedAt: '2026-09-26T12:00:00.000Z' },
+  };
+  mockGetQueued.mockResolvedValue([queued]);
+  render(<FieldSafetyActions bookingId="job-a" employeeUid="employee-a" />);
+  await waitFor(() => expect(mockSend).toHaveBeenCalledWith({ eventId: queued.eventId, bookingId: 'job-a', location: queued.location }));
+  expect(mockPermission).not.toHaveBeenCalled();
+  expect(mockRemoveQueued).toHaveBeenCalledWith('employee-a', queued.eventId);
+  expect(screen.getByText('Safety alert sent to ServicesOS.')).toBeTruthy();
+});
+
+test('queued event retries when the app resumes and retains the same event ID', async () => {
+  let appStateListener;
+  jest.spyOn(AppState, 'addEventListener').mockImplementation((_, listener) => {
+    appStateListener = listener;
+    return { remove: jest.fn() };
+  });
+  mockSend.mockRejectedValueOnce(Object.assign(new Error('offline'), { retryable: true }));
+  render(<FieldSafetyActions bookingId="job-a" employeeUid="employee-a" />);
+  await act(async () => fireEvent.press(screen.getByText('Send Safety Alert')));
+  const eventId = mockSend.mock.calls[0][0].eventId;
+  expect(screen.getByText(/queued on this device/)).toBeTruthy();
+  await act(async () => appStateListener('active'));
+  expect(mockSend.mock.calls[1][0].eventId).toBe(eventId);
+  expect(screen.getByText('Safety alert sent to ServicesOS.')).toBeTruthy();
+});
+
+test('successful online send leaves no queued item', async () => {
+  render(<FieldSafetyActions bookingId="job-a" employeeUid="employee-a" />);
+  await act(async () => fireEvent.press(screen.getByText('Send Safety Alert')));
+  expect(mockEnqueue).not.toHaveBeenCalled();
+  expect(mockRemoveQueued).toHaveBeenCalledTimes(1);
+});
+
+test('server-confirmed delivery remains Sent if local cleanup must retry later', async () => {
+  mockRemoveQueued.mockRejectedValue(new Error('temporary file failure'));
+  render(<FieldSafetyActions bookingId="job-a" employeeUid="employee-a" />);
+  await act(async () => fireEvent.press(screen.getByText('Send Safety Alert')));
+  expect(screen.getByText('Safety alert sent to ServicesOS.')).toBeTruthy();
+  expect(screen.queryByText('Safety alert failed. Try again.')).toBeNull();
 });
 
 test('one-time valid foreground location is supplemental', async () => {

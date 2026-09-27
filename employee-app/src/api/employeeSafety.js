@@ -8,3 +8,4 @@ const send = employeeSafetyClient.createEmployeeSafetyClient({
 });
 
 export const sendSafetyAlert = send;
+export const isRetryableSafetyError = employeeSafetyClient.isRetryableSafetyError;
