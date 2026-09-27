@@ -2,6 +2,8 @@ const { createHash } = require('node:crypto');
 
 const CURRENCY = 'usd';
 const VERSION = 1;
+const PAYMENT_COLLECTION_LEASE_VERSION = 1;
+const PAYMENT_COLLECTION_CHANNELS = new Set(['checkout', 'manual', 'terminal']);
 
 class AccountingError extends Error {
   constructor(code, status = 409) {
@@ -116,6 +118,104 @@ function recordId(kind, providerId) {
   return `${kind}_${createHash('sha256').update(providerId).digest('hex')}`;
 }
 
+function collectionOperationHash(operationId) {
+  if (typeof operationId !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(operationId)) {
+    throw new AccountingError('invalid_collection_operation', 400);
+  }
+  return createHash('sha256').update(operationId).digest('hex');
+}
+
+function paymentCollectionLeaseRef(db, tenantId, bookingId) {
+  return bookingRef(db, tenantId, bookingId).collection('paymentCollectionControl').doc('current');
+}
+
+function isActivePaymentCollectionLease(lease, nowMs) {
+  if (!lease || lease.version !== PAYMENT_COLLECTION_LEASE_VERSION) return false;
+  if (lease.status === 'reserved') return true;
+  if (lease.status !== 'provider_pending') return false;
+  if (lease.channel === 'checkout' && Number.isSafeInteger(lease.providerExpiresAtMs) &&
+      lease.providerExpiresAtMs <= nowMs) return false;
+  return true;
+}
+
+function assertPaymentCollectionLeaseContext(lease, expected) {
+  const operationHash = collectionOperationHash(expected.operationId);
+  if (lease.tenantId !== expected.tenantId || lease.bookingId !== expected.bookingId ||
+      lease.channel !== expected.channel || lease.operationHash !== operationHash ||
+      lease.actorUid !== expected.actorUid || lease.amountCents !== expected.amountCents ||
+      lease.currency !== CURRENCY ||
+      (lease.connectedAccountId || null) !== (expected.connectedAccountId || null)) {
+    throw new AccountingError('payment_collection_mismatch');
+  }
+  return operationHash;
+}
+
+function reservePaymentCollectionInTransaction({ tx, leaseRef, existingLease, tenantId, bookingId,
+  channel, operationId, actorUid, amountCents, connectedAccountId = null, nowIso }) {
+  if (!PAYMENT_COLLECTION_CHANNELS.has(channel) || typeof actorUid !== 'string' || !actorUid ||
+      !Number.isSafeInteger(amountCents) || amountCents <= 0 || !Number.isFinite(Date.parse(nowIso))) {
+    throw new AccountingError('invalid_payment_collection', 400);
+  }
+  const operationHash = collectionOperationHash(operationId);
+  const nowMs = Date.parse(nowIso);
+  if (isActivePaymentCollectionLease(existingLease, nowMs)) {
+    if (existingLease.operationHash !== operationHash) {
+      throw new AccountingError('payment_collection_conflict');
+    }
+    assertPaymentCollectionLeaseContext(existingLease, {
+      tenantId, bookingId, channel, operationId, actorUid, amountCents, connectedAccountId,
+    });
+    return { reused: true, lease: existingLease };
+  }
+  const attempt = existingLease?.operationHash === operationHash && Number.isSafeInteger(existingLease.attempt)
+    ? existingLease.attempt + 1 : 1;
+  const lease = {
+    version: PAYMENT_COLLECTION_LEASE_VERSION,
+    tenantId,
+    bookingId,
+    channel,
+    operationHash,
+    attempt,
+    actorUid,
+    amountCents,
+    currency: CURRENCY,
+    connectedAccountId,
+    status: 'reserved',
+    provider: null,
+    providerObjectId: null,
+    providerExpiresAtMs: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    closedAt: null,
+  };
+  tx.set(leaseRef, lease);
+  return { reused: false, lease };
+}
+
+function paymentCollectionLeasePatch(lease, patch, nowIso) {
+  return { ...lease, ...patch, updatedAt: nowIso };
+}
+
+async function acquirePaymentCollectionLease({ admin, tenantId, bookingId, channel, operationId,
+  actorUid, connectedAccountId = null, nowIso }) {
+  const db = admin.firestore();
+  const ref = bookingRef(db, tenantId, bookingId);
+  const leaseRef = paymentCollectionLeaseRef(db, tenantId, bookingId);
+  return db.runTransaction(async tx => {
+    const [bookingSnap, leaseSnap] = await Promise.all([tx.get(ref), tx.get(leaseRef)]);
+    if (!bookingSnap.exists) throw new AccountingError('booking_not_found', 404);
+    const booking = bookingSnap.data() || {};
+    if (booking.paymentAccounting?.version !== VERSION) throw new AccountingError('accounting_cutover_required');
+    const current = balance(booking);
+    if (!current.collectible) throw new AccountingError('amount_exceeds_collectible');
+    return reservePaymentCollectionInTransaction({
+      tx, leaseRef, existingLease: leaseSnap.exists ? leaseSnap.data() : null,
+      tenantId, bookingId, channel, operationId, actorUid,
+      amountCents: current.remainingCents, connectedAccountId, nowIso,
+    });
+  });
+}
+
 async function readCanonicalBalance({ admin, tenantId, bookingId }) {
   const snap = await bookingRef(admin.firestore(), tenantId, bookingId).get();
   if (!snap.exists) throw new AccountingError('booking_not_found', 404);
@@ -163,7 +263,8 @@ async function cutoverBooking({ admin, tenantId, bookingId, nowIso,
 }
 
 async function reconcilePayment({ admin, tenantId, bookingId, connectedAccountId, providerPaymentId,
-  amountCents, currency, channel, nowIso, checkoutSessionId, livemode, receiptUrl, paymentCreatedAt }) {
+  amountCents, currency, channel, nowIso, checkoutSessionId, livemode, receiptUrl, paymentCreatedAt,
+  collectionOperationHash: expectedOperationHash }) {
   if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || currency !== CURRENCY ||
       !['online_checkout', 'card_present'].includes(channel)) throw new AccountingError('invalid_payment', 400);
   const db = admin.firestore();
@@ -172,9 +273,10 @@ async function reconcilePayment({ admin, tenantId, bookingId, connectedAccountId
   const id = recordId('stripe_pi', providerPaymentId);
   const paymentRef = ref.collection('paymentRecords').doc(id);
   const identityRef = tenantRef.collection('bookingPaymentIdentities').doc(id);
+  const leaseRef = paymentCollectionLeaseRef(db, tenantId, bookingId);
   return db.runTransaction(async tx => {
-    const [tenantSnap, bookingSnap, paymentSnap, identitySnap] = await Promise.all([
-      tx.get(tenantRef), tx.get(ref), tx.get(paymentRef), tx.get(identityRef),
+    const [tenantSnap, bookingSnap, paymentSnap, identitySnap, leaseSnap] = await Promise.all([
+      tx.get(tenantRef), tx.get(ref), tx.get(paymentRef), tx.get(identityRef), tx.get(leaseRef),
     ]);
     if (!tenantSnap.exists || !bookingSnap.exists) throw new AccountingError('payment_context_not_found', 404);
     const tenant = tenantSnap.data() || {};
@@ -256,6 +358,21 @@ async function reconcilePayment({ admin, tenantId, bookingId, connectedAccountId
       ...(receiptUrl ? { stripeReceiptUrl: receiptUrl } : {}),
       ...(checkoutSessionId ? { stripeCheckoutSessionId: checkoutSessionId } : {}),
     });
+    const lease = leaseSnap.exists ? leaseSnap.data() : null;
+    const leaseMatchesPayment = lease && isActivePaymentCollectionLease(lease, Date.parse(nowIso)) &&
+      lease.tenantId === tenantId && lease.bookingId === bookingId &&
+      lease.amountCents === amountCents && lease.currency === currency &&
+      lease.connectedAccountId === connectedAccountId &&
+      ((expectedOperationHash && lease.operationHash === expectedOperationHash) ||
+       (checkoutSessionId && lease.provider === 'stripe_checkout_session' &&
+        lease.providerObjectId === checkoutSessionId) ||
+       (channel === 'card_present' && lease.provider === 'stripe_payment_intent' &&
+        lease.providerObjectId === providerPaymentId));
+    if (leaseMatchesPayment) {
+      tx.set(leaseRef, paymentCollectionLeasePatch(lease, {
+        status: 'completed', closedAt: nowIso, canonicalPaymentRecordId: id,
+      }, nowIso));
+    }
     return { id, balance: projected };
   });
 }
@@ -274,8 +391,9 @@ async function recordManualPayment({ admin, tenantId, bookingId, actorUid, clien
   const ref = bookingRef(db, tenantId, bookingId);
   const paymentRef = ref.collection('paymentRecords')
     .doc(recordId('manual', `${actorUid}\n${clientPaymentId}`));
+  const leaseRef = paymentCollectionLeaseRef(db, tenantId, bookingId);
   return db.runTransaction(async tx => {
-    const [snap, paymentSnap] = await Promise.all([tx.get(ref), tx.get(paymentRef)]);
+    const [snap, paymentSnap, leaseSnap] = await Promise.all([tx.get(ref), tx.get(paymentRef), tx.get(leaseRef)]);
     if (!snap.exists) throw new AccountingError('booking_not_found', 404);
     const booking = snap.data() || {};
     if (booking.paymentAccounting?.version !== VERSION) throw new AccountingError('accounting_cutover_required');
@@ -289,14 +407,19 @@ async function recordManualPayment({ admin, tenantId, bookingId, actorUid, clien
       return { id: paymentRef.id, duplicate: true, balance: balance(booking) };
     }
     const current = balance(booking);
-    const nowMs = Date.parse(nowIso);
-    if (booking.stripeCheckoutReservation?.expiresAtMs > nowMs ||
-        (booking.stripePaymentStatus === 'checkout_created' && booking.stripeCheckoutSessionId &&
-          (!Number.isSafeInteger(booking.stripeCheckoutSessionExpiresAt) ||
-           booking.stripeCheckoutSessionExpiresAt * 1000 > nowMs))) {
-      throw new AccountingError('checkout_link_active');
-    }
     if (!current.collectible || amountCents > current.remainingCents) throw new AccountingError('amount_exceeds_collectible');
+    const nowMs = Date.parse(nowIso);
+    if (!leaseSnap.exists && booking.stripePaymentStatus === 'checkout_created' &&
+        booking.stripeCheckoutSessionId &&
+        (!Number.isSafeInteger(booking.stripeCheckoutSessionExpiresAt) ||
+         booking.stripeCheckoutSessionExpiresAt * 1000 > nowMs)) {
+      throw new AccountingError('payment_collection_conflict');
+    }
+    const reservation = reservePaymentCollectionInTransaction({
+      tx, leaseRef, existingLease: leaseSnap.exists ? leaseSnap.data() : null,
+      tenantId, bookingId, channel: 'manual', operationId: clientPaymentId, actorUid,
+      amountCents, nowIso,
+    });
     const updated = {
       ...booking.paymentAccounting,
       confirmedPaymentCents: booking.paymentAccounting.confirmedPaymentCents + amountCents,
@@ -311,6 +434,9 @@ async function recordManualPayment({ admin, tenantId, bookingId, actorUid, clien
       ...summaryPatch(booking, updated, nowIso, 'manual_payment_gateway'),
       paymentMethod: method, paymentNote: note, receivedAt: nowIso,
     });
+    tx.set(leaseRef, paymentCollectionLeasePatch(reservation.lease, {
+      status: 'completed', closedAt: nowIso, canonicalPaymentRecordId: paymentRef.id,
+    }, nowIso));
     return { id: paymentRef.id, balance: projected };
   });
 }
@@ -379,6 +505,9 @@ async function reconcileReduction({ admin, tenantId, bookingId, originalPaymentI
 }
 
 module.exports = {
-  AccountingError, CURRENCY, VERSION, cents, canonicalTotalCents, planCutover, balance,
-  readCanonicalBalance, cutoverBooking, reconcilePayment, recordManualPayment, reconcileReduction, recordId,
+  AccountingError, CURRENCY, VERSION, PAYMENT_COLLECTION_LEASE_VERSION, PAYMENT_COLLECTION_CHANNELS,
+  cents, canonicalTotalCents, planCutover, balance, readCanonicalBalance, cutoverBooking,
+  reconcilePayment, recordManualPayment, reconcileReduction, recordId, collectionOperationHash,
+  paymentCollectionLeaseRef, isActivePaymentCollectionLease, assertPaymentCollectionLeaseContext,
+  reservePaymentCollectionInTransaction, paymentCollectionLeasePatch, acquirePaymentCollectionLease,
 };

@@ -3,6 +3,7 @@ const test = require('node:test');
 const {
   AccountingError, cents, planCutover, balance, cutoverBooking, readCanonicalBalance,
   reconcilePayment, recordManualPayment, reconcileReduction, recordId,
+  acquirePaymentCollectionLease, collectionOperationHash,
 } = require('../bookingPaymentAccounting');
 const { createBookingManualPaymentGatewayHandler } = require('../bookingManualPaymentGateway');
 const { buildCutoverReport } = require('../scripts/bookingPaymentCutover');
@@ -266,13 +267,89 @@ test('manual gateway derives tenant and records bounded payment; full reversal i
 test('manual payment cannot race an active Checkout link', async () => {
   const f = fixture();
   await cutoverBooking({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a', nowIso });
-  f.store.set('tenants/tenant-a/bookings/booking-a', {
-    ...f.booking(), stripeCheckoutSessionId: 'cs_open', stripePaymentStatus: 'checkout_created',
-    stripeCheckoutSessionExpiresAt: 1893456000,
+  await acquirePaymentCollectionLease({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a',
+    channel: 'checkout', operationId: 'checkout-attempt-0003', actorUid: 'owner-a',
+    connectedAccountId: 'acct_a', nowIso });
+  f.store.set('tenants/tenant-a/bookings/booking-a/paymentCollectionControl/current', {
+    ...f.store.get('tenants/tenant-a/bookings/booking-a/paymentCollectionControl/current'),
+    status: 'provider_pending', provider: 'stripe_checkout_session', providerObjectId: 'cs_open',
+    providerExpiresAtMs: Date.parse(nowIso) + 60_000,
   });
   await assert.rejects(recordManualPayment({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a',
     actorUid: 'owner-a', clientPaymentId: 'manual-attempt-0003', amountCents: 100,
     method: 'cash', note: '', nowIso }),
-  { code: 'checkout_link_active' });
+  { code: 'payment_collection_conflict' });
   assert.equal(f.records().length, 0);
+});
+
+test('shared payment collection lease is server-authored, reusable only by the same context', async () => {
+  const f = fixture();
+  await cutoverBooking({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a', nowIso });
+  const request = { admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a',
+    channel: 'checkout', operationId: 'checkout-attempt-shared-01', actorUid: 'owner-a',
+    connectedAccountId: 'acct_a', nowIso };
+  const first = await acquirePaymentCollectionLease(request);
+  const second = await acquirePaymentCollectionLease(request);
+  assert.equal(first.reused, false);
+  assert.equal(second.reused, true);
+  assert.equal(first.lease.amountCents, 10000);
+  assert.equal(first.lease.operationHash, collectionOperationHash(request.operationId));
+  assert.equal(first.lease.operationId, undefined);
+  assert.equal(first.lease.status, 'reserved');
+  await assert.rejects(acquirePaymentCollectionLease({ ...request,
+    operationId: 'checkout-attempt-shared-02' }), { code: 'payment_collection_conflict' });
+  await assert.rejects(acquirePaymentCollectionLease({ ...request,
+    actorUid: 'owner-b' }), { code: 'payment_collection_mismatch' });
+  await assert.rejects(acquirePaymentCollectionLease({ ...request,
+    channel: 'manual', connectedAccountId: null }), { code: 'payment_collection_mismatch' });
+});
+
+test('shared lease denies fully paid and wrong booking contexts', async () => {
+  const paid = fixture({ paymentAccounting: { version: 1, totalCents: 10000,
+    currency: 'usd', issues: [],
+    legacyOpeningPaidCents: 10000, confirmedPaymentCents: 0, confirmedRefundCents: 0,
+    confirmedManualReversalCents: 0 } });
+  const request = { admin: paid.admin, tenantId: 'tenant-a', bookingId: 'booking-a',
+    channel: 'checkout', operationId: 'checkout-attempt-paid-01', actorUid: 'owner-a',
+    connectedAccountId: 'acct_a', nowIso };
+  await assert.rejects(acquirePaymentCollectionLease(request), { code: 'amount_exceeds_collectible' });
+  await assert.rejects(acquirePaymentCollectionLease({ ...request, bookingId: 'missing-booking' }),
+    { code: 'booking_not_found' });
+  await assert.rejects(acquirePaymentCollectionLease({ ...request, tenantId: 'tenant-b' }),
+    { code: 'booking_not_found' });
+});
+
+test('unresolved provider-associated terminal lease never releases from local time alone', async () => {
+  const f = fixture();
+  await cutoverBooking({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a', nowIso });
+  await acquirePaymentCollectionLease({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a',
+    channel: 'terminal', operationId: 'terminal-attempt-0001', actorUid: 'owner-a',
+    connectedAccountId: 'acct_a', nowIso });
+  const path = 'tenants/tenant-a/bookings/booking-a/paymentCollectionControl/current';
+  f.store.set(path, { ...f.store.get(path), status: 'provider_pending',
+    provider: 'stripe_payment_intent', providerObjectId: 'pi_terminal_pending' });
+  const muchLater = '2036-09-26T09:00:00.000Z';
+  await assert.rejects(acquirePaymentCollectionLease({ admin: f.admin, tenantId: 'tenant-a',
+    bookingId: 'booking-a', channel: 'checkout', operationId: 'checkout-attempt-later-01',
+    actorUid: 'owner-a', connectedAccountId: 'acct_a', nowIso: muchLater }),
+  { code: 'payment_collection_conflict' });
+  await assert.rejects(recordManualPayment({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a',
+    actorUid: 'owner-a', clientPaymentId: 'manual-attempt-later-01', amountCents: 100,
+    method: 'cash', note: '', nowIso: muchLater }), { code: 'payment_collection_conflict' });
+});
+
+test('competing manual operations serialize against canonical remaining balance', async () => {
+  const f = fixture();
+  await cutoverBooking({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a', nowIso });
+  const common = { admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a', actorUid: 'owner-a',
+    amountCents: 6000, method: 'cash', note: '', nowIso };
+  const results = await Promise.allSettled([
+    recordManualPayment({ ...common, clientPaymentId: 'manual-concurrent-0001' }),
+    recordManualPayment({ ...common, clientPaymentId: 'manual-concurrent-0002' }),
+  ]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter(result => result.status === 'rejected' &&
+    result.reason.code === 'amount_exceeds_collectible').length, 1);
+  assert.equal(f.records().length, 1);
+  assert.equal(balance(f.booking()).remainingCents, 4000);
 });

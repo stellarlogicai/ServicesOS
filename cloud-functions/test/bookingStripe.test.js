@@ -9,6 +9,7 @@ const {
   handleBookingPaymentSucceeded,
   isBookingPaymentMetadata,
 } = require('../bookingStripe');
+const { collectionOperationHash } = require('../bookingPaymentAccounting');
 
 const nowIso = '2026-07-07T18:00:00.000Z';
 
@@ -249,6 +250,7 @@ test('createBookingCheckoutSessionCore rejects missing tenantId or bookingId', a
     admin: createMockAdmin(baseStore()),
     appUrl: 'http://localhost:5173',
     bookingId: '',
+    clientCheckoutId: 'checkout-attempt-0001',
     getPlatformFee: () => 0.03,
     nowIso,
     secretKey: 'sk_test_123',
@@ -266,6 +268,7 @@ test('createBookingCheckoutSessionCore rejects missing booking', async () => {
     admin: createMockAdmin(baseStore()),
     appUrl: 'http://localhost:5173',
     bookingId: 'missing-booking',
+    clientCheckoutId: 'checkout-attempt-0001',
     getPlatformFee: () => 0.03,
     nowIso,
     secretKey: 'sk_test_123',
@@ -289,7 +292,7 @@ test('createBookingCheckoutSessionCore requires canonical tenant admin membershi
   const result = await createBookingCheckoutSessionCore({
     admin: createMockAdmin(store), appUrl: 'http://localhost:5173', bookingId: 'booking-1',
     getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123', stripe,
-    tenantId: 'tenant-a', uid: 'admin-1',
+    tenantId: 'tenant-a', uid: 'admin-1', clientCheckoutId: 'checkout-attempt-0001',
   });
   assert.equal(result.success, false);
   assert.equal(result.status, 403);
@@ -303,6 +306,7 @@ test('createBookingCheckoutSessionCore rejects invalid booking amount', async ()
     })),
     appUrl: 'http://localhost:5173',
     bookingId: 'booking-1',
+    clientCheckoutId: 'checkout-attempt-0001',
     getPlatformFee: () => 0.03,
     nowIso,
     secretKey: 'sk_test_123',
@@ -322,6 +326,7 @@ test('createBookingCheckoutSessionCore creates checkout metadata and does not ma
     admin: createMockAdmin(store),
     appUrl: 'http://localhost:5173',
     bookingId: 'booking-1',
+    clientCheckoutId: 'checkout-attempt-0001',
     getPlatformFee: () => 0.03,
     nowIso,
     secretKey: 'sk_test_123',
@@ -338,6 +343,7 @@ test('createBookingCheckoutSessionCore creates checkout metadata and does not ma
     tenantId: 'tenant-a',
     bookingId: 'booking-1',
     paymentChannel: 'online_checkout',
+    paymentCollectionOperationHash: collectionOperationHash('checkout-attempt-0001'),
     stripeMode: 'test',
   });
   assert.deepEqual(stripe.calls[0].params.payment_intent_data.metadata, stripe.calls[0].params.metadata);
@@ -355,7 +361,7 @@ test('Checkout uses remaining balance and reuses one open direct-charge session'
   const stripe = createStripeMock();
   const args = { admin, appUrl: 'http://localhost:5173', bookingId: 'booking-1',
     getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123', stripe,
-    tenantId: 'tenant-a', uid: 'admin-1' };
+    tenantId: 'tenant-a', uid: 'admin-1', clientCheckoutId: 'checkout-attempt-0001' };
   const first = await createBookingCheckoutSessionCore(args);
   const second = await createBookingCheckoutSessionCore(args);
   assert.equal(first.success, true);
@@ -375,23 +381,23 @@ test('fully paid booking cannot create another Checkout session', async () => {
   const result = await createBookingCheckoutSessionCore({
     admin: createMockAdmin(store), appUrl: 'http://localhost:5173', bookingId: 'booking-1',
     getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123', stripe,
-    tenantId: 'tenant-a', uid: 'admin-1',
+    tenantId: 'tenant-a', uid: 'admin-1', clientCheckoutId: 'checkout-attempt-0001',
   });
   assert.equal(result.success, false);
   assert.equal(result.status, 400);
   assert.equal(stripe.calls.length, 0);
 });
 
-test('failed Checkout creation clears its reservation so a later attempt can proceed', async () => {
+test('ambiguous Checkout failure retains authority and same-operation retry reuses it', async () => {
   const store = baseStore();
   const args = { admin: createMockAdmin(store), appUrl: 'http://localhost:5173', bookingId: 'booking-1',
     getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123',
-    tenantId: 'tenant-a', uid: 'admin-1' };
+    tenantId: 'tenant-a', uid: 'admin-1', clientCheckoutId: 'checkout-attempt-0001' };
   const failed = await createBookingCheckoutSessionCore({
     ...args, stripe: createStripeCheckoutErrorMock(new Error('temporary provider failure')),
   });
   assert.equal(failed.success, false);
-  assert.equal(store['tenants/tenant-a/bookings/booking-1'].stripeCheckoutReservation, null);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1/paymentCollectionControl/current'].status, 'reserved');
   const stripe = createStripeMock();
   const retried = await createBookingCheckoutSessionCore({ ...args, stripe });
   assert.equal(retried.success, true);
@@ -404,12 +410,33 @@ test('concurrent Checkout requests cannot create two open sessions', async () =>
   const stripe = createStripeMock();
   const args = { admin, appUrl: 'http://localhost:5173', bookingId: 'booking-1',
     getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123', stripe,
-    tenantId: 'tenant-a', uid: 'admin-1' };
+    tenantId: 'tenant-a', uid: 'admin-1', clientCheckoutId: 'checkout-attempt-0001' };
   const results = await Promise.all([
-    createBookingCheckoutSessionCore(args), createBookingCheckoutSessionCore(args),
+    createBookingCheckoutSessionCore(args),
+    createBookingCheckoutSessionCore({ ...args, clientCheckoutId: 'checkout-attempt-0002' }),
   ]);
   assert.equal(results.filter(result => result.success).length, 1);
   assert.equal(results.filter(result => result.status === 409).length, 1);
+  assert.equal(stripe.calls.length, 1);
+});
+
+test('definitive pre-provider Checkout failure releases authority for a new operation', async () => {
+  const store = baseStore();
+  const error = new Error('invalid request');
+  error.statusCode = 400;
+  const args = { admin: createMockAdmin(store), appUrl: 'http://localhost:5173', bookingId: 'booking-1',
+    getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123',
+    tenantId: 'tenant-a', uid: 'admin-1', clientCheckoutId: 'checkout-attempt-release-01' };
+  const failed = await createBookingCheckoutSessionCore({
+    ...args, stripe: createStripeCheckoutErrorMock(error),
+  });
+  assert.equal(failed.success, false);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1/paymentCollectionControl/current'].status, 'released');
+  const stripe = createStripeMock();
+  const retried = await createBookingCheckoutSessionCore({
+    ...args, clientCheckoutId: 'checkout-attempt-release-02', stripe,
+  });
+  assert.equal(retried.success, true);
   assert.equal(stripe.calls.length, 1);
 });
 
@@ -430,6 +457,7 @@ test('createBookingCheckoutSessionCore returns clean error for non-platform Stri
     stripe: createStripeCheckoutErrorMock(error),
     tenantId: 'tenant-a',
     uid: 'admin-1',
+    clientCheckoutId: 'checkout-attempt-0001',
   });
 
   assert.equal(result.success, false);
@@ -458,6 +486,7 @@ test('createBookingCheckoutSessionCore returns clean error for inaccessible conn
     stripe: createStripeCheckoutErrorMock(error),
     tenantId: 'tenant-a',
     uid: 'admin-1',
+    clientCheckoutId: 'checkout-attempt-0001',
   });
 
   assert.equal(result.success, false);
@@ -573,6 +602,29 @@ test('handleBookingCheckoutCompleted updates booking and is safe for duplicate e
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].amountReceived, 190);
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].stripeCheckoutSessionId, 'cs_test_booking');
   assert.equal(store['tenants/tenant-a/bookings/booking-1'].stripePaymentIntentId, 'pi_123');
+});
+
+test('canonical Checkout reconciliation closes its matching shared collection lease', async () => {
+  const store = baseStore();
+  const admin = createMockAdmin(store);
+  const stripe = createStripeMock();
+  const checkout = await createBookingCheckoutSessionCore({
+    admin, appUrl: 'http://localhost:5173', bookingId: 'booking-1',
+    clientCheckoutId: 'checkout-reconcile-0001', getPlatformFee: () => 0.03,
+    nowIso, secretKey: 'sk_test_123', stripe, tenantId: 'tenant-a', uid: 'admin-1',
+  });
+  assert.equal(checkout.success, true);
+  const metadata = stripe.calls[0].params.metadata;
+  await handleBookingCheckoutCompleted({
+    id: checkout.data.sessionId, amount_total: 19000,
+    created: Math.floor(Date.parse(nowIso) / 1000) + 1,
+    currency: 'usd', livemode: false, metadata,
+    payment_intent: 'pi_checkout_reconciled', payment_status: 'paid',
+  }, { admin, nowIso, connectedAccountId: 'acct_123' });
+  const lease = store['tenants/tenant-a/bookings/booking-1/paymentCollectionControl/current'];
+  assert.equal(lease.status, 'completed');
+  assert.equal(lease.providerObjectId, checkout.data.sessionId);
+  assert.match(lease.canonicalPaymentRecordId, /^stripe_pi_/);
 });
 
 test('charge.refunded maps through the connected account and reconciles each refund once', async () => {

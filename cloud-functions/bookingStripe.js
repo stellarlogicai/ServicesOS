@@ -1,8 +1,10 @@
-const { randomUUID, createHash } = require('node:crypto');
+const { createHash } = require('node:crypto');
 const BOOKING_PAYMENT_SOURCE = 'servicesos_booking_payment';
 const DEFAULT_CURRENCY = 'usd';
 const {
   AccountingError, balance, canonicalTotalCents, cutoverBooking, reconcilePayment, reconcileReduction, recordId,
+  collectionOperationHash, paymentCollectionLeaseRef, isActivePaymentCollectionLease,
+  reservePaymentCollectionInTransaction, paymentCollectionLeasePatch,
 } = require('./bookingPaymentAccounting');
 const BOOKING_CHECKOUT_ALLOWED_ORIGINS = new Set([
   'https://servicesos.netlify.app',
@@ -45,12 +47,13 @@ function stripeModeFromKey(secretKey = '') {
   return '';
 }
 
-function bookingPaymentMetadata(tenantId, bookingId) {
+function bookingPaymentMetadata(tenantId, bookingId, operationHash) {
   return {
     source: BOOKING_PAYMENT_SOURCE,
     tenantId,
     bookingId,
     paymentChannel: 'online_checkout',
+    ...(operationHash ? { paymentCollectionOperationHash: operationHash } : {}),
   };
 }
 
@@ -202,6 +205,7 @@ async function createBookingCheckoutSessionCore({
   admin,
   appUrl,
   bookingId,
+  clientCheckoutId,
   currency = DEFAULT_CURRENCY,
   getPlatformFee,
   nowIso,
@@ -213,6 +217,9 @@ async function createBookingCheckoutSessionCore({
   if (!isNonEmptyString(tenantId) || !isNonEmptyString(bookingId)) {
     return { success: false, status: 400, error: 'tenantId and bookingId are required' };
   }
+  let operationHash;
+  try { operationHash = collectionOperationHash(clientCheckoutId); }
+  catch { return { success: false, status: 400, error: 'A valid checkout operation ID is required' }; }
   if (currency !== DEFAULT_CURRENCY) {
     return { success: false, status: 400, error: 'Unsupported booking currency' };
   }
@@ -235,29 +242,70 @@ async function createBookingCheckoutSessionCore({
 
   await cutoverBooking({ admin, tenantId, bookingId, nowIso });
   const nowMs = Date.parse(nowIso);
-  const reservationId = randomUUID();
-  const reservation = await db.runTransaction(async tx => {
-    const fresh = await tx.get(bookingRef);
+  const leaseRef = paymentCollectionLeaseRef(db, tenantId, bookingId);
+  let reservation;
+  try { reservation = await db.runTransaction(async tx => {
+    const [fresh, leaseSnap] = await Promise.all([tx.get(bookingRef), tx.get(leaseRef)]);
     const booking = fresh.data() || {};
     const currentBalance = balance(booking);
     if (!currentBalance.collectible) return { invalid: true };
     const amountCents = currentBalance.remainingCents;
-    if (booking.stripePaymentStatus === 'checkout_created' && booking.stripeCheckoutSessionId) {
+    const existingLease = leaseSnap.exists ? leaseSnap.data() : null;
+    if (isActivePaymentCollectionLease(existingLease, nowMs)) {
+      const acquired = reservePaymentCollectionInTransaction({
+        tx, leaseRef, existingLease, tenantId, bookingId, channel: 'checkout',
+        operationId: clientCheckoutId, actorUid: uid, amountCents,
+        connectedAccountId: stripeAccountId, nowIso,
+      });
+      if (acquired.lease.status === 'provider_pending') {
+        if (acquired.lease.provider !== 'stripe_checkout_session' ||
+            !acquired.lease.providerObjectId || !acquired.lease.providerUrl) {
+          throw new AccountingError('payment_collection_mismatch');
+        }
+        return { reused: true, booking, amountCents, lease: acquired.lease,
+          session: { id: acquired.lease.providerObjectId, url: acquired.lease.providerUrl } };
+      }
+      return { booking, amountCents, lease: acquired.lease };
+    }
+    if (!existingLease && booking.stripePaymentStatus === 'checkout_created' && booking.stripeCheckoutSessionId) {
       const expiresAt = booking.stripeCheckoutSessionExpiresAt;
       if (!Number.isSafeInteger(expiresAt)) return { conflict: true };
       if (expiresAt * 1000 > nowMs) {
         if (booking.stripeCheckoutSessionAmountCents !== amountCents || !booking.stripeCheckoutSessionUrl) {
           return { conflict: true };
         }
-        return { reused: true, booking, amountCents,
+        const acquired = reservePaymentCollectionInTransaction({
+          tx, leaseRef, existingLease: null, tenantId, bookingId, channel: 'checkout',
+          operationId: clientCheckoutId, actorUid: uid, amountCents,
+          connectedAccountId: stripeAccountId, nowIso,
+        });
+        const lease = paymentCollectionLeasePatch(acquired.lease, {
+          status: 'provider_pending', provider: 'stripe_checkout_session',
+          providerObjectId: booking.stripeCheckoutSessionId,
+          providerUrl: booking.stripeCheckoutSessionUrl,
+          providerExpiresAtMs: expiresAt * 1000,
+        }, nowIso);
+        tx.set(leaseRef, lease);
+        return { reused: true, booking, amountCents, lease,
           session: { id: booking.stripeCheckoutSessionId, url: booking.stripeCheckoutSessionUrl } };
       }
     }
     if (booking.stripeCheckoutReservation?.expiresAtMs > nowMs) return { conflict: true };
-    tx.update(bookingRef, { stripeCheckoutReservation: { id: reservationId,
-      amountCents, expiresAtMs: nowMs + 10 * 60 * 1000 } });
-    return { booking, amountCents };
-  });
+    const acquired = reservePaymentCollectionInTransaction({
+      tx, leaseRef, existingLease, tenantId, bookingId, channel: 'checkout',
+      operationId: clientCheckoutId, actorUid: uid, amountCents,
+      connectedAccountId: stripeAccountId, nowIso,
+    });
+    tx.update(bookingRef, { stripeCheckoutReservation: null });
+    return { booking, amountCents, lease: acquired.lease };
+  }); } catch (error) {
+    if (error instanceof AccountingError &&
+        ['payment_collection_conflict', 'payment_collection_mismatch'].includes(error.code)) {
+      return { success: false, status: 409,
+        error: 'Another payment collection is already in progress for this booking.' };
+    }
+    throw error;
+  }
   if (reservation.conflict) return { success: false, status: 409,
     error: 'An existing booking checkout is still open. Refresh or try again after it expires.' };
   const { booking } = reservation;
@@ -270,7 +318,7 @@ async function createBookingCheckoutSessionCore({
   const platformFeePercentage = getPlatformFee(subscriptionTier);
   const platformFeeAmount = Math.round(amountCents * platformFeePercentage);
   const metadata = {
-    ...bookingPaymentMetadata(tenantId, bookingId),
+    ...bookingPaymentMetadata(tenantId, bookingId, operationHash),
     stripeMode: stripeModeFromKey(secretKey),
   };
   const sessionParams = buildBookingCheckoutSessionParams({
@@ -287,7 +335,7 @@ async function createBookingCheckoutSessionCore({
   if (!reservation.reused) {
     try {
       const idempotencyKey = createHash('sha256')
-        .update(`booking-checkout-v1:${tenantId}:${bookingId}:${reservationId}`).digest('hex');
+        .update(`booking-checkout-v2:${tenantId}:${bookingId}:${operationHash}:${reservation.lease.attempt}`).digest('hex');
       session = await stripe.checkout.sessions.create(sessionParams,
         { stripeAccount: stripeAccountId, idempotencyKey });
       if (!Number.isSafeInteger(session.expires_at) || session.expires_at * 1000 <= nowMs || !session.url) {
@@ -296,25 +344,39 @@ async function createBookingCheckoutSessionCore({
       const finalized = await db.runTransaction(async tx => {
         const fresh = await tx.get(bookingRef);
         const current = fresh.data() || {};
-        if (current.stripeCheckoutReservation?.id !== reservationId ||
+        const currentLeaseSnap = await tx.get(leaseRef);
+        const currentLease = currentLeaseSnap.exists ? currentLeaseSnap.data() : null;
+        if (!currentLease || currentLease.operationHash !== operationHash ||
+            currentLease.status !== 'reserved' || currentLease.actorUid !== uid ||
+            currentLease.channel !== 'checkout' || currentLease.amountCents !== amountCents ||
+            currentLease.connectedAccountId !== stripeAccountId ||
             balance(current).remainingCents !== amountCents) return false;
+        const providerLease = paymentCollectionLeasePatch(currentLease, {
+          status: 'provider_pending', provider: 'stripe_checkout_session',
+          providerObjectId: session.id, providerUrl: session.url,
+          providerExpiresAtMs: session.expires_at * 1000,
+        }, nowIso);
         tx.update(bookingRef, { ...buildCheckoutCreatedPatch(session, { nowIso }),
           stripeCheckoutSessionUrl: session.url,
           stripeCheckoutSessionExpiresAt: session.expires_at,
           stripeCheckoutSessionAmountCents: amountCents,
           stripeCheckoutReservation: null });
+        tx.set(leaseRef, providerLease);
         return true;
       });
       if (!finalized) throw new AccountingError('checkout_balance_changed');
     } catch (error) {
+      let safeToRelease = !session && Number.isInteger(error?.statusCode) &&
+        error.statusCode >= 400 && error.statusCode < 500 && ![408, 409, 429].includes(error.statusCode);
       if (session?.id && stripe.checkout.sessions.expire) {
-        try { await stripe.checkout.sessions.expire(session.id, { stripeAccount: stripeAccountId }); }
+        try { await stripe.checkout.sessions.expire(session.id, { stripeAccount: stripeAccountId }); safeToRelease = true; }
         catch (expireError) { console.error('[Booking Stripe] Could not expire unused session:', expireError?.code); }
       }
-      await db.runTransaction(async tx => {
-        const fresh = await tx.get(bookingRef);
-        if (fresh.data()?.stripeCheckoutReservation?.id === reservationId) {
-          tx.update(bookingRef, { stripeCheckoutReservation: null });
+      if (safeToRelease) await db.runTransaction(async tx => {
+        const leaseSnap = await tx.get(leaseRef);
+        const lease = leaseSnap.exists ? leaseSnap.data() : null;
+        if (lease?.operationHash === operationHash && lease.status === 'reserved' && lease.actorUid === uid) {
+          tx.set(leaseRef, paymentCollectionLeasePatch(lease, { status: 'released', closedAt: nowIso }, nowIso));
         }
       });
       const setupFailure = stripeSetupFailureResult(error);
@@ -363,6 +425,7 @@ function createBookingCheckoutSessionHandler({ admin, appUrl, getPlatformFee, se
         admin,
         appUrl,
         bookingId: req.body?.bookingId,
+        clientCheckoutId: req.body?.clientCheckoutId,
         currency: req.body?.currency || DEFAULT_CURRENCY,
         getPlatformFee,
         nowIso: new Date().toISOString(),
@@ -399,6 +462,7 @@ async function handleBookingPaymentSucceeded(paymentIntent, { admin, nowIso, con
     amountCents: paymentIntent.amount_received, currency: paymentIntent.currency,
     channel: paymentChannel(metadata), nowIso, livemode: paymentIntent.livemode,
     checkoutSessionId: paymentIntent.metadata.checkoutSessionId,
+    collectionOperationHash: metadata.paymentCollectionOperationHash,
     receiptUrl: paymentIntent.latest_charge?.receipt_url,
     paymentCreatedAt: paymentIntent.created,
   });
@@ -427,6 +491,7 @@ async function handleBookingCheckoutCompleted(session, { admin, nowIso, connecte
     connectedAccountId, providerPaymentId: paymentIntentId, amountCents: session.amount_total,
     currency: session.currency, channel: paymentChannel(metadata), nowIso, livemode: session.livemode,
     checkoutSessionId: session.id,
+    collectionOperationHash: metadata.paymentCollectionOperationHash,
     paymentCreatedAt: session.created,
   });
   return { handled: true, ...result };

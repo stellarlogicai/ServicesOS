@@ -58,6 +58,7 @@ export default function BookingsList() {
   const employeeLoadRequestRef = useRef(0);
   const bookingDetailContentRef = useRef(null);
   const manualPaymentAttemptRef = useRef('');
+  const checkoutAttemptRef = useRef({ bookingId: '', id: '' });
   const canManageAssignment = isAdmin?.() === true;
   const [bookings, setBookings] = useState([]);
   const [bookingsTenantId, setBookingsTenantId] = useState(null);
@@ -399,7 +400,17 @@ export default function BookingsList() {
     }));
 
     try {
-      const result = await createBookingCheckoutSession(tenantId, selectedBooking.id);
+      if (checkoutAttemptRef.current.bookingId !== selectedBooking.id || !checkoutAttemptRef.current.id) {
+        checkoutAttemptRef.current = {
+          bookingId: selectedBooking.id,
+          id: globalThis.crypto.randomUUID().replaceAll('-', ''),
+        };
+      }
+      const result = await createBookingCheckoutSession(
+        tenantId,
+        selectedBooking.id,
+        checkoutAttemptRef.current.id,
+      );
       setStripeLinkState({
         creating: false,
         url: result?.url || '',

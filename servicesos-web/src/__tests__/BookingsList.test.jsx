@@ -776,7 +776,11 @@ describe('read-only Bookings admin list', () => {
     await user.click(screen.getByRole('button', { name: 'View Details' }));
     await user.click(screen.getByRole('button', { name: 'Create Stripe payment link' }));
 
-    expect(mocks.createBookingCheckoutSession).toHaveBeenCalledWith('tenant-a', 'booking-stripe-link');
+    expect(mocks.createBookingCheckoutSession).toHaveBeenCalledWith(
+      'tenant-a',
+      'booking-stripe-link',
+      expect.stringMatching(/^[A-Za-z0-9_-]{16,128}$/),
+    );
     expect(await screen.findByText('Payment link created. This booking will be marked paid after Stripe confirms payment.')).toBeInTheDocument();
     expect(screen.getByDisplayValue('https://checkout.stripe.test/pay/cs_test_booking')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open payment link' })).toHaveAttribute('href', 'https://checkout.stripe.test/pay/cs_test_booking');

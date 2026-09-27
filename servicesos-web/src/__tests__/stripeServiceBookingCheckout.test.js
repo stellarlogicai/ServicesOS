@@ -52,7 +52,7 @@ describe('createBookingCheckoutSession', () => {
   it('calls the booking-scoped checkout backend and returns session data', async () => {
     const { createBookingCheckoutSession } = await import('../services/stripeService');
 
-    const result = await createBookingCheckoutSession('tenant-a', 'booking-1');
+    const result = await createBookingCheckoutSession('tenant-a', 'booking-1', 'checkout-attempt-0001');
 
     expect(firebaseMocks.auth.currentUser.getIdToken).toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledWith(
@@ -63,7 +63,8 @@ describe('createBookingCheckoutSession', () => {
           'Authorization': 'Bearer id-token-123',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ tenantId: 'tenant-a', bookingId: 'booking-1' }),
+        body: JSON.stringify({ tenantId: 'tenant-a', bookingId: 'booking-1',
+          clientCheckoutId: 'checkout-attempt-0001' }),
       }
     );
     expect(result).toEqual({
@@ -81,7 +82,8 @@ describe('createBookingCheckoutSession', () => {
     firebaseMocks.auth.currentUser = null;
     const { createBookingCheckoutSession } = await import('../services/stripeService');
 
-    await expect(createBookingCheckoutSession('tenant-a', 'booking-1')).rejects.toThrow('Authentication required');
+    await expect(createBookingCheckoutSession('tenant-a', 'booking-1', 'checkout-attempt-0001'))
+      .rejects.toThrow('Authentication required');
     expect(fetch).not.toHaveBeenCalled();
   });
 });

@@ -1716,6 +1716,10 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     const record = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking', 'paymentRecords', 'fake');
     await assertFails(setDoc(record, { amountCents: 18500, status: 'confirmed' }));
     await assertFails(getDoc(record));
+    const collectionLease = doc(database, 'tenants', TENANT_A, 'bookings', 'field-booking',
+      'paymentCollectionControl', 'current');
+    await assertFails(setDoc(collectionLease, { status: 'reserved', amountCents: 18500 }));
+    await assertFails(getDoc(collectionLease));
     await assertFails(setDoc(doc(database, 'tenants', TENANT_A, 'bookingPaymentIdentities', 'fake'),
       { bookingId: 'field-booking' }));
 

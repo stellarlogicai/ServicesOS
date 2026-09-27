@@ -258,10 +258,10 @@ export async function createCheckoutSession(estimate, formData, depositPercentag
  * Create a Stripe Checkout session for an existing booking.
  * This creates a pending Stripe checkout only. Payment is confirmed by webhook.
  */
-export async function createBookingCheckoutSession(tenantId, bookingId) {
+export async function createBookingCheckoutSession(tenantId, bookingId, clientCheckoutId) {
   try {
-    if (!tenantId || !bookingId) {
-      throw new Error('tenantId and bookingId are required');
+    if (!tenantId || !bookingId || !/^[A-Za-z0-9_-]{16,128}$/.test(clientCheckoutId || '')) {
+      throw new Error('tenantId, bookingId, and a valid checkout operation ID are required');
     }
 
     const user = auth.currentUser;
@@ -278,7 +278,7 @@ export async function createBookingCheckoutSession(tenantId, bookingId) {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ tenantId, bookingId }),
+      body: JSON.stringify({ tenantId, bookingId, clientCheckoutId }),
     });
 
     if (!response.ok) {
