@@ -1,5 +1,7 @@
 # ServicesOS V1 Rollback Runbook
 
+> **HISTORICAL PLANNING RUNBOOK:** The Git/deployment references below are old and are not a current rollback target or authorization. Establish the exact release candidate, deployed revisions, rules IDs, and backups before any separately approved action. Current status is in `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md`.
+
 Status: **Planning only. No rollback action is pre-approved.**
 
 Protected pre-V1 Git reference:

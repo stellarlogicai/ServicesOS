@@ -1,5 +1,7 @@
 # ServicesOS V1 Production Data Readiness Report
 
+> **HISTORICAL PRODUCTION DATA SNAPSHOT (2026-07-14):** The data counts, identity findings, and readiness classifications below are time-bound evidence from that audit, not current production readiness. Do not reuse raw or derived findings without an approved fresh audit against the intended candidate. Current release gates are in `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md`.
+
 Prepared: 2026-07-14
 
 Branch: `v1-lab-production-identity-readiness`

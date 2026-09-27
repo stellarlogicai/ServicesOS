@@ -1,5 +1,7 @@
 # Wife Beta Manual Walkthrough
 
+> **HISTORICAL / SUPERSEDED:** These steps describe the earlier wife-beta build, not the current V1 candidate. Do not treat old surface exclusions, results, or instructions as the current acceptance scope. Use `SERVICESOS_V1_FINISH_BOARD.md` for wife V1 acceptance; mobile Tap to Pay is excluded from that acceptance and is post-V1.
+
 This document provides manual testing steps for wife beta readiness validation.
 
 ## Dashboard Null-Safety Fix (June 25, 2026)

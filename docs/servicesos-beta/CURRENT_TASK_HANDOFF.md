@@ -1,5 +1,7 @@
 # Current Task Handoff
 
+> **HISTORICAL / SUPERSEDED:** This file is an archive of older task handoffs and branch-specific results, not the active task or a current V1 status source. Some instructions and “next task” statements below are obsolete. Use `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md` for the active branch, remaining scope, and release gates; revalidate any old evidence against the current release candidate.
+
 ## Create Estimate Wife-Beta Readiness
 
 **Status:** Code-complete; full validation passed

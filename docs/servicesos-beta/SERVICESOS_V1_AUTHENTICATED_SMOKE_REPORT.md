@@ -1,5 +1,7 @@
 # ServicesOS V1 Authenticated Smoke Report
 
+> **HISTORICAL LOCAL-EMULATOR EVIDENCE (2026-07-14):** This records a successful smoke on an earlier branch and fake local Firebase project. It is not physical-device acceptance, current-HEAD validation, or production evidence. Re-run relevant flows on the selected candidate/environment; current scope is in `SERVICESOS_V1_FINISH_BOARD.md`.
+
 Smoke date: 2026-07-14
 
 Branch: `v1-lab-field-assignment-visibility`

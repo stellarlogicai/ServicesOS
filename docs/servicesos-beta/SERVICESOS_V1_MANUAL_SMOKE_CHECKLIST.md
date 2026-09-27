@@ -1,5 +1,7 @@
 # ServicesOS V1 Manual Smoke Checklist
 
+> **Blank checklist template:** No item is passed until the tester records the current candidate SHA, environment, date, and evidence below. Use `SERVICESOS_V1_FINISH_BOARD.md` for current scope; mobile Tap to Pay is not part of V1 acceptance.
+
 Use this checklist only with fake data in an approved staging, emulator, preview, or explicitly approved test tenant. Never place passwords, tokens, secret keys, or private customer data in this file.
 
 ## 1. Approval And Environment

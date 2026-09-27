@@ -1,5 +1,7 @@
 # ServicesOS Baseline Failure Inventory
 
+> **HISTORICAL BASELINE:** The failures and repository observations below describe the pre-change baseline, not the current V1 branch. Do not use these as current test results or blockers; run and record validation on the selected candidate.
+
 Created before making ServicesOS fixes. This document summarizes the repo/package structure and the baseline validation failures observed before changing code, tests, Stripe, Firebase, auth, tenant logic, payments, routing, or backend behavior.
 
 ## 1. Workspace Structure

@@ -1,5 +1,7 @@
 # ServicesOS V1 Production Smoke Checklist
 
+> **Blank release checklist, not approval or evidence:** Reinitialize it for the exact approved release candidate and record every result. July readiness reports are historical. Use `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md` for current release gates; mobile Tap to Pay is post-V1.
+
 Use controlled test records only. Do not use real customer data for destructive or
 write-heavy checks. Each item must be marked **Pass**, **Fail - rollback/blocker**, or
 **Not run** with UTC, operator, role, and sanitized evidence.

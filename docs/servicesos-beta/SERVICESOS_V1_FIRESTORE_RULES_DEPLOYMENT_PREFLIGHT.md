@@ -1,5 +1,7 @@
 # ServicesOS V1 Firestore Rules Deployment Preflight
 
+> **HISTORICAL PREFLIGHT SNAPSHOT:** This preflight is tied to the branch and candidate listed below. It does not authorize deployment or establish the state of current rules. Re-compare canonical/mirror rules and deployed rules against the selected release candidate before any separately approved deployment. Current release status is in `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md`.
+
 Status: **Preflight captured. Deployment not authorized or performed.**
 
 Updated: 2026-07-26

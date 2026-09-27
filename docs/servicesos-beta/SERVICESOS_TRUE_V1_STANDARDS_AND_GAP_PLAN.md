@@ -1,5 +1,7 @@
 # ServicesOS True V1 Standards and Gap Plan
 
+> **HISTORICAL / SUPERSEDED GAP SNAPSHOT:** This plan describes an earlier branch and predates many completed V1 slices. Its gap rows and proposed “smallest safe fixes” are not current tasks. Use `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md` as authority; preserve this file as historical planning evidence only.
+
 ## Current baseline
 
 - Branch: `v1-lab-customer-ready-plan`

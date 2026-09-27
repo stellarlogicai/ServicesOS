@@ -116,3 +116,12 @@ Report back with:
 - recommended commit message
 
 Do not claim readiness beyond the evidence actually completed.
+
+## V1 status documentation maintenance
+
+After any validated ServicesOS V1 implementation slice that changes capability status, release scope, blockers, or sequencing, update:
+
+- `docs/servicesos-beta/SERVICESOS_V1_CURRENT_STATE.md`
+- `docs/servicesos-beta/SERVICESOS_V1_FINISH_BOARD.md`
+
+Complete these updates before starting the next implementation slice. If a slice does not change V1 status, the implementation report must explicitly state: "No V1 documentation status change required."

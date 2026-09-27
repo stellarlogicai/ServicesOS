@@ -1,5 +1,7 @@
 # ServicesOS V1 Deployment Runbook
 
+> **HISTORICAL PLANNING RUNBOOK:** Candidate references and environment evidence below predate the current V1 checkpoint. This document is not deployment approval. Before any separately approved action, replace/verify the exact candidate and target and use current gates from `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md`.
+
 Status: **Planning only. Do not execute without Jamie's approval.**
 
 Production project: `cleaning-intake-system`

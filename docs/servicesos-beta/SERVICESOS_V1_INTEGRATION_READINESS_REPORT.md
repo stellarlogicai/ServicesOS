@@ -1,5 +1,7 @@
 # ServicesOS V1 Integration Readiness Report
 
+> **HISTORICAL SNAPSHOT (2026-07-13):** This report audited an earlier lab branch and its then-current code/rules. Its readiness classifications and follow-up list do not establish readiness or blockers for the current HEAD. Treat it only as dated evidence; re-audit every operational gate against the selected release candidate. Current authority: `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md`.
+
 Audit date: 2026-07-13
 Protected production candidate: `master` / `origin/master` at `031bb46249fd09bbe7014e5f9747d4a7a4737a6f`
 Audit branch: `v1-lab-v1-integration-readiness`

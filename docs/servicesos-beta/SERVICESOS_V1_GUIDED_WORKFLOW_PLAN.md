@@ -1,5 +1,7 @@
 # ServicesOS V1 Guided Workflow Plan
 
+> **HISTORICAL WORKFLOW PLAN:** This plan predates the current V1 branch and may describe incomplete or out-of-date workflow surfaces. Do not use its sequence or gaps as current scope. Use `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md` for current implementation and acceptance status.
+
 Purpose: connect the already-built ServicesOS pieces into a smoother beta workflow without turning this into a V2 rebuild.
 
 Core goal:
@@ -834,4 +836,3 @@ npm run build
 ```
 
 7. Do not commit unless all validation is green.
-

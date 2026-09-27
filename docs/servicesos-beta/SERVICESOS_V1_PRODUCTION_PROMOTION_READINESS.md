@@ -1,5 +1,7 @@
 # ServicesOS V1 Production Promotion Readiness
 
+> **HISTORICAL PRODUCTION SNAPSHOT (2026-07-14):** The observations and A–E classifications below apply only to the audited July branch/production state. They are not current promotion approval and may be stale. Do not infer that a listed blocker remains or was resolved. Re-audit rules, data, Storage/CORS, indexes, identities, assignments, deployments, and privacy against the selected release candidate. Current authority: `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md`.
+
 Audit date: 2026-07-14
 
 Audit branch: `v1-lab-production-promotion-readiness`

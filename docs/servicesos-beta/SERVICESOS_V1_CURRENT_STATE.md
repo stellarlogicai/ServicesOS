@@ -1,6 +1,6 @@
 # ServicesOS V1 Current State
 
-Updated: 2026-09-16
+Updated: 2026-09-27
 
 This file contains the changing ServicesOS checkpoint. Durable repository rules belong in `AGENTS.md`; detailed progress belongs in `SERVICESOS_V1_FINISH_BOARD.md`.
 
@@ -18,11 +18,11 @@ Active branch:
 
 `feature/owner-onboarding-v1`
 
-Latest application-code checkpoint before the current documentation refresh:
+Current application-code checkpoint:
 
-`8bce3919d8e26d2643a476e44b89ed34b7d34718` — `Add employee extra-work request review`
+`075f40d3962a8ea105af431c24ea7e5464673a2b` — `Add employee Terminal payment gateway`
 
-Documentation-only commits follow that application checkpoint on the same branch. Check the branch itself for the current remote HEAD rather than copying a docs-only commit SHA into planning state.
+The branch is `feature/owner-onboarding-v1`. This document is reconciled against that exact HEAD. Historical reports and older checklists are not current-head validation evidence.
 
 The branch is backed up to:
 
@@ -56,7 +56,7 @@ For the Employee App this means:
 - limited active-job safety location, not all-day tracking,
 - field safety alerting and emergency handoffs, not a monitoring center or direct police dispatch,
 - narrow offline resilience for critical safety state, not a full offline-first platform,
-- Tap to Pay with verified backend truth and owner auditability, not every future mobile payment feature.
+- secure card-present payment foundations with verified backend truth and owner auditability; Employee App Terminal SDK, UI, and device workflow are post-V1.
 
 Advanced forms remain deferred unless Jamie explicitly re-scopes them.
 
@@ -66,7 +66,7 @@ Protect the late-October launch target by keeping Codex/implementation work in s
 
 Each coding task should include one capability delta only and explicitly define goal, scope, exclusions, files/areas to avoid, acceptance criteria, validation, stop conditions, and report-back.
 
-Do not combine major areas such as onboarding, mobile routing, field safety, Tap to Pay, and release hardening into a single task. Complete and validate one slice before moving to the next.
+Do not combine major areas such as onboarding, mobile routing, field safety, post-V1 Tap to Pay, and release hardening into a single task. Complete and validate one slice before moving to the next.
 
 ## What is already implemented on the current V1 branch
 
@@ -105,200 +105,73 @@ The Employee App is no longer a placeholder-only shell. Current branch capabilit
 - verified employee profile/logout
 - extra-work request UI using tenant add-ons or a bounded custom request
 - native/Google/Apple Maps directions handoff foundation
+- deterministic Today/Upcoming ordering and current/next-job progression, with refresh for changed safe summaries and generic change notices
+- Field Safety actions and a bounded persistent safety-alert retry queue
+- employee payment-collection permission and the server-owned Terminal payment gateway
 
 The active navigation shell is intentionally narrow: Jobs/Today, Job Details, Work Assistant, and Profile. Legacy Training and Messages files do not make those features current V1 blockers.
 
-### Owner onboarding / SaaS activation spine
+Day progression and directions have focused implementation tests, but physical-device acceptance and owner/admin-to-employee assignment/day acceptance remain open. No generalized employee messaging or push-notification system is included.
 
-Implemented:
+## Completed current-branch capabilities
 
-- server-owned owner/tenant bootstrap
-- canonical admin/tenant relationship validation
-- basic business profile step
-- versioned SaaS agreement delivery and acceptance evidence
-- owner subscription Checkout gateway
-- server-owned Stripe Customer
-- verified `invoice.paid` activation path
-- exact tenant/customer/subscription/Price/quantity validation
-- stale/idempotent event protection
+These implementation slices are present in branch history and have focused code/tests. This documentation audit did not rerun their suites; implementation status is not current-head validation or release acceptance.
 
-Important: this is the secure activation spine, not the complete ServicesOS operational onboarding.
+### Customer scope and extra work
 
-## Canonical V1 onboarding requirement
+- Customer identity and booking ownership are checked server-side for approval.
+- Customer approval creates one immutable authoritative scope revision; duplicate approval is idempotent.
+- Employee JobPacket reads the revised scope on its next normal fetch. Declined, stale, cancelled, or unapproved requests do not revise scope.
 
-A new customer must complete onboarding that gathers the information ServicesOS needs to function correctly for that business.
+### Owner onboarding and SaaS billing
 
-The production onboarding must use current canonical ServicesOS models and settings. Do not restore the legacy CleanOps `ImprovedOnboarding.jsx` flow as-is.
+- Canonical services/pricing, availability, branding, employee/team setup, Stripe Connect, and explicit final acceptance are implemented.
+- Paid entitlement remains separate from operational completion; final acceptance revalidates prerequisites and fresh provider state.
+- Monthly ($100) and annual ($1,000) subscription paths use two canonical server-configured Prices; lifecycle code covers renewal, failure/cure, recovery, scheduled cancellation, and termination.
+- Owner billing Portal code validates its server-configured capabilities before session creation.
+- Controlled test/live Price and Portal configuration, provider/webhook acceptance, onboarding journey acceptance, and current-head web/Functions regressions remain release gates. No production configuration change is implied here.
 
-Required V1 onboarding areas:
+### Employee day and Field Safety
 
-1. secure owner/tenant bootstrap
-2. business basics
-3. SaaS agreement
-4. ServicesOS subscription choice and verified payment
-5. services and deterministic pricing setup
-6. availability / scheduling rules
-7. brand basics
-8. customer-payment setup through Stripe Connect, with `Skip / do later`
-9. team choice/setup
-10. review, resume support, completion marker, and clear first action
+- Today/Upcoming order is deterministic; current/next job actions and refresh/change notice are implemented. Directions are an external maps handoff.
+- Field Safety has explicit dialer/owner-call handoffs, optional foreground location, server-authorized alerts, and a bounded persistent queue with same-event retry and honest Sent/Queued/Failed states.
+- Owner alert display is read-only. No acknowledgement, push, continuous location, or missed-check-in service is included in the accepted slice.
+- Physical-device acceptance for auth/session, directions, photos, safety permissions/network/retry, and owner/employee field workflow remains open.
 
-Existing `businessSettings` must remain the canonical destination for compatible business information rather than creating a competing onboarding-only settings object.
+### Booking payments and post-V1 Terminal boundary
 
-The `I have employees` path must eventually create/link employees through the canonical employee identity flow so those employees can authenticate into the mobile app safely.
+- Canonical booking payment accounting, immutable payment/refund/reversal records, owner display, and server-authoritative Checkout/manual payment are implemented.
+- Checkout, manual, and terminal use one server-owned collection lease. Employee payment permission defaults false and is owner/admin controlled.
+- `employeeTerminalPaymentGateway` is a backend foundation: it checks canonical employee permission/assignment, derives connected-account authority and amount server-side, prepares/reuses card-present PaymentIntents, issues scoped connection tokens, and reconciles only provider-confirmed results into canonical accounting.
+- **Mobile Tap to Pay is post-V1.** The Employee App remains Expo 51 / React Native 0.74.5; SDK/platform migration, mobile Terminal transport/UI, and physical Tap to Pay acceptance are planned after ServicesOS V1 release. Do not treat them as V1 or wife-beta blockers, and do not discard the completed backend foundations.
 
-## Billing state correction still required
+### GrowthAI / SLAI Assistant
 
-Current implementation activates the paid tenant after verified subscription payment. V1 now needs to separate:
+The existing V1 feature set, credit UX, tenant-safe provider gateway, and provider kill switch remain in code. Current-head integrated regression, approved provider-backed test-mode acceptance, closure of V1 findings, and explicit V1 freeze are not proven by this documentation audit and remain open.
 
-- **billing entitlement active**, from
-- **operational onboarding complete**.
+## Remaining V1 work and release gates
 
-Verified subscription payment must not by itself mean the business has completed ServicesOS setup.
+1. Run current-HEAD full web, Cloud Functions, Employee App, Firestore rules, and Storage rules suites; run lint, build, and rules parity. Record actual totals and failures. Older report totals are not current-head validation.
+2. Complete integration acceptance for customer-approved scope refresh, employee assignment/cancel/reschedule/reassignment behavior, employee authentication, and owner/admin-to-employee day/assignment communication. No generalized messaging system is implied.
+3. Complete physical-device acceptance for the Employee App core workflow, directions, camera/photo, authentication/session recovery, and Field Safety permissions/network/queue. Verify exactly one owner-visible safety alert after retry; never place an actual emergency call.
+4. Re-audit customer identity ownership, duplicate/cross-tenant `authUid`, tenant membership, employee identity/assignment, field-photo and safety authorization, and cross-tenant denial against the current candidate and controlled test data.
+5. Before promotion, re-verify deployed Firestore and Storage rules against the candidate, rules parity, required indexes, Storage initialization/CORS, existing object-prefix compatibility, and data readiness. July production reports are historical snapshots, not current readiness proof.
+6. Re-verify Netlify build/commit and deployed Cloud Function revisions for the selected candidate. Prepare backups and rollback evidence under the deployment runbook.
+7. Complete controlled Stripe test-mode/live acceptance for owner monthly/annual billing and Portal, Connect onboarding, booking Checkout, payment/refund webhooks, fees, tenant isolation, and failure/retry. Verify separate test/live Price and Portal configuration; this audit changed no provider state.
+8. Deploy only to a controlled V1 test environment after approved gates, then complete wife V1 acceptance, close critical findings, tune UI, and run final release smoke.
 
-The company-wide ServicesOS pricing decision is:
-
-- $100/month
-- $1,000/year
-- same normal entitlement either way
-
-Current code still exposes a single monthly Price path. Monthly + annual selection and exact two-Price validation are required before customer release.
-
-Post-activation subscription lifecycle work also remains: renewal, failed payment, cancellation/end-of-term, recovery/reactivation, and customer billing-management behavior as required for V1.
-
-## Employee App V1 remaining work
-
-### Web-linked field correspondence
-
-- finish extra-work through customer approval and authoritative scope refresh
-- ensure approved scope changes refresh the employee JobPacket/checklist/time/price safely
-- ensure declined/unapproved requests do not alter authoritative mobile work
-- verify assignment, cancellation, reschedule, and reassignment changes refresh safely
-- verify employees created through onboarding can enter the canonical mobile login path
-
-### Basic routing / day progression
-
-V1 requires the practical field-worker form only:
-
-- define/confirm ordered work sequence for the employee day
-- clear current-job / next-job progression
-- retain reliable external maps/directions handoff
-- owner/admin ↔ employee day/assignment correspondence acceptance
-
-Do not expand this into advanced route optimization, continuous GPS, mileage automation, fleet telemetry, or complex crew logistics during V1 unless explicitly re-scoped.
-
-### Field Safety / Emergency — basic V1 capability
-
-Planned V1 field-safety work includes:
-
-- Safety / Emergency action from the active job
-- call-911 device dialer handoff
-- call owner/admin handoff when contact exists
-- tenant-scoped safety alert
-- job/address/timestamp context
-- limited on-demand location when permission/connection allow
-- honest sent/queued/failed/location-unavailable state
-- narrow local queue for unsent safety alerts
-- owner/admin alert review and resolution
-- basic missed-check-in / overdue safety status if promoted in the implementation slice
-- tenant/permission/device/network acceptance
-
-This is not a monitoring-center or emergency-dispatch product. Do not add constant live GPS, hidden recording, all-day surveillance, direct police dispatch, or advanced escalation trees to V1.
-
-### Tap to Pay / mobile payments
-
-Tap to Pay remains part of ServicesOS V1 and was intentionally deferred until the later Employee App/mobile-payment phase.
-
-Remaining work:
-
-- secure employee payment permission model
-- canonical mobile payment API
-- Stripe mobile SDK integration
-- Tap to Pay implementation
-- confirmed backend payment truth
-- owner visibility/audit trail
-- failure/retry behavior
-- supported-device acceptance
-
-### Mobile hardening
-
-- Android emulator/physical-device acceptance
-- auth persistence/expiration/recovery
-- camera/photo permissions
-- location permissions for promoted V1 safety/routing slices
-- network failure/retry behavior
-- duplicate-submit/idempotency behavior
-- reassignment-away and cross-tenant denial
-- full owner → employee → owner field workflow acceptance
-
-## Current remaining V1 work
-
-### Immediate workflow edges
-
-- verify the extra-work flow through customer approval and authoritative job-scope update
-- confirm declined/unapproved extra work cannot mutate authoritative scope
-
-### Owner onboarding
-
-- finish the operational setup stages described above
-- persist/resume onboarding progress
-- separate paid entitlement from onboarding completion
-- new-owner end-to-end acceptance
-
-### Owner SaaS billing
-
-- add monthly + annual choice
-- approve exactly two canonical server-side Price IDs
-- accept either approved Price in activation verification
-- implement required ongoing subscription lifecycle
-
-### Employee App / mobile
-
-- finish web-linked correspondence pieces
-- finish basic routing/day progression
-- implement basic V1 field safety
-- implement Tap to Pay
-- complete device/network/auth/permission acceptance
-
-### Security / release
-
-- current-head full web tests
-- current-head Cloud Functions tests
-- Employee App tests
-- Firestore rules tests
-- Storage rules tests
-- lint and production build
-- customer identity/tenant/privacy verification
-- employee assignment/authorization smoke
-- field-photo authorization smoke
-- field-safety tenant/permission smoke after implementation
-- payment/security integration smoke
-- fix the known stale fixed-date/JSDOM test if it still reproduces
-
-### V1 acceptance
-
-After the integrated branch is validated and deployed to a controlled V1 test environment, Jamie's wife should test the current V1 using outcome-based tasks rather than click-by-click instructions. Only current V1 findings should drive final fixes/UI fine-tuning.
+Production promotion is **not established by this audit**. Old production reports document previous observations/actions but must be re-audited against the intended release candidate; no claim is made that their July state remains current or was corrected.
 
 ## Release sequence
 
-Current sequence:
+1. Close current-head automated integration/security/build validation and remaining customer-scope, employee-day/correspondence, and device acceptance edges.
+2. Re-audit production configuration/data/rules/index/storage readiness and collect current deployment evidence.
+3. Complete controlled test/live Stripe acceptance and a controlled V1 test deployment.
+4. Run wife V1 acceptance using outcome-based tasks, **excluding mobile Tap to Pay**; customer-job payment tests cover approved web/manual paths.
+5. Fix V1-specific critical findings, perform UI fine-tuning, and complete customer-release security and smoke gates.
+6. Freeze and release the customer-facing ServicesOS V1 candidate.
 
-1. complete customer approval of extra work -> immutable revised scope -> refreshed authoritative employee scope
-2. finish full owner onboarding
-3. update owner SaaS billing to monthly + annual and finish required lifecycle
-4. finish Employee App web-linked correspondence pieces
-5. finish basic routing/day progression
-6. implement basic V1 field safety
-7. implement Tap to Pay/mobile payment acceptance
-8. run full current-head integration/security validation
-9. controlled V1 test deployment
-10. wife V1 acceptance
-11. fix V1-specific findings
-12. UI fine-tuning
-13. customer-release hardening and final smoke
-14. customer-facing V1 release
-
-The sequence can use parallel planning, but coding should remain small-slice and controlled. Do not let later mobile capability expansion move the V1 finish line.
+After V1 release, separately upgrade the Employee App platform to Expo 56 / React Native 0.85, integrate the Stripe Terminal React Native SDK, then deliver mobile Tap to Pay as the first post-V1 Employee App payment update. Keep this work isolated from the release candidate.
 
 ## Explicitly parked unless Jamie re-scopes them
 

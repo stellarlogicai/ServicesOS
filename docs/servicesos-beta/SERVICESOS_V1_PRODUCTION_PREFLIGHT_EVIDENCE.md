@@ -1,5 +1,7 @@
 # ServicesOS V1 Production Preflight Evidence
 
+> **HISTORICAL PRODUCTION PREFLIGHT (2026-07-14):** This is dated evidence tied to an earlier branch and is not authorization, current production state, or readiness approval. Re-verify each rule, index, Storage/CORS, identity, assignment, deployment, and privacy claim before promotion. Current authority: `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md`.
+
 Prepared: 2026-07-14
 
 Branch: `v1-lab-production-identity-readiness`

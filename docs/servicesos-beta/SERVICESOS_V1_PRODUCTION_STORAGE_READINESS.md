@@ -1,5 +1,7 @@
 # ServicesOS V1 Production Storage Readiness
 
+> **HISTORICAL PRODUCTION STORAGE SNAPSHOT (2026-07-15):** This report records a prior rules/storage deployment and smoke attempt. Its deployed-state comparison is not current-head evidence or release approval. Re-audit bucket, CORS, deployed rules, object-prefix compatibility, and employee/owner access against the selected release candidate. Current authority: `SERVICESOS_V1_CURRENT_STATE.md` and `SERVICESOS_V1_FINISH_BOARD.md`.
+
 Date: 2026-07-15
 Production project: `cleaning-intake-system`
 Production bucket: `cleaning-intake-system.firebasestorage.app`

@@ -1,6 +1,6 @@
 # ServicesOS V1 Finish Board
 
-Last updated: 2026-09-16
+Last updated: 2026-09-27
 
 This document is the authoritative progress board for the defined customer-facing ServicesOS V1 finish line.
 
@@ -10,7 +10,7 @@ ServicesOS remains priority one. The frozen wife-beta build proved the baseline 
 
 Do not expand V1 because legacy, prototype, or future code exists in the repository. Build only the already-defined customer-facing V1 requirements.
 
-The Employee App is part of customer-facing V1. Tap to Pay is also part of V1, but intentionally belongs to the later mobile/payment phase after the current owner/onboarding/payment work is stabilized.
+The Employee App is part of customer-facing V1. Mobile Tap to Pay is post-V1 because its native-platform migration would put the current release at material risk. Completed backend/payment foundations remain frozen in this branch and are not to be discarded.
 
 The legacy `ImprovedOnboarding.jsx` / CleanOps-style flow is reference material only. Do not restore it as the production onboarding. New onboarding must use current canonical ServicesOS models and settings.
 
@@ -23,7 +23,7 @@ Examples:
 - routing/navigation V1 = ordered daily work, clear next-job progression, and reliable directions handoff; not route optimization, continuous GPS, fleet telemetry, or mileage automation,
 - field safety V1 = emergency actions, tenant-scoped alerting, limited job-safety location when permitted, honest delivery state, and owner review; not a monitoring center, direct police dispatch, or all-day surveillance,
 - offline V1 = targeted resilience only where required for safety/critical field actions; not a general offline-first employee platform,
-- Tap to Pay V1 = authorized card-present collection with verified backend truth and owner auditability; not every future mobile invoicing/tipping/reconciliation feature,
+- mobile Tap to Pay = post-V1 Employee App upgrade and native Terminal integration; V1 keeps the completed server/accounting foundations but does not require mobile card-present collection,
 - extra-work V1 = employee request → owner/customer approval → authoritative scope refresh; not advanced field quoting or autonomous pricing.
 
 Do not turn a basic V1 capability into a broad platform while trying to finish the release.
@@ -43,15 +43,15 @@ Each coding prompt should contain only one controlled capability delta and must 
 - stop conditions,
 - required report-back.
 
-Do not combine owner onboarding, mobile routing, field safety, Tap to Pay, and release hardening into one coding task. Complete and validate one slice before promoting the next.
+Do not combine owner onboarding, mobile routing, field safety, post-V1 Tap to Pay, and release hardening into one coding task. Complete and validate one slice before promoting the next.
 
 ## Current checkpoint
 
 Active V1 branch: `feature/owner-onboarding-v1`
 
-Latest application-code checkpoint before the current documentation refresh: `8bce3919d8e26d2643a476e44b89ed34b7d34718` — `Add employee extra-work request review`
+Current application-code checkpoint: `075f40d3962a8ea105af431c24ea7e5464673a2b` — `Add employee Terminal payment gateway`
 
-Documentation-only commits follow that application checkpoint on the same branch. See `SERVICESOS_V1_CURRENT_STATE.md` for the current remote branch head.
+This board is reconciled against that exact HEAD. Historical reports and old test totals are not current-head release validation.
 
 The deployed wife-beta build is older than this branch and cannot validate the newer V1 work.
 
@@ -72,16 +72,16 @@ See `PR9_HARDENING_RECONCILIATION.md` for the detailed matrix.
 | Area | Status |
 | --- | --- |
 | ServicesOS Core V1 | ✅ Complete |
-| GrowthAI / SLAI Assistant V1 implementation | ✅ Substantially complete; V1 acceptance/freeze remains |
-| Employee App core field workflow | 🟡 Substantially implemented |
-| Employee App routing/navigation basic V1 | 🟡 Directions foundation built; day/next-job progression remains |
-| Employee App field safety basic V1 | ⏳ Planned V1 work |
-| Employee App Tap to Pay | ⏳ V1 later mobile/payment phase |
-| Owner/business onboarding | 🟡 Partial — secure activation spine built; operational setup still incomplete |
-| Owner SaaS billing | 🟡 Partial — checkout + verified paid activation built; annual/lifecycle work remains |
-| Customer-job payments / Stripe Connect | 🟡 Foundation built; production verification remains |
+| GrowthAI / SLAI Assistant V1 implementation | 🟡 Implementation exists; integrated current-head regression and freeze remain |
+| Employee App core field workflow | 🟡 Implemented; integrated physical-device acceptance remains |
+| Employee App routing/navigation basic V1 | 🟡 Day progression and directions implemented; human/device acceptance remains |
+| Employee App field safety basic V1 | 🟡 Alert flow and bounded offline queue implemented; device/network acceptance remains |
+| Employee App Tap to Pay | ⏭️ Post-V1 mobile platform migration and UI |
+| Owner/business onboarding | ✅ Canonical stages and explicit final acceptance implemented; end-to-end release acceptance remains |
+| Owner SaaS billing | ✅ Monthly/annual lifecycle and Portal code implemented; Stripe environment acceptance remains |
+| Customer-job payments / Stripe Connect | ✅ Canonical accounting and shared collection lease implemented; controlled provider acceptance remains |
 | Selective PR #9 hardening | ✅ Complete; broader current-head release validation remains |
-| Wife testing of current V1 | ⬜ Not yet deployed for testing |
+| Wife testing of current V1 | ⬜ Requires current-head gates and controlled test deployment; Tap to Pay excluded |
 | Customer-ready release | ⬜ Final target |
 
 ---
@@ -111,7 +111,7 @@ See `PR9_HARDENING_RECONCILIATION.md` for the detailed matrix.
 
 ---
 
-# 2. GrowthAI / SLAI Assistant V1 — 🟡 ACCEPTANCE / FREEZE REMAINS
+# 2. GrowthAI / SLAI Assistant V1 — 🟡 CURRENT-HEAD ACCEPTANCE / FREEZE REMAINS
 
 The already-defined V1 implementation is substantially complete. Do not add new GrowthAI feature scope before ServicesOS V1 is stable.
 
@@ -127,7 +127,7 @@ The already-defined V1 implementation is substantially complete. Do not add new 
 - [x] Provider gateway and tenant isolation
 - [x] Credit ledger and customer-facing credit UX
 - [x] First-run guide and responsive UI pass
-- [x] Production provider-backed action verified previously
+- [ ] Re-verify provider-backed behavior only in an explicitly approved non-production/test environment; prior production evidence is historical
 - [ ] Re-test inside the current integrated V1 branch/release candidate
 - [ ] Close any V1-specific regression findings
 - [ ] GrowthAI V1 freeze
@@ -138,7 +138,7 @@ The already-defined V1 implementation is substantially complete. Do not add new 
 
 Project path: `employee-app/`
 
-The Employee App must remain a field-execution client for ServicesOS, not a second independent operating system. Web/admin owns planning and approval; mobile confirms, navigates, executes, records, and collects approved payments.
+The Employee App must remain a field-execution client for ServicesOS, not a second independent operating system. Web/admin owns planning and approval; mobile confirms, navigates, executes, and records. Mobile payment collection is post-V1.
 
 ## A. Core field workflow — substantially implemented
 
@@ -167,11 +167,14 @@ V1 routing is the useful field-worker version, not a route-optimization platform
 - [x] Today / upcoming assigned-job list
 - [x] Job address available in employee-safe projection
 - [x] Native/Google/Apple Maps directions handoff foundation
-- [ ] Define/confirm canonical ordered work sequence for the employee day
-- [ ] Clear current-job / next-job progression in the mobile UX
-- [ ] Ensure assignment, cancellation, reschedule, and reassignment changes refresh safely
-- [ ] Owner/admin ↔ employee route/day correspondence acceptance
-- [ ] Device acceptance for directions and next-job flow
+- [x] Deterministic Today/Upcoming order by date, start time, and booking ID
+- [x] Current-job / next-job progression and finished-day state
+- [x] Refresh shows changed safe summaries; removal uses a generic workday-change notice
+- [x] Directions handoff foundation
+- [ ] Owner/admin ↔ employee assignment/day acceptance
+- [ ] Physical-device acceptance for directions, refresh, and next-job flow
+
+No generalized messaging or push system is included. Assignment, cancellation, reschedule, and reassignment must be confirmed in integrated acceptance; employee visibility remains enforced by server JobPacket authority.
 
 Explicitly deferred unless re-scoped:
 
@@ -186,20 +189,17 @@ Explicitly deferred unless re-scoped:
 
 This is a field-safety tool, not a guaranteed emergency-response system.
 
-- [ ] Safety / Emergency action available from active job
-- [ ] Call 911 device-dialer handoff
-- [ ] Call owner/admin handoff when contact is available
-- [ ] Tenant-scoped safety alert to owner/admin
-- [ ] Include active job/address/timestamp and limited location when permission/connection allow
-- [ ] Honest `sent` / `queued` / `failed` / `location unavailable` states
-- [ ] Narrow offline queue for unsent safety alerts only
-- [ ] Retry/sync queued safety alert when connection returns
-- [ ] Owner/admin active-alert review
-- [ ] Owner/admin resolve/close alert
-- [ ] Missed-check-in / overdue basic safety status if included in promoted V1 slice
-- [ ] Limited on-demand location ping for active-job safety/missed check-in when permitted
-- [ ] Tenant-isolation and permission tests
-- [ ] Device/network/location acceptance
+- [x] Safety actions in Job Detail and explicit Call 911 dialer handoff
+- [x] Call Owner uses only the bounded server-projected business phone
+- [x] One optional foreground-location attempt; failure does not block the alert
+- [x] Tenant-scoped server-authorized safety alert with job context and event-ID idempotency
+- [x] Truthful Sent / Queued / Failed delivery states
+- [x] Bounded persistent safety-alert queue, same-event retry on app open/resume, and successful-delivery cleanup
+- [x] Read-only owner/admin recent-alert panel
+- [x] Tenant/permission tests and Firestore client-denial coverage
+- [ ] Physical-device/network/location acceptance
+
+The accepted V1 slice does not add alert acknowledgement/resolution state, missed-check-in monitoring, push notifications, or background GPS. Do not resurrect these from an older checklist without an explicit scope decision.
 
 Explicitly deferred unless re-scoped:
 
@@ -217,43 +217,42 @@ Explicitly deferred unless re-scoped:
 - [x] Bounded custom extra-work request
 - [x] Employee context/note
 - [x] Submitted request reaches owner review foundation
-- [ ] Verify owner-approved extra work reaches customer-approval-ready state correctly
-- [ ] Verify customer approval before authoritative scope mutation
-- [ ] Refresh employee JobPacket/checklist/time/price context after approved scope change
-- [ ] Verify declined/unapproved requests do not alter employee-authoritative work
-- [ ] Confirm owner/admin visibility for the full lifecycle
+- [x] Owner review creates an approval-ready request using owner-reviewed terms
+- [x] Verified customer approval is required before authoritative scope mutation
+- [x] Exactly one immutable scope revision is created; duplicate approval is idempotent
+- [x] Employee JobPacket reads the new canonical scope on the next normal fetch
+- [x] Declined, stale, cancelled, and unapproved requests cannot revise scope
+- [ ] Integrated owner → employee → customer → refreshed-job acceptance
 
-## E. Tap to Pay / mobile payments — V1 later phase
+## E. Booking payments and Terminal backend — implemented; mobile Tap to Pay post-V1
 
-Tap to Pay is not removed from V1. It was intentionally deferred until the team returns to the Employee App/mobile-payment phase.
-
-- [ ] Secure employee payment permission model
-- [ ] Canonical mobile payment API
-- [ ] Stripe mobile SDK integration
-- [ ] Tap to Pay implementation
-- [ ] Confirmed backend payment truth
-- [ ] Owner visibility / audit trail
-- [ ] Failure/retry handling
-- [ ] Supported-device/payment acceptance testing
+- [x] Canonical server-owned booking payment/refund/reversal accounting
+- [x] Shared Checkout/manual/terminal collection lease
+- [x] Employee-specific `canCollectPayments`, owner/admin controlled and default deny
+- [x] Employee Terminal backend gateway with assignment/permission checks, server-derived amount/account, idempotency, recovery, and canonical `card_present` reconciliation
+- [x] Owner-visible canonical payment/audit history
+- [ ] Controlled Stripe test-mode acceptance for booking payment paths
+- [ ] Controlled Stripe production acceptance before customer release
+- [ ] Employee App Expo/RN migration, Terminal SDK, mobile transport/UI, and physical Tap to Pay acceptance (POST-V1; not a current V1 blocker)
 
 ## F. Mobile acceptance / hardening
 
-- [ ] Current V1 Android emulator/device pass
+- [ ] Current V1 Android physical-device pass
 - [ ] Session persistence / auth expiration / recovery pass
 - [ ] Camera/photo permission pass
-- [ ] Location permission behavior for promoted V1 safety/routing slices
+- [ ] Foreground location permission behavior for Field Safety
 - [ ] Network failure/retry pass
 - [ ] Duplicate-submit/idempotency pass
 - [ ] Reassignment-away denial
 - [ ] Cross-tenant denial
-- [ ] Real owner → assign → employee execute → owner review workflow
-- [ ] Real field-workflow acceptance
+- [ ] Owner → assign → employee execute → owner review physical workflow
+- [ ] Real field-workflow acceptance including safety queue recovery
 
 Training-library expansion, office messaging, push notifications, general offline-first sync, payroll/break management, advanced employee management, advanced route optimization, and continuous GPS do not become V1 blockers unless Jamie explicitly re-scopes them.
 
 ---
 
-# 4. Owner / business onboarding — 🟡 PARTIAL
+# 4. Owner / business onboarding — ✅ IMPLEMENTED; ACCEPTANCE REMAINS
 
 ## Completed secure activation spine
 
@@ -269,7 +268,7 @@ Training-library expansion, office messaging, push notifications, general offlin
 - [x] Exact tenant/customer/subscription/Price/quantity validation
 - [x] Idempotent/stale-event protections
 
-## Canonical V1 onboarding contract still to finish
+## Canonical V1 onboarding implementation
 
 The customer must go through onboarding that gathers the information ServicesOS needs to operate correctly. Subscription payment and onboarding completion are separate states.
 
@@ -280,56 +279,42 @@ The customer must go through onboarding that gathers the information ServicesOS 
 - [x] Email
 - [x] Timezone
 - [x] Business address field exists
-- [ ] Business type
-- [ ] Service area in onboarding
-- [ ] Optional website in onboarding
-- [ ] Reuse current canonical `businessSettings` model instead of creating a parallel settings object
+- [x] Current canonical business profile/settings boundary is reused
 
 ### Services & pricing
 
-- [ ] Select offered services
-- [ ] Add custom services
-- [ ] Choose pricing method
-- [ ] Create initial canonical deterministic pricing configuration
-- [ ] Do not make AI pricing authoritative
+- [x] Canonical service catalog and deterministic configured pricing
+- [x] Legacy/static fallback remains compatible but cannot satisfy schema-managed onboarding
 
 ### Availability / scheduling rules
 
 - [x] Working-day model exists in Business Settings
-- [ ] Gather working days during onboarding
-- [ ] Business hours
-- [ ] Typical duration
-- [ ] Scheduling buffer
-- [ ] Booking horizon
+- [x] Canonical availability days gate onboarding progression
+- [x] Other detailed availability/scheduling settings remain in existing Business Settings; no new scheduling architecture was added
 
 ### Brand basics
 
-- [ ] Logo
-- [ ] Minimum canonical brand information ServicesOS / GrowthAI need
-- [ ] Reuse current branding/brand-profile contracts; do not revive a parallel legacy config model
+- [x] Valid default branding completes the stage; canonical custom branding is validated and saved through the gateway
+- [x] Logo and color customization remain optional
 
 ### Customer-payment setup
 
 - [x] Stripe Connect component/foundation exists
-- [ ] Include Stripe Connect in onboarding
-- [ ] Allow `Skip / do later`
+- [x] Stripe Connect stage is included and advances only from fresh canonical readiness
+- [x] Connect setup can be resumed; no permanent skip completes the stage
 
 ### Team
 
-- [ ] `Just me` path
-- [ ] `I have employees` path
-- [ ] Basic employee setup/invite when applicable
-- [ ] Employee created through onboarding can reach the canonical mobile authentication path
+- [x] `owner_only` completes without a fake employee
+- [x] `employees` requires a qualifying canonical UID employee and usable delivered activation state
+- [x] Canonical employee provisioning uses the server identity gateway
 
 ### Finish / resume
 
-- [ ] Review setup
-- [ ] Persist onboarding progress
-- [ ] Resume interrupted onboarding safely
-- [ ] Separate billing entitlement from `onboardingState`
-- [ ] Verified subscription payment must not by itself mark operational onboarding complete
-- [ ] Mark onboarding complete only after required operational setup is satisfied
-- [ ] Clear first action after completion
+- [x] Server-derived progress and resume behavior
+- [x] Billing entitlement remains separate from operational `onboardingState`
+- [x] Explicit Finish setup revalidates prerequisites and fresh subscription/Connect state before setting operational state active
+- [x] Completed schema-managed tenants bypass onboarding; legacy tenants retain compatibility behavior
 - [ ] New-owner end-to-end acceptance test without founder/developer help
 
 ## Explicitly not required for initial V1 onboarding
@@ -344,7 +329,7 @@ These may be future improvements after the required operational onboarding works
 
 ---
 
-# 5. Owner SaaS subscription billing — 🟡 PARTIAL
+# 5. Owner SaaS subscription billing — ✅ IMPLEMENTED; PROVIDER ACCEPTANCE REMAINS
 
 Company platform pricing is:
 
@@ -361,23 +346,23 @@ Company platform pricing is:
 - [x] Verified paid-invoice activation
 - [x] Active linked subscription required before activation
 
-## Remaining
+## Implemented contract
 
-- [ ] Add monthly + annual billing selection
-- [ ] Add exactly two server-approved canonical Price IDs
-- [ ] Update activation validation to accept either approved monthly or annual Price
-- [ ] Preserve identical normal product entitlement across monthly/annual terms
-- [ ] Define and implement post-activation billing lifecycle
-- [ ] Subscription renewal verification
-- [ ] Payment-failure handling
-- [ ] Cancellation/end-of-term handling
-- [ ] Recovery/reactivation behavior
-- [ ] Customer Portal / self-service billing-management path if required for customer-ready V1
-- [ ] Production Stripe test-mode/live-mode acceptance
+- [x] $100 monthly and $1,000 annual plans map to two server-configured canonical Price IDs; browser supplies only the interval
+- [x] Checkout quantity is one and both terms grant the same normal entitlement
+- [x] Renewal, payment failure/seven-day cure, recovery, scheduled cancellation, and actual termination are handled through canonical webhook state
+- [x] Owner billing Portal is available through a server gateway; allowed capabilities are checked before session creation
+- [x] Portal supports payment-method updates, invoice history, and cancel-at-period-end; plan switching/pause are disabled
+
+## Release gates
+
+- [ ] Verify separate test/live Price IDs and billing Portal configurations in controlled Stripe environments
+- [ ] Test Checkout, renewal, failure/recovery, scheduled cancellation/termination, return routing, and webhook synchronization in test mode
+- [ ] Complete live-mode controlled acceptance before customer release
 
 ---
 
-# 6. Customer-job payments / Stripe Connect — 🟡 FOUNDATION BUILT
+# 6. Customer-job payments / Stripe Connect — ✅ ACCOUNTING IMPLEMENTED; PROVIDER ACCEPTANCE REMAINS
 
 This is separate from the owner SaaS subscription.
 
@@ -386,40 +371,34 @@ This is separate from the owner SaaS subscription.
 - [x] Honest public return-state behavior
 - [x] Webhook-confirmed payment truth foundation
 - [x] Manual-payment separation
-- [ ] Production Connect verification
-- [ ] Production booking checkout verification
-- [ ] Webhook end-to-end verification
-- [ ] Platform-fee verification
-- [ ] Payment tenant-isolation verification
-- [ ] Failure/retry acceptance
+- [x] Immutable canonical payment, refund, and reversal records with idempotent reconciliation
+- [x] Shared server-owned collection lease excludes competing Checkout/manual/Terminal collection
+- [x] Cutover tooling is explicit-booking, emulator-only, and dry-run by default; no production cutover occurred
+- [ ] Controlled test-mode Connect/Checkout/refund/webhook, fee, tenant-isolation, and failure/retry acceptance
+- [ ] Production Connect and booking-payment verification before customer release
 
-Tap to Pay is tracked in the Employee App section and remains a later V1 mobile/payment phase.
+Mobile Tap to Pay is post-V1; see Employee App section E. Its backend foundations are complete and remain frozen.
 
 ---
 
-# 7. Job scope / extra-work flow — 🟡 FINAL EDGE VERIFICATION
+# 7. Job scope / extra-work flow — ✅ IMPLEMENTED; INTEGRATED ACCEPTANCE REMAINS
 
 - [x] Residential/commercial intake
 - [x] Customer-approved job scope control
 - [x] Canonical tenant add-on catalog
 - [x] Employee extra-work request submission
 - [x] Owner review foundation
-- [ ] Verify owner-approved extra work reaches a customer-approval-ready state correctly
-- [ ] Verify customer approval is captured before extra work becomes authoritative scope
-- [ ] Verify approved extra work updates the job packet/checklist/price/time contract safely
-- [ ] Verify declined requests do not change authoritative scope
-- [ ] Full owner → employee → owner → customer → job-scope integration test
+- [x] Owner-approved terms transition to customer approval-ready state
+- [x] Verified customer approval creates one immutable authoritative scope revision
+- [x] Employee JobPacket reads the updated scope on subsequent fetch
+- [x] Declined, stale, cancelled, or unapproved requests cannot revise scope
+- [ ] Full integrated owner → employee → customer → updated-job acceptance
 
 ---
 
-# 8. Security / release hardening — 🟡 IN PROGRESS
+# 8. Security / release hardening — 🟡 CURRENT-HEAD VALIDATION REQUIRED
 
-Do not claim these complete from old branch evidence. Re-run against the integrated current V1 branch.
-
-The selective PR #9 hardening checkpoint is complete. The next locked V1
-capability is customer approval of extra work -> immutable revised scope ->
-refreshed authoritative employee scope. Do not implement it as part of this
-documentation checkpoint.
+The code-level slices below are implemented, but prior branch totals and July production reports are not evidence for this HEAD. The selective PR #9 hardening checkpoint is complete; do not merge/cherry-pick that branch wholesale.
 
 - [ ] Full current-head web test suite
 - [ ] Full current-head Cloud Functions suite
@@ -435,14 +414,17 @@ documentation checkpoint.
 - [ ] Cross-tenant denial smoke
 - [ ] Employee assignment/authorization smoke
 - [ ] Field-photo authorization smoke
-- [ ] Field-safety tenant/permission smoke after that slice is implemented
+- [ ] Field-safety tenant/permission and physical-device/network acceptance
 - [ ] Current payment/security integration smoke
-- [ ] Fix known stale fixed-date/JSDOM test if it still reproduces
-- [ ] Update deployment/release evidence after current-head validation
+- [ ] Reproduce and classify known fixed-date/JSDOM failures on current HEAD; fix only current-slice regressions
+- [ ] Verify current production Firestore/Storage rules, rules parity, indexes, Storage setup/CORS, object-prefix compatibility, and identity/assignment readiness before promotion
+- [ ] Capture current Netlify commit/build and Cloud Functions deployed-revision evidence
+- [ ] Verify test/live Stripe Prices, Portal configuration, Connect, booking Checkout, fees, and webhook synchronization
+- [ ] Controlled test deployment, wife acceptance, beta-critical fixes, UI fine-tuning, and final release smoke
 
 ---
 
-# 9. Wife V1 acceptance — ⬜ NOT YET AVAILABLE
+# 9. Wife V1 acceptance — ⬜ PENDING CONTROLLED TEST DEPLOYMENT
 
 The original wife beta has already served as discovery/UX validation and helped define this V1. Do not re-test solved beta issues merely because the old build is still deployed.
 
@@ -457,9 +439,9 @@ After the current V1 branch passes integration/release validation and is deploye
 - [ ] Employee field workflow
 - [ ] Basic day/next-job navigation flow
 - [ ] Basic field-safety flow
-- [ ] Customer-job payment flow
-- [ ] Tap to Pay flow
+- [ ] Customer-job web/manual payment flow
 - [ ] GrowthAI / SLAI Assistant
+- [ ] Confirm assignment changes and day progression are understandable
 - [ ] Record hesitation/confusion/blockers
 - [ ] Fix V1-specific findings
 - [ ] Re-test
@@ -475,7 +457,6 @@ After the current V1 branch passes integration/release validation and is deploye
 - [ ] Employee App core field workflow accepted
 - [ ] Employee App basic routing/day progression accepted
 - [ ] Employee App basic field-safety capability accepted
-- [ ] Employee App Tap to Pay accepted
 - [ ] Integrated security/tests/build green
 - [ ] Controlled V1 deployment green
 - [ ] Wife V1 acceptance critical findings closed
@@ -484,6 +465,8 @@ After the current V1 branch passes integration/release validation and is deploye
 - [ ] Feature freeze
 - [ ] Final release candidate
 - [ ] Customer-facing ServicesOS V1
+
+Mobile Tap to Pay is not part of this V1 acceptance checklist; it is explicitly post-V1 work.
 
 ---
 
@@ -511,6 +494,7 @@ Unless Jamie explicitly changes scope, these do not become V1 blockers merely be
 - photo deletion/retention automation
 - monitoring-center or direct emergency-dispatch platform
 - future standalone SLAI products
+- Employee App Expo/RN migration, Stripe Terminal SDK, mobile Tap to Pay UX, and physical card-present acceptance (post-V1)
 
 ---
 
