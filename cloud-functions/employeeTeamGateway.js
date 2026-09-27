@@ -25,6 +25,12 @@ function parseRequest(body) {
   if (action === 'owner_set_workforce_mode' && exact(body, ['action','workforceMode']) && WORKFORCE_MODES.has(body.workforceMode)) {
     return { action, workforceMode: body.workforceMode };
   }
+  if (action === 'owner_set_payment_permission' && exact(body, ['action','employeeUid','canCollectPayments']) &&
+      typeof body.canCollectPayments === 'boolean') {
+    const employeeUid = normalizedText(body.employeeUid);
+    if (!employeeUid || employeeUid.length > 128 || employeeUid.includes('/')) fail('Invalid employee request.');
+    return { action, employeeUid, canCollectPayments: body.canCollectPayments };
+  }
   if (action === 'owner_provision' && exact(body, ['action','name','email','phone'])) {
     const name = normalizedText(body.name);
     const email = (normalizedText(body.email) || '').toLowerCase();
@@ -62,7 +68,7 @@ function addMembership(membership, uid) {
 }
 
 function projectEmployee(uid, value) {
-  return { uid, name: normalizedText(value.name) || '', email: (normalizedText(value.email) || '').toLowerCase(), phone: normalizedText(value.phone) || '', status: value.status === 'active' ? 'active' : 'inactive', activationStatus: normalizedText(value.activationStatus) || 'pending' };
+  return { uid, name: normalizedText(value.name) || '', email: (normalizedText(value.email) || '').toLowerCase(), phone: normalizedText(value.phone) || '', status: value.status === 'active' ? 'active' : 'inactive', activationStatus: normalizedText(value.activationStatus) || 'pending', canCollectPayments: value.canCollectPayments === true };
 }
 
 async function assertCanonicalCollisionSafe({ admin, context, authUser, request }) {
@@ -90,7 +96,7 @@ async function createCanonicalEmployee({ admin, context, authUser, request }) {
     const tenant = data(tenantSnap);
     if (!tenant || data(userSnap) || data(employeeSnap)) fail('This account cannot be provisioned automatically.', 'canonical_account_conflict', 409);
     transaction.create(userRef, { email: request.email, displayName: request.name, role: 'employee', status: 'active', tenantId: context.tenantId, createdAt: now, createdByUid: context.uid, updatedAt: now, updatedByUid: context.uid });
-    transaction.create(employeeRef, { schemaVersion: 1, authUid: authUser.uid, name: request.name, email: request.email, phone: request.phone, status: 'active', activationStatus: 'pending', activationEmailDay: null, activationEmailCount: 0, activationEmailLastAttemptAt: null, activationEmailLastSentAt: null, createdAt: now, createdByUid: context.uid, updatedAt: now, updatedByUid: context.uid });
+    transaction.create(employeeRef, { schemaVersion: 1, authUid: authUser.uid, name: request.name, email: request.email, phone: request.phone, status: 'active', activationStatus: 'pending', activationEmailDay: null, activationEmailCount: 0, activationEmailLastAttemptAt: null, activationEmailLastSentAt: null, canCollectPayments: false, paymentPermissionUpdatedAt: null, paymentPermissionUpdatedByUid: null, createdAt: now, createdByUid: context.uid, updatedAt: now, updatedByUid: context.uid });
     transaction.update(context.tenantRef, { users: addMembership(tenant.users, authUser.uid), workforceMode: 'employees', updatedAt: now, updatedByUid: context.uid });
   });
   return projectEmployee(authUser.uid, { name:request.name,email:request.email,phone:request.phone,status:'active',activationStatus:'pending' });
@@ -176,6 +182,37 @@ async function list({ admin, context }) {
   return { success:true, workforceMode:WORKFORCE_MODES.has(context.tenant.workforceMode)?context.tenant.workforceMode:null, employees:candidates.filter(Boolean).sort((a,b)=>a.name.localeCompare(b.name)) };
 }
 
+async function setPaymentPermission({ admin, context, request, now = new Date() }) {
+  const db = admin.firestore();
+  const profileRef = db.collection('users').doc(request.employeeUid);
+  const employeeRef = context.tenantRef.collection('employees').doc(request.employeeUid);
+  return db.runTransaction(async transaction => {
+    const [tenantSnap, profileSnap, employeeSnap] = await Promise.all([
+      transaction.get(context.tenantRef), transaction.get(profileRef), transaction.get(employeeRef),
+    ]);
+    const tenant = data(tenantSnap);
+    const profile = data(profileSnap);
+    const employee = data(employeeSnap);
+    const profileEmail = (normalizedText(profile?.email) || '').toLowerCase();
+    const employeeEmail = (normalizedText(employee?.email) || '').toLowerCase();
+    if (!tenant || !profile || !employee || employeeRef.id !== request.employeeUid ||
+        profile.role !== 'employee' || profile.status !== 'active' || profile.tenantId !== context.tenantId ||
+        employee.authUid !== request.employeeUid || employee.status !== 'active' ||
+        !membershipContains(tenant.users, request.employeeUid) || !profileEmail || profileEmail !== employeeEmail) {
+      fail('Employee unavailable.', 'employee_unavailable', 404);
+    }
+    const timestamp = now.toISOString();
+    transaction.update(employeeRef, {
+      canCollectPayments: request.canCollectPayments,
+      paymentPermissionUpdatedAt: timestamp,
+      paymentPermissionUpdatedByUid: context.uid,
+      updatedAt: timestamp,
+      updatedByUid: context.uid,
+    });
+    return projectEmployee(request.employeeUid, { ...employee, canCollectPayments: request.canCollectPayments });
+  });
+}
+
 function createEmployeeTeamGatewayHandler({ admin, sendActivationEmail }) { return async (req,res) => {
   const origin=req.headers?.origin;if(ORIGINS.has(origin)){res.set('Access-Control-Allow-Origin',origin);res.set('Vary','Origin');}res.set('Access-Control-Allow-Methods','POST, OPTIONS');res.set('Access-Control-Allow-Headers','Content-Type, Authorization');
   if(req.method==='OPTIONS')return res.status(204).send('');if(req.method!=='POST')return res.status(405).json({error:'Method not allowed',code:'method_not_allowed'});
@@ -184,9 +221,10 @@ function createEmployeeTeamGatewayHandler({ admin, sendActivationEmail }) { retu
   try{const request=parseRequest(req.body);const context=await ownerContext(admin,identity.uid);
     if(request.action==='owner_list')return res.status(200).json(await list({admin,context}));
     if(request.action==='owner_set_workforce_mode'){const now=new Date().toISOString();await context.tenantRef.update({workforceMode:request.workforceMode,updatedAt:now,updatedByUid:context.uid});return res.status(200).json({success:true,workforceMode:request.workforceMode});}
+    if(request.action==='owner_set_payment_permission')return res.status(200).json({success:true,employee:await setPaymentPermission({admin,context,request})});
     if(request.action==='owner_provision')return res.status(200).json(await provision({admin,context,request,sendActivationEmail}));
     const authUser=await admin.auth().getUserByEmail(request.email).catch(()=>null);if(!authUser)fail('Employee unavailable.','employee_unavailable',404);const employee=await assertCanonicalCollisionSafe({admin,context,authUser,request:{email:request.email}});return res.status(200).json({success:true,employee:await sendActivation({admin,context,employee,sendActivationEmail}),reused:true});
   }catch(error){if(error instanceof EmployeeTeamError)return res.status(error.status).json({error:error.message,code:error.code});return res.status(500).json({error:'Employee team service is temporarily unavailable.',code:'team_unavailable'});}
 };}
 
-module.exports={ ACTIVATION_RESEND_LIMIT, EmployeeTeamError, LIMITS, MAX_EMPLOYEES, WORKFORCE_MODES, addMembership, createEmployeeTeamGatewayHandler, createResendActivationSender, parseRequest, projectEmployee };
+module.exports={ ACTIVATION_RESEND_LIMIT, EmployeeTeamError, LIMITS, MAX_EMPLOYEES, WORKFORCE_MODES, addMembership, createEmployeeTeamGatewayHandler, createResendActivationSender, parseRequest, projectEmployee, setPaymentPermission };

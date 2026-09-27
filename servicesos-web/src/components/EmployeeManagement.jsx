@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { listCanonicalEmployees, provisionEmployee, resendEmployeeActivation } from '../services/employeeTeamService';
+import { listCanonicalEmployees, provisionEmployee, resendEmployeeActivation, setEmployeePaymentPermission } from '../services/employeeTeamService';
 
 const EMPTY_FORM = Object.freeze({ name: '', email: '', phone: '' });
 
@@ -65,6 +65,20 @@ export default function EmployeeManagement({ onChanged }) {
     }
   }
 
+  async function handlePaymentPermission(employee, canCollectPayments) {
+    setSubmitting(true);
+    try {
+      const result = await setEmployeePaymentPermission(employee.uid, canCollectPayments);
+      setEmployees(current => current.map(item => item.uid === employee.uid ? result.employee : item));
+      setMessage({ type: 'success', text: 'Payment collection permission updated.' });
+      onChanged?.();
+    } catch {
+      setMessage({ type: 'error', text: 'Payment collection permission could not be updated. Try again.' });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 24 }}>
@@ -75,7 +89,7 @@ export default function EmployeeManagement({ onChanged }) {
       {loading ? <p>Loading employees...</p> : employees.length === 0 ? <div style={{ padding: 28, border: '1px solid #e2e8f0', background: '#fff' }}>No employees yet.</div> : (
         <div style={{ border: '1px solid #e2e8f0', background: '#fff' }}>{employees.map(employee => (
           <div key={employee.uid} style={{ padding: 16, borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center' }}>
-            <div><strong>{employee.name}</strong><div style={{ color: '#64748b', marginTop: 4 }}>{employee.email}{employee.phone ? ` · ${employee.phone}` : ''}</div><div style={{ color: '#64748b', marginTop: 4 }}>Status: {employee.status} · Activation: {employee.activationStatus}</div></div>
+            <div><strong>{employee.name}</strong><div style={{ color: '#64748b', marginTop: 4 }}>{employee.email}{employee.phone ? ` · ${employee.phone}` : ''}</div><div style={{ color: '#64748b', marginTop: 4 }}>Status: {employee.status} · Activation: {employee.activationStatus}</div><label style={{ display: 'block', marginTop: 10 }}><input type="checkbox" checked={employee.canCollectPayments} disabled={submitting} onChange={event => handlePaymentPermission(employee, event.target.checked)} /> Collect customer payments</label><div style={{ color: '#64748b', marginTop: 4, fontSize: 14 }}>Allows supported field-payment features when available.</div></div>
             {employee.activationStatus !== 'authenticated' && <button type="button" onClick={() => handleResend(employee)} disabled={submitting}>Resend activation</button>}
           </div>
         ))}</div>
