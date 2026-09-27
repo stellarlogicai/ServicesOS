@@ -24,6 +24,12 @@ Current application-code checkpoint:
 
 The branch is `feature/owner-onboarding-v1`. This document is reconciled against that exact HEAD. Historical reports and older checklists are not current-head validation evidence.
 
+The current documentation checkpoint is:
+
+`b7310dbee1a2069b4aaea9390829b974796aaa9b` — `Reconcile ServicesOS V1 release state`
+
+The application-code checkpoint remains `075f40d3962a8ea105af431c24ea7e5464673a2b`; the later commit is documentation/process only.
+
 The branch is backed up to:
 
 `origin/feature/owner-onboarding-v1`
@@ -147,18 +153,34 @@ These implementation slices are present in branch history and have focused code/
 
 ### GrowthAI / SLAI Assistant
 
-The existing V1 feature set, credit UX, tenant-safe provider gateway, and provider kill switch remain in code. Current-head integrated regression, approved provider-backed test-mode acceptance, closure of V1 findings, and explicit V1 freeze are not proven by this documentation audit and remain open.
+The existing V1 feature set, credit UX, tenant-safe provider gateway, and provider kill switch remain in code. The 2026-09-27 current-head audit found a reproducible `GrowthAIPage.test.jsx` failure in the free-briefing assertion: it expects two "Business briefing" headings and receives one. This is not classified as a security, payment, or data-integrity defect without separate triage, but it blocks GrowthAI V1 regression closure and freeze. Provider-backed test-mode acceptance remains open.
+
+## Current-head local validation audit (2026-09-27)
+
+The following evidence was collected on the current branch without provider or production actions:
+
+- Cloud Functions: `495/495` passed.
+- Firestore rules: `64/64` passed.
+- Storage rules: `21/21` passed.
+- Rules parity, Cloud Function syntax checks, web lint, and web production build: passed.
+- Employee App API/unit tests: `95/95` passed.
+- Employee App React Native tests: `99/99` passed.
+- Expo Doctor: `17/17` checks passed; Expo dependency check reported current/compatible and public config resolved.
+- Focused Field Mode: `39/39` passed.
+- Targeted web release tests: `140/165` passed.
+
+The aggregate full-web gate is not yet clean or proven. `AppOnboardingRouter.test.jsx` has 24 failures before test bodies because `window.localStorage.removeItem` is not a function; Node also reports an invalid `--localstorage-file` warning. Treat that as a test-environment/setup issue, not a proven application defect. `GrowthAIPage.test.jsx` fails reproducibly `1/59`. A parallel aggregate run also reported a Field Mode failure that passes in isolation, while a one-worker aggregate run hung before executing tests. Do not claim a clean current-head full-web suite until these conditions are separately resolved or attributed.
 
 ## Remaining V1 work and release gates
 
-1. Run current-HEAD full web, Cloud Functions, Employee App, Firestore rules, and Storage rules suites; run lint, build, and rules parity. Record actual totals and failures. Older report totals are not current-head validation.
+1. Close the current-head full-web gate: triage the reproducible GrowthAI briefing assertion and separately attribute/fix the AppOnboardingRouter localStorage test-environment setup and aggregate-run instability. Do not classify them as product/security defects without evidence.
 2. Complete integration acceptance for customer-approved scope refresh, employee assignment/cancel/reschedule/reassignment behavior, employee authentication, and owner/admin-to-employee day/assignment communication. No generalized messaging system is implied.
-3. Complete physical-device acceptance for the Employee App core workflow, directions, camera/photo, authentication/session recovery, and Field Safety permissions/network/queue. Verify exactly one owner-visible safety alert after retry; never place an actual emergency call.
+3. Complete physical-device acceptance for Android auth persistence/recovery, camera/photos, directions handoff, foreground location, and Field Safety queue/recovery/idempotent owner alert. Verify exactly one owner-visible safety alert after retry; never place an actual emergency call.
 4. Re-audit customer identity ownership, duplicate/cross-tenant `authUid`, tenant membership, employee identity/assignment, field-photo and safety authorization, and cross-tenant denial against the current candidate and controlled test data.
-5. Before promotion, re-verify deployed Firestore and Storage rules against the candidate, rules parity, required indexes, Storage initialization/CORS, existing object-prefix compatibility, and data readiness. July production reports are historical snapshots, not current readiness proof.
+5. Before promotion, re-verify deployed Firestore and Storage rules against the candidate, rules parity, required indexes, Storage initialization/CORS, existing object-prefix compatibility, identity/membership and assignment data readiness, and customer privacy/tenant smoke. July production reports are historical snapshots, not current readiness proof.
 6. Re-verify Netlify build/commit and deployed Cloud Function revisions for the selected candidate. Prepare backups and rollback evidence under the deployment runbook.
 7. Complete controlled Stripe test-mode/live acceptance for owner monthly/annual billing and Portal, Connect onboarding, booking Checkout, payment/refund webhooks, fees, tenant isolation, and failure/retry. Verify separate test/live Price and Portal configuration; this audit changed no provider state.
-8. Deploy only to a controlled V1 test environment after approved gates, then complete wife V1 acceptance, close critical findings, tune UI, and run final release smoke.
+8. Deploy only to a controlled V1 test environment after approved gates, then complete wife V1 acceptance, close critical findings, tune UI, and run final release smoke. Mobile Tap to Pay remains post-V1 and excluded from these gates.
 
 Production promotion is **not established by this audit**. Old production reports document previous observations/actions but must be re-audited against the intended release candidate; no claim is made that their July state remains current or was corrected.
 
@@ -199,4 +221,4 @@ After V1 release, separately upgrade the Employee App platform to Expo 56 / Reac
 
 Old branch-specific test totals are historical evidence only. Do not reuse them as proof for the integrated current branch.
 
-The next release-readiness audit must report the actual current totals and current-head results.
+The 2026-09-27 current-head audit totals above are the latest local evidence. They do not replace physical-device, controlled provider, deployment, production-readiness, or wife-acceptance gates.

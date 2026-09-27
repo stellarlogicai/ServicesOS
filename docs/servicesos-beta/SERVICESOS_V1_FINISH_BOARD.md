@@ -51,7 +51,9 @@ Active V1 branch: `feature/owner-onboarding-v1`
 
 Current application-code checkpoint: `075f40d3962a8ea105af431c24ea7e5464673a2b` — `Add employee Terminal payment gateway`
 
-This board is reconciled against that exact HEAD. Historical reports and old test totals are not current-head release validation.
+Current documentation checkpoint: `b7310dbee1a2069b4aaea9390829b974796aaa9b` — `Reconcile ServicesOS V1 release state`
+
+The application-code checkpoint remains `075f40d3962a8ea105af431c24ea7e5464673a2b`; the later commit is documentation/process only. Historical reports and old test totals are not current-head release validation.
 
 The deployed wife-beta build is older than this branch and cannot validate the newer V1 work.
 
@@ -114,6 +116,8 @@ See `PR9_HARDENING_RECONCILIATION.md` for the detailed matrix.
 # 2. GrowthAI / SLAI Assistant V1 — 🟡 CURRENT-HEAD ACCEPTANCE / FREEZE REMAINS
 
 The already-defined V1 implementation is substantially complete. Do not add new GrowthAI feature scope before ServicesOS V1 is stable.
+
+Current-head audit finding: `GrowthAIPage.test.jsx` reproducibly fails `1/59` in the free-briefing assertion, which expects two "Business briefing" headings and receives one. It requires separate triage before GrowthAI V1 freeze; it is not currently classified as a security, payment, or data-integrity defect.
 
 - [x] Conversation-first Home
 - [x] Business briefing
@@ -400,13 +404,17 @@ Mobile Tap to Pay is post-V1; see Employee App section E. Its backend foundation
 
 The code-level slices below are implemented, but prior branch totals and July production reports are not evidence for this HEAD. The selective PR #9 hardening checkpoint is complete; do not merge/cherry-pick that branch wholesale.
 
-- [ ] Full current-head web test suite
-- [ ] Full current-head Cloud Functions suite
-- [ ] Employee App unit/auth suites
-- [ ] Firestore rules suite
-- [ ] Storage rules suite
-- [ ] Lint
-- [ ] Production build
+- [ ] Full current-head web test suite: not clean/proven. Parallel aggregate execution reported a Field Mode failure that passes in isolation; a one-worker aggregate run hung before tests. `AppOnboardingRouter.test.jsx` has 24 localStorage setup failures before test bodies, and `GrowthAIPage.test.jsx` reproduces `1/59` failure.
+- [x] Full current-head Cloud Functions suite: `495/495` passed, including onboarding/billing lifecycle, payment/refund accounting, shared collection lease, employee provisioning, Terminal backend authority, JobPacket, extra work, Field Safety, and GrowthAI provider controls.
+- [x] Employee App API/unit and React Native/auth suites: `95/95` and `99/99` passed.
+- [x] Firestore rules suite: `64/64` passed.
+- [x] Storage rules suite: `21/21` passed.
+- [x] Rules parity and Cloud Function syntax checks passed.
+- [x] Web lint passed.
+- [x] Web production build passed.
+- [x] Expo Doctor: `17/17` checks passed; dependency check is current/compatible and public config resolved.
+- [x] Focused Field Mode: `39/39` passed.
+- [x] Targeted web release tests: `140/165` passed; the 25 failures are the 24 router environment/setup failures and one reproducible GrowthAI assertion.
 - [ ] Customer identity ownership verification
 - [ ] Customer-to-tenant matching
 - [ ] Duplicate/cross-tenant `authUid` checks
@@ -421,6 +429,10 @@ The code-level slices below are implemented, but prior branch totals and July pr
 - [ ] Capture current Netlify commit/build and Cloud Functions deployed-revision evidence
 - [ ] Verify test/live Stripe Prices, Portal configuration, Connect, booking Checkout, fees, and webhook synchronization
 - [ ] Controlled test deployment, wife acceptance, beta-critical fixes, UI fine-tuning, and final release smoke
+
+Still required before controlled wife beta: a clean current-head web validation gate, GrowthAI V1 regression closure/freeze, controlled test deployment, physical Employee App acceptance, and real owner/employee/customer end-to-end workflow acceptance. Android auth persistence/recovery, camera/photos, directions handoff, foreground location, Field Safety queue/recovery/idempotent owner alert, and Stripe Checkout/refund/webhook/Connect/Portal behavior remain manual/device/provider acceptance work.
+
+Still required before customer release: current production-readiness re-audit; deployed Firestore/Storage rules and revision evidence; required indexes; Storage CORS and object-path compatibility; identity/membership and assignment readiness; Netlify/Functions deployment evidence; customer privacy/tenant smoke; and controlled Stripe test/live acceptance. Mobile Tap to Pay remains post-V1 and is not a V1 or wife-beta blocker.
 
 ---
 
