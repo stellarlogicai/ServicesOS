@@ -117,7 +117,7 @@ See `PR9_HARDENING_RECONCILIATION.md` for the detailed matrix.
 
 The already-defined V1 implementation is substantially complete. Do not add new GrowthAI feature scope before ServicesOS V1 is stable.
 
-Current-head audit finding: `GrowthAIPage.test.jsx` reproducibly fails `1/59` in the free-briefing assertion, which expects two "Business briefing" headings and receives one. It requires separate triage before GrowthAI V1 freeze; it is not currently classified as a security, payment, or data-integrity defect.
+Current focused recheck: `GrowthAIPage.test.jsx` passed `59/59`; the earlier free-briefing assertion failure no longer reproduces after the Vitest worker storage fix. Provider-backed test-mode acceptance remains open.
 
 - [x] Conversation-first Home
 - [x] Business briefing
@@ -404,7 +404,7 @@ Mobile Tap to Pay is post-V1; see Employee App section E. Its backend foundation
 
 The code-level slices below are implemented, but prior branch totals and July production reports are not evidence for this HEAD. The selective PR #9 hardening checkpoint is complete; do not merge/cherry-pick that branch wholesale.
 
-- [ ] Full current-head web test suite: not clean/proven. Parallel aggregate execution reported a Field Mode failure that passes in isolation; a one-worker aggregate run hung before tests. `AppOnboardingRouter.test.jsx` has 24 localStorage setup failures before test bodies, and `GrowthAIPage.test.jsx` reproduces `1/59` failure.
+- [ ] Full current-head web test suite: still required. The Vitest/jsdom localStorage blocker is resolved; `AppOnboardingRouter.test.jsx` passes `24/24`, auth/onboarding tests pass `73/73`, and `GrowthAIPage.test.jsx` passes `59/59`. Earlier aggregate execution reported a Field Mode failure that passed in isolation, and a one-worker aggregate run hung before tests.
 - [x] Full current-head Cloud Functions suite: `495/495` passed, including onboarding/billing lifecycle, payment/refund accounting, shared collection lease, employee provisioning, Terminal backend authority, JobPacket, extra work, Field Safety, and GrowthAI provider controls.
 - [x] Employee App API/unit and React Native/auth suites: `95/95` and `99/99` passed.
 - [x] Firestore rules suite: `64/64` passed.
@@ -414,7 +414,8 @@ The code-level slices below are implemented, but prior branch totals and July pr
 - [x] Web production build passed.
 - [x] Expo Doctor: `17/17` checks passed; dependency check is current/compatible and public config resolved.
 - [x] Focused Field Mode: `39/39` passed.
-- [x] Targeted web release tests: `140/165` passed; the 25 failures are the 24 router environment/setup failures and one reproducible GrowthAI assertion.
+- [x] Focused router/auth/onboarding and GrowthAI checks passed: router `24/24`, adjacent auth/onboarding `73/73`, GrowthAI `59/59`, and combined router + GrowthAI `83/83`; the invalid `--localstorage-file` warning is gone.
+- [ ] Historical targeted web set previously reported as `140/165`: exact file selection was not recorded and cannot be reproduced; do not treat those totals as current acceptance evidence.
 - [ ] Customer identity ownership verification
 - [ ] Customer-to-tenant matching
 - [ ] Duplicate/cross-tenant `authUid` checks
@@ -430,9 +431,9 @@ The code-level slices below are implemented, but prior branch totals and July pr
 - [ ] Verify test/live Stripe Prices, Portal configuration, Connect, booking Checkout, fees, and webhook synchronization
 - [ ] Controlled test deployment, wife acceptance, beta-critical fixes, UI fine-tuning, and final release smoke
 
-Still required before controlled wife beta: a clean current-head web validation gate, GrowthAI V1 regression closure/freeze, controlled test deployment, physical Employee App acceptance, and real owner/employee/customer end-to-end workflow acceptance. Android auth persistence/recovery, camera/photos, directions handoff, foreground location, Field Safety queue/recovery/idempotent owner alert, and Stripe Checkout/refund/webhook/Connect/Portal behavior remain manual/device/provider acceptance work.
+Still required before controlled wife beta: a clean normal full current-head web suite, GrowthAI V1 regression/freeze review, controlled test deployment, physical Employee App acceptance, and real owner/employee/customer end-to-end workflow acceptance. Focused GrowthAI now passes, but provider-backed test-mode acceptance remains open. Android auth persistence/recovery, camera/photos, directions handoff, foreground location, Field Safety queue/recovery/idempotent owner alert, and Stripe Checkout/refund/webhook/Connect/Portal behavior remain manual/device/provider acceptance work.
 
-Still required before customer release: current production-readiness re-audit; deployed Firestore/Storage rules and revision evidence; required indexes; Storage CORS and object-path compatibility; identity/membership and assignment readiness; Netlify/Functions deployment evidence; customer privacy/tenant smoke; and controlled Stripe test/live acceptance. Mobile Tap to Pay remains post-V1 and is not a V1 or wife-beta blocker.
+Still required before customer release: current production-readiness re-audit; deployed Firestore/Storage rules and revision evidence; required indexes; Storage CORS and object-path compatibility; identity/membership and assignment readiness; Netlify/Functions deployment evidence; customer privacy/tenant smoke; and controlled Stripe test/live acceptance. Physical/device acceptance remains open, including Android auth, camera/photos, directions, foreground location, and Field Safety retry/recovery. Mobile Tap to Pay remains post-V1 and is not a V1 or wife-beta blocker.
 
 ---
 
