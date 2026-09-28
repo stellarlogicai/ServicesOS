@@ -2,16 +2,9 @@
  * smsService.js
  * Twilio SMS Auto-Quote delivery service.
  *
- * SETUP:
- *   1. npm install twilio
- *   2. Add to your .env file:
- *        VITE_TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
- *        VITE_TWILIO_AUTH_TOKEN=your_auth_token_here
- *        VITE_TWILIO_PHONE_NUMBER=+1XXXXXXXXXX    ← your Twilio number
- *        VITE_BUSINESS_NAME="Sparkle Clean Pro"
- *        VITE_BOOKING_URL=https://yourdomain.com/book
- *   3. In production, call sendQuoteSMS() from your backend route —
- *      never expose Twilio credentials to the browser.
+ * Legacy server-side helper. Never configure Twilio credentials as Vite
+ * variables or expose them to browser code. The current browser wrapper is
+ * preview-only and does not send SMS.
  *
  * USAGE (Node.js / serverless function):
  *   import { sendQuoteSMS, sendBookingConfirmationSMS, sendReminderSMS } from './smsService.js';

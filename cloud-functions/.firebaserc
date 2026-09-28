@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "cleaning-intake-system"
+    "default": "cleaning-intake-system",
+    "production": "cleaning-intake-system",
+    "staging": "servicesos-v1-staging"
   }
 }

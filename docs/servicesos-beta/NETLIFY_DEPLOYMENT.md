@@ -2,6 +2,10 @@
 
 Date: June 30, 2026
 
+> Historical wife-beta setup only; this is not current deployment authority.
+> Use `SERVICESOS_V1_STAGING_DEPLOYMENT.md` for the current staging/production
+> boundary. Never place server secrets in `VITE_*` variables.
+
 This document is for deploying the existing `servicesos-web` Vite React app to Netlify for the Aunt B wife beta.
 
 This is deployment setup only. It does not enable Stripe, payment collection, payment links, refunds, invoices, Tap to Pay, Customer Portal payments, Settings, Schedule, Calendar, Staff Scheduling, or other deferred modules.
@@ -49,9 +53,6 @@ VITE_BOOKING_URL=
 VITE_EMAIL_FROM=
 VITE_FUNCTIONS_URL=
 VITE_ORS_API_KEY=
-VITE_TWILIO_ACCOUNT_SID=
-VITE_TWILIO_AUTH_TOKEN=
-VITE_TWILIO_PHONE_NUMBER=
 ```
 
 Do not add Resend API keys as Vite variables. Resend keys must stay server-side in Firebase Functions as `RESEND_API_KEY`.
