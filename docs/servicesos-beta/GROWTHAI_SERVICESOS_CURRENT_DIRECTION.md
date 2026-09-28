@@ -22,6 +22,28 @@ other consequential actions.
 
 ServicesOS remains the active product priority.
 
+## Founder acceptance finding (2026-09-28)
+
+Jamie’s founder/manual owner-web pass found an existing V1 experience gap: the
+conversation surface can behave like an intent/workflow router when an owner
+asks a direct business-fact question. For example, “How many bookings do I have
+coming up?” received a generic capability prompt instead of an answer grounded
+in canonical ServicesOS data.
+
+The next GrowthAI functional slice should make ordinary supported business
+questions answer naturally from bounded, authorized, tenant-scoped canonical
+evidence (for example, upcoming bookings). Deterministic retrieval and
+calculations remain free. Use credits only for explicit provider-backed
+generation, analysis, interpretation, or research. Preserve human approval for
+consequential actions; do not add autonomous mutations, unrestricted database
+access, or a general conversation-history requirement. This is an existing V1
+experience gap, not a new standalone product or autonomous-agent expansion.
+
+Jamie’s manual pass is complete for now. Wife beta has not yet been completed
+on this V1 candidate. The pass also identified non-functional owner-web polish
+for Services & Pricing, Add-on Catalog, Booking Details, and Edit Customer;
+these should remain scoped UI consistency work.
+
 ## Role-aware landing direction
 
 The eventual owner/admin landing experience is GrowthAI Home. It should provide

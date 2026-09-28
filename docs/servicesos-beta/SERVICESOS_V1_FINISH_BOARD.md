@@ -1,6 +1,6 @@
 # ServicesOS V1 Finish Board
 
-Last updated: 2026-09-27
+Last updated: 2026-09-28
 
 This document is the authoritative progress board for the defined customer-facing ServicesOS V1 finish line.
 
@@ -49,11 +49,9 @@ Do not combine owner onboarding, mobile routing, field safety, post-V1 Tap to Pa
 
 Active V1 branch: `feature/owner-onboarding-v1`
 
-Current application-code checkpoint: `075f40d3962a8ea105af431c24ea7e5464673a2b` — `Add employee Terminal payment gateway`
+Current branch checkpoint: `f0f287412d4c58316fb85317e0475386452236d6` — `Fix existing customer booking rules`
 
-Current documentation checkpoint: `b7310dbee1a2069b4aaea9390829b974796aaa9b` — `Reconcile ServicesOS V1 release state`
-
-The application-code checkpoint remains `075f40d3962a8ea105af431c24ea7e5464673a2b`; the later commit is documentation/process only. Historical reports and old test totals are not current-head release validation.
+This board is being reconciled at that current branch HEAD. Historical reports and old test totals are not current-head release validation.
 
 The deployed wife-beta build is older than this branch and cannot validate the newer V1 work.
 
@@ -74,7 +72,7 @@ See `PR9_HARDENING_RECONCILIATION.md` for the detailed matrix.
 | Area | Status |
 | --- | --- |
 | ServicesOS Core V1 | ✅ Complete |
-| GrowthAI / SLAI Assistant V1 implementation | 🟡 Implementation exists; integrated current-head regression and freeze remain |
+| GrowthAI / SLAI Assistant V1 | 🟡 Foundations implemented; founder acceptance found a natural factual-conversation gap; V1 acceptance/freeze remains |
 | Employee App core field workflow | 🟡 Implemented; integrated physical-device acceptance remains |
 | Employee App routing/navigation basic V1 | 🟡 Day progression and directions implemented; human/device acceptance remains |
 | Employee App field safety basic V1 | 🟡 Alert flow and bounded offline queue implemented; device/network acceptance remains |
@@ -113,11 +111,11 @@ See `PR9_HARDENING_RECONCILIATION.md` for the detailed matrix.
 
 ---
 
-# 2. GrowthAI / SLAI Assistant V1 — 🟡 CURRENT-HEAD ACCEPTANCE / FREEZE REMAINS
+# 2. GrowthAI / SLAI Assistant V1 — 🟡 NATURAL CONVERSATION GAP / ACCEPTANCE REMAINS
 
-The already-defined V1 implementation is substantially complete. Do not add new GrowthAI feature scope before ServicesOS V1 is stable.
+The V1 foundations and existing workflows are implemented; do not add new product scope or autonomous behavior. Jamie's founder/manual owner-web pass found that a normal question such as “How many bookings do I have coming up?” received a generic capability prompt instead of a factual answer from authorized ServicesOS data. Treat natural, evidence-grounded business conversation as an existing V1 experience gap and the next functional priority.
 
-Current focused recheck: `GrowthAIPage.test.jsx` passed `59/59`; the earlier free-briefing assertion failure no longer reproduces after the Vitest worker storage fix. Provider-backed test-mode acceptance remains open.
+Current focused recheck: `GrowthAIPage.test.jsx` passed `59/59`; the earlier free-briefing assertion failure no longer reproduces after the Vitest worker storage fix. Provider-backed test-mode acceptance remains open. Deterministic tenant-scoped retrieval/calculation stays free; credits apply only to explicit provider-backed generation, analysis, interpretation, or research. Consequential actions remain human-approved.
 
 - [x] Conversation-first Home
 - [x] Business briefing
@@ -131,10 +129,13 @@ Current focused recheck: `GrowthAIPage.test.jsx` passed `59/59`; the earlier fre
 - [x] Provider gateway and tenant isolation
 - [x] Credit ledger and customer-facing credit UX
 - [x] First-run guide and responsive UI pass
+- [ ] Answer ordinary factual business questions naturally from bounded, authorized canonical tenant evidence instead of defaulting to a generic workflow menu
 - [ ] Re-verify provider-backed behavior only in an explicitly approved non-production/test environment; prior production evidence is historical
 - [ ] Re-test inside the current integrated V1 branch/release candidate
 - [ ] Close any V1-specific regression findings
 - [ ] GrowthAI V1 freeze
+
+The founder/manual owner-web acceptance pass is complete for now; wife beta has not yet been completed on this V1 candidate. It also identified UI polish (not new capability scope) for Services & Pricing, Add-on Catalog, Booking Details, and Edit Customer. See `SERVICESOS_V1_PRE_RESET_HANDOFF_2026-09-28.md` for findings and sequence.
 
 ---
 
@@ -454,8 +455,9 @@ The code-level slices below are implemented, but prior branch totals and July pr
 - [x] Local service-catalog, add-on-catalog, and owner-safety-alert reads executed through Functions.
 - [x] Business Settings automatically invoked `getConnectedAccountStatus`; the seeded tenant had no Stripe account pointer, and the local handler returned before any Stripe request. No provider request occurred. Keep local beta synthetic and do not add real Stripe/Connect state or credentials.
 - [x] Firebase CLI may inject its signed-in user credential-file path into the Functions child. Runtime used the demo project and loopback Auth/Firestore/Storage hosts; no real Firebase project or external provider access was observed. Credential-file contents were not inspected.
-- [x] Fix and locally verify the existing-customer booking rules/schema mismatch found during wife beta. `bookingCreateKeysOnly()` rejected `bookingType`; commercial builder fields were also absent. The canonical/mirrored rules now validate typed residential/commercial shapes, including the bounded commercial details map, while preserving the prior untyped quote-to-booking shape and existing tenant/payment restrictions. Firestore rules passed `65/65`, parity passed, focused web tests passed `26/26`, and a seeded Tenant A admin's residential existing-customer transaction succeeded in the local demo emulator; its temporary booking was removed.
-- [ ] Continue the limited owner-web wife-beta session using synthetic emulator data for usability, navigation, customer/booking workflows, and UI-friction discovery. The existing-customer residential booking flow is now verified locally and wife beta may resume; the session remains incomplete. Status: **ready with minor non-blocking issues**; this is not release-ready or Blaze-backed staging acceptance.
+- [x] Close the existing-customer booking rules/schema mismatch found during founder/manual acceptance (`f0f287412d4c58316fb85317e0475386452236d6`, `Fix existing customer booking rules`). Residential booking works; bounded commercial shape is supported; commercial-only residential fields and unknown/untrusted fields remain denied; tenant/role/payment protections remain intact. Firestore rules passed `65/65`, parity passed, focused web tests passed `26/26`, and a seeded Tenant A local transaction succeeded; the temporary booking was removed.
+- [x] Jamie completed the founder/manual owner-web pass to catch obvious workflow blockers and operational/UI friction before wife beta.
+- [ ] Complete the limited owner-web wife-beta session using synthetic emulator data for usability, navigation, customer/booking workflows, and UI-friction discovery. Wife beta has not yet been completed on this V1 candidate. Status: **ready with minor non-blocking issues**; this is not release-ready or Blaze-backed staging acceptance.
 - [ ] Review minor local warnings: stale `.env.v1-smoke` Functions comment; repeated “multiple emulator instances” warning that did not prevent discovery; existing Functions-version warning; missing local email configuration. None is established as a local wife-beta blocker.
 - [ ] Complete Blaze-backed Storage/real-cloud Functions acceptance, authenticated staging tenant/security smoke, Stripe/provider acceptance, physical-device acceptance, integrated owner/employee/customer workflow, and final release gates.
 
@@ -465,15 +467,15 @@ The staging project remains on Spark. Blaze is temporarily deferred because Goog
 
 Work that does not require Blaze may continue: authenticated staging Firestore security smoke once safe representative identities/data are available; review of the pending rules warnings and effective deployed-rule correspondence; Firebase Auth verification; Netlify staging configuration; local/emulator Functions and Storage validation; and non-provider acceptance work. Local rules tests (64/64) and parity passed, and anonymous staging access was denied as expected; these do not prove authenticated deployed-rule behavior. Production Firebase and Netlify remain untouched. Stripe staging/test-mode setup, physical-device acceptance, and wife beta remain open; mobile Tap to Pay remains post-V1. Staging resource creation does not mean ServicesOS V1 is release-ready.
 
-Still required before controlled integrated/device/provider wife-beta acceptance: GrowthAI V1 regression/freeze review, controlled test deployment, physical Employee App acceptance, and real owner/employee/customer end-to-end workflow acceptance. A limited owner-web usability session may begin locally with synthetic emulator data as recorded above. The aggregate web suite is clean, but React `act(...)` warnings remain test-hygiene debt. Focused GrowthAI passes; provider-backed test-mode acceptance remains open. Android auth persistence/recovery, camera/photos, directions handoff, foreground location, Field Safety queue/recovery/idempotent owner alert, and Stripe Checkout/refund/webhook/Connect/Portal behavior remain manual/device/provider acceptance work.
+Still required before controlled integrated/device/provider wife-beta acceptance: implement the identified SLAI Assistant natural factual-conversation gap, assistant responsive UI cleanup, owner-web UI polish, a short Jamie regression pass, controlled test deployment, physical Employee App acceptance, and real owner/employee/customer end-to-end workflow acceptance. The founder/manual pass is complete; wife beta is still pending. The aggregate web suite is clean, but React `act(...)` warnings remain test-hygiene debt. Focused GrowthAI passes; provider-backed test-mode acceptance remains open. Android auth persistence/recovery, camera/photos, directions handoff, foreground location, Field Safety queue/recovery/idempotent owner alert, and Stripe Checkout/refund/webhook/Connect/Portal behavior remain manual/device/provider acceptance work.
 
 Still required before customer release: current production-readiness re-audit; deployed Firestore/Storage rules and revision evidence; required indexes; Storage CORS and object-path compatibility; identity/membership and assignment readiness; Netlify/Functions deployment evidence; customer privacy/tenant smoke; and controlled Stripe test/live acceptance. Physical/device acceptance remains open, including Android auth, camera/photos, directions, foreground location, and Field Safety retry/recovery. Mobile Tap to Pay remains post-V1 and is not a V1 or wife-beta blocker.
 
 ---
 
-# 9. Wife V1 acceptance — ⬜ PENDING CONTROLLED TEST DEPLOYMENT
+# 9. Wife V1 acceptance — ⬜ PENDING CURRENT-CANDIDATE ACCEPTANCE
 
-The original wife beta has already served as discovery/UX validation and helped define this V1. Do not re-test solved beta issues merely because the old build is still deployed.
+The original wife beta has already served as discovery/UX validation and helped define this V1. Jamie has completed a separate founder/manual owner-web pass on the current candidate; wife beta itself is not yet complete. Do not re-test solved beta issues merely because the old build is still deployed. Begin outcome-based wife-beta tasks after the next functional/UI slices and Jamie's short regression pass, using an approved controlled environment.
 
 After the current V1 branch passes integration/release validation and is deployed to a controlled test environment:
 

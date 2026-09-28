@@ -20,15 +20,15 @@ Active branch:
 
 Current application-code checkpoint:
 
-`075f40d3962a8ea105af431c24ea7e5464673a2b` — `Add employee Terminal payment gateway`
+`f0f287412d4c58316fb85317e0475386452236d6` — `Fix existing customer booking rules`
 
-The branch is `feature/owner-onboarding-v1`. This document is reconciled against that exact HEAD. Historical reports and older checklists are not current-head validation evidence.
+This document is reconciled against the current branch HEAD. Historical reports and older checklists are not current-head validation evidence.
 
-The current documentation checkpoint is:
+The prior documentation checkpoint was:
 
 `b7310dbee1a2069b4aaea9390829b974796aaa9b` — `Reconcile ServicesOS V1 release state`
 
-The application-code checkpoint remains `075f40d3962a8ea105af431c24ea7e5464673a2b`; the later commit is documentation/process only.
+The current HEAD includes the booking-rules fix and its documentation reconciliation.
 
 The branch is backed up to:
 
@@ -153,7 +153,7 @@ These implementation slices are present in branch history and have focused code/
 
 ### GrowthAI / SLAI Assistant
 
-The existing V1 feature set, credit UX, tenant-safe provider gateway, and provider kill switch remain in code. The previously observed free-briefing assertion failure in `GrowthAIPage.test.jsx` no longer reproduces: the focused suite passed `59/59` after the Vitest worker storage fix. Provider-backed test-mode acceptance remains open.
+The existing V1 foundations, credit UX, tenant-safe provider gateway, and provider kill switch remain implemented. Jamie's founder/manual acceptance pass identified a V1 experience gap: a natural factual question about upcoming bookings fell back to a generic capability prompt rather than answering from authorized canonical ServicesOS data. This is the highest-priority next functional slice, not a claim that the whole feature is absent or authorization for autonomous actions. The focused `GrowthAIPage.test.jsx` suite passed `59/59`; provider-backed test-mode acceptance remains open. See `GROWTHAI_SERVICESOS_CURRENT_DIRECTION.md` and the pre-reset handoff.
 
 ## Current-head local validation audit (2026-09-28)
 
@@ -211,9 +211,11 @@ Business Settings automatically invoked `getConnectedAccountStatus`. The seeded 
 
 Firebase CLI may inject its signed-in user credential-file path into the Functions emulator child. Runtime used `demo-servicesos-v1-smoke-local` and loopback Auth/Firestore/Storage emulator hosts; no real Firebase project or external provider access was observed, and credential-file contents were not inspected. Minor warnings were a stale `.env.v1-smoke` comment claiming Functions is not started, a repeated “multiple emulator instances” warning that did not prevent discovery, an existing Functions-version warning, and missing local email configuration. None is established as a local wife-beta blocker.
 
-Local wife beta exposed an existing-customer booking rules/schema mismatch: `bookingCreateKeysOnly()` rejected the residential builder's `bookingType` field, and the commercial builder's `bookingType`, `commercialDetails`, and `accessInstructions` fields were also outside the allowlist. The canonical and mirrored rules now allow only `residential` without commercial-only fields, or `commercial` with the current builder's exact bounded 17-key details map and matching access instructions. Legacy untyped quote-to-booking creates retain their prior shape; tenant/role, assignment, payment, and unknown-field restrictions remain in force.
+Jamie's founder/manual owner-web pass found an existing-customer booking rules/schema mismatch: `bookingCreateKeysOnly()` rejected the residential builder's `bookingType` field, and the commercial builder's `bookingType`, `commercialDetails`, and `accessInstructions` fields were also outside the allowlist. This was fixed in `f0f287412d4c58316fb85317e0475386452236d6` (`Fix existing customer booking rules`). The canonical and mirrored rules now allow only `residential` without commercial-only fields, or `commercial` with the current builder's exact bounded 17-key details map and matching access instructions. Legacy untyped quote-to-booking creates retain their prior shape; tenant/role, assignment, payment, and unknown-field restrictions remain in force. Treat this finding as closed.
 
-Regression validation passed: Firestore rules `65/65`, rules parity, existing-customer booking service and Customer Management safety tests `26/26`. On the local demo emulator, the seeded Tenant A admin successfully created a transaction using the residential `owner-existing-customer` payload shape; the temporary booking was removed. The limited local owner-web wife-beta session may resume for synthetic-data testing. This does not establish overall release readiness or Blaze-backed staging acceptance.
+Regression validation passed: Firestore rules `65/65`, rules parity, existing-customer booking service and Customer Management safety tests `26/26`. On the local demo emulator, the seeded Tenant A admin successfully created a transaction using the residential `owner-existing-customer` payload shape; the temporary booking was removed. Jamie's founder/manual owner-web pass is complete for now. The wife beta has not yet been completed on this V1 candidate. This does not establish overall release readiness or Blaze-backed staging acceptance.
+
+The founder pass also identified owner-web polish opportunities, without changing product scope: align Services & Pricing and Add-on Catalog forms with the established Business Settings layout; make Booking Details more left-aligned, compact, and scannable while preserving its existing sections and behavior; and make Edit Customer more compact at normal desktop sizes, with responsive grouping and visible actions.
 
 This readiness supports owner-web usability testing, synthetic customer/booking workflows, navigation, and UI-friction/bug finding only. Open gates remain Blaze-backed Storage and real-cloud Functions, authenticated staging tenant/security smoke, Stripe/provider acceptance, physical-device acceptance, integrated owner/employee/customer acceptance, and final release work.
 
@@ -221,14 +223,7 @@ Production promotion is **not established by this audit**. Old production report
 
 ## Release sequence
 
-1. Close current-head automated integration/security/build validation and remaining customer-scope, employee-day/correspondence, and device acceptance edges.
-2. Re-audit production configuration/data/rules/index/storage readiness and collect current deployment evidence.
-3. Complete controlled test/live Stripe acceptance and a controlled V1 test deployment.
-4. Run wife V1 acceptance using outcome-based tasks, **excluding mobile Tap to Pay**; customer-job payment tests cover approved web/manual paths.
-5. Fix V1-specific critical findings, perform UI fine-tuning, and complete customer-release security and smoke gates.
-6. Freeze and release the customer-facing ServicesOS V1 candidate.
-
-After V1 release, separately upgrade the Employee App platform to Expo 56 / React Native 0.85, integrate the Stripe Terminal React Native SDK, then deliver mobile Tap to Pay as the first post-V1 Employee App payment update. Keep this work isolated from the release candidate.
+The next implementation cycle should follow `SERVICESOS_V1_PRE_RESET_HANDOFF_2026-09-28.md`: address the smallest safe SLAI Assistant natural factual-conversation gap using authorized tenant evidence, then responsive assistant UI and the listed owner-web polish, followed by a short Jamie regression pass and wife-beta acceptance. Beta-critical/security/data/workflow fixes and UI fine-tuning follow. Complete cloud/provider/device gates when Blaze is financially practical, then run final release smoke. Do not move future products ahead of ServicesOS. Mobile Tap to Pay remains post-V1.
 
 ## Explicitly parked unless Jamie re-scopes them
 
