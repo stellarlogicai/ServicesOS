@@ -201,6 +201,14 @@ The isolated Firebase and Netlify staging resources exist, but they are not read
 
 Staging is **not ready** for Storage initialization or real-cloud Functions/web deployment. The deployed Firestore rules still require effective-rule review and security smoke on Spark. Composite-index readiness is verified Enabled in Firebase Console, but this does not establish overall deployment or release readiness.
 
+### Local wife-beta emulator verification (2026-09-28)
+
+The local smoke project is `demo-servicesos-v1-smoke-local`. Auth (`127.0.0.1:9099`), Firestore (`127.0.0.1:8080`), the Functions listener (`127.0.0.1:5001`), Storage (`127.0.0.1:9199`), and Emulator UI (`http://127.0.0.1:4000/`) started on loopback. The Vite app started at `http://127.0.0.1:5173/`. Project isolation guards were confirmed, the seed/reset completed against localhost with five fake personas, 22 Firestore documents, and local upload fixtures, and the frontend reported emulator mode for the fixed demo project. Anonymous reads of seeded Firestore documents were denied as expected.
+
+The local wife-beta environment is **blocked**: Functions discovery timed out while loading definitions. The listener started, but usable Function endpoints were not registered, so authenticated owner/tenant-isolation UI smoke was not completed and owner-web wife-beta workflow acceptance cannot begin. `servicesos-web/.env.v1-smoke` says no Functions emulator is started, while `npm run emulators:v1-smoke` does start one; record this as a local smoke configuration/documentation mismatch pending resolution with the discovery blocker. This checkpoint records the observed mismatch without diagnosing its cause. No real Firebase project or external provider was contacted; no staging/production action occurred.
+
+Open gates include local Functions emulator discovery/startup, authenticated local owner/tenant smoke, local wife beta, Blaze-backed staging acceptance, physical-device acceptance, Stripe/provider acceptance, and final release work.
+
 Production promotion is **not established by this audit**. Old production reports document previous observations/actions but must be re-audited against the intended release candidate; no claim is made that their July state remains current or was corrected.
 
 ## Release sequence
