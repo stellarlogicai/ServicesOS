@@ -431,6 +431,17 @@ The code-level slices below are implemented, but prior branch totals and July pr
 - [ ] Verify test/live Stripe Prices, Portal configuration, Connect, booking Checkout, fees, and webhook synchronization
 - [ ] Controlled test deployment, wife acceptance, beta-critical fixes, UI fine-tuning, and final release smoke
 
+### Staging infrastructure checkpoint (2026-09-28)
+
+- [x] Isolated Firebase staging project and `ServicesOS Staging Web` app registered; staging `(default)` Firestore database created in `nam5`.
+- [ ] Verify effective staging Firestore rules and deploy reviewed rules/indexes only after the controlled deployment gate is approved.
+- [ ] Enable the required staging Email/Password and Google Auth providers and confirm the Netlify staging hostname is authorized.
+- [ ] Initialize staging Storage in the approved matching region (`us-east1`); this currently requires a billing-plan upgrade, not performed.
+- [ ] Configure the six staging Firebase web client variables on the empty, unlinked Netlify site; the connector rejected the attempted write, so values are not confirmed/set.
+- [ ] Confirm staging deployment controls, then deploy only a reviewed candidate. No app/rules/indexes/Functions/web deployment has occurred.
+
+The staging project remains on Spark; Storage is unavailable until a billing upgrade, and Cloud Functions deployment requires Blaze. No billing change was made. Production Firebase and Netlify remain untouched, Stripe staging/test-mode setup and physical-device acceptance remain open, and mobile Tap to Pay remains post-V1. Staging resource creation does not mean ServicesOS V1 is release-ready.
+
 Still required before controlled wife beta: GrowthAI V1 regression/freeze review, controlled test deployment, physical Employee App acceptance, and real owner/employee/customer end-to-end workflow acceptance. The aggregate web suite is clean, but React `act(...)` warnings remain test-hygiene debt. Focused GrowthAI passes; provider-backed test-mode acceptance remains open. Android auth persistence/recovery, camera/photos, directions handoff, foreground location, Field Safety queue/recovery/idempotent owner alert, and Stripe Checkout/refund/webhook/Connect/Portal behavior remain manual/device/provider acceptance work.
 
 Still required before customer release: current production-readiness re-audit; deployed Firestore/Storage rules and revision evidence; required indexes; Storage CORS and object-path compatibility; identity/membership and assignment readiness; Netlify/Functions deployment evidence; customer privacy/tenant smoke; and controlled Stripe test/live acceptance. Physical/device acceptance remains open, including Android auth, camera/photos, directions, foreground location, and Field Safety retry/recovery. Mobile Tap to Pay remains post-V1 and is not a V1 or wife-beta blocker.

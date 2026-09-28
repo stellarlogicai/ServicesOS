@@ -186,6 +186,19 @@ The full current-head web validation gate is clean. The router localStorage envi
 6. Complete controlled Stripe test-mode/live acceptance for owner monthly/annual billing and Portal, Connect onboarding, booking Checkout, payment/refund webhooks, fees, tenant isolation, and failure/retry. Verify separate test/live Price and Portal configuration; this audit changed no provider state.
 7. Deploy only to a controlled V1 test environment after approved gates, then complete wife V1 acceptance, close critical findings, tune UI, and run final release smoke. Mobile Tap to Pay remains post-V1 and excluded from these gates.
 
+## Staging infrastructure readiness (2026-09-28)
+
+The isolated Firebase and Netlify staging resources exist, but they are not ready for application deployment:
+
+- Firebase project `servicesos-v1-staging` (`ServicesOS V1 Staging`) has one registered web app, `ServicesOS Staging Web` (app ID `1:431826220393:web:0dfa7ddbd837878b9f79f8`). Staging web configuration was retrieved, but its client values were not confirmed in Netlify.
+- The staging `(default)` Firestore database was created in `nam5`, matching the observed production Firestore location. No staging rules or indexes were deployed, and effective database rules have not been verified. Production Storage location was observed as `us-east1`; staging Storage is not initialized.
+- Staging Auth still requires Email/Password and Google providers for current V1 flows. Neither provider is confirmed enabled, and `servicesos-v1-staging.netlify.app` is not confirmed as an authorized Auth domain.
+- Netlify site `servicesos-v1-staging` (`servicesos-v1-staging.netlify.app`) exists, is empty, and is not linked to the repository. The six staging `VITE_FIREBASE_*` client variables were not confirmed/set because the configuration write was rejected by the connector safety guard.
+- The staging project is on Spark. Storage requires a billing-plan upgrade, which has not occurred; Cloud Functions deployment also has a Blaze billing prerequisite. No billing upgrade was made.
+- No application, rules, indexes, Functions, or web deployment occurred. Production Firebase and Netlify were not modified. Stripe staging/test-mode configuration, physical-device acceptance, and wife beta remain pending. Mobile Tap to Pay remains post-V1.
+
+Staging is **not ready** for rules, indexes, Functions, or web deployment. Do not interpret resource creation as release readiness.
+
 Production promotion is **not established by this audit**. Old production reports document previous observations/actions but must be re-audited against the intended release candidate; no claim is made that their July state remains current or was corrected.
 
 ## Release sequence
