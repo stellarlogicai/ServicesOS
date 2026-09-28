@@ -1595,6 +1595,103 @@ describe('tenant-scoped customer intake Firestore rules', () => {
     }));
   });
 
+  test('existing-customer residential and commercial booking types use their bounded create contracts', async () => {
+    const residential = {
+      schemaVersion: 1,
+      tenantId: TENANT_A,
+      source: 'owner-existing-customer',
+      customerId: 'customer-a',
+      bookingType: 'residential',
+      customerName: 'Customer A',
+      customerSnapshot: { customerId: 'customer-a', name: 'Customer A', fullName: 'Customer A', email: '', phone: '' },
+      propertySnapshot: { address: '1 Test Street', city: '', state: '', zipCode: '' },
+      requestSnapshot: { cleaningType: 'Standard clean', specialRequests: '', submittedAt: '2026-07-13T14:00:00.000Z' },
+      date: '2026-07-20',
+      startTime: '09:00',
+      scheduledAt: '2026-07-20T14:00:00.000Z',
+      agreedPrice: 190,
+      status: 'scheduled',
+      serviceType: 'Standard clean',
+      address: '1 Test Street',
+      notes: '',
+      createdBy: 'admin-a',
+      createdAt: '2026-07-13T14:00:00.000Z',
+      updatedAt: '2026-07-13T14:00:00.000Z',
+    };
+    const admin = authenticatedDatabase('admin-a');
+
+    await assertSucceeds(setDoc(doc(admin, 'tenants', TENANT_A, 'bookings', 'existing-customer-residential'), residential));
+    await assertFails(setDoc(doc(admin, 'tenants', TENANT_A, 'bookings', 'existing-customer-unknown-top-level'), {
+      ...residential,
+      unexpectedClientField: true,
+    }));
+    await assertFails(setDoc(doc(admin, 'tenants', TENANT_A, 'bookings', 'existing-customer-invalid-type'), {
+      ...residential,
+      bookingType: 'residential-commercial',
+    }));
+    await assertFails(setDoc(doc(admin, 'tenants', TENANT_A, 'bookings', 'residential-commercial-fields'), {
+      ...residential,
+      commercialDetails: {},
+      accessInstructions: 'Use the east entrance',
+    }));
+
+    const commercialDetails = {
+      businessName: 'Example Office',
+      primaryContactName: 'Ada Cruz',
+      phone: '555-0100',
+      email: '',
+      serviceAddress: '500 Commerce Drive',
+      facilityType: 'Office',
+      approximateSquareFootage: 12000,
+      areasToClean: 'Offices and lobby',
+      numberOfRestrooms: 4,
+      frequency: 'Weekly',
+      preferredServiceWindow: 'After 6 PM',
+      operatingHours: '8 AM to 5 PM',
+      accessSecurityInstructions: 'Use the east entrance',
+      knownHazards: '',
+      specialSurfacesMaterials: 'Stone lobby floor',
+      suppliesEquipmentNotes: 'Tenant supplies liners',
+      generalNotes: 'Call on arrival',
+    };
+    const commercial = {
+      ...residential,
+      bookingType: 'commercial',
+      customerName: commercialDetails.businessName,
+      address: commercialDetails.serviceAddress,
+      notes: commercialDetails.generalNotes,
+      commercialDetails,
+      accessInstructions: commercialDetails.accessSecurityInstructions,
+    };
+
+    await assertSucceeds(setDoc(doc(admin, 'tenants', TENANT_A, 'bookings', 'existing-customer-commercial'), commercial));
+    await assertFails(setDoc(doc(admin, 'tenants', TENANT_A, 'bookings', 'commercial-unknown-nested-key'), {
+      ...commercial,
+      commercialDetails: { ...commercialDetails, arbitraryMetadata: 'not allowed' },
+    }));
+    await assertFails(setDoc(doc(admin, 'tenants', TENANT_A, 'bookings', 'commercial-oversized-field'), {
+      ...commercial,
+      commercialDetails: { ...commercialDetails, areasToClean: 'x'.repeat(1001) },
+    }));
+    await assertFails(setDoc(doc(admin, 'tenants', TENANT_A, 'bookings', 'commercial-invalid-square-footage'), {
+      ...commercial,
+      commercialDetails: { ...commercialDetails, approximateSquareFootage: 10000001 },
+    }));
+    await assertFails(setDoc(doc(admin, 'tenants', TENANT_A, 'bookings', 'commercial-mismatched-access'), {
+      ...commercial,
+      accessInstructions: 'Different instructions',
+    }));
+    await assertFails(setDoc(doc(admin, 'tenants', TENANT_A, 'bookings', 'commercial-payment-spoof'), {
+      ...commercial,
+      paymentAccounting: { amountPaid: 190 },
+    }));
+
+    await assertFails(setDoc(doc(authenticatedDatabase('admin-b'), 'tenants', TENANT_A, 'bookings', 'cross-tenant-create'), residential));
+    await assertFails(setDoc(doc(authenticatedDatabase('employee-a'), 'tenants', TENANT_A, 'bookings', 'employee-create'), residential));
+    await assertFails(setDoc(doc(authenticatedDatabase('customer-a-auth'), 'tenants', TENANT_A, 'bookings', 'customer-create'), residential));
+    await assertFails(setDoc(doc(testEnvironment.unauthenticatedContext().firestore(), 'tenants', TENANT_A, 'bookings', 'anonymous-create'), residential));
+  });
+
   test('tenant admin can atomically convert one lead to one safe booking', async () => {
     const database = authenticatedDatabase('admin-a');
     const leadReference = doc(database, 'tenants', TENANT_A, 'leads', 'request-a');

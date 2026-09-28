@@ -143,6 +143,7 @@ service cloud.firestore {
         'leadId',
         'sourceLeadId',
         'source',
+        'bookingType',
         'customerId',
         'propertyId',
         'customerName',
@@ -161,6 +162,8 @@ service cloud.firestore {
         'status',
         'serviceType',
         'address',
+        'commercialDetails',
+        'accessInstructions',
         'notes',
         'createdBy',
         'createdAt',
@@ -172,8 +175,63 @@ service cloud.firestore {
       return isBookingManager(tenantId) &&
              bookingCreateKeysOnly() &&
              request.resource.data.status == 'scheduled' &&
+             validBookingTypeAndDetails() &&
              validRequestedBookingAssignment(tenantId) &&
              (!('tenantId' in request.resource.data) || request.resource.data.tenantId == tenantId);
+    }
+
+    function isBoundedBookingText(value, maximumLength) {
+      return value is string && value.size() <= maximumLength;
+    }
+
+    function validCommercialBookingDetails(details) {
+      return details is map &&
+             details.keys().hasAll([
+               'businessName', 'primaryContactName', 'phone', 'email', 'serviceAddress',
+               'facilityType', 'approximateSquareFootage', 'areasToClean', 'numberOfRestrooms',
+               'frequency', 'preferredServiceWindow', 'operatingHours', 'accessSecurityInstructions',
+               'knownHazards', 'specialSurfacesMaterials', 'suppliesEquipmentNotes', 'generalNotes'
+             ]) &&
+             details.keys().hasOnly([
+               'businessName', 'primaryContactName', 'phone', 'email', 'serviceAddress',
+               'facilityType', 'approximateSquareFootage', 'areasToClean', 'numberOfRestrooms',
+               'frequency', 'preferredServiceWindow', 'operatingHours', 'accessSecurityInstructions',
+               'knownHazards', 'specialSurfacesMaterials', 'suppliesEquipmentNotes', 'generalNotes'
+             ]) &&
+             isTrimmedString(details.businessName, 1, 160) &&
+             isTrimmedString(details.primaryContactName, 1, 160) &&
+             isBoundedBookingText(details.phone, 40) &&
+             isBoundedBookingText(details.email, 254) &&
+             (details.phone.size() > 0 || details.email.size() > 0) &&
+             isTrimmedString(details.serviceAddress, 1, 300) &&
+             isBoundedBookingText(details.facilityType, 120) &&
+             (details.approximateSquareFootage == null ||
+              (details.approximateSquareFootage is int && details.approximateSquareFootage > 0 && details.approximateSquareFootage <= 10000000)) &&
+             isBoundedBookingText(details.areasToClean, 1000) &&
+             (details.numberOfRestrooms == null ||
+              (details.numberOfRestrooms is int && details.numberOfRestrooms >= 0 && details.numberOfRestrooms <= 10000)) &&
+             isBoundedBookingText(details.frequency, 120) &&
+             isBoundedBookingText(details.preferredServiceWindow, 160) &&
+             isBoundedBookingText(details.operatingHours, 500) &&
+             isBoundedBookingText(details.accessSecurityInstructions, 1000) &&
+             isBoundedBookingText(details.knownHazards, 1000) &&
+             isBoundedBookingText(details.specialSurfacesMaterials, 1000) &&
+             isBoundedBookingText(details.suppliesEquipmentNotes, 1000) &&
+             isBoundedBookingText(details.generalNotes, 1000);
+    }
+
+    function validBookingTypeAndDetails() {
+      let data = request.resource.data;
+      let hasCommercialDetails = 'commercialDetails' in data;
+      let hasAccessInstructions = 'accessInstructions' in data;
+      return !('bookingType' in data)
+        ? (!hasCommercialDetails && !hasAccessInstructions)
+        : data.bookingType == 'residential'
+          ? (!hasCommercialDetails && !hasAccessInstructions)
+          : data.bookingType == 'commercial' &&
+            hasCommercialDetails && hasAccessInstructions &&
+            validCommercialBookingDetails(data.commercialDetails) &&
+            data.accessInstructions == data.commercialDetails.accessSecurityInstructions;
     }
 
     function isTrimmedString(value, minimumLength, maximumLength) {
