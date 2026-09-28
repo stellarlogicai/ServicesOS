@@ -436,7 +436,7 @@ The code-level slices below are implemented, but prior branch totals and July pr
 - [x] Isolated Firebase staging project and `ServicesOS Staging Web` app registered; staging `(default)` Firestore database created in `nam5`.
 - [x] Deploy reviewed Firestore rules to `servicesos-v1-staging`; CLI reported successful compilation/release, with warnings involving `request`, an unused helper, and `exists` pending review. No rules release/version identifier was exposed; effective deployed-rule correspondence remains unverified.
 - [x] Deploy Firestore indexes to `servicesos-v1-staging`; post-deploy listing returned 22 definitions matching source, including the employee-assignment composite index.
-- [ ] Verify required staging indexes reach READY; Firebase CLI did not expose READY/BUILDING state, so readiness is unverified.
+- [x] Verify staging composite-index readiness in Firebase Console: 22/22 indexes show `Enabled`, with none Building or Missing. The `bookings` index on `assignedEmployeeAuthUid ASC`, `status ASC`, and `date DESC` (Collection scope) is `Enabled`.
 - [ ] Review staging rules warnings and verify effective deployed rules. These tasks can proceed on Spark and do not require Blaze.
 - [x] Enable staging Email/Password Auth and authorize `servicesos-v1-staging.netlify.app`; no staging users were created and production Auth was untouched.
 - [x] Enable Google Auth for current web sign-in with approved public-facing name `ServicesOS by Stellar Logic AI` and support email `stellar.logic.ai@gmail.com`.
