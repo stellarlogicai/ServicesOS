@@ -435,7 +435,8 @@ The code-level slices below are implemented, but prior branch totals and July pr
 
 - [x] Isolated Firebase staging project and `ServicesOS Staging Web` app registered; staging `(default)` Firestore database created in `nam5`.
 - [ ] Verify effective staging Firestore rules and deploy reviewed rules/indexes only after the controlled deployment gate is approved.
-- [ ] Enable the required staging Email/Password and Google Auth providers and confirm the Netlify staging hostname is authorized.
+- [x] Enable staging Email/Password Auth and authorize `servicesos-v1-staging.netlify.app`; no staging users were created and production Auth was untouched.
+- [ ] Enable Google Auth for current web sign-in after a human selects the OAuth public-facing project name and support email.
 - [ ] Initialize staging Storage in the approved matching region (`us-east1`); this currently requires a billing-plan upgrade, not performed.
 - [ ] Configure the six staging Firebase web client variables on the empty, unlinked Netlify site; the connector rejected the attempted write, so values are not confirmed/set.
 - [ ] Confirm staging deployment controls, then deploy only a reviewed candidate. No app/rules/indexes/Functions/web deployment has occurred.
