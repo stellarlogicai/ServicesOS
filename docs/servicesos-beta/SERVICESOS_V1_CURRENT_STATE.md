@@ -1,6 +1,6 @@
 # ServicesOS V1 Current State
 
-Updated: 2026-09-27
+Updated: 2026-09-28
 
 This file contains the changing ServicesOS checkpoint. Durable repository rules belong in `AGENTS.md`; detailed progress belongs in `SERVICESOS_V1_FINISH_BOARD.md`.
 
@@ -155,7 +155,7 @@ These implementation slices are present in branch history and have focused code/
 
 The existing V1 feature set, credit UX, tenant-safe provider gateway, and provider kill switch remain in code. The previously observed free-briefing assertion failure in `GrowthAIPage.test.jsx` no longer reproduces: the focused suite passed `59/59` after the Vitest worker storage fix. Provider-backed test-mode acceptance remains open.
 
-## Current-head local validation audit (2026-09-27)
+## Current-head local validation audit (2026-09-28)
 
 The following evidence was collected on the current branch without provider or production actions:
 
@@ -171,20 +171,20 @@ The following evidence was collected on the current branch without provider or p
 - Focused auth/onboarding regression set: `73/73` passed across four files.
 - Focused `GrowthAIPage.test.jsx`: `59/59` passed; the prior free-briefing failure no longer reproduces.
 - Combined router and GrowthAI tests: `83/83` passed.
-- The historical targeted release set reported as `140/165` cannot be reproduced because its exact file selection was not recorded. It is historical context, not current acceptance evidence.
+- Canonical aggregate web suite (`npm run test -- --run --reporter=verbose`): `94/94` files and `844/844` tests passed, `0` failed, `0` skipped, exit code `0`, duration `104.50` seconds. `AppOnboardingRouter`, `GrowthAIPage`, and Field Mode passed in the aggregate run. The earlier aggregate stall did not reproduce. React `act(...)` warnings appeared; no assertion failures occurred.
+- The historical targeted release set reported as `140/165` cannot be reproduced because its exact file selection was not recorded. It is historical context, not current acceptance evidence and is not the current acceptance result.
 
-The aggregate full-web gate remains open. The router localStorage environment blocker is resolved, and the prior GrowthAI focused failure no longer reproduces. Earlier aggregate validation also reported a Field Mode failure that passed in isolation and a one-worker run that hung before tests executed. Run the normal current-head full web suite once as the next authoritative web gate; report any remaining failures without broadening this infrastructure fix.
+The full current-head web validation gate is clean. The router localStorage environment blocker is resolved, and the prior GrowthAI focused failure no longer reproduces. React `act(...)` warnings remain test-hygiene debt, but are not established as a V1 release blocker. ServicesOS V1 is not thereby release-ready; the controlled deployment, device, provider, security, and integrated workflow gates below remain open.
 
 ## Remaining V1 work and release gates
 
-1. Close the current-head full-web gate by running the normal full web suite. The AppOnboardingRouter environment blocker is resolved and the previous GrowthAI focused failure is no longer reproduced; the unrecorded historical 165-test selection is not acceptance evidence.
-2. Complete integration acceptance for customer-approved scope refresh, employee assignment/cancel/reschedule/reassignment behavior, employee authentication, and owner/admin-to-employee day/assignment communication. No generalized messaging system is implied.
-3. Complete physical-device acceptance for Android auth persistence/recovery, camera/photos, directions handoff, foreground location, and Field Safety queue/recovery/idempotent owner alert. Verify exactly one owner-visible safety alert after retry; never place an actual emergency call.
-4. Re-audit customer identity ownership, duplicate/cross-tenant `authUid`, tenant membership, employee identity/assignment, field-photo and safety authorization, and cross-tenant denial against the current candidate and controlled test data.
-5. Before promotion, re-verify deployed Firestore and Storage rules against the candidate, rules parity, required indexes, Storage initialization/CORS, existing object-prefix compatibility, identity/membership and assignment data readiness, and customer privacy/tenant smoke. July production reports are historical snapshots, not current readiness proof.
-6. Re-verify Netlify build/commit and deployed Cloud Function revisions for the selected candidate. Prepare backups and rollback evidence under the deployment runbook.
-7. Complete controlled Stripe test-mode/live acceptance for owner monthly/annual billing and Portal, Connect onboarding, booking Checkout, payment/refund webhooks, fees, tenant isolation, and failure/retry. Verify separate test/live Price and Portal configuration; this audit changed no provider state.
-8. Deploy only to a controlled V1 test environment after approved gates, then complete wife V1 acceptance, close critical findings, tune UI, and run final release smoke. Mobile Tap to Pay remains post-V1 and excluded from these gates.
+1. Complete integration acceptance for customer-approved scope refresh, employee assignment/cancel/reschedule/reassignment behavior, employee authentication, and owner/admin-to-employee day/assignment communication. No generalized messaging system is implied.
+2. Complete physical-device Employee App acceptance for Android auth persistence/recovery, camera/photos, directions handoff, foreground location, and Field Safety queue/recovery/idempotent owner alert. Verify exactly one owner-visible safety alert after retry; never place an actual emergency call.
+3. Re-audit customer identity ownership, duplicate/cross-tenant `authUid`, tenant membership, employee identity/assignment, field-photo and safety authorization, and cross-tenant denial against the current candidate and controlled test data.
+4. Before promotion, re-verify deployed Firestore and Storage rules against the candidate, rules parity, required indexes, Storage initialization/CORS, existing object-prefix compatibility, identity/membership and assignment data readiness, and customer privacy/tenant smoke. July production reports are historical snapshots, not current readiness proof.
+5. Re-verify Netlify build/commit and deployed Cloud Function revisions for the selected candidate. Prepare backups and rollback evidence under the deployment runbook.
+6. Complete controlled Stripe test-mode/live acceptance for owner monthly/annual billing and Portal, Connect onboarding, booking Checkout, payment/refund webhooks, fees, tenant isolation, and failure/retry. Verify separate test/live Price and Portal configuration; this audit changed no provider state.
+7. Deploy only to a controlled V1 test environment after approved gates, then complete wife V1 acceptance, close critical findings, tune UI, and run final release smoke. Mobile Tap to Pay remains post-V1 and excluded from these gates.
 
 Production promotion is **not established by this audit**. Old production reports document previous observations/actions but must be re-audited against the intended release candidate; no claim is made that their July state remains current or was corrected.
 
