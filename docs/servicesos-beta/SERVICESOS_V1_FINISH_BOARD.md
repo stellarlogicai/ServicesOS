@@ -1,6 +1,6 @@
 # ServicesOS V1 Finish Board
 
-Last updated: 2026-08-28
+Last updated: 2026-09-22
 
 This document is the authoritative progress board for the defined customer-facing ServicesOS V1 finish line.
 
@@ -25,6 +25,7 @@ Owner/business onboarding and release hardening are required before unfamiliar c
 | Owner/business onboarding | ⬜ Remaining |
 | Payments / Tap to Pay | 🟡 Foundation built |
 | Release hardening | 🟡 In progress |
+| Pre-launch security gate | ⬜ Required before launch |
 | Wife beta | 🟡 Ready to begin |
 | Customer-ready release | ⬜ Final target |
 
@@ -80,6 +81,8 @@ Core V1 should not be redefined by legacy, disabled, prototype, internal-only, o
 - [x] Raw Firestore rules diagnostics no longer render in SLAI Assistant
 
 Security and production verification still continue under Release Hardening.
+
+A full defensive pre-launch security review is now explicitly in V1 scope. The detailed gate is defined in `SERVICESOS_V1_PRELAUNCH_SECURITY_GATE.md`. The preferred AI-assisted review path is Daybreak Blue when available/approved, but the release requirement is the completed evidence-based gate rather than dependence on a specific vendor or model.
 
 ---
 
@@ -516,7 +519,39 @@ The old CleanOps onboarding is legacy/reference material, not the current produc
 
 ---
 
-# 8. Wife beta — ⬜ UPCOMING
+# 8. Pre-launch security gate — ⬜ REQUIRED BEFORE PUBLIC LAUNCH
+
+Detailed contract: `SERVICESOS_V1_PRELAUNCH_SECURITY_GATE.md`
+
+Run after wife-beta-critical fixes and V1 release-candidate freeze, before public launch.
+
+- [ ] Freeze intended release candidate and record immutable commit SHA
+- [ ] Complete architecture/threat-model review
+- [ ] Complete authentication, authorization, identity, and tenant-isolation review
+- [ ] Complete Firestore and Storage rules/data-boundary review
+- [ ] Complete Cloud Functions/backend/API boundary review
+- [ ] Complete Stripe / Stripe Connect / webhook payment-integrity review
+- [ ] Complete SLAI Assistant / AI prompt-injection, provider-data, tool/action, and credit-abuse review
+- [ ] Complete public/customer-input and data-exposure review
+- [ ] Complete Employee App / field authorization review
+- [ ] Complete secrets, configuration, dependency, and deployment review
+- [ ] Complete logging/privacy/auditability review
+- [ ] Complete abuse, concurrency, replay, and failure-mode review
+- [ ] Validate findings independently before remediation
+- [ ] Remediate all validated Critical findings
+- [ ] Remediate all validated High findings, or remove/disable the affected V1 capability and re-verify the safe boundary
+- [ ] Record explicit disposition for every Medium finding
+- [ ] Add regression coverage for Critical/High remediations where technically practical
+- [ ] Re-run focused security review after remediation
+- [ ] Run final V1 automated suites and security smokes
+- [ ] Commit sanitized final security-gate report
+- [ ] Jamie explicitly approves the gate before public launch
+
+**Release rule:** a model-generated finding is not automatically a vulnerability, and a model-generated severity is not authoritative. Findings must be validated against the real V1 architecture and exposure. Daybreak/AI is the auditor and analysis aid; humans retain release authority.
+
+---
+
+# 9. Wife beta — ⬜ UPCOMING
 
 - [ ] GrowthAI testing
 - [ ] Owner workflow testing
@@ -533,11 +568,12 @@ The old CleanOps onboarding is legacy/reference material, not the current produc
 
 ---
 
-# 9. Customer-ready ServicesOS V1 — ⬜ FINAL TARGET
+# 10. Customer-ready ServicesOS V1 — ⬜ FINAL TARGET
 
 - [ ] Feature freeze
 - [ ] All V1-required tests green
-- [ ] Security gates green
+- [ ] Existing security gates green
+- [ ] Full V1 pre-launch security gate green with sanitized final report
 - [ ] Production payment smoke green
 - [ ] New owner can onboard without developer/founder help
 - [ ] Employee can operate from Employee App
