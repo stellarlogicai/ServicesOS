@@ -76,6 +76,33 @@ limited to plain text. New capabilities should plug into a capability/action
 registry and result-renderer architecture instead of adding permanent panels to
 the Home page.
 
+### Future explicit specialist selection
+
+Natural-language intent routing remains the default interaction model. A future
+universal composer may additionally support explicit `@Capability` or
+`@System` selection, such as `@GrowthAI`, when an owner wants to deliberately
+target an available SLAI specialist capability rather than rely on automatic
+routing.
+
+Explicit specialist selection is a routing hint, not a permission bypass. It
+must preserve ServicesOS tenant isolation, authorization, server-side context
+minimization, credit disclosure, human-review requirements, and consequential
+action boundaries. Only capabilities actually available and authorized for the
+current user and tenant should be selectable.
+
+Long term, a specialist capability may be implemented as an independently
+deployable SLAI system that is also reusable outside ServicesOS. ServicesOS
+should consume that capability through a bounded, versioned interface rather
+than require the specialist implementation to live inside the ServicesOS
+runtime. Independent deployment should allow specialist updates or temporary
+unavailability to degrade only that capability where practical, while core
+ServicesOS operations remain available.
+
+This is a future architecture direction only. It does not authorize a
+generalized plugin framework, service extraction, microservice migration, or
+new V1 implementation work. Existing ServicesOS V1 routing and capability
+boundaries remain authoritative until a separate slice is explicitly approved.
+
 ## First-run GrowthAI onboarding
 
 The first eligible owner/admin visit to GrowthAI should introduce the assistant
