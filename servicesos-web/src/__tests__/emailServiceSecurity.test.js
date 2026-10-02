@@ -1,90 +1,157 @@
-/**
- * emailServiceSecurity.test.js
- * Security test to verify email service does not use VITE_RESEND_* variables
- * and does not call Resend API directly from the browser.
- */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { sendQuoteEmail, sendBookingConfirmationEmail } from '../services/emailService';
+const mocks = vi.hoisted(() => ({
+  auth: {
+    currentUser: {
+      getIdToken: vi.fn().mockResolvedValue('mock-token'),
+    },
+  },
+}));
+
+vi.mock('../firebase', () => ({ auth: mocks.auth }));
+
+import {
+  sendBookingConfirmationEmail,
+  sendQuoteEmail,
+  sendServiceAgreementEmail,
+} from '../services/emailService';
+
+const tenantId = 'tenant-a';
+const lead = { email: 'customer@example.com', firstName: 'John', id: 'lead-123' };
+const estimate = { priceLow: 100, priceHigh: 150, laborHours: 2 };
+
+function successResponse() {
+  return Promise.resolve({
+    ok: true,
+    json: () => Promise.resolve({ success: true, id: 'email-123', status: 'sent' }),
+  });
+}
 
 describe('emailService security', () => {
   beforeEach(() => {
-    // Mock import.meta.env to ensure no VITE_RESEND_* variables are set
-    vi.stubGlobal('import', {
-      meta: {
-        env: {
-          VITE_FUNCTIONS_URL: 'https://functions.example.com',
-          VITE_BUSINESS_NAME: 'Test Business',
-          VITE_EMAIL_FROM: 'test@example.com',
-          VITE_BOOKING_URL: 'https://example.com/book'
-        }
-      }
+    vi.restoreAllMocks();
+    vi.stubEnv('VITE_FUNCTIONS_URL', 'https://functions.example.com');
+    vi.stubEnv('VITE_RESEND_API_KEY', '');
+    mocks.auth.currentUser = { getIdToken: vi.fn().mockResolvedValue('mock-token') };
+    vi.stubGlobal('fetch', vi.fn(successResponse));
+  });
+
+  it('sends tenant, auth, and the caller-stable idempotency key only to the Cloud Function', async () => {
+    const result = await sendQuoteEmail(tenantId, lead, estimate, { idempotencyKey: 'stable-attempt-key' });
+
+    expect(result).toMatchObject({ success: true, idempotencyKey: 'stable-attempt-key' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, options] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe('https://functions.example.com/sendCustomerEmail');
+    expect(url).not.toContain('api.resend.com');
+    expect(options.headers.Authorization).toBe('Bearer mock-token');
+    expect(JSON.parse(options.body)).toMatchObject({
+      tenantId,
+      idempotencyKey: 'stable-attempt-key',
+      emailType: 'quote',
+      relatedEntityId: 'lead-123',
+    });
+    expect(import.meta.env.VITE_RESEND_API_KEY).toBeFalsy();
+  });
+
+  it('returns the same idempotency key on an uncertain response so a retry can reuse it', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ code: 'send_uncertain', error: 'Retry this same email attempt.' }),
     });
 
-    // Mock fetch to track calls
-    const mockFetch = vi.fn(() =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({ id: 'email-123' })
-      })
+    const result = await sendQuoteEmail(tenantId, lead, estimate, { idempotencyKey: 'retry-this-key' });
+
+    expect(result).toEqual(expect.objectContaining({
+      success: false,
+      code: 'send_uncertain',
+      idempotencyKey: 'retry-this-key',
+    }));
+  });
+
+  it('requires an authenticated browser session before calling the Function', async () => {
+    mocks.auth.currentUser = null;
+
+    const result = await sendQuoteEmail(tenantId, lead, estimate, { idempotencyKey: 'auth-required' });
+
+    expect(result).toMatchObject({ success: false, code: 'unauthenticated' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing tenant context before calling the Function', async () => {
+    const result = await sendQuoteEmail('', lead, estimate, { idempotencyKey: 'tenant-required' });
+
+    expect(result).toMatchObject({ success: false, code: 'invalid_request' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps the same key when browser fetch fails ambiguously', async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    const result = await sendQuoteEmail(tenantId, lead, estimate, { idempotencyKey: 'network-attempt' });
+
+    expect(result).toMatchObject({
+      success: false,
+      code: 'send_uncertain',
+      idempotencyKey: 'network-attempt',
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the same tenant-aware boundary for booking confirmation', async () => {
+    const booking = { scheduledAt: new Date().toISOString(), agreedPrice: 125, id: 'booking-123' };
+
+    await sendBookingConfirmationEmail(tenantId, lead, booking, { idempotencyKey: 'booking-attempt' });
+
+    const [url, options] = vi.mocked(fetch).mock.calls[0];
+    expect(url).not.toContain('api.resend.com');
+    expect(JSON.parse(options.body)).toMatchObject({
+      tenantId,
+      idempotencyKey: 'booking-attempt',
+      emailType: 'booking_confirmation',
+      relatedEntityId: 'booking-123',
+    });
+  });
+
+  it('sends one canonical PDF for a service agreement', async () => {
+    const pdf = new Blob(['%PDF-1.4\nsynthetic'], { type: 'application/pdf' });
+
+    await sendServiceAgreementEmail(
+      tenantId,
+      lead,
+      estimate,
+      { id: 'contract-123', signedAt: new Date().toISOString() },
+      pdf,
+      { idempotencyKey: 'agreement-attempt' },
     );
-    vi.stubGlobal('fetch', mockFetch);
 
-    // Mock auth
-    vi.stubGlobal('auth', {
-      currentUser: {
-        getIdToken: () => Promise.resolve('mock-token')
-      }
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1].body);
+    expect(body).toMatchObject({
+      tenantId,
+      idempotencyKey: 'agreement-attempt',
+      emailType: 'service_agreement',
+      relatedEntityId: 'contract-123',
     });
+    expect(body.attachments).toEqual([expect.objectContaining({
+      filename: 'Service_Agreement.pdf',
+      type: 'application/pdf',
+    })]);
+    expect(body.attachments[0].content).toMatch(/^[A-Za-z0-9+/]+=*$/);
   });
 
-  it('sendQuoteEmail does not use VITE_RESEND_API_KEY', async () => {
-    const lead = { email: 'customer@example.com', firstName: 'John', id: 'lead-123' };
-    const estimate = { priceLow: 100, priceHigh: 150 };
+  it('rejects oversized service-agreement files before fetch', async () => {
+    const oversized = new Blob([new Uint8Array((2 * 1024 * 1024) + 1)], { type: 'application/pdf' });
 
-    await sendQuoteEmail(lead, estimate);
+    const result = await sendServiceAgreementEmail(
+      tenantId,
+      lead,
+      estimate,
+      { id: 'contract-123' },
+      oversized,
+      { idempotencyKey: 'oversized-attempt' },
+    );
 
-    // Verify VITE_RESEND_API_KEY was not accessed
-    expect(import.meta.env.VITE_RESEND_API_KEY).toBeUndefined();
-  });
-
-  it('sendQuoteEmail calls cloud function endpoint, not Resend API', async () => {
-    const lead = { email: 'customer@example.com', firstName: 'John', id: 'lead-123' };
-    const estimate = { priceLow: 100, priceHigh: 150 };
-
-    await sendQuoteEmail(lead, estimate);
-
-    const fetchCalls = vi.mocked(fetch).mock.calls;
-    expect(fetchCalls.length).toBeGreaterThan(0);
-    
-    // Verify the call is to the cloud function, not Resend
-    const url = fetchCalls[0][0];
-    expect(url).toContain('sendCustomerEmail');
-    expect(url).not.toContain('api.resend.com');
-  });
-
-  it('sendBookingConfirmationEmail does not use VITE_RESEND_API_KEY', async () => {
-    const lead = { email: 'customer@example.com', firstName: 'John' };
-    const booking = { scheduledAt: new Date().toISOString(), agreedPrice: 125, id: 'booking-123' };
-
-    await sendBookingConfirmationEmail(lead, booking);
-
-    // Verify VITE_RESEND_API_KEY was not accessed
-    expect(import.meta.env.VITE_RESEND_API_KEY).toBeUndefined();
-  });
-
-  it('sendBookingConfirmationEmail calls cloud function endpoint, not Resend API', async () => {
-    const lead = { email: 'customer@example.com', firstName: 'John' };
-    const booking = { scheduledAt: new Date().toISOString(), agreedPrice: 125, id: 'booking-123' };
-
-    await sendBookingConfirmationEmail(lead, booking);
-
-    const fetchCalls = vi.mocked(fetch).mock.calls;
-    expect(fetchCalls.length).toBeGreaterThan(0);
-    
-    // Verify the call is to the cloud function, not Resend
-    const url = fetchCalls[0][0];
-    expect(url).toContain('sendCustomerEmail');
-    expect(url).not.toContain('api.resend.com');
+    expect(result).toMatchObject({ success: false, code: 'invalid_request' });
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

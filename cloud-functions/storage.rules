@@ -57,6 +57,24 @@ service firebase.storage {
               (request.resource.contentType == 'image/webp' && fileName.matches('^[A-Za-z0-9_-]+\\.webp$')));
     }
 
+    function hasMatchingFieldPhotoReservation(tenantId, bookingId, phase, fileName) {
+      let booking = bookingDocument(tenantId, bookingId);
+      return booking != null &&
+             'fieldPhotoUploadReservations' in booking.data &&
+             fileName in booking.data.fieldPhotoUploadReservations &&
+             booking.data.fieldPhotoUploadReservations[fileName].schemaVersion == 1 &&
+             booking.data.fieldPhotoUploadReservations[fileName].tenantId == tenantId &&
+             booking.data.fieldPhotoUploadReservations[fileName].bookingId == bookingId &&
+             booking.data.fieldPhotoUploadReservations[fileName].phase == phase &&
+             booking.data.fieldPhotoUploadReservations[fileName].fileName == fileName &&
+             booking.data.fieldPhotoUploadReservations[fileName].storagePath ==
+               'tenants/' + tenantId + '/bookings/' + bookingId + '/field-photos/' + phase + '/' + fileName &&
+             booking.data.fieldPhotoUploadReservations[fileName].contentType == request.resource.contentType &&
+             booking.data.fieldPhotoUploadReservations[fileName].sizeBytes == request.resource.size &&
+             booking.data.fieldPhotoUploadReservations[fileName].uploadedByUid == request.auth.uid &&
+             booking.data.fieldPhotoUploadReservations[fileName].status == 'reserved';
+    }
+
     function validBrandingObject() {
       return request.resource != null &&
              request.resource.size > 0 &&
@@ -77,6 +95,7 @@ service firebase.storage {
       allow create: if isAllowedPhase(phase) &&
                        isAuthenticated() &&
                        canAccessFieldPhoto(tenantId, bookingId) &&
+                       hasMatchingFieldPhotoReservation(tenantId, bookingId, phase, fileName) &&
                        resource == null &&
                        validPhotoObject(fileName);
       allow update, delete: if false;

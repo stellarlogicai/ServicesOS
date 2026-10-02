@@ -68,6 +68,8 @@ vi.mock('../services/stripeService', () => ({
 }));
 
 vi.mock('../services/fieldPhotoService', () => ({
+  createFieldPhotoClientUploadId: vi.fn(() => 'client-upload-bookings-list'),
+  FIELD_PHOTO_MAX_PER_BOOKING: 20,
   FIELD_PHOTO_PHASES: ['before', 'after'],
   listFieldPhotos: mocks.listFieldPhotos,
   listFieldPhotosForMarketing: mocks.listFieldPhotosForMarketing,

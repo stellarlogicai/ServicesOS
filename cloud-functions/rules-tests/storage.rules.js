@@ -16,6 +16,25 @@ const BRANDING_PATH = `tenants/${TENANT_A}/branding/logo_test.png`;
 let testEnvironment;
 let storageRulesSource;
 
+function reservation({ tenantId = TENANT_A, bookingId, phase, fileName, contentType, uploadedByUid, sizeBytes = 32, status = 'reserved' }) {
+  return {
+    schemaVersion: 1,
+    tenantId,
+    bookingId,
+    phase,
+    fileName,
+    storagePath: `tenants/${tenantId}/bookings/${bookingId}/field-photos/${phase}/${fileName}`,
+    contentType,
+    sizeBytes,
+    uploadedByUid,
+    status,
+  };
+}
+
+function reservationsForBooking(bookingId, entries) {
+  return Object.fromEntries(entries.map(entry => [entry.fileName, reservation({ bookingId, ...entry })]));
+}
+
 async function seedAccessData() {
   await testEnvironment.withSecurityRulesDisabled(async context => {
     const database = context.firestore();
@@ -49,13 +68,28 @@ async function seedAccessData() {
     await database.doc(`tenants/${TENANT_A}/bookings/booking-a`).set({
       status: 'scheduled',
       assignedEmployeeAuthUid: 'employee-a',
+      fieldPhotoUploadReservations: reservationsForBooking('booking-a', [
+        { phase: 'before', fileName: 'photo-a.jpg', contentType: 'image/jpeg', uploadedByUid: 'employee-a' },
+        { phase: 'after', fileName: 'photo-b.png', contentType: 'image/png', uploadedByUid: 'employee-a' },
+        { phase: 'after', fileName: 'photo-c.webp', contentType: 'image/webp', uploadedByUid: 'employee-a' },
+        { phase: 'before', fileName: 'photo-protected.jpg', contentType: 'image/jpeg', uploadedByUid: 'employee-a' },
+        { phase: 'before', fileName: 'admin-protected.jpg', contentType: 'image/jpeg', uploadedByUid: 'admin-a' },
+        { phase: 'after', fileName: 'new.jpg', contentType: 'image/jpeg', uploadedByUid: 'employee-a-2' },
+      ]),
     });
     await database.doc(`tenants/${TENANT_A}/bookings/unassigned-booking`).set({
       status: 'scheduled',
+      fieldPhotoUploadReservations: reservationsForBooking('unassigned-booking', [
+        { phase: 'before', fileName: 'admin-photo.jpg', contentType: 'image/jpeg', uploadedByUid: 'admin-a' },
+        { phase: 'after', fileName: 'super-photo.png', contentType: 'image/png', uploadedByUid: 'super-admin' },
+      ]),
     });
     await database.doc(`tenants/${TENANT_A}/bookings/completed-booking`).set({
       status: 'completed',
       assignedEmployeeAuthUid: 'employee-a',
+      fieldPhotoUploadReservations: reservationsForBooking('completed-booking', [
+        { phase: 'after', fileName: 'completed.png', contentType: 'image/png', uploadedByUid: 'employee-a' },
+      ]),
     });
     await database.doc(`tenants/${TENANT_A}/bookings/cancelled-booking`).set({
       status: 'cancelled',
@@ -120,7 +154,7 @@ describe('tenant-scoped Field Mode Storage rules', () => {
     assert.equal(firestoreCalls.length, 2);
     assert.doesNotMatch(accessSource, /tenantExists|tenantRecord/);
     assert.match(storageRulesSource, /allow read: if isAllowedPhase\(phase\) &&\s+isAuthenticated\(\) &&\s+canAccessFieldPhoto/);
-    assert.match(storageRulesSource, /allow create: if isAllowedPhase\(phase\) &&\s+isAuthenticated\(\) &&\s+canAccessFieldPhoto/);
+    assert.match(storageRulesSource, /allow create: if isAllowedPhase\(phase\) &&\s+isAuthenticated\(\) &&\s+canAccessFieldPhoto[\s\S]*hasMatchingFieldPhotoReservation/);
   });
 
   after(async () => {
@@ -174,6 +208,32 @@ describe('tenant-scoped Field Mode Storage rules', () => {
     await assertFails(upload('employee-a', `tenants/${TENANT_A}/bookings/booking-a/field-photos/during/photo.jpg`, 'image/jpeg'));
     await assertFails(upload('employee-a', 'tenants/DEFAULT/bookings/booking-a/field-photos/before/photo.jpg', 'image/jpeg'));
     await assertFails(upload('employee-a', 'jobPhotos/booking-a/photo.jpg', 'image/jpeg'));
+  });
+
+  test('field photo creation requires an exact reserved server slot', async () => {
+    const basePath = `tenants/${TENANT_A}/bookings/booking-a/field-photos`;
+    await assertFails(upload('employee-a', `${basePath}/before/no-slot.jpg`, 'image/jpeg'));
+
+    await testEnvironment.withSecurityRulesDisabled(async context => {
+      const booking = context.firestore().doc(`tenants/${TENANT_A}/bookings/booking-a`);
+      const snapshot = await booking.get();
+      const existing = snapshot.data().fieldPhotoUploadReservations;
+      await booking.update({
+        fieldPhotoUploadReservations: {
+          ...existing,
+          'wrong-phase.jpg': reservation({ bookingId: 'booking-a', phase: 'after', fileName: 'wrong-phase.jpg', contentType: 'image/jpeg', uploadedByUid: 'employee-a' }),
+          'wrong-path.jpg': { ...reservation({ bookingId: 'booking-a', phase: 'before', fileName: 'wrong-path.jpg', contentType: 'image/jpeg', uploadedByUid: 'employee-a' }), storagePath: 'wrong/path.jpg' },
+          'wrong-type.jpg': reservation({ bookingId: 'booking-a', phase: 'before', fileName: 'wrong-type.jpg', contentType: 'image/png', uploadedByUid: 'employee-a' }),
+          'wrong-size.jpg': reservation({ bookingId: 'booking-a', phase: 'before', fileName: 'wrong-size.jpg', contentType: 'image/jpeg', uploadedByUid: 'employee-a', sizeBytes: 64 }),
+          'wrong-user.jpg': reservation({ bookingId: 'booking-a', phase: 'before', fileName: 'wrong-user.jpg', contentType: 'image/jpeg', uploadedByUid: 'employee-a-2' }),
+          'finalized.jpg': reservation({ bookingId: 'booking-a', phase: 'before', fileName: 'finalized.jpg', contentType: 'image/jpeg', uploadedByUid: 'employee-a', status: 'finalized' }),
+        },
+      });
+    });
+
+    for (const fileName of ['wrong-phase.jpg', 'wrong-path.jpg', 'wrong-type.jpg', 'wrong-size.jpg', 'wrong-user.jpg', 'finalized.jpg']) {
+      await assertFails(upload('employee-a', `${basePath}/before/${fileName}`, 'image/jpeg'));
+    }
   });
 
   test('employee access requires exact assignment and an active non-archived booking', async () => {
