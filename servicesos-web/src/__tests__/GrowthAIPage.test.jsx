@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GrowthAIPage from '../modules/growthAI/GrowthAIPage';
 import * as businessIntelligence from '../modules/growthAI/growthAIBusinessIntelligence';
+import { approvedBookingFixture } from '../test/approvedBookingFixture';
 
 const state = vi.hoisted(() => ({
   auth: {
@@ -851,6 +852,45 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(screen.getAllByText(/Booking scheduling evidence is missing, invalid or conflicting/)).toHaveLength(2);
     expect(screen.queryByText(/No eligible upcoming bookings/)).not.toBeInTheDocument();
     expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it.each(['modern', 'legacy'])('renders the approved financial obligation through %s without cost or mutation', async path => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-08T12:00:00Z'));
+    let modern;
+    try {
+      if (path === 'legacy') modern = vi.spyOn(businessIntelligence, 'answerBusinessQuestion').mockReturnValue({ status: 'unsupported' });
+      state.auth.currentTenant.businessSettings = { timeZone: 'America/Chicago' };
+      state.opportunityWorkspace.bookings = [approvedBookingFixture()];
+      const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('How much is Synthetic Financial paying?');
+      expect(await screen.findByText('Saved booking amount: $410.00.')).toBeInTheDocument();
+      expect(screen.queryByText('Saved booking amount: $200.00.')).not.toBeInTheDocument();
+      expectReadOnlyContext(); await expectCreditBalance(5);
+      expect(state.opportunityWorkspace).toEqual(original);
+    } finally { modern?.mockRestore(); vi.useRealTimers(); }
+  });
+  it.each(['stale', 'hash', 'missing', 'contradictory'])('renders unavailable financial evidence for %s without provider guessing', async scenario => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-08T12:00:00Z'));
+    try {
+      state.auth.currentTenant.businessSettings = { timeZone: 'America/Chicago' };
+      const booking = approvedBookingFixture();
+      if (scenario === 'stale') booking.jobScopeControl.approvedVersion = 3;
+      if (scenario === 'hash') {
+        booking.approvedJobScope.scopeHash = 'a'.repeat(64); booking.jobScopeControl.approvedScopeHash = 'a'.repeat(64);
+      }
+      if (scenario === 'missing') delete booking.approvedJobScope.approvedAt;
+      if (scenario === 'contradictory') booking.approvedJobScope.snapshot.price = 620;
+      state.opportunityWorkspace.bookings = [booking];
+      const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('How much is Synthetic Financial paying?');
+      expect(await screen.findByText('The requested price is unavailable in this loaded record. I will not infer it from another record.')).toBeInTheDocument();
+      expect(screen.queryByText(/Saved booking amount: \$/)).not.toBeInTheDocument();
+      expectReadOnlyContext(); await expectCreditBalance(5);
+      expect(state.opportunityWorkspace).toEqual(original);
+    } finally { vi.useRealTimers(); }
   });
   it('renders canonical service comparisons and contextual differences without calls, credits or mutations', async () => {
     contextFixtures(); state.opportunityWorkspace.bookings[0].customerSnapshot = { email: 'synthetic@example.test' };

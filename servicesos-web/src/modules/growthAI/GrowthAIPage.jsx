@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useAuth } from '../../contexts/AuthContext';
 import { listOwnerServices } from '../../services/serviceCatalogService';
 import { buildOwnerContext } from './growthAIOwnerContext';
+import { prepareAssistantBookingFinancials } from './growthAIBookingFinancialContext';
 import { listFieldPhotosForMarketing } from '../../services/fieldPhotoService';
 import GrowthAIActivityView from './components/GrowthAIActivityView';
 import GrowthAIDraftsView from './components/GrowthAIDraftsView';
@@ -259,8 +260,9 @@ export default function GrowthAIPage({ onReviewJob }) {
     setOpportunitiesLoading(true);
     try {
       const workspace = await refreshGrowthAIOpportunityFeed(tenantId);
+      const bookings = await prepareAssistantBookingFinancials(workspace.bookings, requestedTenantId);
       if (requestSequence === opportunityRequestSequence.current && isCurrentTenantRequest(requestedTenantId, requestVersion)) {
-        setOpportunityWorkspace({ ...workspace, tenantId: requestedTenantId });
+        setOpportunityWorkspace({ ...workspace, bookings, tenantId: requestedTenantId });
       }
       return workspace;
     } catch (error) {

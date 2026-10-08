@@ -2,6 +2,7 @@ import { resolveBookingSchedule, isEligibleUpcomingBooking, hasInvalidActiveBook
 import { listEligibleEstimateAssistanceLeads, readSavedEstimatePricing, formatEstimateCurrency } from './growthAIEstimateAssistance';
 import { formatMarketingServiceName } from './growthAIMarketingService';
 import { resolveTemporalConstraint, validScheduleDate, validScheduleTime, localDateParts } from './growthAITemporalConstraint';
+import { readAssistantBookingFinancials } from './growthAIBookingFinancialContext';
 
 const text = value => typeof value === 'string' ? value.trim().slice(0, 160) : '';
 const ref = (type, id) => ({ type, id });
@@ -29,8 +30,6 @@ const dateMillis = value => {
     return Number.isFinite(parsed) && Number.isFinite(new Date(parsed).getTime()) ? parsed : null;
   } catch { return null; }
 };
-const money = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 &&
-  Number.isSafeInteger(Math.round(value * 100)) && Math.abs(value * 100 - Math.round(value * 100)) < 0.000001 ? value : null;
 const visible = record => record.isArchived !== true && record.isDeleted !== true;
 const savedContact = record => {
   const snapshot = record.customerSnapshot || {};
@@ -56,7 +55,8 @@ export function buildOwnerContext({ tenantId, authorized, bookings = [], leads =
       type: 'booking', id: record.id, customerId: text(record.customerId), customerName: name(record),
       serviceType: serviceType(record), serviceId: text(record.serviceId), date: schedule.date || text(record.date), time: schedule.time || text(record.startTime),
       scheduledMillis: schedule.startMillis, scheduleError: schedule.error, status: text(record.status), completed: record.status === 'completed' || record.fieldStatus === 'completed',
-      upcoming: isEligibleUpcomingBooking(record, now.getTime(), packet.timeZone, schedule), amount: money(record.agreedPrice ?? record.price),
+      upcoming: isEligibleUpcomingBooking(record, now.getTime(), packet.timeZone, schedule),
+      ...readAssistantBookingFinancials(record),
       leadId: text(record.leadId || record.sourceLeadId),
       contact: savedContact(record),
     };

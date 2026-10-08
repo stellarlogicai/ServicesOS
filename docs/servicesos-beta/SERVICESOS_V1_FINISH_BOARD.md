@@ -1,5 +1,29 @@
 # ServicesOS V1 Finish Board
 
+## Assistant approved financial obligation handoff (2026-10-08)
+
+- **REPAIRED — READY FOR REVIEW**; automatically validated, uncommitted, not
+  integrated-release or payment certified. Base $200 plus approved additions $210
+  yields valid hash-bound scope v2 total $410 / 41,000 canonical cents.
+- Before repair, the rendered Assistant reported $200. Modern and legacy answers
+  now report $410; the original $200 remains separate base evidence/stored history.
+- Reuse `bookingObligationCents`; validate sorted-JSON SHA-256/approved version
+  binding and revalidate booking/tenant identity. Invalid, stale, missing,
+  contradictory or unverified evidence fails closed, never falling back to $200.
+  Browser hashing unavailable also fails closed. Partial payments/refunds/reversals
+  affect canonical balance, not total obligation; formulas and history are unchanged.
+- Zero provider/router/generation calls and unchanged credits are asserted.
+  Validation: financial/rendered 34/34; GrowthAI/composer 24 files / 1,120/1,120;
+  related web 15 files / 197/197; accounting/approval 37/37; Functions 523/523.
+  Final unfiltered suites: zero failures/skips. Lint/build/diff-check passed.
+- Keep open: no-ID/manual Checkout reconciliation and controlled Stripe/provider
+  acceptance, combined integrated acceptance,
+  owner/customer workflow, Agreement Lite signing/presentation/PDF, physical
+  employee-device/photos, Stripe provider acceptance, IW-04 fee decision, deployed
+  security and release validation. Wife beta/payments/release are not certified.
+- IW-01/IW-02/IW-03 remain intact. Existing build/import/CRLF warnings remain;
+  no provider/deployment/production action occurred. Tap to Pay remains post-V1.
+
 ## IW-02 approved extra-work financial handoff (2026-10-08)
 
 - Repaired, ready for review; not deployed or full payment/release certified.
@@ -93,7 +117,7 @@ make zero router/generation calls, consume zero credits and leave synthetic busi
 data unchanged. Tenant/identity switching, reset, stale/foreign/suspended context,
 coherent replacement and conflicting explicit identity remain covered.
 
-All 29 intentional dirty/untracked paths remain. The protected
+At the 2026-10-07 checkpoint, 29 intentional dirty/untracked paths remained. The protected
 sistant_Beta_UX_WIP.patch SHA-256 remains
 1C5E11D80DE54D4D5B7D84A0A3093CE68B12FD65BC1CC9666934C95E5556818B.
 Review the intelligence code/tests together; keep emulator/provider-test support,

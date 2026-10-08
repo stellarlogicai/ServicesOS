@@ -1,5 +1,37 @@
 # ServicesOS V1 Current State
 
+## Assistant approved financial obligation handoff (2026-10-08)
+
+**REPAIRED — READY FOR REVIEW**, automatically validated but not integrated-release
+or payment certified. A $200 original booking plus $210 approved additions has a
+valid hash-bound scope v2 obligation of $410 / 41,000 canonical accounting cents.
+The failing rendered regression reproduced the previous $200 Assistant answer.
+Modern and legacy rendered answers now report the $410 booking obligation, while
+the original $200 remains separately preserved as base evidence and stored history.
+
+The authorized packet projection reuses `bookingObligationCents`, verifies the
+sorted-JSON SHA-256 and approved version binding, and revalidates booking/tenant
+identity and financial evidence before use. Invalid, stale, missing, contradictory
+or unverified approval evidence fails closed without an outdated base fallback.
+Unavailable browser hashing also fails closed. Partial payment, refund and reversal
+evidence changes canonical net paid/remaining balance, not the approved obligation.
+No accounting formula, scheduling writer, reasoning engine or business data changed.
+Rendered tests verify zero provider/router/generation calls and unchanged AI credits.
+
+Validation: focused financial/rendered 34/34; complete GrowthAI/composer 24 files /
+1,120/1,120; related booking/scheduling/payment web 15 files / 197/197;
+accounting/approval 37/37; full Functions 523/523. Final unfiltered suites have zero
+failures/skips. Lint, production build and git diff --check passed; existing
+bundle-size, dynamic-import and CRLF warnings remain. The implementation is
+uncommitted; no provider, deployment, migration or production action occurred.
+
+Still open: no-ID/manual Checkout reconciliation and controlled Stripe/provider
+acceptance; combined integrated acceptance;
+owner/customer workflow; Agreement Lite signing/presentation/PDF; employee
+physical-device/photo acceptance; Stripe provider acceptance; IW-04 fee-policy
+decision; deployed security and release validation. Wife beta, payments and release
+are not certified. Mobile Tap to Pay remains post-V1.
+
 ## IW-02 approved extra-work financial handoff (2026-10-08)
 
 IW-02 is repaired and ready for review, not deployed or payment-certified.
@@ -103,7 +135,7 @@ make zero router/generation calls, consume zero credits and leave synthetic busi
 data unchanged. Tenant/identity switching, reset, stale/foreign/suspended context,
 coherent replacement and conflicting explicit identity remain covered.
 
-All 29 intentional dirty/untracked paths remain. The protected
+At the 2026-10-07 checkpoint, 29 intentional dirty/untracked paths remained. The protected
 sistant_Beta_UX_WIP.patch SHA-256 remains
 1C5E11D80DE54D4D5B7D84A0A3093CE68B12FD65BC1CC9666934C95E5556818B.
 Review the intelligence code/tests together; keep emulator/provider-test support,
