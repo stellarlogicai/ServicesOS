@@ -1,4 +1,5 @@
 const { canonicalJobScopeSnapshot, scopeHash } = require('./jobScopeControl');
+const { cents, canonicalTotalCents, summaryPatch, paymentCollectionLeaseRef } = require('./bookingPaymentAccounting');
 
 class ExtraWorkApprovalError extends Error {
   constructor(message, code = 'request_unavailable', status = 409) {
@@ -112,6 +113,22 @@ async function approveCustomerExtraWork({ admin, context, bookingId, requestId, 
     if (record.status === 'customer_approved') return { request: customerProjection(record) };
     if (record.status !== 'approval_ready') fail('Extra-work request is not approval-ready.', 'approval_conflict', 409);
 
+    // Approval and every collector read the same booking/lease transaction boundary.
+    // A provider-associated operation is unresolved even if its local expiry passed.
+    const leaseSnap = await tx.get(paymentCollectionLeaseRef(db, context.tenantId, bookingId));
+    const lease = leaseSnap.exists ? leaseSnap.data() : null;
+    if (lease && (lease.version !== 1 || lease.tenantId !== context.tenantId || lease.bookingId !== bookingId ||
+        !['completed', 'released'].includes(lease.status)) ||
+        booking.stripePaymentStatus === 'checkout_created' || booking.stripeCheckoutReservation) {
+      fail('Resolve the current payment collection before approving a financial scope change.', 'payment_collection_conflict', 409);
+    }
+    if (cents(booking.agreedPrice ?? booking.price) === null) {
+      fail('Original booking price is invalid.', 'invalid_price', 409);
+    }
+    if (booking.paymentAccounting?.issues?.length) {
+      fail('Payment history requires review before changing the financial scope.', 'payment_history_unavailable', 409);
+    }
+
     const approved = booking.approvedJobScope;
     const control = booking.jobScopeControl || {};
     if (!approved || control.state !== 'approved' || control.latestVersion !== approved.version ||
@@ -124,7 +141,7 @@ async function approveCustomerExtraWork({ admin, context, bookingId, requestId, 
     const priorVersionRef = bookingRef.collection('jobScopeVersions').doc(`v${approved.version}`);
     const priorVersionSnap = await tx.get(priorVersionRef);
     const priorVersion = priorVersionSnap.exists ? priorVersionSnap.data() || {} : {};
-    if (priorVersion.state !== 'approved' || priorVersion.scopeHash !== approved.scopeHash ||
+    if (priorVersion.version !== approved.version || priorVersion.state !== 'approved' || priorVersion.scopeHash !== approved.scopeHash ||
       scopeHash(priorVersion.snapshot) !== approved.scopeHash) {
       fail('Approved scope history is unavailable.', 'scope_history_unavailable', 409);
     }
@@ -161,8 +178,17 @@ async function approveCustomerExtraWork({ admin, context, bookingId, requestId, 
       sourceRequestId: requestId,
       priorVersion: approved.version,
     };
+    const revisedBooking = {
+      ...booking,
+      jobScopeControl: { ...control, approvedVersion: version, approvedScopeHash: revisedHash },
+      approvedJobScope: { version, scopeHash: revisedHash, approvedAt, snapshot: revisedSnapshot },
+    };
+    if (canonicalTotalCents(revisedBooking) === null) fail('Approved financial scope is invalid.', 'invalid_price', 409);
+    const paymentPatch = booking.paymentAccounting
+      ? summaryPatch(revisedBooking, booking.paymentAccounting, approvedAt, 'customer_extra_work_approval') : {};
     tx.create(versionRef, versionRecord);
     tx.update(bookingRef, {
+      ...paymentPatch,
       jobScopeControl: {
         ...control,
         state: 'approved',

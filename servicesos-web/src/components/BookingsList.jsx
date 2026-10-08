@@ -18,6 +18,8 @@ import {
   bookingPaymentNote,
   bookingPaymentStatus,
   bookingPrice,
+  bookingOriginalPrice,
+  bookingObligationAmount,
   bookingReference,
   bookingReceivedDate,
   bookingSchedule,
@@ -801,6 +803,7 @@ export default function BookingsList() {
               </p>
               <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, margin: 0 }}>
                 <DetailItem label="Job price" value={bookingPrice(selectedBooking)} />
+                {selectedBooking.approvedJobScope && <DetailItem label="Original booking price" value={bookingOriginalPrice(selectedBooking)} />}
                 <DetailItem label="Payment status" value={bookingPaymentStatus(selectedBooking)} />
                 <DetailItem label="Payment method" value={bookingPaymentMethod(selectedBooking) || 'Not recorded'} />
                 <DetailItem label="Amount received" value={bookingAmountReceived(selectedBooking) || 'Not recorded'} />
@@ -1559,8 +1562,7 @@ function bookingFieldIssue(booking = {}) {
 }
 
 function bookingAgreedPrice(booking = {}) {
-  const agreedPrice = Number(booking.agreedPrice ?? booking.price);
-  return Number.isFinite(agreedPrice) && agreedPrice >= 0 ? agreedPrice : null;
+  return bookingObligationAmount(booking);
 }
 
 function buildPaymentDetailsPatch(form) {

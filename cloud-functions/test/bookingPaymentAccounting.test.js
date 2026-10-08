@@ -7,8 +7,29 @@ const {
 } = require('../bookingPaymentAccounting');
 const { createBookingManualPaymentGatewayHandler } = require('../bookingManualPaymentGateway');
 const { buildCutoverReport } = require('../scripts/bookingPaymentCutover');
+const { canonicalJobScopeSnapshot, scopeHash } = require('../jobScopeControl');
+const { canonicalTotalCents } = require('../bookingPaymentAccounting');
 
 const nowIso = '2026-09-26T09:00:00.000Z';
+
+test('IW-02 approved financial projection requires exact version, hash and valid cent operands', () => {
+  const booking = { agreedPrice: 200, approvedJobScope: { snapshot: { extraWork: [{ requestId: 'synthetic-r', priceDeltaCents: 21000 }] } } };
+  const snapshot = canonicalJobScopeSnapshot('synthetic-booking', booking);
+  const hash = scopeHash(snapshot);
+  booking.approvedJobScope = { version: 2, scopeHash: hash, approvedAt: nowIso, snapshot };
+  booking.jobScopeControl = { approvedVersion: 2, approvedScopeHash: hash };
+  assert.equal(canonicalTotalCents(booking), 41000);
+  for (const patch of [
+    { approvedJobScope: { ...booking.approvedJobScope, snapshot: { ...snapshot, price: 620 } } },
+    { jobScopeControl: { approvedVersion: 1, approvedScopeHash: hash } },
+    { agreedPrice: '111.111' },
+    { approvedJobScope: { ...booking.approvedJobScope, snapshot: { ...snapshot, price: null } } },
+  ]) assert.equal(canonicalTotalCents({ ...booking, ...patch }), null);
+  const duplicate = { ...snapshot, extraWork: [...snapshot.extraWork, ...snapshot.extraWork], price: 620 };
+  const duplicateHash = scopeHash(duplicate);
+  assert.equal(canonicalTotalCents({ ...booking, approvedJobScope: { ...booking.approvedJobScope, snapshot: duplicate, scopeHash: duplicateHash },
+    jobScopeControl: { approvedVersion: 2, approvedScopeHash: duplicateHash } }), null);
+});
 
 function fixture(bookingOverrides = {}) {
   const store = new Map([

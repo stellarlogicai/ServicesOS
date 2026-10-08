@@ -137,6 +137,25 @@ describe('read-only Bookings admin list', () => {
     expect(await screen.findByText('Your job management page. Update booked job details, create Stripe payment links, and copy customer-ready messages.')).toBeInTheDocument();
   });
 
+  it('IW-02 renders approved total, original price and canonical remaining balance separately', async () => {
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{ id: 'synthetic-booking', customerName: 'Synthetic approved customer', agreedPrice: 200,
+      amountReceived: 100, paymentAccounting: { version: 1 }, remainingBalanceCents: 31000, paymentStatus: 'partial',
+      approvedJobScope: { version: 2, scopeHash: 'synthetic-hash', approvedAt: '2026-09-04T12:00:00Z', snapshot: {
+        schemaVersion: 1, bookingId: 'synthetic-booking', price: 410, extraWork: [{ requestId: 'synthetic-request', priceDeltaCents: 21000 }] } },
+      jobScopeControl: { approvedVersion: 2, approvedScopeHash: 'synthetic-hash' },
+    }] });
+    render(<BookingsList />);
+    await screen.findByRole('heading', { name: 'Synthetic approved customer' });
+    fireEvent.click(screen.getByRole('button', { name: /View details/i }));
+    expect(await screen.findByText('Original booking price')).toBeInTheDocument();
+    expect(screen.getByText('$200.00')).toBeInTheDocument();
+    expect(screen.getAllByText('$410.00').length).toBeGreaterThan(0);
+    expect(screen.getByText('$310.00')).toBeInTheDocument();
+    expect(screen.getByText('$100.00')).toBeInTheDocument();
+    expect(mocks.createBookingCheckoutSession).not.toHaveBeenCalled();
+    expect(mocks.recordBookingManualPayment).not.toHaveBeenCalled();
+  });
+
   it('loads bookings through the active tenant service boundary', async () => {
     let resolveLoad;
     mocks.getJobs.mockReturnValue(new Promise(resolve => {

@@ -3,6 +3,10 @@ const assert = require('node:assert/strict');
 const { createJobScopeGatewayHandler } = require('../jobScopeGateway');
 const { canonicalJobScopeSnapshot, scopeHash } = require('../jobScopeControl');
 const { employeeJobPacket } = require('../employeeJobPacketProjection');
+const { balance, planCutover, readCanonicalBalance, reconcilePayment, reconcileReduction, recordId,
+  recordManualPayment, acquirePaymentCollectionLease } = require('../bookingPaymentAccounting');
+const { createBookingCheckoutSessionCore } = require('../bookingStripe');
+const { approveCustomerExtraWork } = require('../extraWorkApproval');
 
 function fixture({ uid = 'customer-a', requestStatus = 'approval_ready', requestScopeVersion = 1, identityTenant = 'tenant-a' } = {}) {
   const bookingPath = 'tenants/tenant-a/bookings/booking-a';
@@ -77,13 +81,28 @@ function fixture({ uid = 'customer-a', requestStatus = 'approval_ready', request
     }
   }
   const snapshot = ref => ({ id: ref.id, exists: data.has(ref.path), data: () => structuredClone(data.get(ref.path)) });
-  const transaction = {
-    get: ref => Promise.resolve(snapshot(ref)),
-    create(ref, value) { if (data.has(ref.path)) throw new Error('already exists'); data.set(ref.path, structuredClone(value)); writes.push(['create', ref.path, value]); },
-    update(ref, patch) { data.set(ref.path, { ...data.get(ref.path), ...structuredClone(patch) }); writes.push(['update', ref.path, patch]); },
-  };
-  const db = { collection: name => new Query(name), runTransaction: callback => callback(transaction) };
+  let queue = Promise.resolve();
+  const db = { collection: name => new Query(name), runTransaction(callback) {
+    const run = async () => {
+      const staged = [];
+      const result = await callback({ get: ref => Promise.resolve(snapshot(ref)),
+        create: (ref, value) => staged.push(['create', ref.path, structuredClone(value)]),
+        update: (ref, value) => staged.push(['update', ref.path, structuredClone(value)]),
+        set: (ref, value) => staged.push(['set', ref.path, structuredClone(value)]),
+      });
+      for (const [kind, path, value] of staged) {
+        if (kind === 'create') assert.equal(data.has(path), false);
+        data.set(path, kind === 'update' ? { ...data.get(path), ...value } : value);
+        writes.push([kind, path, value]);
+      }
+      return result;
+    };
+    const result = queue.then(run, run);
+    queue = result.then(() => undefined, () => undefined);
+    return result;
+  } };
   const admin = { auth: () => ({ verifyIdToken: async () => ({ uid }) }), firestore: () => db };
+  admin.firestore.FieldValue = { serverTimestamp: () => 'synthetic-server-time' };
   return { admin, data, writes, bookingPath, originalSnapshot, originalHash };
 }
 
@@ -98,6 +117,145 @@ async function call(source, body) {
 }
 
 const approval = { action: 'customer_extra_work_approve', bookingId: 'booking-a', requestId: 'request-a', affirmativeAcceptance: true };
+const nowIso = '2026-09-04T12:00:00.000Z';
+function accountingFixture(options) {
+  const source = fixture(options);
+  const booking = source.data.get(source.bookingPath);
+  booking.paymentAccounting = planCutover(booking, '2026-09-01T12:00:00.000Z');
+  Object.assign(source.data.get('tenants/tenant-a'), { stripeAccountId: 'acct_synthetic', chargesEnabled: true });
+  return source;
+}
+const paymentArgs = source => ({ admin: source.admin, tenantId: 'tenant-a', bookingId: 'booking-a', nowIso });
+
+test('IW-02 partial payment and delayed duplicate webhook preserve revised authority and refund provenance', async () => {
+  const source = accountingFixture();
+  const paid = { ...paymentArgs(source), connectedAccountId: 'acct_synthetic', providerPaymentId: 'pi_synthetic', amountCents: 10000,
+    currency: 'usd', channel: 'online_checkout', paymentCreatedAt: Date.parse(nowIso) / 1000 };
+  await reconcilePayment(paid);
+  assert.equal((await call(source, approval)).statusCode, 200);
+  assert.equal((await reconcilePayment(paid)).duplicate, true);
+  assert.equal(balance(source.data.get(source.bookingPath)).remainingCents, 31000);
+  await reconcileReduction({ ...paymentArgs(source), connectedAccountId: 'acct_synthetic', originalPaymentId: recordId('stripe_pi', 'pi_synthetic'),
+    reductionId: 'refund_synthetic', amountCents: 2500, kind: 'refund' });
+  assert.equal(balance(source.data.get(source.bookingPath)).remainingCents, 33500);
+  assert.equal(source.data.get(source.bookingPath).agreedPrice, 200);
+});
+
+test('IW-02 paid base can receive an approved revised obligation without fabricating payment', async () => {
+  const source = accountingFixture();
+  await recordManualPayment({ ...paymentArgs(source), actorUid: 'owner-a', clientPaymentId: 'manual-operation-001', amountCents: 20000, method: 'cash', note: '' });
+  assert.equal((await call(source, approval)).statusCode, 200);
+  assert.equal(balance(source.data.get(source.bookingPath)).remainingCents, 21000);
+  assert.equal(source.data.get(source.bookingPath).paymentStatus, 'partial');
+  await reconcileReduction({ ...paymentArgs(source), kind: 'manual_reversal', actorUid: 'owner-a', amountCents: 20000,
+    originalPaymentId: recordId('manual', 'owner-a\nmanual-operation-001'), reductionId: 'reversal_synthetic' });
+  assert.equal(balance(source.data.get(source.bookingPath)).remainingCents, 41000);
+});
+
+for (const state of ['reserved', 'provider_pending', 'unknown']) {
+  test(`IW-02 unresolved ${state} collection blocks approval without mutation even after local expiry`, async () => {
+    const source = accountingFixture();
+    source.data.set(`${source.bookingPath}/paymentCollectionControl/current`, { version: 1, status: state,
+      tenantId: 'tenant-a', bookingId: 'booking-a', channel: 'checkout', providerObjectId: 'cs_synthetic', providerExpiresAtMs: 1 });
+    const before = structuredClone([...source.data]);
+    assert.equal((await call(source, approval)).statusCode, 409);
+    assert.deepEqual([...source.data], before);
+  });
+}
+
+test('IW-02 legacy unresolved Checkout blocks approval without a shared lease', async () => {
+  const source = accountingFixture();
+  Object.assign(source.data.get(source.bookingPath), { stripePaymentStatus: 'checkout_created', stripeCheckoutSessionId: 'cs_synthetic', stripeCheckoutSessionExpiresAt: 1 });
+  assert.equal((await call(source, approval)).statusCode, 409);
+});
+
+test('IW-02 released collection allows approval, and Checkout receives the revised remaining amount', async () => {
+  const source = accountingFixture();
+  source.data.set(`${source.bookingPath}/paymentCollectionControl/current`, { version: 1, tenantId: 'tenant-a', bookingId: 'booking-a', status: 'released' });
+  assert.equal((await call(source, approval)).statusCode, 200);
+  const calls = [];
+  const result = await createBookingCheckoutSessionCore({ ...paymentArgs(source), uid: 'owner-a', clientCheckoutId: 'checkout-operation-001', appUrl: 'http://localhost:5173',
+    secretKey: '', getPlatformFee: () => 0, stripe: { checkout: { sessions: { create: async params => {
+      calls.push(params); return { id: 'cs_synthetic', url: 'https://example.invalid/checkout', expires_at: Date.parse(nowIso) / 1000 + 3600 };
+    } } } } });
+  assert.equal(result.success, true);
+  assert.equal(result.data.amount, 41000);
+  assert.equal(calls[0].line_items[0].price_data.unit_amount, 41000);
+});
+
+test('IW-02 concurrent same approvals reuse one revision; different stale requests cannot add twice', async () => {
+  const source = accountingFixture();
+  source.data.set(`${source.bookingPath}/extraWorkRequests/request-b`, { ...structuredClone(source.data.get(`${source.bookingPath}/extraWorkRequests/request-a`)), id: 'request-b' });
+  const results = await Promise.all([call(source, approval), call(source, approval), call(source, { ...approval, requestId: 'request-b' })]);
+  assert.deepEqual(results.map(result => result.statusCode), [200, 200, 409]);
+  assert.equal(balance(source.data.get(source.bookingPath)).totalCents, 41000);
+  assert.equal(source.data.has(`${source.bookingPath}/jobScopeVersions/v3`), false);
+});
+
+test('IW-02 collection and approval serialize against the same booking and lease', async () => {
+  const source = accountingFixture();
+  const [lease, approvalResult] = await Promise.all([
+    acquirePaymentCollectionLease({ ...paymentArgs(source), channel: 'terminal', operationId: 'terminal-operation-001', actorUid: 'owner-a' }),
+    call(source, approval),
+  ]);
+  assert.equal(lease.lease.amountCents, 20000);
+  assert.equal(approvalResult.statusCode, 409);
+  assert.equal(balance(source.data.get(source.bookingPath)).totalCents, 20000);
+});
+
+test('IW-02 invalid base monetary precision cannot be legitimized by rounded scope history', async () => {
+  const source = accountingFixture();
+  source.data.get(source.bookingPath).agreedPrice = '111.111';
+  assert.equal((await call(source, approval)).statusCode, 409);
+});
+
+test('IW-02 invalid reviewed cents, missing immutable evidence and unresolved payment history fail without writes', async () => {
+  for (const kind of ['precision', 'history', 'unresolved_payment']) {
+    const source = accountingFixture();
+    if (kind === 'precision') source.data.get(`${source.bookingPath}/extraWorkRequests/request-a`).ownerReview.customPriceCents = 111.111;
+    if (kind === 'history') source.data.delete(`${source.bookingPath}/jobScopeVersions/v1`);
+    if (kind === 'unresolved_payment') source.data.get(source.bookingPath).paymentAccounting.issues = ['unresolved_legacy_payment'];
+    const before = structuredClone([...source.data]);
+    assert.equal((await call(source, approval)).statusCode, 409);
+    assert.deepEqual([...source.data], before);
+  }
+});
+
+test('IW-02 an approval that wins first binds the next collector to the revised amount', async () => {
+  const source = accountingFixture();
+  const [result, lease] = await Promise.all([approveCustomerExtraWork({ admin: source.admin,
+    context: { tenantId: 'tenant-a', uid: 'customer-a' }, customer: { id: 'customer-a-record' },
+    bookingId: 'booking-a', requestId: 'request-a', now: new Date(nowIso) }),
+    acquirePaymentCollectionLease({ ...paymentArgs(source), channel: 'checkout', operationId: 'checkout-operation-002', actorUid: 'owner-a' })]);
+  assert.equal(result.request.approvedRevisionVersion, 2);
+  assert.equal(lease.lease.amountCents, 41000);
+});
+
+test('IW-02 a delayed confirmed payment changes net paid, never the approved total', async () => {
+  const source = accountingFixture();
+  assert.equal((await call(source, approval)).statusCode, 200);
+  await reconcilePayment({ ...paymentArgs(source), connectedAccountId: 'acct_synthetic', providerPaymentId: 'pi_delayed_synthetic', amountCents: 20000,
+    currency: 'usd', channel: 'online_checkout', paymentCreatedAt: Date.parse('2026-09-02T12:00:00Z') / 1000 });
+  const current = await readCanonicalBalance(paymentArgs(source));
+  assert.equal(current.totalCents, 41000);
+  assert.equal(current.netPaidCents, 20000);
+  assert.equal(current.remainingCents, 21000);
+});
+
+test('IW-02 approved revised total reaches canonical accounting without changing the original price', async () => {
+  const source = fixture();
+  const original = source.data.get(source.bookingPath);
+  original.paymentAccounting = planCutover(original, '2026-09-01T12:00:00.000Z');
+  assert.equal(balance(original).totalCents, 20000);
+  const result = await call(source, approval);
+  assert.equal(result.statusCode, 200);
+  const booking = source.data.get(source.bookingPath);
+  assert.equal(booking.approvedJobScope.snapshot.price, 410);
+  assert.equal(booking.agreedPrice, 200);
+  assert.equal(balance(booking).totalCents, 41000);
+  assert.equal(booking.remainingBalanceCents, 41000);
+  assert.equal(booking.paymentStatus, 'not_paid');
+});
 
 test('valid customer approval creates one immutable authoritative scope revision', async () => {
   const source = fixture();
@@ -151,10 +309,11 @@ test('wrong customer and cross-tenant customer cannot approve', async () => {
 });
 
 test('non-ready, declined, cancelled, and stale requests cannot create revisions', async () => {
-  for (const status of ['submitted', 'declined', 'cancelled']) {
-    const source = fixture({ requestStatus: status });
+  for (const status of ['submitted', 'declined', 'cancelled', 'expired']) {
+    const source = accountingFixture({ requestStatus: status });
     assert.equal((await call(source, approval)).statusCode, 409, status);
     assert.equal(source.data.has(`${source.bookingPath}/jobScopeVersions/v2`), false);
+    assert.equal(balance(source.data.get(source.bookingPath)).totalCents, 20000);
   }
   const stale = fixture({ requestScopeVersion: 0 });
   assert.equal((await call(stale, approval)).statusCode, 409);

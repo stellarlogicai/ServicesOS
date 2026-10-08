@@ -3,6 +3,16 @@ import {
   BOOKING_PAYMENT_METHOD_LABELS,
 } from '../core/scheduling/schedulingService';
 import { formatDateOnly } from '../utils/dateOnly';
+import { cents, bookingObligationCents } from '../../../cloud-functions/bookingFinancialAmount.mjs';
+
+export const bookingOriginalPrice = booking => {
+  const base = cents(booking.agreedPrice ?? booking.price);
+  return base === null ? 'Price not set' : currency(base / 100);
+};
+export const bookingObligationAmount = booking => {
+  const total = bookingObligationCents(booking);
+  return total === null ? null : total / 100;
+};
 
 function firstText(...values) {
   return values.find(value => typeof value === 'string' && value.trim())?.trim() || '';
@@ -86,11 +96,9 @@ export function bookingSchedule(booking = {}) {
 }
 
 export function bookingPrice(booking = {}) {
-  const directPrice = [booking.agreedPrice, booking.price]
-    .filter(value => value !== null && value !== undefined && value !== '')
-    .map(Number)
-    .find(Number.isFinite);
-  if (directPrice !== undefined) return `$${directPrice.toFixed(2)}`;
+  const total = bookingObligationAmount(booking);
+  if (total !== null) return currency(total);
+  if (booking.approvedJobScope) return 'Price not set';
 
   if (Number.isFinite(Number(booking.estimate?.priceLow))) {
     const low = Number(booking.estimate.priceLow);
@@ -140,8 +148,8 @@ export function bookingStillOwed(booking = {}) {
       Number.isSafeInteger(booking.remainingBalanceCents) && booking.remainingBalanceCents >= 0) {
     return currency(booking.remainingBalanceCents / 100);
   }
-  const agreedPrice = Number(booking.agreedPrice ?? booking.price);
-  if (!Number.isFinite(agreedPrice)) return 'Unavailable';
+  const agreedPrice = bookingObligationAmount(booking);
+  if (agreedPrice === null) return 'Unavailable';
 
   const amountReceived = Number(booking.amountReceived);
   if (!Number.isFinite(amountReceived)) return currency(agreedPrice);

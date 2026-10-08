@@ -1,5 +1,36 @@
 # ServicesOS V1 Current State
 
+## IW-02 approved extra-work financial handoff (2026-10-08)
+
+IW-02 is repaired and ready for review, not deployed or payment-certified.
+The original booking price remains unchanged for scope calculations. A valid,
+version-bound, hash-validated customer-approved scope supplies the revised
+accounting obligation: base $200 plus approved additions $210 is $410, not $620.
+Pending, rejected, expired and stale proposals do not change that obligation.
+Approval refreshes existing canonical payment summaries transactionally without
+creating payments or rewriting payment/refund history. Checkout and manual
+payment consumers continue using the shared canonical balance helper.
+
+Financial approval conflicts with unresolved shared collection authority, even
+after local expiry, and with unresolved legacy Checkout reservation/status.
+No provider cancellation, replacement charge or automatic recovery is added.
+Exact money parsing rejects negative, malformed and greater-than-two-decimal
+inputs before owner review submission. Owner payment details distinguish the
+original price from the approved total and canonical remaining balance.
+
+Validation: focused accounting/approval 37/37; full Functions 523/523;
+affected web 17 files / 612 tests passed, including IW-01 scheduling and GrowthAI
+regressions; owner financial UI subset 3 files / 59 passed; lint and build passed.
+The first broader web attempt executed no tests because sandbox temporary-file
+renames were denied; the unchanged command passed outside that sandbox.
+Existing bundle-size, dynamic-import and CRLF warnings remain.
+
+IW-01 files and unrelated dirty work remain preserved. No historical backfill,
+provider action, deployment or production change occurred. Controlled payment
+acceptance, integrated workflows, physical-device acceptance and wife beta remain
+open; mobile Tap to Pay remains post-V1. Resolve indeterminate/legacy collections
+through authoritative recovery before retrying financial approval.
+
 ## IW-01 tenant-local scheduling handoff repair (2026-10-08)
 
 IW-01 is repaired and ready for review, not deployed. Booking creation, estimate

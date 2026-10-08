@@ -1,4 +1,6 @@
 const { createHash } = require('node:crypto');
+const { scopeHash } = require('./jobScopeControl');
+const { cents, bookingObligationCents } = require('./bookingFinancialAmount.mjs');
 
 const CURRENCY = 'usd';
 const VERSION = 1;
@@ -13,17 +15,11 @@ class AccountingError extends Error {
   }
 }
 
-function cents(value, { allowZero = true } = {}) {
-  if (typeof value !== 'number' && typeof value !== 'string') return null;
-  const text = String(value);
-  if (!/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(text)) return null;
-  const [whole, fraction = ''] = text.split('.');
-  const result = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
-  return Number.isSafeInteger(result) && (allowZero || result > 0) ? result : null;
-}
-
 function canonicalTotalCents(booking) {
-  return cents(booking.agreedPrice ?? booking.price);
+  const total = bookingObligationCents(booking);
+  if (total === null || booking.approvedJobScope &&
+      scopeHash(booking.approvedJobScope.snapshot) !== booking.approvedJobScope.scopeHash) return null;
+  return total;
 }
 
 function planCutover(booking, nowIso) {
@@ -506,7 +502,7 @@ async function reconcileReduction({ admin, tenantId, bookingId, originalPaymentI
 
 module.exports = {
   AccountingError, CURRENCY, VERSION, PAYMENT_COLLECTION_LEASE_VERSION, PAYMENT_COLLECTION_CHANNELS,
-  cents, canonicalTotalCents, planCutover, balance, readCanonicalBalance, cutoverBooking,
+  cents, canonicalTotalCents, planCutover, balance, summaryPatch, readCanonicalBalance, cutoverBooking,
   reconcilePayment, recordManualPayment, reconcileReduction, recordId, collectionOperationHash,
   paymentCollectionLeaseRef, isActivePaymentCollectionLease, assertPaymentCollectionLeaseContext,
   reservePaymentCollectionInTransaction, paymentCollectionLeasePatch, acquirePaymentCollectionLease,

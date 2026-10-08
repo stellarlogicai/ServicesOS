@@ -1,5 +1,26 @@
 # ServicesOS V1 Finish Board
 
+## IW-02 approved extra-work financial handoff (2026-10-08)
+
+- Repaired, ready for review; not deployed or full payment/release certified.
+- Preserve original base price; validated customer-approved versioned scope is
+  the revised accounting obligation ($200 + $210 = $410, without double count).
+- Unapproved/stale proposals cannot change collectible balance. Existing paid,
+  refund and reversal formulas and immutable records remain unchanged.
+- Financial approval and collection serialize transactionally. Unresolved
+  collection/legacy Checkout blocks approval even after local expiry; provider
+  cancellation/replacement and automatic recovery are not implemented.
+- Owner review uses exact integer cents, rejecting invalid precision; payment
+  details show original price, approved total and canonical remaining balance.
+- Validation: accounting/approval 37/37; Functions 523/523; affected web 17 files,
+  612/612; financial UI subset 59/59; lint/build passed. Initial sandbox rename
+  failure ran no web tests; unchanged elevated run passed. Existing build/CRLF
+  warnings remain.
+- IW-01 and unrelated dirty work preserved; no historical migration or provider
+  action. Review this slice, then resume integrated acceptance. Controlled
+  payment/provider, device, deployment and wife-beta gates remain open.
+- Tap to Pay remains post-V1; no broader release readiness is claimed.
+
 ## IW-01 tenant-local scheduling handoff repair (2026-10-08)
 
 IW-01 is repaired and ready for review, not deployed. Booking creation, estimate
