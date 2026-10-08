@@ -1,5 +1,35 @@
 # ServicesOS V1 Finish Board
 
+## Checkout collection safety and recovery (2026-10-08)
+
+- **REPAIRED — READY FOR REVIEW**; uncommitted, automatically validated, not
+  Stripe-provider/payment/integrated-release certified. The failing regression
+  reproduced duplicate 19,000-cent Checkout authority after saved lease expiry.
+- Unresolved leases stay active regardless of age; unknown states fail closed.
+  Different operation IDs and same-ID unknown retries cannot bypass authority.
+  Expired pending Checkout also excludes manual collection. No automatic cancel,
+  refund, replacement or idempotency replay is performed.
+- Existing authenticated booking gateway recovers current server lease/session
+  without browser-local identity; verifies tenant/admin membership, original actor,
+  booking, connected account, mode, currency, metadata and canonical amount.
+  Open sessions return the existing link; paid sessions use canonical reconciliation
+  and duplicate-ledger closure, never count twice or close a different session.
+- Only verified expired/unpaid noncollection can release the unchanged operation;
+  canceled intents must show zero received amount. A newly released operation needs
+  another explicit owner request before creation. Recovery itself creates nothing.
+- Missing provider ID, legacy reservation, unavailable/contradictory evidence or
+  different actor stays blocked for reconciliation; no manual override or migration
+  is authorized. No schema/rules, fee-policy, accounting formula or Assistant change.
+- Validation: focused backend 101/101; full Functions 545/545; owner payment,
+  extra-work/agreement web 7 files / 81/81; zero failures/skips. Lint/build/diff-check
+  passed. Existing chunk/import/CRLF warnings remain. Remount/repeated recovery,
+  concurrency, partial balances, delayed webhooks, refund/reversal and tenant denial
+  are covered. IW-01/IW-02/IW-03 and unrelated dirty work remain preserved.
+- Keep open: controlled Stripe acceptance; no-ID/manual reconciliation; IW-04;
+  integrated rerun; owner/customer workflow; Agreement Lite signing/presentation/PDF;
+  employee physical-device/photos; deployed security; wife beta and final release.
+  No provider/deployment/production action. Tap to Pay remains post-V1.
+
 ## Assistant approved financial obligation handoff (2026-10-08)
 
 - **REPAIRED — READY FOR REVIEW**; automatically validated, uncommitted, not

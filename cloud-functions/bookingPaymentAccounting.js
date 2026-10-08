@@ -125,13 +125,11 @@ function paymentCollectionLeaseRef(db, tenantId, bookingId) {
   return bookingRef(db, tenantId, bookingId).collection('paymentCollectionControl').doc('current');
 }
 
-function isActivePaymentCollectionLease(lease, nowMs) {
-  if (!lease || lease.version !== PAYMENT_COLLECTION_LEASE_VERSION) return false;
-  if (lease.status === 'reserved') return true;
-  if (lease.status !== 'provider_pending') return false;
-  if (lease.channel === 'checkout' && Number.isSafeInteger(lease.providerExpiresAtMs) &&
-      lease.providerExpiresAtMs <= nowMs) return false;
-  return true;
+function isActivePaymentCollectionLease(lease) {
+  if (!lease) return false;
+  // Age is not evidence of noncollection. Unknown persisted states also fail closed.
+  return lease.version !== PAYMENT_COLLECTION_LEASE_VERSION ||
+    !['completed', 'released'].includes(lease.status);
 }
 
 function assertPaymentCollectionLeaseContext(lease, expected) {
@@ -294,6 +292,17 @@ async function reconcilePayment({ admin, tenantId, bookingId, connectedAccountId
     }
     if (booking.paymentAccounting?.version !== VERSION) throw new AccountingError('accounting_cutover_required');
     const accounting = booking.paymentAccounting;
+    const lease = leaseSnap.exists ? leaseSnap.data() : null;
+    const leaseMatchesPayment = lease?.version === PAYMENT_COLLECTION_LEASE_VERSION &&
+      isActivePaymentCollectionLease(lease) && lease.tenantId === tenantId && lease.bookingId === bookingId &&
+      lease.amountCents === amountCents && lease.currency === currency && lease.connectedAccountId === connectedAccountId &&
+      (lease.channel === 'checkout' && channel === 'online_checkout'
+        ? lease.providerObjectId
+          ? lease.provider === 'stripe_checkout_session' && lease.providerObjectId === checkoutSessionId
+          : expectedOperationHash && lease.operationHash === expectedOperationHash
+        : lease.channel === 'terminal' && channel === 'card_present' &&
+          ((lease.provider === 'stripe_payment_intent' && lease.providerObjectId === providerPaymentId) ||
+           (!lease.providerObjectId && expectedOperationHash && lease.operationHash === expectedOperationHash)));
     if (accounting.legacyStripePaymentIntentId === providerPaymentId ||
         (accounting.legacyOpeningPaidCents > 0 && checkoutSessionId &&
          accounting.legacyStripeCheckoutSessionId === checkoutSessionId)) {
@@ -305,6 +314,11 @@ async function reconcilePayment({ admin, tenantId, bookingId, connectedAccountId
           existing.providerPaymentId !== providerPaymentId || existing.amountCents !== amountCents ||
           existing.connectedAccountId !== connectedAccountId || existing.currency !== currency) {
         throw new AccountingError('payment_identity_conflict');
+      }
+      if (existing.status === 'confirmed' && leaseMatchesPayment) {
+        tx.set(leaseRef, paymentCollectionLeasePatch(lease, {
+          status: 'completed', closedAt: nowIso, canonicalPaymentRecordId: id,
+        }, nowIso));
       }
       return { duplicate: true, unresolvedLegacy: existing.status === 'unresolved_legacy',
         balance: balance(booking) };
@@ -354,16 +368,6 @@ async function reconcilePayment({ admin, tenantId, bookingId, connectedAccountId
       ...(receiptUrl ? { stripeReceiptUrl: receiptUrl } : {}),
       ...(checkoutSessionId ? { stripeCheckoutSessionId: checkoutSessionId } : {}),
     });
-    const lease = leaseSnap.exists ? leaseSnap.data() : null;
-    const leaseMatchesPayment = lease && isActivePaymentCollectionLease(lease, Date.parse(nowIso)) &&
-      lease.tenantId === tenantId && lease.bookingId === bookingId &&
-      lease.amountCents === amountCents && lease.currency === currency &&
-      lease.connectedAccountId === connectedAccountId &&
-      ((expectedOperationHash && lease.operationHash === expectedOperationHash) ||
-       (checkoutSessionId && lease.provider === 'stripe_checkout_session' &&
-        lease.providerObjectId === checkoutSessionId) ||
-       (channel === 'card_present' && lease.provider === 'stripe_payment_intent' &&
-        lease.providerObjectId === providerPaymentId));
     if (leaseMatchesPayment) {
       tx.set(leaseRef, paymentCollectionLeasePatch(lease, {
         status: 'completed', closedAt: nowIso, canonicalPaymentRecordId: id,

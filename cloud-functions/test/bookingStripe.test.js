@@ -4,6 +4,7 @@ const {
   BOOKING_PAYMENT_SOURCE,
   createBookingCheckoutSessionHandler,
   createBookingCheckoutSessionCore,
+  recoverBookingCheckoutSessionCore,
   handleBookingCheckoutCompleted,
   handleBookingChargeRefunded,
   handleBookingPaymentSucceeded,
@@ -137,20 +138,25 @@ function baseStore(overrides = {}) {
 
 function createStripeMock(session = {}) {
   const calls = [];
+  let saved;
   return {
     calls,
     checkout: {
       sessions: {
         create: async (params, options) => {
           calls.push({ params, options });
-          return {
+          saved = {
             id: 'cs_test_booking',
-            url: 'https://checkout.stripe.test/session',
+            url: 'https://checkout.stripe.com/c/pay/synthetic',
             expires_at: 1893456000,
             livemode: false,
+            mode: 'payment', currency: 'usd', status: 'open', payment_status: 'unpaid',
+            amount_total: params.line_items[0].price_data.unit_amount, metadata: params.metadata,
             ...session,
           };
+          return saved;
         },
+        retrieve: async () => saved,
       },
     },
   };
@@ -388,7 +394,179 @@ test('fully paid booking cannot create another Checkout session', async () => {
   assert.equal(stripe.calls.length, 0);
 });
 
-test('ambiguous Checkout failure retains authority and same-operation retry reuses it', async () => {
+test('paid session with delayed webhook cannot be replaced after saved expiry', async () => {
+  const store = baseStore();
+  const stripe = createStripeMock({ expires_at: Date.parse(nowIso) / 1000 + 3600 });
+  const args = { admin: createMockAdmin(store), appUrl: 'http://localhost:5173', bookingId: 'booking-1',
+    getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123', stripe,
+    tenantId: 'tenant-a', uid: 'admin-1', clientCheckoutId: 'checkout-attempt-0001' };
+  assert.equal((await createBookingCheckoutSessionCore(args)).success, true);
+  stripe.checkout.sessions.retrieve = async () => ({ status: 'complete', payment_status: 'paid' });
+  const create = stripe.checkout.sessions.create;
+  stripe.checkout.sessions.create = async (...values) => ({ ...await create(...values),
+    id: 'cs_test_replacement', expires_at: Date.parse(nowIso) / 1000 + 7200 });
+  const later = new Date(Date.parse(nowIso) + 3600001).toISOString();
+  const second = await createBookingCheckoutSessionCore({ ...args, nowIso: later,
+    clientCheckoutId: 'checkout-attempt-0002' });
+  assert.equal(second.status, 409);
+  assert.equal(stripe.calls.length, 1);
+  assert.equal(stripe.calls[0].params.line_items[0].price_data.unit_amount, 19000);
+});
+
+async function recoveryFixture(sessionPatch = {}, bookingPatch = {}) {
+  const store = baseStore({ 'tenants/tenant-a/bookings/booking-1': { agreedPrice: 190, ...bookingPatch } });
+  const stripe = createStripeMock();
+  const args = { admin: createMockAdmin(store), appUrl: 'http://localhost:5173', bookingId: 'booking-1',
+    getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123', stripe,
+    tenantId: 'tenant-a', uid: 'admin-1', clientCheckoutId: 'checkout-attempt-0001' };
+  await createBookingCheckoutSessionCore(args);
+  const session = { ...await stripe.checkout.sessions.retrieve(), created: Date.parse(nowIso) / 1000 + 1,
+    ...sessionPatch };
+  stripe.checkout.sessions.retrieve = async () => session;
+  return { store, stripe, args, session };
+}
+
+test('browser remount, repeated and concurrent recovery returns only the existing open session', async () => {
+  const { stripe, args } = await recoveryFixture();
+  const { clientCheckoutId, ...remounted } = args;
+  const results = await Promise.all(Array.from({ length: 3 }, () => recoverBookingCheckoutSessionCore(remounted)));
+  assert.equal(results.every(r => r.data.state === 'open'), true);
+  assert.equal(results.every(r => r.data.sessionId === 'cs_test_booking'), true);
+  assert.equal(stripe.calls.length, 1);
+});
+
+test('paid recovery uses canonical ledger and delayed duplicate webhook cannot count twice', async () => {
+  const { args, session, store, stripe } = await recoveryFixture({ status: 'complete', payment_status: 'paid',
+    payment_intent: 'pi_recovered' });
+  stripe.paymentIntents = { retrieve: async () => ({ id: 'pi_recovered', status: 'succeeded',
+    amount_received: 19000, currency: 'usd', livemode: false, metadata: session.metadata }) };
+  const results = await Promise.all([recoverBookingCheckoutSessionCore(args), recoverBookingCheckoutSessionCore(args)]);
+  assert.equal(results.every(r => r.data.state === 'settled'), true);
+  await handleBookingCheckoutCompleted(session, { admin: args.admin, nowIso, connectedAccountId: 'acct_123' });
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentAccounting.confirmedPaymentCents, 19000);
+  assert.equal((await createBookingCheckoutSessionCore({ ...args, clientCheckoutId: 'checkout-attempt-0002' })).success, false);
+  assert.equal(stripe.calls.length, 1);
+});
+
+test('provider-confirmed expired unpaid session releases once; retry needs explicit initiation', async () => {
+  const { args, stripe, store } = await recoveryFixture({ status: 'expired', payment_status: 'unpaid', payment_intent: null });
+  const first = await recoverBookingCheckoutSessionCore(args);
+  assert.equal(first.data.state, 'released');
+  assert.equal((await recoverBookingCheckoutSessionCore(args)).data.state, 'released');
+  assert.equal(stripe.calls.length, 1);
+  assert.equal(store['tenants/tenant-a/bookings/booking-1/paymentCollectionControl/current'].status, 'released');
+  assert.equal((await createBookingCheckoutSessionCore({ ...args, clientCheckoutId: 'checkout-attempt-0002' })).success, true);
+  assert.equal(stripe.calls.length, 2);
+});
+
+test('known paid recovery closes its lease when payment was already recorded by another webhook path', async () => {
+  const { args, session, store, stripe } = await recoveryFixture({ status: 'complete', payment_status: 'paid',
+    payment_intent: 'pi_existing_ledger' });
+  const pi = { id: 'pi_existing_ledger', status: 'succeeded', amount_received: 19000, currency: 'usd',
+    livemode: false, created: session.created, metadata: session.metadata };
+  await handleBookingPaymentSucceeded({ ...pi, metadata: { ...pi.metadata, paymentCollectionOperationHash: undefined } },
+    { admin: args.admin, nowIso, connectedAccountId: 'acct_123' });
+  stripe.paymentIntents = { retrieve: async () => pi };
+  assert.equal(store['tenants/tenant-a/bookings/booking-1/paymentCollectionControl/current'].status, 'provider_pending');
+  assert.equal((await recoverBookingCheckoutSessionCore(args)).data.state, 'settled');
+  assert.equal(store['tenants/tenant-a/bookings/booking-1'].paymentAccounting.confirmedPaymentCents, 19000);
+  assert.equal(stripe.calls.length, 1);
+});
+
+for (const [name, patch] of Object.entries({
+  'wrong booking metadata': { metadata: { source: BOOKING_PAYMENT_SOURCE, tenantId: 'tenant-a', bookingId: 'other' } },
+  'wrong amount': { amount_total: 20000 },
+  'wrong mode': { livemode: true },
+  'complete unpaid': { status: 'complete', payment_status: 'unpaid' },
+  'unknown payment state': { payment_status: 'no_payment_required' },
+})) test(`recovery blocks ${name} without a second create`, async () => {
+  const { args, stripe, store } = await recoveryFixture(patch);
+  assert.equal((await recoverBookingCheckoutSessionCore(args)).data.state, 'blocked');
+  assert.equal(store['tenants/tenant-a/bookings/booking-1/paymentCollectionControl/current'].status, 'provider_pending');
+  assert.equal(stripe.calls.length, 1);
+});
+
+test('provider timeout remains blocked and does not release or create', async () => {
+  const { args, stripe, store } = await recoveryFixture();
+  stripe.checkout.sessions.retrieve = async () => { throw new Error('synthetic timeout'); };
+  assert.equal((await recoverBookingCheckoutSessionCore(args)).data.state, 'blocked');
+  assert.equal(store['tenants/tenant-a/bookings/booking-1/paymentCollectionControl/current'].status, 'provider_pending');
+  assert.equal(stripe.calls.length, 1);
+});
+
+test('partial balance is recovered exactly; stale balance does not return a collectible URL', async () => {
+  const { args, stripe, store } = await recoveryFixture({}, { amountReceived: 40 });
+  assert.equal((await recoverBookingCheckoutSessionCore(args)).data.amount, 15000);
+  store['tenants/tenant-a/bookings/booking-1'].paymentAccounting.confirmedPaymentCents = 1000;
+  assert.equal((await recoverBookingCheckoutSessionCore(args)).data.state, 'blocked');
+  assert.equal(stripe.calls.length, 1);
+});
+
+test('recovery denies cross-tenant and employee actors before provider access', async () => {
+  const { args, stripe, store } = await recoveryFixture();
+  let reads = 0;
+  stripe.checkout.sessions.retrieve = async () => { reads++; throw new Error('must not read'); };
+  assert.equal((await recoverBookingCheckoutSessionCore({ ...args, tenantId: 'tenant-b' })).status, 403);
+  store['users/admin-1'].role = 'employee';
+  assert.equal((await recoverBookingCheckoutSessionCore(args)).status, 403);
+  assert.equal(reads, 0);
+});
+
+for (const state of ['processing', 'requires_payment_method', 'succeeded', 'canceled']) {
+  test(`expired session with ${state} intent requires final noncollection evidence`, async () => {
+    const { args, stripe, session, store } = await recoveryFixture({ status: 'expired', payment_intent: 'pi_expired' });
+    stripe.paymentIntents = { retrieve: async () => ({ id: 'pi_expired', status: state,
+      amount_received: state === 'succeeded' ? 19000 : 0, currency: 'usd', livemode: false, metadata: session.metadata }) };
+    assert.equal((await recoverBookingCheckoutSessionCore(args)).data.state, state === 'canceled' ? 'released' : 'blocked');
+    assert.equal(store['tenants/tenant-a/bookings/booking-1/paymentCollectionControl/current'].status,
+      state === 'canceled' ? 'released' : 'provider_pending');
+    assert.equal(stripe.calls.length, 1);
+  });
+}
+
+test('recovery cannot release contradictory ledger or invalid approved scope evidence', async () => {
+  const { args, stripe, store } = await recoveryFixture({ status: 'expired', payment_intent: null });
+  store['tenants/tenant-a/bookings/booking-1'].paymentAccounting.issues = ['unresolved_legacy_payment'];
+  assert.equal((await recoverBookingCheckoutSessionCore(args)).data.state, 'blocked');
+  store['tenants/tenant-a/bookings/booking-1'].paymentAccounting.issues = [];
+  store['tenants/tenant-a/bookings/booking-1'].approvedJobScope = { approvedVersion: 2, scopeHash: 'invalid' };
+  assert.equal((await recoverBookingCheckoutSessionCore(args)).data.state, 'blocked');
+  assert.equal(stripe.calls.length, 1);
+});
+
+test('concurrent same-ID creation sends only one request and retains authoritative session', async () => {
+  const store = baseStore(), stripe = createStripeMock();
+  const args = { admin: createMockAdmin(store), appUrl: 'http://localhost:5173', bookingId: 'booking-1',
+    getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123', stripe,
+    tenantId: 'tenant-a', uid: 'admin-1', clientCheckoutId: 'checkout-attempt-0001' };
+  const results = await Promise.all([createBookingCheckoutSessionCore(args), createBookingCheckoutSessionCore(args)]);
+  assert.equal(results.filter(r => r.success).length, 1);
+  assert.equal(stripe.calls.length, 1);
+  assert.equal((await recoverBookingCheckoutSessionCore(args)).data.state, 'open');
+});
+
+test('recovery response racing a newer lease cannot release the newer operation', async () => {
+  const { args, stripe, session, store } = await recoveryFixture({ status: 'expired', payment_intent: null });
+  stripe.checkout.sessions.retrieve = async () => {
+    const path = 'tenants/tenant-a/bookings/booking-1/paymentCollectionControl/current';
+    store[path] = { ...store[path], attempt: store[path].attempt + 1 };
+    return session;
+  };
+  assert.equal((await recoverBookingCheckoutSessionCore(args)).data.state, 'blocked');
+  assert.equal(store['tenants/tenant-a/bookings/booking-1/paymentCollectionControl/current'].status, 'provider_pending');
+});
+
+test('recovery handler authenticates and dispatches without client operation or provider creation', async () => {
+  const { args, stripe } = await recoveryFixture();
+  const handler = createBookingCheckoutSessionHandler(args);
+  const res = createResponseMock();
+  await handler({ method: 'POST', headers: { authorization: 'Bearer synthetic' },
+    body: { tenantId: 'tenant-a', bookingId: 'booking-1', action: 'recover' } }, res);
+  assert.equal(res.body.state, 'open');
+  assert.equal(stripe.calls.length, 1);
+});
+
+test('ambiguous Checkout failure retains authority and blocks even same-operation replay', async () => {
   const store = baseStore();
   const args = { admin: createMockAdmin(store), appUrl: 'http://localhost:5173', bookingId: 'booking-1',
     getPlatformFee: () => 0.03, nowIso, secretKey: 'sk_test_123',
@@ -400,8 +578,14 @@ test('ambiguous Checkout failure retains authority and same-operation retry reus
   assert.equal(store['tenants/tenant-a/bookings/booking-1/paymentCollectionControl/current'].status, 'reserved');
   const stripe = createStripeMock();
   const retried = await createBookingCheckoutSessionCore({ ...args, stripe });
-  assert.equal(retried.success, true);
-  assert.equal(stripe.calls.length, 1);
+  assert.equal(retried.status, 409);
+  assert.equal(stripe.calls.length, 0);
+  const different = await createBookingCheckoutSessionCore({ ...args, stripe,
+    clientCheckoutId: 'checkout-attempt-0002', nowIso: '2026-10-08T12:00:00.000Z' });
+  assert.equal(different.status, 409);
+  const recovered = await recoverBookingCheckoutSessionCore({ ...args, stripe });
+  assert.equal(recovered.data.state, 'blocked');
+  assert.equal(stripe.calls.length, 0);
 });
 
 test('concurrent Checkout requests cannot create two open sessions', async () => {

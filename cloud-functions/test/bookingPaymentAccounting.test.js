@@ -303,6 +303,21 @@ test('manual payment cannot race an active Checkout link', async () => {
   assert.equal(f.records().length, 0);
 });
 
+test('expired pending Checkout still excludes manual collection', async () => {
+  const f = fixture();
+  await cutoverBooking({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a', nowIso });
+  await acquirePaymentCollectionLease({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a',
+    channel: 'checkout', operationId: 'checkout-expired-0001', actorUid: 'owner-a',
+    connectedAccountId: 'acct_a', nowIso });
+  const path = 'tenants/tenant-a/bookings/booking-a/paymentCollectionControl/current';
+  f.store.set(path, { ...f.store.get(path), status: 'provider_pending',
+    provider: 'stripe_checkout_session', providerObjectId: 'cs_expired', providerExpiresAtMs: 1 });
+  await assert.rejects(recordManualPayment({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a',
+    actorUid: 'owner-a', clientPaymentId: 'manual-expired-0001', amountCents: 100,
+    method: 'cash', note: '', nowIso }), { code: 'payment_collection_conflict' });
+  assert.equal(f.records().length, 0);
+});
+
 test('shared payment collection lease is server-authored, reusable only by the same context', async () => {
   const f = fixture();
   await cutoverBooking({ admin: f.admin, tenantId: 'tenant-a', bookingId: 'booking-a', nowIso });

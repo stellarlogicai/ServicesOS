@@ -1,5 +1,45 @@
 # ServicesOS V1 Current State
 
+## Checkout collection safety and recovery (2026-10-08)
+
+**REPAIRED — READY FOR REVIEW**, uncommitted and automatically validated only.
+The failing P1 regression reproduced a second 19,000-cent Checkout after saved
+expiry while the original provider session was paid and its webhook delayed.
+Reserved/provider-pending authority now remains active regardless of age; unknown
+lease states also fail closed. Expiry cannot permit Checkout or manual collection.
+Unknown creation results cannot be replayed, including same-operation retries after
+the provider idempotency retention window. Definitive pre-creation rejection may
+release authority; no automatic provider cancellation/refund/replacement is added.
+
+The existing authenticated Checkout gateway accepts booking-bound recovery without
+a browser operation ID. It reuses the current lease and existing provider identity,
+checks active owner/admin membership and original actor binding, tenant/booking,
+connected account, mode, currency, metadata and amount. Recovery never creates a
+session. An open verified session returns only its existing link; paid evidence
+passes through canonical reconciliation, including idempotent closure for a payment
+already recorded by another webhook path. Known session identity prevents a delayed
+event from closing a different session's lease. Provider-confirmed expired/unpaid
+with no intent, or canceled intent with zero received amount, can release the exact
+unchanged lease transactionally. Fresh balance/approval evidence is rechecked.
+The owner must issue another explicit request to create after a newly resolved lease.
+
+Missing provider identity, unresolved legacy reservations, contradictory or unavailable
+provider/ledger evidence and another actor's operation remain blocked for reconciliation.
+No age-only release, idempotency-key replay, manual override, historical migration,
+new storage schema/rules or fee-policy change is introduced. Owner remount recovery,
+repeated requests and unmount guards are tested. Partial balance, extra-work approval,
+refund/reversal and tenant-denial contracts remain covered; IW-01/IW-02/IW-03 and
+Assistant financial handoff source/test work are preserved.
+
+Validation: focused Checkout/accounting/approval/Terminal compatibility 101/101;
+full Functions 545/545; relevant owner payment/extra-work/agreement web 7 files /
+81/81. Final suites: zero failures/skips. Lint, build and diff-check passed; existing
+large-chunk, Firestore dynamic-import and CRLF warnings remain. No live provider,
+deployment or production action occurred. Controlled Stripe acceptance, unresolved
+no-ID/manual reconciliation, IW-04 fee-policy decision, combined integrated acceptance,
+owner/customer workflow, Agreement Lite presentation/PDF, employee device/photos,
+deployed security, wife beta and release gates remain open. Tap to Pay stays post-V1.
+
 ## Assistant approved financial obligation handoff (2026-10-08)
 
 **REPAIRED — READY FOR REVIEW**, automatically validated but not integrated-release

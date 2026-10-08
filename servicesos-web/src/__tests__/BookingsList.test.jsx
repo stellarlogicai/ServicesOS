@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getJobs: vi.fn(),
   createBookingCheckoutSession: vi.fn(),
+  recoverBookingCheckoutSession: vi.fn(),
   updateBookingAdminFields: vi.fn(),
   updateBookingManualPaymentStatus: vi.fn(),
   listBookingPayments: vi.fn(),
@@ -68,6 +69,7 @@ vi.mock('../core/scheduling/schedulingService', () => ({
 
 vi.mock('../services/stripeService', () => ({
   createBookingCheckoutSession: mocks.createBookingCheckoutSession,
+  recoverBookingCheckoutSession: mocks.recoverBookingCheckoutSession,
 }));
 
 vi.mock('../services/bookingPaymentService', () => ({
@@ -107,6 +109,8 @@ describe('read-only Bookings admin list', () => {
     mocks.userUid = 'admin-a';
     mocks.getJobs.mockReset();
     mocks.createBookingCheckoutSession.mockReset();
+    mocks.recoverBookingCheckoutSession.mockReset();
+    mocks.recoverBookingCheckoutSession.mockResolvedValue({ state: 'none', allowInitiation: true });
     mocks.updateBookingAdminFields.mockReset();
     mocks.updateBookingManualPaymentStatus.mockReset();
     mocks.listBookingPayments.mockReset();
@@ -814,6 +818,68 @@ describe('read-only Bookings admin list', () => {
     expect(mocks.updateBookingManualPaymentStatus).not.toHaveBeenCalled();
   });
 
+  it('recovers the same session after remount without creating another collection', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{ id: 'booking-recover',
+      customerName: 'Recovery Customer', date: '2026-10-15', startTime: '10:00', price: 190 }] });
+    mocks.recoverBookingCheckoutSession.mockResolvedValue({ state: 'open', sessionId: 'cs_existing',
+      url: 'https://checkout.stripe.com/c/pay/existing' });
+    for (let i = 0; i < 2; i++) {
+      const view = render(<BookingsList />);
+      await user.click(await screen.findByRole('button', { name: 'View Details' }));
+      await user.click(screen.getByRole('button', { name: 'Create Stripe payment link' }));
+      expect(await screen.findByDisplayValue('https://checkout.stripe.com/c/pay/existing')).toBeInTheDocument();
+      view.unmount();
+    }
+    expect(mocks.recoverBookingCheckoutSession).toHaveBeenCalledTimes(2);
+    expect(mocks.createBookingCheckoutSession).not.toHaveBeenCalled();
+    expect(mocks.recordBookingManualPayment).not.toHaveBeenCalled();
+  });
+
+  it('shows unresolved recovery without creating or marking paid', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{ id: 'booking-blocked',
+      customerName: 'Blocked Customer', date: '2026-10-15', startTime: '10:00', price: 190 }] });
+    mocks.recoverBookingCheckoutSession.mockResolvedValue({ state: 'blocked', message: 'Collection unresolved. Do not collect again.' });
+    render(<BookingsList />);
+    await user.click(await screen.findByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Create Stripe payment link' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Collection unresolved');
+    expect(mocks.createBookingCheckoutSession).not.toHaveBeenCalled();
+    expect(mocks.recordBookingManualPayment).not.toHaveBeenCalled();
+  });
+
+  it('a newly released collection needs a second explicit request before creation', async () => {
+    const user = userEvent.setup();
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{ id: 'booking-released',
+      customerName: 'Released Customer', date: '2026-10-15', startTime: '10:00', price: 190 }] });
+    mocks.recoverBookingCheckoutSession.mockResolvedValueOnce({ state: 'released', message: 'Prior session expired without payment.' })
+      .mockResolvedValue({ state: 'released', allowInitiation: true });
+    mocks.createBookingCheckoutSession.mockResolvedValue({ url: 'https://checkout.stripe.com/c/pay/new' });
+    render(<BookingsList />);
+    await user.click(await screen.findByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Create Stripe payment link' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Prior session expired');
+    expect(mocks.createBookingCheckoutSession).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Create Stripe payment link' }));
+    expect(await screen.findByDisplayValue('https://checkout.stripe.com/c/pay/new')).toBeInTheDocument();
+    expect(mocks.createBookingCheckoutSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('unmount during recovery cannot proceed to new provider initiation', async () => {
+    const user = userEvent.setup();
+    let resolve;
+    mocks.getJobs.mockResolvedValue({ success: true, data: [{ id: 'booking-unmount',
+      customerName: 'Unmount Customer', date: '2026-10-15', startTime: '10:00', price: 190 }] });
+    mocks.recoverBookingCheckoutSession.mockReturnValue(new Promise(done => { resolve = done; }));
+    const view = render(<BookingsList />);
+    await user.click(await screen.findByRole('button', { name: 'View Details' }));
+    await user.click(screen.getByRole('button', { name: 'Create Stripe payment link' }));
+    view.unmount();
+    await act(async () => resolve({ state: 'none', allowInitiation: true }));
+    expect(mocks.createBookingCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it('copies a created Stripe payment link when clipboard is available', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -897,7 +963,7 @@ describe('read-only Bookings admin list', () => {
     await user.click(screen.getByRole('button', { name: 'View Details' }));
     await user.click(screen.getByRole('button', { name: 'Create Stripe payment link' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Stripe payment link could not be created. You can still mark this booking paid another way.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Payment collection unavailable. Recover or reconcile any existing attempt before collecting again.');
     expect(screen.queryByText(/sk_test_secret/)).not.toBeInTheDocument();
     expect(screen.queryByText(/backend failure/)).not.toBeInTheDocument();
   });

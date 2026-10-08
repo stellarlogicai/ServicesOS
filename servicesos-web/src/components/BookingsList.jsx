@@ -28,7 +28,7 @@ import {
   bookingStillOwed,
   bookingTypeLabel,
 } from './bookingDisplay';
-import { createBookingCheckoutSession } from '../services/stripeService';
+import { createBookingCheckoutSession, recoverBookingCheckoutSession } from '../services/stripeService';
 import {
   employeeAssignmentLabel,
   getActiveTenantEmployeeProfiles,
@@ -60,13 +60,17 @@ export default function BookingsList() {
   const employeeLoadRequestRef = useRef(0);
   const bookingDetailContentRef = useRef(null);
   const manualPaymentAttemptRef = useRef('');
-  const checkoutAttemptRef = useRef({ bookingId: '', id: '' });
+  const checkoutScopeRef = useRef(null);
   const canManageAssignment = isAdmin?.() === true;
   const [bookings, setBookings] = useState([]);
   const [bookingsTenantId, setBookingsTenantId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedBooking, setSelectedBooking] = useState(null);
+  useEffect(() => {
+    checkoutScopeRef.current = `${tenantId}:${user?.uid}:${selectedBooking?.id}`;
+    return () => { checkoutScopeRef.current = null; };
+  }, [tenantId, user?.uid, selectedBooking?.id]);
   const [activeBookingDetailTab, setActiveBookingDetailTab] = useState('details');
   const [isEditingBooking, setIsEditingBooking] = useState(false);
   const [editForm, setEditForm] = useState({ date: '', startTime: '', notes: '' });
@@ -388,7 +392,7 @@ export default function BookingsList() {
       setStripeLinkState({
         creating: false,
         url: '',
-        error: 'Stripe payment link could not be created. You can still mark this booking paid another way.',
+        error: 'Payment collection unavailable. Recover or reconcile any existing attempt before collecting again.',
         copyMessage: '',
       });
       return;
@@ -401,18 +405,21 @@ export default function BookingsList() {
       copyMessage: '',
     }));
 
+    const scope = checkoutScopeRef.current;
     try {
-      if (checkoutAttemptRef.current.bookingId !== selectedBooking.id || !checkoutAttemptRef.current.id) {
-        checkoutAttemptRef.current = {
-          bookingId: selectedBooking.id,
-          id: globalThis.crypto.randomUUID().replaceAll('-', ''),
-        };
+      const recovered = await recoverBookingCheckoutSession(tenantId, selectedBooking.id);
+      if (scope !== checkoutScopeRef.current) return;
+      if (recovered.state !== 'open' && recovered.allowInitiation !== true) {
+        setStripeLinkState({ creating: false, url: '', error: recovered.message ||
+          'Collection unresolved. Do not collect again until reconciled.', copyMessage: '' });
+        await loadBookings();
+        return;
       }
-      const result = await createBookingCheckoutSession(
-        tenantId,
-        selectedBooking.id,
-        checkoutAttemptRef.current.id,
+      const result = recovered.state === 'open' ? recovered : await createBookingCheckoutSession(
+        tenantId, selectedBooking.id, globalThis.crypto.randomUUID().replaceAll('-', ''),
       );
+      if (scope !== checkoutScopeRef.current) return;
+      if (!result?.url) throw new Error('Collection requires reconciliation');
       setStripeLinkState({
         creating: false,
         url: result?.url || '',
@@ -420,10 +427,11 @@ export default function BookingsList() {
         copyMessage: '',
       });
     } catch {
+      if (scope !== checkoutScopeRef.current) return;
       setStripeLinkState({
         creating: false,
         url: '',
-        error: 'Stripe payment link could not be created. You can still mark this booking paid another way.',
+        error: 'Payment collection unavailable. Recover or reconcile any existing attempt before collecting again.',
         copyMessage: '',
       });
     }

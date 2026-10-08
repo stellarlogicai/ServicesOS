@@ -302,6 +302,14 @@ export async function createBookingCheckoutSession(tenantId, bookingId, clientCh
   }
 }
 
+export async function recoverBookingCheckoutSession(tenantId, bookingId) {
+  if (!tenantId || !bookingId) throw new Error('tenantId and bookingId are required');
+  return authorizedFunctionFetch('createBookingCheckoutSession', {
+    method: 'POST',
+    body: JSON.stringify({ tenantId, bookingId, action: 'recover' }),
+  });
+}
+
 export function getFirebaseFunctionUrl(functionName) {
   const configuredBaseUrl = import.meta.env.VITE_FUNCTIONS_URL?.replace(/\/+$/, '');
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'cleaning-intake-system';

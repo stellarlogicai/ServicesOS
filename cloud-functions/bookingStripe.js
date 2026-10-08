@@ -265,32 +265,12 @@ async function createBookingCheckoutSessionCore({
         return { reused: true, booking, amountCents, lease: acquired.lease,
           session: { id: acquired.lease.providerObjectId, url: acquired.lease.providerUrl } };
       }
-      return { booking, amountCents, lease: acquired.lease };
+      return { conflict: true };
     }
     if (!existingLease && booking.stripePaymentStatus === 'checkout_created' && booking.stripeCheckoutSessionId) {
-      const expiresAt = booking.stripeCheckoutSessionExpiresAt;
-      if (!Number.isSafeInteger(expiresAt)) return { conflict: true };
-      if (expiresAt * 1000 > nowMs) {
-        if (booking.stripeCheckoutSessionAmountCents !== amountCents || !booking.stripeCheckoutSessionUrl) {
-          return { conflict: true };
-        }
-        const acquired = reservePaymentCollectionInTransaction({
-          tx, leaseRef, existingLease: null, tenantId, bookingId, channel: 'checkout',
-          operationId: clientCheckoutId, actorUid: uid, amountCents,
-          connectedAccountId: stripeAccountId, nowIso,
-        });
-        const lease = paymentCollectionLeasePatch(acquired.lease, {
-          status: 'provider_pending', provider: 'stripe_checkout_session',
-          providerObjectId: booking.stripeCheckoutSessionId,
-          providerUrl: booking.stripeCheckoutSessionUrl,
-          providerExpiresAtMs: expiresAt * 1000,
-        }, nowIso);
-        tx.set(leaseRef, lease);
-        return { reused: true, booking, amountCents, lease,
-          session: { id: booking.stripeCheckoutSessionId, url: booking.stripeCheckoutSessionUrl } };
-      }
+      return { conflict: true };
     }
-    if (booking.stripeCheckoutReservation?.expiresAtMs > nowMs) return { conflict: true };
+    if (booking.stripeCheckoutReservation) return { conflict: true };
     const acquired = reservePaymentCollectionInTransaction({
       tx, leaseRef, existingLease, tenantId, bookingId, channel: 'checkout',
       operationId: clientCheckoutId, actorUid: uid, amountCents,
@@ -307,7 +287,7 @@ async function createBookingCheckoutSessionCore({
     throw error;
   }
   if (reservation.conflict) return { success: false, status: 409,
-    error: 'An existing booking checkout is still open. Refresh or try again after it expires.' };
+    error: 'An unresolved collection requires recovery or reconciliation before another payment attempt.' };
   const { booking } = reservation;
   const amountCents = reservation.invalid ? 0 : reservation.amountCents;
   if (!Number.isInteger(amountCents) || amountCents <= 0) {
@@ -332,6 +312,9 @@ async function createBookingCheckoutSessionCore({
   });
 
   let session = reservation.session;
+  if (reservation.reused) {
+    return recoverBookingCheckoutSessionCore({ admin, bookingId, nowIso, secretKey, stripe, tenantId, uid });
+  }
   if (!reservation.reused) {
     try {
       const idempotencyKey = createHash('sha256')
@@ -347,6 +330,7 @@ async function createBookingCheckoutSessionCore({
         const currentLeaseSnap = await tx.get(leaseRef);
         const currentLease = currentLeaseSnap.exists ? currentLeaseSnap.data() : null;
         if (!currentLease || currentLease.operationHash !== operationHash ||
+            currentLease.attempt !== reservation.lease.attempt ||
             currentLease.status !== 'reserved' || currentLease.actorUid !== uid ||
             currentLease.channel !== 'checkout' || currentLease.amountCents !== amountCents ||
             currentLease.connectedAccountId !== stripeAccountId ||
@@ -366,16 +350,24 @@ async function createBookingCheckoutSessionCore({
       });
       if (!finalized) throw new AccountingError('checkout_balance_changed');
     } catch (error) {
-      let safeToRelease = !session && Number.isInteger(error?.statusCode) &&
+      const safeToRelease = !session && Number.isInteger(error?.statusCode) &&
         error.statusCode >= 400 && error.statusCode < 500 && ![408, 409, 429].includes(error.statusCode);
-      if (session?.id && stripe.checkout.sessions.expire) {
-        try { await stripe.checkout.sessions.expire(session.id, { stripeAccount: stripeAccountId }); safeToRelease = true; }
-        catch (expireError) { console.error('[Booking Stripe] Could not expire unused session:', expireError?.code); }
-      }
+      // Never cancel a provider object as an error-handling side effect.
+      if (session?.id) await db.runTransaction(async tx => {
+        const snap = await tx.get(leaseRef);
+        const lease = snap.exists ? snap.data() : null;
+        if (lease?.operationHash === operationHash && lease.attempt === reservation.lease.attempt &&
+            lease.status === 'reserved' && lease.actorUid === uid) {
+          tx.set(leaseRef, paymentCollectionLeasePatch(lease, {
+            provider: 'stripe_checkout_session', providerObjectId: session.id,
+          }, nowIso));
+        }
+      });
       if (safeToRelease) await db.runTransaction(async tx => {
         const leaseSnap = await tx.get(leaseRef);
         const lease = leaseSnap.exists ? leaseSnap.data() : null;
-        if (lease?.operationHash === operationHash && lease.status === 'reserved' && lease.actorUid === uid) {
+        if (lease?.operationHash === operationHash && lease.attempt === reservation.lease.attempt &&
+            lease.status === 'reserved' && lease.actorUid === uid) {
           tx.set(leaseRef, paymentCollectionLeasePatch(lease, { status: 'released', closedAt: nowIso }, nowIso));
         }
       });
@@ -403,6 +395,102 @@ async function createBookingCheckoutSessionCore({
   };
 }
 
+async function recoverBookingCheckoutSessionCore({ admin, bookingId, nowIso, secretKey, stripe, tenantId, uid }) {
+  if (![tenantId, bookingId].every(value => isNonEmptyString(value) && !value.includes('/')) || tenantId === 'DEFAULT') {
+    return { success: false, status: 400, error: 'A valid tenant and booking are required' };
+  }
+  const db = admin.firestore();
+  const access = await verifyTenantAdminAccess(db, uid, tenantId);
+  if (!access.success) return access;
+  const ref = db.collection('tenants').doc(tenantId).collection('bookings').doc(bookingId);
+  const leaseRef = paymentCollectionLeaseRef(db, tenantId, bookingId);
+  const [bookingSnap, leaseSnap] = await Promise.all([ref.get(), leaseRef.get()]);
+  if (!bookingSnap.exists) return { success: false, status: 404, error: 'Booking not found' };
+  const booking = bookingSnap.data();
+  const lease = leaseSnap.exists ? leaseSnap.data() : null;
+  const result = (state, message, fields = {}) => ({ success: true, data: { state, message, ...fields } });
+  const blocked = () => result('blocked', 'Collection outcome is unresolved. Retry recovery or request payment reconciliation; do not collect again.');
+  if (!lease) return booking.stripeCheckoutReservation || booking.stripePaymentStatus === 'checkout_created'
+    ? blocked() : result('none', 'No unresolved collection.', { allowInitiation: true });
+  if (lease.version !== 1 || lease.tenantId !== tenantId || lease.bookingId !== bookingId ||
+      lease.channel !== 'checkout' || lease.actorUid !== uid ||
+      lease.connectedAccountId !== access.tenantData.stripeAccountId || lease.currency !== DEFAULT_CURRENCY ||
+      !/^[a-f0-9]{64}$/.test(lease.operationHash || '') || !Number.isSafeInteger(lease.attempt) || lease.attempt < 1 ||
+      !Number.isSafeInteger(lease.amountCents) || lease.amountCents <= 0) return blocked();
+  if (['completed', 'released'].includes(lease.status)) {
+    try {
+      const current = balance(booking);
+      if (lease.status === 'completed') {
+        if (!lease.canonicalPaymentRecordId) return blocked();
+        const recordSnap = await ref.collection('paymentRecords').doc(lease.canonicalPaymentRecordId).get();
+        const record = recordSnap.exists ? recordSnap.data() : null;
+        if (!record || record.status !== 'confirmed' || record.tenantId !== tenantId || record.bookingId !== bookingId ||
+            record.amountCents !== lease.amountCents || record.connectedAccountId !== lease.connectedAccountId ||
+            record.currency !== lease.currency) return blocked();
+      }
+      return result(lease.status === 'completed' ? 'settled' : 'released',
+        'Prior collection reconciled. Any new collection uses the current remaining balance.',
+        { allowInitiation: current.collectible });
+    } catch { return blocked(); }
+  }
+  if (!['reserved', 'provider_pending'].includes(lease.status) ||
+      lease.provider !== 'stripe_checkout_session' || !lease.providerObjectId) return blocked();
+  try {
+    const session = await stripe.checkout.sessions.retrieve(lease.providerObjectId,
+      { stripeAccount: lease.connectedAccountId });
+    const mode = stripeModeFromKey(secretKey);
+    const metadataMatches = metadata => metadata?.source === BOOKING_PAYMENT_SOURCE &&
+      metadata.tenantId === tenantId && metadata.bookingId === bookingId &&
+      metadata.paymentChannel === 'online_checkout' &&
+      metadata.paymentCollectionOperationHash === lease.operationHash;
+    if (!mode || session.id !== lease.providerObjectId || session.mode !== 'payment' ||
+        session.currency !== lease.currency || session.amount_total !== lease.amountCents ||
+        typeof session.livemode !== 'boolean' || session.livemode !== (mode === 'live') ||
+        !metadataMatches(session.metadata)) return blocked();
+    if (session.status === 'complete' && session.payment_status === 'paid') {
+      const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+      if (!piId) return blocked();
+      const pi = await stripe.paymentIntents.retrieve(piId, { stripeAccount: lease.connectedAccountId });
+      if (pi.id !== piId || pi.status !== 'succeeded' || pi.amount_received !== lease.amountCents ||
+          pi.currency !== lease.currency || pi.livemode !== session.livemode || !metadataMatches(pi.metadata)) return blocked();
+      await handleBookingCheckoutCompleted(session, { admin, nowIso, connectedAccountId: lease.connectedAccountId });
+      const current = await leaseRef.get();
+      return current.data()?.operationHash === lease.operationHash && current.data()?.status === 'completed'
+        ? result('settled', 'Stripe-confirmed payment reconciled. Refresh the booking balance.') : blocked();
+    }
+    if (session.payment_status !== 'unpaid') return blocked();
+    if (session.status === 'expired' && session.payment_intent !== null && !session.payment_intent) return blocked();
+    if (session.status === 'expired' && session.payment_intent) {
+      const id = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent.id;
+      const pi = await stripe.paymentIntents.retrieve(id, { stripeAccount: lease.connectedAccountId });
+      if (pi.id !== id || pi.status !== 'canceled' || pi.amount_received !== 0 ||
+          pi.currency !== lease.currency || pi.livemode !== session.livemode || !metadataMatches(pi.metadata)) return blocked();
+    }
+    if (!['open', 'expired'].includes(session.status)) return blocked();
+    return await db.runTransaction(async tx => {
+      const [freshBooking, freshLease] = await Promise.all([tx.get(ref), tx.get(leaseRef)]);
+      const current = freshLease.data();
+      if (!current || current.operationHash !== lease.operationHash || current.attempt !== lease.attempt ||
+          current.status !== lease.status || current.providerObjectId !== lease.providerObjectId ||
+          current.actorUid !== uid || current.amountCents !== lease.amountCents) return blocked();
+      const b = freshBooking.data();
+      const remaining = balance(b);
+      if (!remaining.collectible || remaining.remainingCents !== lease.amountCents) return blocked();
+      if (session.status === 'open') {
+        if (typeof session.url !== 'string' || !session.url.startsWith('https://checkout.stripe.com/')) return blocked();
+        return result('open', 'Existing unpaid Checkout session recovered.', {
+          sessionId: session.id, url: session.url, amount: lease.amountCents, currency: lease.currency,
+        });
+      }
+      tx.set(leaseRef, paymentCollectionLeasePatch(current, { status: 'released', closedAt: nowIso }, nowIso));
+      tx.update(ref, { stripePaymentStatus: 'checkout_expired', stripeCheckoutReservation: null });
+      return result('released', 'Stripe confirmed the prior session expired without payment. A new collection requires an explicit request.');
+    });
+  } catch {
+    return blocked();
+  }
+}
+
 function createBookingCheckoutSessionHandler({ admin, appUrl, getPlatformFee, secretKey, stripe }) {
   return async (req, res) => {
     applyBookingCheckoutCors(req, res);
@@ -421,7 +509,11 @@ function createBookingCheckoutSessionHandler({ admin, appUrl, getPlatformFee, se
         return res.status(auth.status).json({ error: auth.error });
       }
 
-      const result = await createBookingCheckoutSessionCore({
+      if (req.body?.action && req.body.action !== 'recover') {
+        return res.status(400).json({ error: 'Unsupported Checkout action' });
+      }
+      const core = req.body?.action === 'recover' ? recoverBookingCheckoutSessionCore : createBookingCheckoutSessionCore;
+      const result = await core({
         admin,
         appUrl,
         bookingId: req.body?.bookingId,
@@ -545,6 +637,7 @@ module.exports = {
   buildBookingCheckoutSessionParams,
   buildCheckoutCreatedPatch,
   createBookingCheckoutSessionCore,
+  recoverBookingCheckoutSessionCore,
   createBookingCheckoutSessionHandler,
   handleBookingCheckoutCompleted,
   handleBookingChargeRefunded,

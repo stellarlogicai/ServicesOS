@@ -86,6 +86,25 @@ describe('createBookingCheckoutSession', () => {
       .rejects.toThrow('Authentication required');
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it('recovers by authenticated booking identity without a browser operation ID', async () => {
+    const { recoverBookingCheckoutSession } = await import('../services/stripeService');
+    fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'blocked', message: 'Reconcile' }) });
+    expect(await recoverBookingCheckoutSession('tenant-a', 'booking-1')).toEqual({ state: 'blocked', message: 'Reconcile' });
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/createBookingCheckoutSession'),
+      expect.objectContaining({ body: JSON.stringify({ tenantId: 'tenant-a', bookingId: 'booking-1', action: 'recover' }),
+        headers: expect.objectContaining({ Authorization: 'Bearer id-token-123' }) }));
+  });
+
+  it('recovery requires authentication and never retries failed lookup as creation', async () => {
+    const { recoverBookingCheckoutSession } = await import('../services/stripeService');
+    fetch.mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'Unavailable' }) });
+    await expect(recoverBookingCheckoutSession('tenant-a', 'booking-1')).rejects.toThrow('Unavailable');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    firebaseMocks.auth.currentUser = null;
+    await expect(recoverBookingCheckoutSession('tenant-a', 'booking-1')).rejects.toThrow('Authentication required');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('Stripe Connect setup helpers', () => {
