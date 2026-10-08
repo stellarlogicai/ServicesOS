@@ -1,5 +1,43 @@
 # ServicesOS V1 Finish Board
 
+## IW-01 tenant-local scheduling handoff repair (2026-10-08)
+
+IW-01 is repaired and ready for review, not deployed. Booking creation, estimate
+conversion and rescheduling now derive the canonical instant from the configured
+tenant timezone through one pure scheduling helper. The booking modal's conflict
+and availability checks use that same timezone instead of the host timezone.
+No booking schema or historical record was migrated.
+
+Employee authorization checks are unchanged. Only scheduling timezone propagation
+changed: configured UTC remains UTC; missing or invalid timezone is unavailable.
+The shared credit-entitlement timezone policy is unchanged. JobPacket dates,
+scheduled instants and visibility fail closed on unavailable timezone, incomplete
+start evidence, DST gaps/folds and invalid/conflicting persisted timestamps.
+
+Failing regressions preceded the fixes: the new web handoff suite failed 9/17 on
+Chicago and 14/17 on UTC; the backend handoff suite failed 8/12. The broader UTC
+rendered run then exposed two host-local conflict-check failures, also repaired.
+Final new handoff coverage passes 19/19 web and 12/12 backend. Each host in UTC,
+America/Chicago, America/Los_Angeles, Asia/Tokyo and Pacific/Kiritimati passed
+542/542 tests across 10 web files and 59/59 employee/backend tests. Chicago
+October 8, 2026 at 10:00 consistently produces 2026-10-08T15:00:00.000Z;
+00:30 remains October 8 and produces 05:30Z. Valid DST boundaries pass; ambiguous
+or nonexistent local starts are rejected rather than guessed.
+
+Full Functions validation passes 508/508; complete GrowthAI/composer validation
+passes 23 files / 1,086 tests. Lint, production build and git diff --check pass.
+Existing bundle-size, Firestore dynamic-import and CRLF warnings remain.
+Assistant scheduling/evidence semantics, employee UID/role/membership decisions,
+payment authority and security rules are unchanged. Safety, extra-work and Terminal
+test fixtures now supply valid schedule/timezone evidence; their production logic
+was not changed.
+
+Historical invalid/conflicting bookings remain refused, not silently repaired.
+This is local automated evidence, not physical-device or real-cloud acceptance.
+IW-02 and Stripe work were not started. Integrated owner/employee acceptance,
+physical-device checks, provider acceptance, controlled deployment, wife beta and
+final release gates remain open; mobile Tap to Pay remains post-V1.
+
 ## Final intelligence freeze verification (2026-10-07)
 
 The accumulated Assistant intelligence batch is ready for commit review after the

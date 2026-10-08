@@ -29,7 +29,7 @@ import {
   BOOKING_MANUAL_PAYMENT_STATUS_LABELS,
   BOOKING_PAYMENT_METHOD_LABELS,
   bookingMatchesEmployeeFieldVisibility,
-  buildBookingAdminUpdatePatch,
+  buildBookingAdminUpdatePatch as buildAdminPatch,
   buildBookingFieldExecutionPatch,
   buildBookingManualPaymentStatusPatch,
   getRequiredChecklistCompletion,
@@ -37,6 +37,7 @@ import {
   updateBookingFieldExecution,
   updateBookingManualPaymentStatus,
 } from '../core/scheduling/schedulingService';
+const buildBookingAdminUpdatePatch = (patch, options) => buildAdminPatch(patch, { ...options, timeZone: 'America/Chicago' });
 
 const now = '2026-06-30T12:00:00.000Z';
 
@@ -96,14 +97,14 @@ describe('booking admin update whitelist helper', () => {
     const result = buildBookingAdminUpdatePatch({
       date: '2026-07-03',
       startTime: '09:00',
-      scheduledAt: new Date('2026-07-03T09:00').toISOString(),
+      scheduledAt: '2026-07-03T14:00:00.000Z',
     }, { now });
 
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({
       date: '2026-07-03',
       startTime: '09:00',
-      scheduledAt: new Date('2026-07-03T09:00').toISOString(),
+      scheduledAt: '2026-07-03T14:00:00.000Z',
     });
   });
 
@@ -111,7 +112,7 @@ describe('booking admin update whitelist helper', () => {
     const result = buildBookingAdminUpdatePatch({
       date: '2026-07-04',
       startTime: '09:00',
-      scheduledAt: new Date('2026-07-03T09:00').toISOString(),
+      scheduledAt: '2026-07-03T14:00:00.000Z',
     }, { now });
 
     expect(result).toMatchObject({
@@ -318,6 +319,7 @@ describe('booking admin update write wrapper', () => {
     loggingMocks.logError.mockReset();
     firestoreMocks.doc.mockImplementation((db, ...path) => ({ db, path }));
     firestoreMocks.updateDoc.mockResolvedValue(undefined);
+    firestoreMocks.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ businessSettings: { timeZone: 'America/Chicago' } }) });
   });
 
   it('requires tenantId before building or writing', async () => {
@@ -435,7 +437,7 @@ describe('booking admin update write wrapper', () => {
     const result = await updateBookingAdminFields('tenant-a', 'booking-1', {
       date: '2026-07-04',
       startTime: '09:00',
-      scheduledAt: new Date('2026-07-03T09:00').toISOString(),
+      scheduledAt: '2026-07-03T14:00:00.000Z',
     }, { now });
 
     expect(result).toMatchObject({

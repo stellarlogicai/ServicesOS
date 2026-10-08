@@ -587,12 +587,12 @@ describe('employee-safe JobPacket projection', () => {
 
   test('all output is JSON-safe and malformed optional timestamps become null', () => {
     const timestamp = { toDate: () => new Date('2026-09-03T14:30:00.000Z') };
-    const packet = employeeJobPacket('booking-a', baseBooking({ scheduledAt: timestamp }), 'UTC');
+    const packet = employeeJobPacket('booking-a', baseBooking({ startTime: '14:30', scheduledAt: timestamp }), 'UTC');
     assert.equal(packet.schedule.scheduledAt, '2026-09-03T14:30:00.000Z');
     assert.doesNotThrow(() => JSON.stringify(packet));
     const malformed = employeeJobPacket('booking-b', baseBooking({ scheduledAt: { toDate: () => { throw new Error('bad'); } } }), 'UTC');
     assert.equal(malformed.schedule.scheduledAt, null);
-    assert.equal(malformed.schedule.date, '2026-09-03');
+    assert.equal(malformed.schedule.date, null);
   });
 
   test('field strings and list strings are bounded', () => {

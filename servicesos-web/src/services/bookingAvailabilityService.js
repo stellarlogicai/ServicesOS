@@ -1,4 +1,5 @@
 import { BUSINESS_DAYS, DEFAULT_AVAILABLE_DAYS } from './businessSettingsService';
+import { resolveSchedule } from '../../../cloud-functions/bookingSchedule.mjs';
 
 const DAY_BY_INDEX = [
   'sunday',
@@ -10,9 +11,9 @@ const DAY_BY_INDEX = [
   'saturday',
 ];
 
-export function checkBookingDayAvailability({ scheduledAt, availableDays }) {
-  const scheduledDate = new Date(scheduledAt);
-  if (Number.isNaN(scheduledDate.getTime())) {
+export function checkBookingDayAvailability({ scheduledAt, availableDays, timeZone }) {
+  const schedule = resolveSchedule({ scheduledAt }, timeZone);
+  if (!schedule.scheduledAt) {
     throw new Error('A valid booking date is required.');
   }
 
@@ -29,7 +30,7 @@ export function checkBookingDayAvailability({ scheduledAt, availableDays }) {
     throw new Error('Business availability has no valid available days.');
   }
 
-  const day = DAY_BY_INDEX[scheduledDate.getDay()];
+  const day = DAY_BY_INDEX[new Date(`${schedule.date}T00:00:00Z`).getUTCDay()];
   return {
     available: normalizedDays.includes(day),
     day,

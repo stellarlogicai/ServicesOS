@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildExistingCustomerBooking,
+  buildExistingCustomerBooking as buildBooking,
   mapExistingCustomerProperty,
   mapExistingCustomerToEstimatePrefill,
 } from '../services/existingCustomerBookingService';
+const buildExistingCustomerBooking = args => buildBooking({ ...args, timeZone: 'America/Chicago' });
 
 const customer = {
   id: 'customer-a',

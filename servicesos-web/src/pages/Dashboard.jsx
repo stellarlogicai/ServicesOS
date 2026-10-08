@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { getLeads, setLeadStatus, deleteLead } from "../services/crmService";
 import { approveQuoteRequestAndCreateBooking } from "../services/quoteBookingConversionService";
+import { resolveSchedule } from '../../../cloud-functions/bookingSchedule.mjs';
 import { getJobs } from "../core/scheduling/schedulingService";
 import { findBookingConflict } from "../services/bookingConflictService";
 import { checkBookingDayAvailability } from "../services/bookingAvailabilityService";
@@ -62,7 +63,7 @@ function StatCard({ label, value, sub, accent }) {
 }
 
 // ─── Book modal ───────────────────────────────────────────────────────────────
-function BookModal({ lead, onClose, onSave, onCheckAvailability, onCheckConflict }) {
+function BookModal({ lead, timeZone, onClose, onSave, onCheckAvailability, onCheckConflict }) {
   const display = getFormData(lead);
   const pendingOwnerReview = isPendingOwnerReview(lead);
   const normalizeBookingTime = (value) => {
@@ -87,11 +88,11 @@ function BookModal({ lead, onClose, onSave, onCheckAvailability, onCheckConflict
   const validPrice = Number(price) > 0;
   const busy = checking || creating;
 
-  const bookingData = () => ({
-    scheduledAt: new Date(`${date}T${time}`).toISOString(),
-    agreedPrice: Number(price),
-    notes
-  });
+  const bookingData = () => {
+    const schedule = resolveSchedule({ date, startTime: time }, timeZone);
+    if (!schedule.scheduledAt) throw new Error('Booking date, time and business timezone must identify a valid scheduled start.');
+    return { ...schedule, agreedPrice: Number(price), notes };
+  };
 
   const resetChecks = () => {
     setAvailabilityWarning(false);
@@ -556,6 +557,7 @@ export default function Dashboard() {
       return findBookingConflict({
         bookings: result.data,
         scheduledAt: bookingData.scheduledAt,
+        timeZone: currentTenant?.businessSettings?.timeZone,
         durationHours: lead.estimate?.appointmentDuration
       });
     } catch {
@@ -569,6 +571,7 @@ export default function Dashboard() {
     const settings = await getBusinessSettings(tenantId);
     return checkBookingDayAvailability({
       scheduledAt: bookingData.scheduledAt,
+      timeZone: currentTenant?.businessSettings?.timeZone,
       availableDays: settings?.availability?.availableDays,
     });
   }, [currentTenant]);
@@ -822,6 +825,7 @@ export default function Dashboard() {
       {bookingLead && (
         <BookModal
           lead={bookingLead}
+          timeZone={currentTenant?.businessSettings?.timeZone}
           onClose={() => setBookingLead(null)}
           onSave={data => handleBook(bookingLead, data)}
           onCheckAvailability={checkBookingAvailability}

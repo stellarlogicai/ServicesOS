@@ -9,7 +9,7 @@ const { employeeJobPacket, safeBusinessPhone } = require('../employeeJobPacketPr
 const NOW = new Date('2026-09-26T12:00:00.000Z');
 
 function setup({ employeeRole = 'employee', employeeStatus = 'active', members = ['employee-a'],
-  booking = { date: '2026-09-26', status: 'scheduled', assignedEmployeeAuthUid: 'employee-a' },
+  booking = { date: '2026-09-26', startTime: '09:00', status: 'scheduled', assignedEmployeeAuthUid: 'employee-a' },
   adminRole = 'admin', adminMembers = ['owner-a'] } = {}) {
   const records = new Map();
   const paths = [];
@@ -19,7 +19,7 @@ function setup({ employeeRole = 'employee', employeeStatus = 'active', members =
     'owner-a': { role: adminRole, status: 'active', tenantId: 'tenant-a' },
     'cross-owner': { role: 'admin', status: 'active', tenantId: 'tenant-b' },
   };
-  const tenant = { users: members, adminUsers: adminMembers, businessPhone: '(555) 123-4567' };
+  const tenant = { users: members, adminUsers: adminMembers, businessPhone: '(555) 123-4567', businessSettings: { timeZone: 'UTC' } };
   function snapshot(path) {
     const [collection, id, subcollection, subId] = path;
     let data;

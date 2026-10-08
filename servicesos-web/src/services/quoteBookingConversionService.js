@@ -1,18 +1,11 @@
 import { collection, doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import { addSchemaVersion } from '../shared/schemas/schemaVersioning';
+import { resolveSchedule, scheduleParts } from '../../../cloud-functions/bookingSchedule.mjs';
 import {
   buildQuoteRequestSnapshot,
   normalizeQuoteIntakeData,
 } from './customerPortalQuoteRequestMapper';
-
-function localDateParts(date) {
-  const pad = value => String(value).padStart(2, '0');
-  return {
-    date: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
-    time: `${pad(date.getHours())}:${pad(date.getMinutes())}`
-  };
-}
 
 function firstText(...values) {
   return values.find(value => typeof value === 'string' && value.trim())?.trim() || '';
@@ -140,22 +133,24 @@ export function buildQuoteBookingConversion({
   bookingData,
   reviewedBy,
   bookingId,
-  now = new Date().toISOString()
+  now = new Date().toISOString(),
+  timeZone
 }) {
   if (!lead?.id) throw new Error('Lead ID is required.');
   if (!reviewedBy) throw new Error('Reviewing admin UID is required.');
 
-  const scheduledDate = new Date(bookingData?.scheduledAt);
+  const schedule = resolveSchedule(bookingData, timeZone);
+  const scheduledDate = schedule.scheduledAt ? new Date(schedule.scheduledAt) : null;
   const agreedPrice = Number(bookingData?.agreedPrice);
-  if (Number.isNaN(scheduledDate.getTime())) throw new Error('A valid booking date is required.');
+  if (!scheduledDate) throw new Error('A valid booking date, time and business timezone are required.');
   if (!Number.isFinite(agreedPrice) || agreedPrice <= 0) {
     throw new Error('An approved price greater than zero is required.');
   }
 
   const durationHours = Math.max(Number(lead.estimate?.appointmentDuration) || 2, 0.5);
   const endDate = new Date(scheduledDate.getTime() + durationHours * 60 * 60 * 1000);
-  const start = localDateParts(scheduledDate);
-  const end = localDateParts(endDate);
+  const start = scheduleParts(scheduledDate, timeZone);
+  const end = scheduleParts(endDate, timeZone);
   const notes = String(bookingData?.notes || '').trim();
   const customerDisplay = buildCustomerDisplaySnapshot(lead);
   const legacySnapshots = lead.formData && (!lead.propertySnapshot || !lead.requestSnapshot)
@@ -247,6 +242,8 @@ export async function approveQuoteRequestAndCreateBooking({
   const operationNow = new Date().toISOString();
 
   return runTransaction(db, async transaction => {
+    const tenantSnapshot = await transaction.get(doc(db, 'tenants', tenantId));
+    const timeZone = tenantSnapshot.exists() ? tenantSnapshot.data().businessSettings?.timeZone : null;
     const leadSnapshot = await transaction.get(leadRef);
     if (!leadSnapshot.exists()) {
       throw conversionStateError('This request no longer exists. Refresh the dashboard before trying again.');
@@ -292,6 +289,7 @@ export async function approveQuoteRequestAndCreateBooking({
       reviewedBy,
       bookingId: bookingRef.id,
       now: operationNow,
+      timeZone,
     });
     const leadPatch = {
       ...conversion.leadPatch,

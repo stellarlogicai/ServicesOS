@@ -2,8 +2,8 @@ import { collection, doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import { addSchemaVersion } from '../shared/schemas/schemaVersioning';
 import { errorResponse, successResponse } from '../shared/api/apiResponseStandard';
+import { resolveSchedule, validScheduleDate } from '../../../cloud-functions/bookingSchedule.mjs';
 
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_ONLY = /^\d{2}:\d{2}$/;
 export const BOOKING_TYPES = Object.freeze(['residential', 'commercial']);
 
@@ -27,14 +27,6 @@ const COMMERCIAL_TEXT_LIMITS = Object.freeze({
 
 function text(value) {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function localDateParts(date) {
-  const pad = value => String(value).padStart(2, '0');
-  return {
-    date: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
-    time: `${pad(date.getHours())}:${pad(date.getMinutes())}`,
-  };
 }
 
 function splitCustomerName(customer) {
@@ -85,9 +77,7 @@ export function mapExistingCustomerToEstimatePrefill(customer) {
 }
 
 function validDate(value) {
-  if (!DATE_ONLY.test(value)) return false;
-  const date = new Date(`${value}T00:00:00`);
-  return !Number.isNaN(date.getTime()) && localDateParts(date).date === value;
+  return validScheduleDate(value);
 }
 
 function validTime(value) {
@@ -131,7 +121,7 @@ function buildCommercialDetails(input = {}) {
   return successResponse({ ...details, approximateSquareFootage, numberOfRestrooms });
 }
 
-export function buildExistingCustomerBooking({ tenantId, customer, bookingInput, createdBy, now }) {
+export function buildExistingCustomerBooking({ tenantId, customer, bookingInput, createdBy, now, timeZone }) {
   const bookingType = text(bookingInput?.bookingType);
   const serviceType = text(bookingInput?.serviceType);
   const date = text(bookingInput?.date);
@@ -154,8 +144,8 @@ export function buildExistingCustomerBooking({ tenantId, customer, bookingInput,
   }
   if (!text(createdBy)) return bookingValidationError('Your authenticated user ID is required to create a booking.');
 
-  const scheduledDate = new Date(`${date}T${startTime}`);
-  if (Number.isNaN(scheduledDate.getTime())) return bookingValidationError('Choose a valid booking date and time.');
+  const schedule = resolveSchedule(bookingInput, timeZone);
+  if (!schedule.scheduledAt) return bookingValidationError('Booking date, time and business timezone must identify one valid, consistent scheduled start.');
 
   const name = text(customer.name) || [text(customer.firstName), text(customer.lastName)].filter(Boolean).join(' ');
   const customerSnapshot = {
@@ -203,7 +193,7 @@ export function buildExistingCustomerBooking({ tenantId, customer, bookingInput,
     },
     date,
     startTime,
-    scheduledAt: scheduledDate.toISOString(),
+    scheduledAt: schedule.scheduledAt,
     agreedPrice,
     status: 'scheduled',
     serviceType,
@@ -230,6 +220,8 @@ export async function createExistingCustomerBooking({ tenantId, customerId, book
 
   try {
     return await runTransaction(db, async transaction => {
+      const tenantSnapshot = await transaction.get(doc(db, 'tenants', tenantId));
+      const timeZone = tenantSnapshot.exists() ? tenantSnapshot.data().businessSettings?.timeZone : null;
       const customerSnapshot = await transaction.get(customerRef);
       if (!customerSnapshot.exists()) {
         return bookingValidationError('Customer no longer exists. Refresh Customers and try again.');
@@ -239,7 +231,7 @@ export async function createExistingCustomerBooking({ tenantId, customerId, book
       if (customer.tenantId && customer.tenantId !== tenantId) {
         return bookingValidationError('This customer does not belong to the selected tenant. Refresh Customers and try again.');
       }
-      const builtBooking = buildExistingCustomerBooking({ tenantId, customer, bookingInput, createdBy, now });
+      const builtBooking = buildExistingCustomerBooking({ tenantId, customer, bookingInput, createdBy, now, timeZone });
       if (!builtBooking.success) return builtBooking;
 
       transaction.set(bookingRef, builtBooking.data);

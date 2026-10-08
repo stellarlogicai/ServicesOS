@@ -1,4 +1,4 @@
-const { resolveTenantTimeZone } = require('./growthAICreditEntitlement');
+const { isValidIanaTimeZone } = require('./growthAICreditEntitlement');
 
 class EmployeeAuthorizationError extends Error {
   constructor() {
@@ -51,7 +51,8 @@ async function verifyCanonicalEmployee({ admin, uid }) {
     uid,
     tenantId,
     profile,
-    tenantTimeZone: resolveTenantTimeZone(tenant),
+    tenantTimeZone: isValidIanaTimeZone(tenant.businessSettings?.timeZone)
+      ? tenant.businessSettings.timeZone.trim() : null,
     businessPhone: typeof tenant.businessPhone === 'string' ? tenant.businessPhone : null,
   };
 }

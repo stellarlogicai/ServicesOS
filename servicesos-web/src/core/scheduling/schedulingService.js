@@ -12,6 +12,7 @@ import { db } from '../../firebase';
 import { addSchemaVersion, getSchemaVersion } from '../../shared/schemas/schemaVersioning';
 import { successResponse, errorResponse } from '../../shared/api/apiResponseStandard';
 import { logError, ERROR_CODES, SEVERITY } from '../../shared/logging/errorLoggingStandard';
+import { resolveSchedule, scheduleParts, validScheduleDate } from '../../../../cloud-functions/bookingSchedule.mjs';
 
 const COLLECTION_NAME = 'bookings';
 const SCHEMA_TYPE = 'JOB';
@@ -102,22 +103,12 @@ const BOOKING_CHECKLIST_SCOPE_SERVICE_KEYS = new Set([
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_ONLY_PATTERN = /^\d{2}:\d{2}$/;
 
-function localDateParts(date) {
-  const pad = value => String(value).padStart(2, '0');
-  return {
-    date: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
-    time: `${pad(date.getHours())}:${pad(date.getMinutes())}`,
-  };
-}
-
 function bookingAdminValidationError(message) {
   return errorResponse(message, 'VALIDATION_ERROR');
 }
 
 function isValidDateOnly(value) {
-  if (typeof value !== 'string' || !DATE_ONLY_PATTERN.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00`);
-  return !Number.isNaN(parsed.getTime()) && localDateParts(parsed).date === value;
+  return validScheduleDate(value);
 }
 
 function isValidTimeOnly(value) {
@@ -140,7 +131,7 @@ function isValidPaymentDateString(value) {
   return parseValidIsoDate(value) !== null;
 }
 
-function normalizeBookingAdminTimeFields(patch, payload) {
+function normalizeBookingAdminTimeFields(patch, payload, timeZone) {
   const hasDate = Object.hasOwn(patch, 'date');
   const hasStartTime = Object.hasOwn(patch, 'startTime');
   const hasEndTime = Object.hasOwn(patch, 'endTime');
@@ -164,7 +155,8 @@ function normalizeBookingAdminTimeFields(patch, payload) {
       return bookingAdminValidationError('Booking scheduledAt must be a valid ISO string.');
     }
 
-    const derived = localDateParts(scheduledDate);
+    const derived = scheduleParts(scheduledDate, timeZone);
+    if (!derived) return bookingAdminValidationError('A valid business timezone is required.');
     if (hasDate && patch.date !== derived.date) {
       return bookingAdminValidationError('Booking date must match scheduledAt.');
     }
@@ -172,6 +164,7 @@ function normalizeBookingAdminTimeFields(patch, payload) {
       return bookingAdminValidationError('Booking startTime must match scheduledAt.');
     }
 
+    if (!resolveSchedule(patch, timeZone).scheduledAt) return bookingAdminValidationError('Booking scheduling evidence is invalid or conflicting.');
     payload.scheduledAt = patch.scheduledAt;
     payload.date = hasDate ? patch.date : derived.date;
     payload.startTime = hasStartTime ? patch.startTime : derived.time;
@@ -180,14 +173,14 @@ function normalizeBookingAdminTimeFields(patch, payload) {
       return bookingAdminValidationError('Booking date and startTime must be supplied together.');
     }
 
-    const scheduledDate = new Date(`${patch.date}T${patch.startTime}`);
-    if (Number.isNaN(scheduledDate.getTime())) {
+    const schedule = resolveSchedule(patch, timeZone);
+    if (!schedule.scheduledAt) {
       return bookingAdminValidationError('Booking date and startTime must produce a valid scheduledAt value.');
     }
 
     payload.date = patch.date;
     payload.startTime = patch.startTime;
-    payload.scheduledAt = scheduledDate.toISOString();
+    payload.scheduledAt = schedule.scheduledAt;
   }
 
   if (hasEndTime) {
@@ -197,7 +190,7 @@ function normalizeBookingAdminTimeFields(patch, payload) {
   return null;
 }
 
-export function buildBookingAdminUpdatePatch(proposedPatch, { now = new Date().toISOString() } = {}) {
+export function buildBookingAdminUpdatePatch(proposedPatch, { now = new Date().toISOString(), timeZone } = {}) {
   if (!proposedPatch || typeof proposedPatch !== 'object' || Array.isArray(proposedPatch)) {
     return bookingAdminValidationError('Booking update patch must be an object.');
   }
@@ -209,7 +202,7 @@ export function buildBookingAdminUpdatePatch(proposedPatch, { now = new Date().t
   }
 
   const payload = {};
-  const timeError = normalizeBookingAdminTimeFields(proposedPatch, payload);
+  const timeError = normalizeBookingAdminTimeFields(proposedPatch, payload, timeZone);
   if (timeError) return timeError;
 
   if (Object.hasOwn(proposedPatch, 'status')) {
@@ -727,7 +720,12 @@ export async function updateBookingAdminFields(tenantId, bookingId, proposedPatc
       return errorResponse('Booking ID is required', 'VALIDATION_ERROR');
     }
 
-    const builtPatch = buildBookingAdminUpdatePatch(proposedPatch, options);
+    let timeZone;
+    if (['date', 'startTime', 'scheduledAt'].some(field => Object.hasOwn(proposedPatch || {}, field))) {
+      const tenantSnapshot = await getDoc(doc(db, 'tenants', tenantId));
+      timeZone = tenantSnapshot.exists() ? tenantSnapshot.data().businessSettings?.timeZone : null;
+    }
+    const builtPatch = buildBookingAdminUpdatePatch(proposedPatch, { ...options, timeZone });
     if (!builtPatch.success) {
       return builtPatch;
     }

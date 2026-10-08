@@ -216,33 +216,32 @@ function asDate(value) {
   }
 }
 
-function localDateKey(value, timeZone = 'UTC') {
+function localDateKey(value, timeZone) {
+  if (!timeZone) return '';
   const date = asDate(value);
   if (!date) return '';
-  const parts = new Intl.DateTimeFormat('en-US-u-ca-gregory-nu-latn', {
+  let parts;
+  try { parts = new Intl.DateTimeFormat('en-US-u-ca-gregory-nu-latn', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(date);
+  }).formatToParts(date); } catch { return ''; }
   const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
   return values.year && values.month && values.day ? `${values.year}-${values.month}-${values.day}` : '';
 }
 
-function bookingDateKey(booking = {}, timeZone = 'UTC') {
-  const scheduledDate = localDateKey(booking.scheduledAt, timeZone);
-  if (scheduledDate) return scheduledDate;
-  const stored = booking.date || booking.appointmentDate;
-  return typeof stored === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(stored) ? stored : '';
+function bookingDateKey(booking = {}, timeZone) {
+  return require('./bookingSchedule.mjs').resolveSchedule(booking, timeZone).date || '';
 }
 
 function scheduleProjection(booking, timeZone) {
-  const scheduledAt = asDate(booking.scheduledAt);
+  const schedule = require('./bookingSchedule.mjs').resolveSchedule(booking, timeZone);
   return {
-    date: bookingDateKey(booking, timeZone) || null,
-    startTime: boundedText(firstText(booking.startTime, booking.time, booking.appointmentTime), 32) || null,
+    date: schedule.date,
+    startTime: schedule.startTime,
     endTime: boundedText(booking.endTime, 32) || null,
-    scheduledAt: scheduledAt ? scheduledAt.toISOString() : null,
+    scheduledAt: schedule.scheduledAt,
   };
 }
 
@@ -491,7 +490,7 @@ function bookingMatchesEmployeeJobVisibility(booking, { uid, today, timeZone }) 
     ACTIVE_STATUSES.has(booking.status) &&
     booking.isArchived !== true &&
     booking.isDeleted !== true &&
-    bookingDateKey(booking, timeZone) >= today
+    today && bookingDateKey(booking, timeZone) && bookingDateKey(booking, timeZone) >= today
   );
 }
 

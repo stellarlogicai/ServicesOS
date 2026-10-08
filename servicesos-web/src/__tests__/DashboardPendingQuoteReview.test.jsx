@@ -15,7 +15,7 @@ const dashboardMocks = vi.hoisted(() => ({
 
 vi.mock('../contexts/AuthContext', () => ({
   useAuth: () => ({
-    currentTenant: { id: 'tenant-test' },
+    currentTenant: { id: 'tenant-test', businessSettings: { timeZone: 'America/Chicago' } },
     user: { uid: 'admin-test' }
   })
 }));
@@ -441,7 +441,7 @@ describe('Dashboard null-safety', () => {
         tenantId: 'tenant-test',
         lead: manualEstimate,
         bookingData: expect.objectContaining({
-          scheduledAt: new Date('2026-07-02T11:45').toISOString(),
+          scheduledAt: '2026-07-02T16:45:00.000Z',
           agreedPrice: 180
         }),
         reviewedBy: 'admin-test'

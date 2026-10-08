@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { findBookingConflict } from '../services/bookingConflictService';
+import { findBookingConflict as findCanonicalBookingConflict } from '../services/bookingConflictService';
+const findBookingConflict = input => findCanonicalBookingConflict({ timeZone: 'America/Chicago', ...input });
 
 const proposed = {
-  scheduledAt: new Date('2026-07-15T10:00').toISOString(),
+  scheduledAt: '2026-07-15T15:00:00.000Z',
   durationHours: 2,
 };
 

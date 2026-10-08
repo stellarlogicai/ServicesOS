@@ -21,8 +21,9 @@ vi.mock('firebase/firestore', () => ({
 
 import {
   approveQuoteRequestAndCreateBooking,
-  buildQuoteBookingConversion
+  buildQuoteBookingConversion as buildConversion
 } from '../services/quoteBookingConversionService';
+const buildQuoteBookingConversion = args => buildConversion({ ...args, timeZone: 'America/Chicago' });
 
 const pendingLead = {
   id: 'lead-test',
@@ -79,13 +80,14 @@ describe('quote booking conversion', () => {
     firestoreMocks.collection.mockReturnValue(bookingCollection);
     firestoreMocks.doc.mockImplementation((root, ...segments) => {
       if (root === bookingCollection) return generatedBookingReference;
+      if (segments.length === 2 && segments[0] === 'tenants') return { kind: 'tenant', id: segments[1] };
       if (segments.at(-2) === 'leads') return { ...leadReference, id: segments.at(-1) };
       if (segments.at(-2) === 'bookings') return { kind: 'booking', id: segments.at(-1) };
       throw new Error(`Unexpected document path: ${segments.join('/')}`);
     });
     firestoreMocks.get.mockResolvedValue(snapshot(pendingLead.id, storedPendingLead()));
     firestoreMocks.runTransaction.mockImplementation(async (_database, callback) => callback({
-      get: firestoreMocks.get,
+      get: ref => ref.kind === 'tenant' ? Promise.resolve(snapshot(ref.id, { businessSettings: { timeZone: 'America/Chicago' } })) : firestoreMocks.get(ref),
       set: firestoreMocks.set,
       update: firestoreMocks.update,
     }));
@@ -278,6 +280,7 @@ describe('quote booking conversion', () => {
         generatedId += 1;
         return { kind: 'booking', id: `booking-${generatedId}` };
       }
+      if (segments.length === 2 && segments[0] === 'tenants') return { kind: 'tenant', id: segments[1] };
       if (segments.at(-2) === 'leads') return { ...leadReference, id: segments.at(-1) };
       if (segments.at(-2) === 'bookings') return { kind: 'booking', id: segments.at(-1) };
       throw new Error(`Unexpected document path: ${segments.join('/')}`);
@@ -286,7 +289,8 @@ describe('quote booking conversion', () => {
       const current = queue.then(async () => {
         const writes = [];
         const transaction = {
-          get: async reference => reference.kind === 'lead'
+          get: async reference => reference.kind === 'tenant'
+            ? snapshot(reference.id, { businessSettings: { timeZone: 'America/Chicago' } }) : reference.kind === 'lead'
             ? snapshot(pendingLead.id, storedLead)
             : snapshot(reference.id, storedBookings.get(reference.id)),
           set: (reference, data) => writes.push({ type: 'set', reference, data }),
