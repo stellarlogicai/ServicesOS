@@ -175,7 +175,10 @@ test("performs a fresh GET and hides detail until it resolves", async () => {
   expect(screen.getByText("Loading job details...")).toBeTruthy();
   expect(screen.queryByText("Sample Customer")).toBeNull();
 
-  await act(async () => pending.resolve(packet()));
+  await act(async () => {
+    pending.resolve(packet());
+    await pending.promise;
+  });
   expect(screen.getByText("Sample Customer")).toBeTruthy();
 });
 
