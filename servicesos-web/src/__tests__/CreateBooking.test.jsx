@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const TEST_NOW = '2026-10-08T12:00:00.000Z';
+const FUTURE_DATE = '2026-10-15';
 
 const mocks = vi.hoisted(() => ({ getCustomers: vi.fn(), createBooking: vi.fn(), listActiveServices:vi.fn() }));
 
@@ -16,10 +19,14 @@ import CreateBooking from '../components/CreateBooking';
 
 describe('Create Booking intake', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(TEST_NOW));
     mocks.getCustomers.mockReset().mockResolvedValue({ success: true, data: [{ id: 'customer-a', name: 'Ada Customer' }] });
     mocks.createBooking.mockReset().mockResolvedValue({ success: true, data: { id: 'booking-a' } });
     mocks.listActiveServices.mockReset().mockResolvedValue([]);
   });
+
+  afterEach(() => vi.useRealTimers());
 
   it('uses canonical service name and price when the tenant catalog is configured',async()=>{
     mocks.listActiveServices.mockResolvedValue([{id:'service-a',name:'Tenant Standard',serviceType:'standard',active:true,priceCents:17500,durationMinutes:120}]);
@@ -27,7 +34,7 @@ describe('Create Booking intake', () => {
     fireEvent.change(screen.getByLabelText('Saved customer *'),{target:{value:'customer-a'}});fireEvent.click(screen.getByRole('radio',{name:'Residential'}));
     fireEvent.change(screen.getByLabelText('Service type or job title *'),{target:{name:'serviceCatalogId',value:'service-a'}});
     expect(screen.getByLabelText('Approved price ($) *')).toHaveValue(175);
-    fireEvent.change(screen.getByLabelText('Scheduled date *'),{target:{value:'2026-10-01'}});fireEvent.change(screen.getByLabelText('Scheduled time *'),{target:{value:'09:00'}});fireEvent.click(screen.getByRole('button',{name:'Create booking'}));
+    fireEvent.change(screen.getByLabelText('Scheduled date *'),{target:{value:FUTURE_DATE}});fireEvent.change(screen.getByLabelText('Scheduled time *'),{target:{value:'09:00'}});fireEvent.click(screen.getByRole('button',{name:'Create booking'}));
     await waitFor(()=>expect(mocks.createBooking).toHaveBeenCalledWith(expect.objectContaining({bookingInput:expect.objectContaining({serviceCatalogId:'service-a',serviceType:'Tenant Standard',agreedPrice:'175.00'})})));
   });
 
@@ -45,7 +52,7 @@ describe('Create Booking intake', () => {
     fireEvent.change(screen.getByLabelText('Saved customer *'), { target: { value: 'customer-a' } });
     fireEvent.click(screen.getByRole('radio', { name: 'Residential' }));
     fireEvent.change(screen.getByLabelText('Service type or job title *'), { target: { value: 'Standard clean' } });
-    fireEvent.change(screen.getByLabelText('Scheduled date *'), { target: { value: '2026-10-01' } });
+    fireEvent.change(screen.getByLabelText('Scheduled date *'), { target: { value: FUTURE_DATE } });
     fireEvent.change(screen.getByLabelText('Scheduled time *'), { target: { value: '09:00' } });
     fireEvent.change(screen.getByLabelText('Approved price ($) *'), { target: { value: '180' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create booking' }));
@@ -62,7 +69,7 @@ describe('Create Booking intake', () => {
     fireEvent.change(screen.getByLabelText('Saved customer *'), { target: { value: 'customer-a' } });
     fireEvent.click(screen.getByRole('radio', { name: 'Commercial' }));
     fireEvent.change(screen.getByLabelText('Service type or job title *'), { target: { value: 'Office maintenance' } });
-    fireEvent.change(screen.getByLabelText('Scheduled date *'), { target: { value: '2026-10-01' } });
+    fireEvent.change(screen.getByLabelText('Scheduled date *'), { target: { value: FUTURE_DATE } });
     fireEvent.change(screen.getByLabelText('Scheduled time *'), { target: { value: '18:00' } });
     fireEvent.change(screen.getByLabelText('Approved price ($) *'), { target: { value: '900' } });
     fireEvent.change(screen.getByLabelText('Business name *'), { target: { value: 'Example Office' } });
@@ -77,5 +84,23 @@ describe('Create Booking intake', () => {
         commercialDetails: expect.objectContaining({ businessName: 'Example Office', primaryContactName: 'Ada Cruz', facilityType: 'Office' }),
       }),
     })));
+  });
+
+  it('rejects a past date through native form validation without submitting', async () => {
+    render(<CreateBooking />);
+    await screen.findByRole('option', { name: 'Ada Customer' });
+    fireEvent.change(screen.getByLabelText('Saved customer *'), { target: { value: 'customer-a' } });
+    fireEvent.click(screen.getByRole('radio', { name: 'Residential' }));
+    fireEvent.change(screen.getByLabelText('Service type or job title *'), { target: { value: 'Standard clean' } });
+    fireEvent.change(screen.getByLabelText('Scheduled time *'), { target: { value: '09:00' } });
+    fireEvent.change(screen.getByLabelText('Approved price ($) *'), { target: { value: '180' } });
+    const date = screen.getByLabelText('Scheduled date *');
+    fireEvent.change(date, { target: { value: FUTURE_DATE } });
+    expect(date.form.checkValidity()).toBe(true);
+    fireEvent.change(date, { target: { value: '2026-10-01' } });
+    expect(date.validity.rangeUnderflow).toBe(true);
+    expect(date.form.checkValidity()).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Create booking' }));
+    expect(mocks.createBooking).not.toHaveBeenCalled();
   });
 });

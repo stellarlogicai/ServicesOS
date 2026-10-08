@@ -1,5 +1,31 @@
 # ServicesOS V1 Current State
 
+## IW-03 booking test fixture validation checkpoint (2026-10-08)
+
+IW-03: **REPAIRED — READY FOR REVIEW**. The three CreateBooking submission
+failures were test-fixture failures: October 1, 2026 had become earlier than the
+form's native minimum date, so valid-submission mocks were never reached.
+The uncommitted test repair controls Date at `2026-10-08T12:00:00Z`, uses
+October 15, 2026 as the valid appointment fixture, restores real timers after
+each test, and adds native past-date rejection coverage. Existing assertions
+are preserved; no production code or IW-01 scheduling semantics changed.
+
+Completed automated validation: CreateBooking 5/5 under each host timezone
+UTC, America/Chicago, America/Los_Angeles, Asia/Tokyo and Pacific/Kiritimati;
+related booking/form tests 63/63; full web suite 104 files / 1,763/1,763 passed,
+zero failures/skips, exit 0, duration 138.77 seconds. Lint, production build and
+git diff --check passed. Existing jsdom navigation, bundle-size, dynamic-import
+and CRLF warnings remain. IW-01 and IW-02 remain repaired with their previously
+recorded validation evidence; this checkpoint does not supersede that evidence.
+
+Automated repair validation is complete, not integrated acceptance certification.
+Still open: combined integrated V1 acceptance rerun; owner/customer end-to-end
+workflow; physical employee-device and photo-upload testing; Agreement Lite
+signing/presentation acceptance; Stripe provider/payment acceptance; IW-04
+commercial platform-fee policy decision; and no-ID/manual Checkout reconciliation.
+Wife beta, payments and release are not certified.
+Mobile Tap to Pay remains post-V1. No provider or production action occurred.
+
 ## Checkout collection safety and recovery (2026-10-08)
 
 **REPAIRED — READY FOR REVIEW**, uncommitted and automatically validated only.

@@ -1,5 +1,26 @@
 # ServicesOS V1 Finish Board
 
+## IW-03 booking test fixture validation checkpoint (2026-10-08)
+
+- **REPAIRED — READY FOR REVIEW**; test repair remains uncommitted.
+- Root cause: October 1, 2026 fixture violated native minimum-date validation.
+  Controlled Date clock: `2026-10-08T12:00:00Z`; future fixture: October 15, 2026.
+  Native past-date rejection coverage added; existing assertions preserved.
+- CreateBooking: 5/5 per host timezone (UTC, America/Chicago,
+  America/Los_Angeles, Asia/Tokyo, Pacific/Kiritimati).
+- Related booking/form tests: 63/63. Full web: 104 files, 1,763/1,763 passed,
+  zero failures/skips, exit 0; 138.77 seconds. Lint/build/diff-check passed.
+- No production behavior or IW-01 scheduling change. IW-01 and IW-02 remain
+  repaired; their previously recorded validation evidence remains applicable.
+- Automated repair validation is complete; combined integrated V1 acceptance
+  rerun and owner/customer end-to-end workflow remain open.
+- Physical employee-device/photo-upload testing, Agreement Lite signing and
+  presentation acceptance, and Stripe provider/payment acceptance remain open.
+- IW-04 commercial platform-fee policy decision and legacy/indeterminate
+  collection recovery remain open; no payment policy was changed.
+- Wife beta, payments and release are not certified. Tap to Pay remains post-V1.
+  Existing jsdom/build/CRLF warnings remain; no provider or production action.
+
 ## Checkout collection safety and recovery (2026-10-08)
 
 - **REPAIRED — READY FOR REVIEW**; uncommitted, automatically validated, not
