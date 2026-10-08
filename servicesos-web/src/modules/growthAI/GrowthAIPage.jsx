@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { listOwnerServices } from '../../services/serviceCatalogService';
+import { buildOwnerContext } from './growthAIOwnerContext';
 import { listFieldPhotosForMarketing } from '../../services/fieldPhotoService';
 import GrowthAIActivityView from './components/GrowthAIActivityView';
 import GrowthAIDraftsView from './components/GrowthAIDraftsView';
@@ -112,6 +114,7 @@ export default function GrowthAIPage({ onReviewJob }) {
   const [messageRevision, setMessageRevision] = useState(0);
   const [error, setError] = useState('');
   const [opportunityWorkspace, setOpportunityWorkspace] = useState(emptyOpportunityWorkspace);
+  const [ownerCatalog, setOwnerCatalog] = useState({ tenantId: null, services: [], ready: false });
   const [opportunitiesLoading, setOpportunitiesLoading] = useState(true);
   const [opportunityFilter, setOpportunityFilter] = useState('all');
   const [creditBalance, setCreditBalance] = useState(null);
@@ -135,6 +138,20 @@ export default function GrowthAIPage({ onReviewJob }) {
   const aiRequestInFlight = useRef(false);
   const aiGeneratingTenantIdRef = useRef(null);
   const savingTenantIdRef = useRef(null);
+
+  useEffect(() => {
+    let current = true;
+    // The existing gateway derives authority from an active admin profile; do not
+    // substitute a selected super-admin tenant for that server-owned authority.
+    if (authorized && role === 'admin' && currentTenant?.id === tenantId) {
+      listOwnerServices().then(services => {
+        if (current) setOwnerCatalog({ tenantId, actorUid: user?.uid, services, ready: true });
+      }).catch(() => {
+        if (current) setOwnerCatalog({ tenantId, actorUid: user?.uid, services: [], ready: false });
+      });
+    }
+    return () => { current = false; };
+  }, [authorized, currentTenant?.id, role, tenantId, user?.uid]);
 
   useLayoutEffect(() => {
     if (activeTenantId.current !== tenantId) {
@@ -567,6 +584,15 @@ export default function GrowthAIPage({ onReviewJob }) {
   const communicationLeads = listCommunicationLeads(tenantOpportunityWorkspace.leads, tenantId);
   const communicationBookings = listCommunicationBookings(tenantOpportunityWorkspace.bookings, tenantId);
   const marketingServices = deriveTenantMarketingServices(tenantOpportunityWorkspace.bookings);
+  const ownerCatalogReady = role === 'admin' && currentTenant?.id === tenantId &&
+    ownerCatalog.tenantId === tenantId && ownerCatalog.actorUid === user?.uid && ownerCatalog.ready;
+  const ownerContext = buildOwnerContext({
+    tenantId, authorized, bookings: tenantOpportunityWorkspace.bookings, leads: tenantOpportunityWorkspace.leads,
+    ready: opportunityWorkspace.tenantId === tenantId && !opportunitiesLoading,
+    services: ownerCatalogReady ? ownerCatalog.services : [],
+    catalogReady: ownerCatalogReady,
+    timeZone: currentTenant?.businessSettings?.timeZone || currentTenant?.timeZone || '',
+  });
   const draftPresentationContext = useMemo(() => ({
     tenantId,
     opportunities: tenantOpportunityWorkspace.opportunities,
@@ -760,6 +786,9 @@ export default function GrowthAIPage({ onReviewJob }) {
       onNewConversation={() => {
         setActiveView('home');
         setWorkingOn('');
+        setCustomerCommunicationIntent(null);
+        setMarketingOpportunity(null);
+        setInputs(value => ({ ...value, serviceType: '' }));
         setHomeSessionVersion(version => version + 1);
       }}
       onViewChange={setActiveView}
@@ -768,11 +797,17 @@ export default function GrowthAIPage({ onReviewJob }) {
       {loadingForTenant ? <p className="growth-ai-empty" role="status">Loading tenant SLAI Assistant workspace...</p> : null}
       {activeView === 'home' ? (
         <GrowthAIHome
-          key={`${tenantId}-${homeSessionVersion}`}
+          key={`${tenantId}-${user?.uid || ''}-${homeSessionVersion}`}
           activeOpportunities={activeOpportunities}
           creditPresentation={creditPresentation}
           aiGenerating={aiGeneratingForTenant}
           brand={brand}
+          bookings={tenantOpportunityWorkspace.bookings}
+          ownerContext={ownerContext}
+          onContextHandoff={handoff => {
+            if (handoff.communication) setCustomerCommunicationIntent(handoff.communication);
+            if (handoff.serviceType) setInputs(value => ({ ...value, serviceType: handoff.serviceType }));
+          }}
           briefing={businessBriefing}
           briefingLoading={opportunitiesLoading}
           brandContext={brandContext}
@@ -850,6 +885,7 @@ export default function GrowthAIPage({ onReviewJob }) {
             setActiveView('drafts');
           }}
           onOpenDrafts={() => setActiveView('drafts')}
+          onOpenActivity={() => setActiveView('activity')}
           onWorkingOnChange={setWorkingOn}
         />
       ) : null}

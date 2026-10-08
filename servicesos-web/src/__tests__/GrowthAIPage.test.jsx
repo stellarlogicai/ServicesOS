@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GrowthAIPage from '../modules/growthAI/GrowthAIPage';
+import * as businessIntelligence from '../modules/growthAI/growthAIBusinessIntelligence';
 
 const state = vi.hoisted(() => ({
   auth: {
@@ -48,6 +49,8 @@ const fieldPhotoService = vi.hoisted(() => ({
   listFieldPhotosForMarketing: vi.fn(),
   loadFieldPhotoBlob: vi.fn(),
 }));
+const catalogService = vi.hoisted(() => ({ listOwnerServices: vi.fn() }));
+vi.mock('../services/serviceCatalogService', () => catalogService);
 
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => state.auth }));
 
@@ -154,8 +157,1024 @@ function canonicalCreditBalance(available, overrides = {}) {
 }
 
 describe('GrowthAI V1 tenant draft foundation', () => {
+  const contextFixtures = () => {
+    state.auth.currentTenant.businessSettings = { timeZone: 'UTC' };
+    state.opportunityWorkspace = { opportunities: [], rebookingImplemented: false,
+      bookings: [
+        { id: 'context-booking', tenantId: 'tenant-a', customerId: 'context-customer', customerName: 'Synthetic Context Customer', serviceType: 'standard', status: 'scheduled', date: '2099-01-01', startTime: '10:00', agreedPrice: 180, leadId: 'context-estimate' },
+        { id: 'context-past', tenantId: 'tenant-a', customerId: 'context-customer', customerName: 'Synthetic Context Customer', serviceType: 'standard', status: 'completed', date: '2020-01-01' },
+        { id: 'foreign-booking', tenantId: 'tenant-b', customerId: 'foreign-customer', customerName: 'Foreign Context Customer', serviceType: 'deep', status: 'scheduled', date: '2099-01-01' },
+      ],
+      leads: [
+        { id: 'context-estimate', tenantId: 'tenant-a', customerId: 'context-customer', customerName: 'Synthetic Context Customer', status: 'quoted', formData: { cleaningType: 'standard' }, createdAt: '2026-01-01T12:00:00Z', estimate: { priceLow: 170, priceHigh: 190 } },
+        { id: 'context-estimate-second', tenantId: 'tenant-a', customerId: 'context-second', customerName: 'Synthetic Second Customer', status: 'quoted', formData: { cleaningType: 'deep' }, createdAt: '2026-02-01T12:00:00Z', estimate: { priceLow: 220, priceHigh: 250 } },
+      ],
+    };
+    catalogService.listOwnerServices.mockResolvedValue([
+      { id: 'standard-service', name: 'Canonical Standard Cleaning', serviceType: 'standard', active: true, priceCents: 18500, durationMinutes: 90 },
+      { id: 'deep-service', name: 'Canonical Deep Cleaning', serviceType: 'deep', active: true, priceCents: 25000, durationMinutes: 120 },
+    ]);
+  };
+  const expectReadOnlyContext = () => {
+    expect(gatewayService.routeGrowthAIConversation).not.toHaveBeenCalled();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+    expect(service.createGrowthAIDraft).not.toHaveBeenCalled();
+    expect(opportunityService.markGrowthAIOpportunityActed).not.toHaveBeenCalled();
+  };
+  it.each([
+    ['America/Chicago', '2026-10-04T04:00:00Z', '10/3/2026'],
+    ['America/Los_Angeles', '2026-10-04T04:00:00Z', '10/3/2026'],
+    ['UTC', '2026-10-04T04:00:00Z', '10/4/2026'],
+    ['Asia/Tokyo', '2026-10-04T16:00:00Z', '10/5/2026'],
+    ['Pacific/Kiritimati', '2026-10-04T12:00:00Z', '10/5/2026'],
+    ['Not/AZone', '2026-10-04T04:00:00Z', null],
+    ['America/Chicago', 'malformed', null],
+  ])('renders tenant-local estimate creation for %s without provider calls or mutations', async (timeZone, createdAt, expected) => {
+    contextFixtures(); state.auth.currentTenant.businessSettings = { timeZone };
+    state.opportunityWorkspace.bookings = [];
+    state.opportunityWorkspace.leads = [{ ...state.opportunityWorkspace.leads[0], createdAt }];
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('Open estimates'); await screen.findByText(/1 eligible open estimates:/);
+    submitComposer('When did we create that estimate?');
+    const reply = await screen.findByText(expected ? `Created ${expected}.` : 'The estimate creation date is unavailable.');
+    if (timeZone === 'America/Chicago') expect(reply).not.toHaveTextContent('Created 10/4/2026.');
+    expectReadOnlyContext(); await expectCreditBalance(5);
+    expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('clears estimate date references on reset and tenant/identity switch and uses the new tenant zone', async () => {
+    contextFixtures(); state.auth.currentTenant.businessSettings = { timeZone: 'America/Chicago' };
+    state.opportunityWorkspace.bookings = [];
+    state.opportunityWorkspace.leads = [{ ...state.opportunityWorkspace.leads[0], createdAt: '2026-10-04T04:00:00Z' }];
+    const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('Open estimates'); await screen.findByText(/1 eligible open estimates:/);
+    submitComposer('When did we create that estimate?'); await screen.findByText('Created 10/3/2026.');
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+    expect(screen.queryByText('Created 10/3/2026.')).not.toBeInTheDocument();
+    submitComposer('When did we create that estimate?'); await screen.findByText(/Which booking, customer, estimate, or service do you mean/);
+    state.auth = { ...state.auth, tenantId: 'tenant-b', currentTenant: { id: 'tenant-b', businessName: 'Synthetic B', businessSettings: { timeZone: 'Pacific/Kiritimati' } }, user: { uid: 'synthetic-admin-b' } };
+    state.opportunityWorkspace.leads = state.opportunityWorkspace.leads.map(item => ({ ...item, tenantId: 'tenant-b' }));
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(screen.queryByText(/Which booking, customer, estimate, or service do you mean/)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('When did we create that estimate?'); await screen.findByText(/Which booking, customer, estimate, or service do you mean/);
+    submitComposer('Open estimates'); await screen.findByText(/1 eligible open estimates:/);
+    submitComposer('When did we create that estimate?'); await screen.findByText('Created 10/4/2026.');
+    state.auth = { ...state.auth, user: { uid: 'different-synthetic-admin-b' } };
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(screen.queryByText('Created 10/4/2026.')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('When did we create that estimate?'); await screen.findByText(/Which booking, customer, estimate, or service do you mean/);
+    expectReadOnlyContext(); await expectCreditBalance(5);
+  });
+  const appointmentFixtures = () => {
+    contextFixtures(); state.auth.currentTenant.businessSettings = { timeZone: 'America/Chicago' };
+    const base = state.opportunityWorkspace.bookings[0];
+    state.opportunityWorkspace.bookings = [{ ...base, customerName: 'Synthetic A', date: '2026-10-05', startTime: '10:00' },
+      { ...base, id: 'appointment-b', customerId: 'customer-b', customerName: 'Synthetic B', date: '2026-10-06', startTime: '13:00' }];
+    state.opportunityWorkspace.leads = [];
+  };
+  it.each([
+    ['conflict', "When is Synthetic B's appointment for that job?", /named customer and referenced booking/],
+    ['what-conflict', "What is Synthetic B's appointment for that job?", /named customer and referenced booking/],
+    ['clean', "When is Synthetic B's appointment?", /^2026-10-06 at 13:00\.$/],
+    ['coherent', "When is Synthetic B's appointment for that job?", /^2026-10-06 at 13:00\.$/],
+    ['same', "When is Synthetic A's appointment for that job?", /^2026-10-05 at 10:00\.$/],
+    ['context', 'When is their appointment for that job?', /^2026-10-05 at 10:00\.$/],
+    ['unknown', "When is Synthetic Z's appointment for that job?", /specific own-tenant customer/],
+    ['ambiguous', "When is Synthetic B's appointment?", /specific own-tenant customer/],
+  ])('renders customer-coherent appointment for %s without provider calls, credits or writes', async (scenario, input, expected) => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    try {
+      appointmentFixtures();
+      if (scenario === 'ambiguous') state.opportunityWorkspace.bookings.push({ ...state.opportunityWorkspace.bookings[1], id: 'another-b', customerId: 'other-b' });
+      const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      if (scenario === 'coherent') { submitComposer("When is Synthetic B's appointment?"); await screen.findByText(/^2026-10-06 at 13:00\.$/); }
+      submitComposer(input);
+      if (scenario === 'coherent') await waitFor(() => expect(screen.getAllByText(/^2026-10-06 at 13:00\.$/)).toHaveLength(2));
+      else { const reply = await screen.findByText(expected); if (!['same', 'context'].includes(scenario)) expect(reply).not.toHaveTextContent('2026-10-05'); }
+      expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    } finally { vi.useRealTimers(); }
+  });
+  it('clears appointment references on reset and tenant/identity switch without retaining A', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    try {
+      appointmentFixtures(); const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      submitComposer("When is Synthetic B's appointment?"); await screen.findByText(/^2026-10-06 at 13:00\.$/);
+      submitComposer("When is Synthetic B's appointment for that job?");
+      await waitFor(() => expect(screen.getAllByText(/^2026-10-06 at 13:00\.$/)).toHaveLength(2));
+      fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+      submitComposer("When is Synthetic B's appointment for that job?"); await screen.findByText(/named customer and referenced booking/);
+      state.auth = { ...state.auth, tenantId: 'tenant-b', currentTenant: { id: 'tenant-b', businessName: 'Synthetic B', businessSettings: { timeZone: 'America/Chicago' } }, user: { uid: 'synthetic-admin-b' } };
+      state.opportunityWorkspace.bookings = [{ ...state.opportunityWorkspace.bookings[1], tenantId: 'tenant-b' }];
+      view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/named customer and referenced booking/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("When is Synthetic B's appointment for that job?"); await screen.findByText(/named customer and referenced booking/);
+      submitComposer("When is Synthetic B's appointment?"); await screen.findByText(/^2026-10-06 at 13:00\.$/);
+      state.auth = { ...state.auth, user: { uid: 'other-admin-b' } }; view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/^2026-10-06 at 13:00\.$/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("When is Synthetic B's appointment for that job?"); await screen.findByText(/named customer and referenced booking/);
+      expectReadOnlyContext(); await expectCreditBalance(5);
+    } finally { vi.useRealTimers(); }
+  });
+  const bookingServiceFixtures = () => {
+    appointmentFixtures();
+    state.opportunityWorkspace.bookings[0].serviceType = 'standard';
+    state.opportunityWorkspace.bookings[1].serviceType = 'deep';
+  };
+  const phoneFixtures = () => {
+    bookingServiceFixtures();
+    state.opportunityWorkspace.bookings[0].customerSnapshot = { phone: '555-0110' };
+    state.opportunityWorkspace.bookings[1].customerSnapshot = { phone: '555-0111' };
+  };
+  const emailFixtures = () => {
+    phoneFixtures();
+    state.opportunityWorkspace.bookings[0].customerSnapshot.email = 'a@example.test';
+    state.opportunityWorkspace.bookings[1].customerSnapshot.email = 'b@example.test';
+  };
+  it.each(['modern', 'legacy'])('clarifies unrecognized named references through %s without cost or writes', async path => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    let modern;
+    try {
+      emailFixtures(); const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      if (path === 'legacy') modern = vi.spyOn(businessIntelligence, 'answerBusinessQuestion').mockReturnValue({ status: 'unsupported' });
+      for (const [index, input] of [
+        'When is that appointment for Synthetic B?', 'What service is that job for Synthetic B?',
+        'What is the status of that job for Synthetic B?', 'How much is that job for Synthetic B?',
+      ].entries()) {
+        submitComposer(input);
+        await waitFor(() => expect(screen.getAllByText(/Choose the specific own-tenant record from a current result list/)).toHaveLength(index + 1));
+      }
+      for (const [index, input] of [
+        'How many times has Synthetic B booked for that job?', 'When did we last work with Synthetic B for that job?',
+        'What are we charging Synthetic B for that job?', "What time is Synthetic B's appointment for that job?",
+      ].entries()) {
+        submitComposer(input);
+        await waitFor(() => expect(screen.getAllByText(/named customer and referenced booking/)).toHaveLength(index + 1));
+      }
+      expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    } finally { modern?.mockRestore(); vi.useRealTimers(); }
+  });
+  it.each(['modern', 'legacy'])('renders all six freeze-blocker refusals through %s with zero cost or writes', async path => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    let modern;
+    try {
+      emailFixtures(); state.opportunityWorkspace.bookings[0].agreedPrice = 111.111;
+      const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      if (path === 'legacy') modern = vi.spyOn(businessIntelligence, 'answerBusinessQuestion').mockReturnValue({ status: 'unsupported' });
+      for (const [index, input] of [
+        'Tell me about Synthetic B for that job?', 'Has Synthetic B used us before for that job?',
+        "When was Synthetic B's estimate created for that job?", 'How much is Synthetic B paying for that job?',
+        'What service is Synthetic B getting for that job?', 'What did we quote Synthetic B for that job?',
+      ].entries()) {
+        submitComposer(input);
+        await waitFor(() => expect(screen.getAllByText(/named customer and referenced booking/)).toHaveLength(index + 1));
+      }
+      submitComposer('How much are we charging Synthetic A?'); await screen.findByText(/unavailable|missing canonical/);
+      expect(screen.queryByText(/\$111\.11/)).not.toBeInTheDocument();
+      expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    } finally { modern?.mockRestore(); vi.useRealTimers(); }
+  });
+  it.each(['modern', 'legacy'])('renders coherent freeze-blocker fields through %s without substituting appointment for creation', async path => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    let modern;
+    try {
+      emailFixtures(); state.opportunityWorkspace.bookings[1].agreedPrice = 222.22;
+      state.opportunityWorkspace.bookings[1].leadId = 'estimate-b';
+      state.opportunityWorkspace.leads = [{ id: 'estimate-b', tenantId: 'tenant-a', customerId: 'customer-b', customerName: 'Synthetic B',
+        status: 'quoted', createdAt: '2026-10-03T05:30:00Z', estimate: { priceLow: 220, priceHigh: 240 } }];
+      const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("What is Synthetic B's service?"); await screen.findByText(/^Deep Cleaning$/);
+      if (path === 'legacy') modern = vi.spyOn(businessIntelligence, 'answerBusinessQuestion').mockReturnValue({ status: 'unsupported' });
+      for (const [input, expected] of [
+        ['Tell me about Synthetic B for that job?', /^Synthetic B: Deep Cleaning/],
+        ['Has Synthetic B used us before for that job?', /0 completed bookings/],
+        ["When was Synthetic B's estimate created for that job?", /^Created 10\/3\/2026\.$/],
+        ['How much is Synthetic B paying for that job?', /^Saved booking amount: \$222\.22\.$/],
+        ['What did we quote Synthetic B for that job?', /Saved estimate range: \$220\.00 to \$240\.00/],
+      ]) { submitComposer(input); await screen.findByText(expected); }
+      submitComposer('What service is Synthetic B getting for that job?');
+      await waitFor(() => expect(screen.getAllByText(/^Deep Cleaning$/)).toHaveLength(2));
+      expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    } finally { modern?.mockRestore(); vi.useRealTimers(); }
+  });
+  it('invalidates repaired summary references on conversation, tenant and identity changes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    try {
+      emailFixtures(); const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("What is Synthetic B's service?"); await screen.findByText(/^Deep Cleaning$/);
+      submitComposer('Tell me about Synthetic B for that job?'); await screen.findByText(/^Synthetic B: Deep Cleaning/);
+      fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+      submitComposer('Tell me about Synthetic B for that job?'); await screen.findByText(/named customer and referenced booking/);
+      state.auth = { ...state.auth, tenantId: 'tenant-b', currentTenant: { id: 'tenant-b', businessSettings: { timeZone: 'America/Chicago' } }, user: { uid: 'admin-b' } };
+      state.opportunityWorkspace.bookings = [{ ...state.opportunityWorkspace.bookings[1], tenantId: 'tenant-b' }];
+      view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/named customer and referenced booking/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Tell me about Synthetic B for that job?'); await screen.findByText(/named customer and referenced booking/);
+      submitComposer("What is Synthetic B's service?"); await screen.findByText(/^Deep Cleaning$/);
+      state.auth = { ...state.auth, user: { uid: 'other-admin-b' } }; view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/^Deep Cleaning$/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Tell me about Synthetic B for that job?'); await screen.findByText(/named customer and referenced booking/);
+      expectReadOnlyContext(); await expectCreditBalance(5);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each([
+    ['conflict', "What is Synthetic B's contact info for that job?", /named customer and referenced booking/],
+    ['clean', "What is Synthetic B's contact info?", /^Synthetic B.*Phone: 555-0111/],
+    ['coherent', "What is Synthetic B's contact info for that job?", /^Synthetic B.*Phone: 555-0111/],
+    ['same', "What is Synthetic A's contact info for that job?", /^Synthetic A.*Phone: 555-0110/],
+    ['context', 'What is their contact info for that job?', /^Synthetic A.*Phone: 555-0110/],
+    ['unknown', "What is Synthetic Z's contact info for that job?", /specific own-tenant customer/],
+    ['ambiguous', "What is Synthetic B's contact info for that job?", /specific own-tenant customer/],
+    ['missing-phone', "What is Synthetic B's contact info for that job?", /unavailable/],
+  ])('renders contact-info integrity for %s without provider, credits or writes', async (scenario, input, expected) => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    try {
+      emailFixtures();
+      if (scenario === 'ambiguous') state.opportunityWorkspace.bookings.push({ ...state.opportunityWorkspace.bookings[1], id: 'another-b', customerId: 'other-b' });
+      if (scenario === 'missing-phone') state.opportunityWorkspace.bookings[1].customerSnapshot.phone = '';
+      const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      if (scenario === 'coherent') { submitComposer("What is Synthetic B's contact info?"); await screen.findByText(/^Synthetic B.*Phone: 555-0111/); }
+      if (scenario === 'missing-phone') { submitComposer("What is Synthetic B's service?"); await screen.findByText(/^Deep Cleaning$/); }
+      submitComposer(input);
+      if (scenario === 'coherent') await waitFor(() => expect(screen.getAllByText(/^Synthetic B.*Phone: 555-0111/)).toHaveLength(2));
+      else { const reply = await screen.findByText(expected); if (!['same', 'context'].includes(scenario)) expect(reply).not.toHaveTextContent('555-0110'); }
+      expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each(['conflict', 'coherent', 'context'])('renders existing legacy contact-info %s when modern execution is unsupported', async scenario => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    let modern;
+    try {
+      emailFixtures(); const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      if (scenario === 'coherent') { submitComposer("What is Synthetic B's service?"); await screen.findByText(/^Deep Cleaning$/); }
+      modern = vi.spyOn(businessIntelligence, 'answerBusinessQuestion').mockReturnValue({ status: 'unsupported' });
+      submitComposer(scenario === 'context' ? 'What is their contact info for that job?' : "What is Synthetic B's contact info for that job?");
+      const reply = await screen.findByText(scenario === 'conflict' ? /named customer and referenced booking/
+        : scenario === 'coherent' ? /^Synthetic B.*Phone: 555-0111/ : /^Synthetic A: Standard Cleaning/);
+      if (scenario !== 'context') expect(reply).not.toHaveTextContent('555-0110');
+      expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    } finally { modern?.mockRestore(); vi.useRealTimers(); }
+  });
+  it('clears contact-info references on reset and tenant/identity switches and accepts coherent context replacement', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    try {
+      emailFixtures(); const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      submitComposer("What is Synthetic B's contact info?"); await screen.findByText(/^Synthetic B.*Phone: 555-0111/);
+      submitComposer("What is Synthetic B's contact info for that job?");
+      await waitFor(() => expect(screen.getAllByText(/^Synthetic B.*Phone: 555-0111/)).toHaveLength(2));
+      fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+      submitComposer("What is Synthetic B's contact info for that job?"); await screen.findByText(/named customer and referenced booking/);
+      state.auth = { ...state.auth, tenantId: 'tenant-b', currentTenant: { id: 'tenant-b', businessName: 'Synthetic B', businessSettings: { timeZone: 'America/Chicago' } }, user: { uid: 'synthetic-admin-b' } };
+      state.opportunityWorkspace.bookings = [{ ...state.opportunityWorkspace.bookings[1], tenantId: 'tenant-b' }]; view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/named customer and referenced booking/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("What is Synthetic B's contact info for that job?"); await screen.findByText(/named customer and referenced booking/);
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic B/);
+      submitComposer("What is Synthetic B's contact info for that job?"); await screen.findByText(/^Synthetic B.*Phone: 555-0111/);
+      state.auth = { ...state.auth, user: { uid: 'other-admin-b' } }; view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/^Synthetic B.*Phone: 555-0111/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("What is Synthetic B's contact info for that job?"); await screen.findByText(/named customer and referenced booking/);
+      expectReadOnlyContext(); await expectCreditBalance(5);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each([
+    ['conflict', "What is Synthetic B's email address for that job?", /named customer and referenced booking/],
+    ['clean', "What is Synthetic B's email address?", /^Synthetic B.*Email: b@example.test/],
+    ['coherent', "What is Synthetic B's email address for that job?", /^Synthetic B.*Email: b@example.test/],
+    ['same', "What is Synthetic A's email address for that job?", /^Synthetic A.*Email: a@example.test/],
+    ['context', 'What is their email address for that job?', /^Synthetic A.*Email: a@example.test/],
+    ['unknown', "What is Synthetic Z's email address for that job?", /specific own-tenant customer/],
+    ['ambiguous', "What is Synthetic B's email address for that job?", /specific own-tenant customer/],
+    ['missing-email', "What is Synthetic B's email address for that job?", /unavailable/],
+  ])('renders coherent email lookup for %s with zero provider calls, credits or writes', async (scenario, input, expected) => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    try {
+      emailFixtures();
+      if (scenario === 'ambiguous') state.opportunityWorkspace.bookings.push({ ...state.opportunityWorkspace.bookings[1], id: 'another-b', customerId: 'other-b' });
+      if (scenario === 'missing-email') state.opportunityWorkspace.bookings[1].customerSnapshot.email = '';
+      const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      if (scenario === 'coherent') { submitComposer("What is Synthetic B's email address?"); await screen.findByText(/^Synthetic B.*Email: b@example.test/); }
+      if (scenario === 'missing-email') { submitComposer("What is Synthetic B's service?"); await screen.findByText(/^Deep Cleaning$/); }
+      submitComposer(input);
+      if (scenario === 'coherent') await waitFor(() => expect(screen.getAllByText(/^Synthetic B.*Email: b@example.test/)).toHaveLength(2));
+      else { const reply = await screen.findByText(expected); if (!['same', 'context'].includes(scenario)) expect(reply).not.toHaveTextContent('a@example.test'); }
+      expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    } finally { vi.useRealTimers(); }
+  });
+  it('clears email references on reset and tenant/identity switches while permitting coherent B replacement', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    try {
+      emailFixtures(); const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      submitComposer("What is Synthetic B's email address?"); await screen.findByText(/^Synthetic B.*Email: b@example.test/);
+      submitComposer("What is Synthetic B's email address for that job?");
+      await waitFor(() => expect(screen.getAllByText(/^Synthetic B.*Email: b@example.test/)).toHaveLength(2));
+      fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+      submitComposer("What is Synthetic B's email address for that job?"); await screen.findByText(/named customer and referenced booking/);
+      state.auth = { ...state.auth, tenantId: 'tenant-b', currentTenant: { id: 'tenant-b', businessName: 'Synthetic B', businessSettings: { timeZone: 'America/Chicago' } }, user: { uid: 'synthetic-admin-b' } };
+      state.opportunityWorkspace.bookings = [{ ...state.opportunityWorkspace.bookings[1], tenantId: 'tenant-b' }];
+      view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/named customer and referenced booking/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("What is Synthetic B's email address for that job?"); await screen.findByText(/named customer and referenced booking/);
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic B/);
+      submitComposer("What is Synthetic B's email address for that job?"); await screen.findByText(/^Synthetic B.*Email: b@example.test/);
+      state.auth = { ...state.auth, user: { uid: 'other-admin-b' } }; view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/^Synthetic B.*Email: b@example.test/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("What is Synthetic B's email address for that job?"); await screen.findByText(/named customer and referenced booking/);
+      expectReadOnlyContext(); await expectCreditBalance(5);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each([
+    ['conflict', "What is Synthetic B's phone number for that job?", /named customer and referenced booking/],
+    ['clean', "What is Synthetic B's phone number?", /^Synthetic B.*Phone: 555-0111/],
+    ['coherent', "What is Synthetic B's phone number for that job?", /^Synthetic B.*Phone: 555-0111/],
+    ['same', "What is Synthetic A's phone number for that job?", /^Synthetic A.*Phone: 555-0110/],
+    ['context', 'What is their phone number for that job?', /^Synthetic A.*Phone: 555-0110/],
+    ['unknown', "What is Synthetic Z's phone number for that job?", /specific own-tenant customer/],
+    ['ambiguous', "What is Synthetic B's phone number for that job?", /specific own-tenant customer/],
+    ['missing-phone', "What is Synthetic B's phone number for that job?", /unavailable/],
+  ])('renders coherent phone lookup for %s with zero provider calls, credits or writes', async (scenario, input, expected) => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    try {
+      phoneFixtures();
+      if (scenario === 'ambiguous') state.opportunityWorkspace.bookings.push({ ...state.opportunityWorkspace.bookings[1], id: 'another-b', customerId: 'other-b' });
+      if (scenario === 'missing-phone') state.opportunityWorkspace.bookings[1].customerSnapshot.phone = '';
+      const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      if (scenario === 'coherent') { submitComposer("What is Synthetic B's phone number?"); await screen.findByText(/^Synthetic B.*Phone: 555-0111/); }
+      if (scenario === 'missing-phone') { submitComposer("What is Synthetic B's service?"); await screen.findByText(/^Deep Cleaning$/); }
+      submitComposer(input);
+      if (scenario === 'coherent') await waitFor(() => expect(screen.getAllByText(/^Synthetic B.*Phone: 555-0111/)).toHaveLength(2));
+      else { const reply = await screen.findByText(expected); if (!['same', 'context'].includes(scenario)) expect(reply).not.toHaveTextContent('555-0110'); }
+      expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    } finally { vi.useRealTimers(); }
+  });
+  it('clears phone references on reset and tenant/identity switches while permitting coherent B replacement', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    try {
+      phoneFixtures(); const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      submitComposer("What is Synthetic B's phone number?"); await screen.findByText(/^Synthetic B.*Phone: 555-0111/);
+      submitComposer("What is Synthetic B's phone number for that job?");
+      await waitFor(() => expect(screen.getAllByText(/^Synthetic B.*Phone: 555-0111/)).toHaveLength(2));
+      fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+      submitComposer("What is Synthetic B's phone number for that job?"); await screen.findByText(/named customer and referenced booking/);
+      state.auth = { ...state.auth, tenantId: 'tenant-b', currentTenant: { id: 'tenant-b', businessName: 'Synthetic B', businessSettings: { timeZone: 'America/Chicago' } }, user: { uid: 'synthetic-admin-b' } };
+      state.opportunityWorkspace.bookings = [{ ...state.opportunityWorkspace.bookings[1], tenantId: 'tenant-b' }];
+      view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/named customer and referenced booking/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("What is Synthetic B's phone number for that job?"); await screen.findByText(/named customer and referenced booking/);
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic B/);
+      submitComposer("What is Synthetic B's phone number for that job?"); await screen.findByText(/^Synthetic B.*Phone: 555-0111/);
+      state.auth = { ...state.auth, user: { uid: 'other-admin-b' } }; view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/^Synthetic B.*Phone: 555-0111/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("What is Synthetic B's phone number for that job?"); await screen.findByText(/named customer and referenced booking/);
+      expectReadOnlyContext(); await expectCreditBalance(5);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each([
+    ['conflict', "What is Synthetic B's service for that job?", /named customer and referenced booking/],
+    ['clean', "What is Synthetic B's service?", /^Deep Cleaning$/],
+    ['coherent', "What is Synthetic B's service for that job?", /^Deep Cleaning$/],
+    ['same', "What is Synthetic A's service for that job?", /^Standard Cleaning$/],
+    ['context', 'What is their service for that job?', /^Standard Cleaning$/],
+    ['unknown', "What is Synthetic Z's service for that job?", /specific own-tenant customer/],
+    ['ambiguous', "What is Synthetic B's service?", /specific own-tenant customer/],
+    ['missing-service', "What is Synthetic B's service?", /unavailable/],
+  ])('renders coherent booking service for %s with zero provider calls, credits or writes', async (scenario, input, expected) => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    try {
+      bookingServiceFixtures();
+      if (scenario === 'ambiguous') state.opportunityWorkspace.bookings.push({ ...state.opportunityWorkspace.bookings[1], id: 'another-b', customerId: 'other-b' });
+      if (scenario === 'missing-service') state.opportunityWorkspace.bookings[1].serviceType = '';
+      const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      if (scenario === 'coherent') { submitComposer("What is Synthetic B's service?"); await screen.findByText(/^Deep Cleaning$/); }
+      submitComposer(input);
+      if (scenario === 'coherent') await waitFor(() => expect(screen.getAllByText(/^Deep Cleaning$/)).toHaveLength(2));
+      else { const reply = await screen.findByText(expected); if (!['same', 'context'].includes(scenario)) expect(reply).not.toHaveTextContent('Standard Cleaning'); }
+      expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    } finally { vi.useRealTimers(); }
+  });
+  it('clears service references on reset and tenant/identity switches while permitting coherent B replacement', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    try {
+      bookingServiceFixtures(); const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+      submitComposer("What is Synthetic B's service?"); await screen.findByText(/^Deep Cleaning$/);
+      submitComposer("What is Synthetic B's service for that job?");
+      await waitFor(() => expect(screen.getAllByText(/^Deep Cleaning$/)).toHaveLength(2));
+      fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+      submitComposer("What is Synthetic B's service for that job?"); await screen.findByText(/named customer and referenced booking/);
+      state.auth = { ...state.auth, tenantId: 'tenant-b', currentTenant: { id: 'tenant-b', businessName: 'Synthetic B', businessSettings: { timeZone: 'America/Chicago' } }, user: { uid: 'synthetic-admin-b' } };
+      state.opportunityWorkspace.bookings = [{ ...state.opportunityWorkspace.bookings[1], tenantId: 'tenant-b' }];
+      view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/named customer and referenced booking/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("What is Synthetic B's service for that job?"); await screen.findByText(/named customer and referenced booking/);
+      submitComposer("What is Synthetic B's service?"); await screen.findByText(/^Deep Cleaning$/);
+      state.auth = { ...state.auth, user: { uid: 'other-admin-b' } }; view.rerender(<GrowthAIPage />);
+      await waitFor(() => expect(screen.queryByText(/^Deep Cleaning$/)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer("What is Synthetic B's service for that job?"); await screen.findByText(/named customer and referenced booking/);
+      expectReadOnlyContext(); await expectCreditBalance(5);
+    } finally { vi.useRealTimers(); }
+  });
+  const statusFixtures = () => {
+    contextFixtures(); const base = state.opportunityWorkspace.bookings[0];
+    state.opportunityWorkspace.bookings = [{ ...base, customerName: 'Synthetic A' },
+      { ...base, id: 'status-b', customerId: 'customer-b', customerName: 'Synthetic B', status: 'completed', date: '2026-10-01' }];
+    state.opportunityWorkspace.leads = [];
+  };
+  it.each([
+    ['conflict', "What's Synthetic B's status for that job?", /named customer and referenced booking/],
+    ['clean', "What's Synthetic B's status?", /^completed$/],
+    ['coherent', "What's Synthetic B's status for that job?", /^completed$/],
+    ['same', "What's Synthetic A's status for that job?", /^scheduled$/],
+    ['context', "What's their status for that job?", /^scheduled$/],
+    ['unknown', "What's Synthetic Z's status for that job?", /specific own-tenant customer/],
+    ['ambiguous', "What's Synthetic B's status?", /specific own-tenant customer/],
+  ])('renders safe explicit booking status for %s without providers, credits or writes', async (scenario, input, expected) => {
+    statusFixtures();
+    if (scenario === 'ambiguous') state.opportunityWorkspace.bookings.push({ ...state.opportunityWorkspace.bookings[1], id: 'another-b', customerId: 'different-b' });
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+    if (scenario === 'coherent') { submitComposer("What's Synthetic B's status?"); await screen.findByText(/^completed$/); }
+    submitComposer(input);
+    if (scenario === 'coherent') await waitFor(() => expect(screen.getAllByText(/^completed$/)).toHaveLength(2));
+    else { const reply = await screen.findByText(expected); if (!['same', 'context'].includes(scenario)) expect(reply).not.toHaveTextContent('scheduled'); }
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('clears explicit status context on conversation reset and tenant/identity switch', async () => {
+    statusFixtures(); const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer("What's Synthetic B's status?"); await screen.findByText(/^completed$/);
+    submitComposer("What's Synthetic B's status for that job?");
+    await waitFor(() => expect(screen.getAllByText(/^completed$/)).toHaveLength(2));
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+    submitComposer("What's Synthetic B's status for that job?"); await screen.findByText(/named customer and referenced booking/);
+    state.auth = { ...state.auth, tenantId: 'tenant-b', currentTenant: { id: 'tenant-b', businessName: 'Synthetic B', businessSettings: { timeZone: 'UTC' } }, user: { uid: 'synthetic-admin-b' } };
+    state.opportunityWorkspace.bookings = [{ ...state.opportunityWorkspace.bookings[1], tenantId: 'tenant-b' }];
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(screen.queryByText(/named customer and referenced booking/)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer("What's Synthetic B's status for that job?"); await screen.findByText(/named customer and referenced booking/);
+    submitComposer("What's Synthetic B's status?"); await screen.findByText(/^completed$/);
+    state.auth = { ...state.auth, user: { uid: 'different-synthetic-admin-b' } }; view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(screen.queryByText(/^completed$/)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer("What's Synthetic B's status for that job?"); await screen.findByText(/named customer and referenced booking/);
+    expectReadOnlyContext(); await expectCreditBalance(5);
+  });
+  const amountFixtures = () => {
+    contextFixtures(); const base = state.opportunityWorkspace.bookings[0];
+    state.opportunityWorkspace.bookings = [{ ...base, customerName: 'Synthetic A' },
+      { ...base, id: 'amount-b', customerId: 'customer-b', customerName: 'Synthetic B', agreedPrice: 250, date: '2099-01-02' }];
+    state.opportunityWorkspace.leads = [];
+  };
+  it.each([
+    ['conflict', 'How much are we charging Synthetic B for that job?', /named customer and referenced booking/],
+    ['clean', 'How much are we charging Synthetic B?', /Saved booking amount: \$250.00/],
+    ['same', 'How much are we charging Synthetic A for that job?', /Saved booking amount: \$180.00/],
+    ['unknown', 'How much are we charging Synthetic Z for that job?', /specific own-tenant customer/],
+    ['ambiguous', 'How much are we charging Synthetic B?', /specific own-tenant customer/],
+  ])('renders safe explicit amount lookup for %s without provider calls or mutations', async (scenario, input, expected) => {
+    amountFixtures();
+    if (scenario === 'ambiguous') state.opportunityWorkspace.bookings.push({ ...state.opportunityWorkspace.bookings[1], id: 'another-b', customerId: 'different-b' });
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+    submitComposer(input); const reply = await screen.findByText(expected);
+    if (scenario !== 'same') expect(reply).not.toHaveTextContent('$180.00');
+    if (['conflict', 'unknown', 'ambiguous'].includes(scenario)) expect(reply).not.toHaveTextContent('Saved booking amount:');
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('invalidates explicit amount context on reset and tenant/identity switch', async () => {
+    amountFixtures(); const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+    submitComposer('How much are we charging Synthetic B?'); await screen.findByText(/Saved booking amount: \$250.00/);
+    submitComposer('How much are we charging Synthetic B for that job?');
+    await waitFor(() => expect(screen.getAllByText(/Saved booking amount: \$250.00/)).toHaveLength(2));
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+    submitComposer('How much are we charging Synthetic B for that job?'); await screen.findByText(/named customer and referenced booking/);
+    state.auth = { ...state.auth, tenantId: 'tenant-b', currentTenant: { id: 'tenant-b', businessName: 'Synthetic B', businessSettings: { timeZone: 'UTC' } }, user: { uid: 'synthetic-admin-b' } };
+    state.opportunityWorkspace.bookings = [{ ...state.opportunityWorkspace.bookings[1], tenantId: 'tenant-b', agreedPrice: 300 }];
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(screen.queryByText(/named customer and referenced booking/)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('How much are we charging Synthetic B for that job?'); await screen.findByText(/named customer and referenced booking/);
+    submitComposer('How much are we charging Synthetic B?'); await screen.findByText(/Saved booking amount: \$300.00/);
+    state.auth = { ...state.auth, user: { uid: 'different-synthetic-admin-b' } };
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(screen.queryByText(/Saved booking amount: \$300.00/)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('How much are we charging Synthetic B for that job?'); await screen.findByText(/named customer and referenced booking/);
+    expectReadOnlyContext(); await expectCreditBalance(5);
+  });
+  it.each(['valid', 'mismatch', 'missing-booking-identity', 'missing-estimate-identity'])('renders customer-consistent contextual quote for %s without provider calls or mutations', async scenario => {
+    contextFixtures();
+    if (scenario === 'mismatch') {
+      state.opportunityWorkspace.bookings[0].leadId = 'context-estimate-second';
+      state.opportunityWorkspace.leads[1].estimate = { priceLow: 240, priceHigh: 260 };
+    }
+    if (scenario === 'missing-booking-identity') delete state.opportunityWorkspace.bookings[0].customerId;
+    if (scenario === 'missing-estimate-identity') delete state.opportunityWorkspace.leads[0].customerId;
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic Context Customer/);
+    submitComposer('What did we quote them for that job?');
+    const reply = await screen.findByText(scenario === 'valid' ? /Saved estimate range: \$170.00 to \$190.00/ : /The linked estimate does not establish this customer relationship/);
+    expect(reply).not.toHaveTextContent('$240.00');
+    if (scenario !== 'valid') expect(reply).not.toHaveTextContent('Saved estimate range:');
+    expectReadOnlyContext(); await expectCreditBalance(5);
+    expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('clears contextual quote associations on conversation reset and tenant/identity switch', async () => {
+    contextFixtures();
+    state.opportunityWorkspace.bookings[0].leadId = 'context-estimate-second';
+    state.opportunityWorkspace.leads[1].estimate = { priceLow: 240, priceHigh: 260 };
+    const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic Context Customer/);
+    submitComposer('What did we quote them for that job?'); await screen.findByText(/The linked estimate does not establish this customer relationship/);
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+    submitComposer('What did we quote them for that job?'); await screen.findByText(/Which booking, customer, estimate, or service do you mean/);
+    state.auth = { ...state.auth, tenantId: 'tenant-b', currentTenant: { id: 'tenant-b', businessName: 'Synthetic B', businessSettings: { timeZone: 'UTC' } }, user: { uid: 'synthetic-admin-b' } };
+    state.opportunityWorkspace.bookings = [{ ...state.opportunityWorkspace.bookings[0], tenantId: 'tenant-b', customerId: 'context-second', customerName: 'Synthetic Second Customer' }];
+    state.opportunityWorkspace.leads = [{ ...state.opportunityWorkspace.leads[1], tenantId: 'tenant-b' }];
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(screen.queryByText(/Which booking, customer, estimate, or service do you mean/)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('What did we quote them for that job?'); await screen.findByText(/Which booking, customer, estimate, or service do you mean/);
+    submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic Second Customer/);
+    submitComposer('What did we quote them for that job?'); await screen.findByText(/Saved estimate range: \$240.00 to \$260.00/);
+    state.auth = { ...state.auth, user: { uid: 'different-synthetic-admin-b' } };
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(screen.queryByText(/Saved estimate range: \$240.00 to \$260.00/)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('What did we quote them for that job?'); await screen.findByText(/Which booking, customer, estimate, or service do you mean/);
+    expectReadOnlyContext(); await expectCreditBalance(5);
+  });
+  it.each(['explicit', 'unresolved', 'ambiguous'])('renders safe legacy quote identity for %s without provider calls or mutations', async scenario => {
+    contextFixtures();
+    const base = state.opportunityWorkspace.bookings[0];
+    state.opportunityWorkspace.bookings = [
+      { ...base, customerName: 'Synthetic A' },
+      { ...base, id: 'booking-b', customerId: 'customer-b', customerName: 'Synthetic B', date: '2099-01-02', leadId: 'estimate-b' },
+    ];
+    state.opportunityWorkspace.leads[0].customerName = 'Synthetic A';
+    state.opportunityWorkspace.leads[1] = { ...state.opportunityWorkspace.leads[1], id: 'estimate-b', customerId: 'customer-b', customerName: 'Synthetic B', estimate: { priceLow: 240, priceHigh: 260 } };
+    if (scenario === 'ambiguous') {
+      state.opportunityWorkspace.bookings.push({ ...base, id: 'duplicate-b', customerId: 'different-b', customerName: 'Synthetic B', date: '2099-01-03' });
+    }
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic A/);
+    submitComposer(`What did we quote Synthetic ${scenario === 'unresolved' ? 'Z' : 'B'}${scenario === 'explicit' ? '' : ' for that job'}?`);
+    const reply = await screen.findByText(scenario === 'explicit' ? /Saved estimate range: \$240.00 to \$260.00/ : /Choose the specific own-tenant customer; that name is missing or identifies multiple customers/);
+    expect(reply).not.toHaveTextContent('$170.00'); expect(reply).not.toHaveTextContent('$190.00');
+    if (scenario !== 'explicit') expect(reply).not.toHaveTextContent('Saved estimate range:');
+    expectReadOnlyContext(); await expectCreditBalance(5);
+    expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it.each([
+    [['2026-02-30', '2026-08-15'], 'Most recent: 2026-08-15.'],
+    [['2026-09-15', '2026-02-30'], 'Most recent: 2026-09-15.'],
+    [['2026-02-30', '2026-09-31'], 'The most recent work date cannot be established from incomplete dates.'],
+  ])('renders trustworthy legacy history for %j without provider calls or mutations', async (dates, expected) => {
+    contextFixtures();
+    const base = state.opportunityWorkspace.bookings[0];
+    state.opportunityWorkspace.bookings = [base, ...dates.map((date, index) => ({ ...base, id: `history-${index}`, status: 'completed', date }))];
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('Who is my next customer?');
+    await screen.findByText(/Next: Synthetic Context Customer/);
+    submitComposer('Have they worked with us before?');
+    const reply = await screen.findByText(/2 completed bookings are present for this canonical customer/);
+    expect(reply).toHaveTextContent(expected);
+    expect(reply).not.toHaveTextContent('2026-02-30');
+    expect(reply).not.toHaveTextContent('2026-09-31');
+    if (!expected.startsWith('Most recent:')) expect(reply).not.toHaveTextContent('Most recent:');
+    expectReadOnlyContext(); await expectCreditBalance(5);
+    expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('renders the earliest future tenant-local start in both routes, never the past same-day booking', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-04T16:30:00Z'));
+    try {
+      contextFixtures(); state.auth.currentTenant.businessSettings = { timeZone: 'America/Chicago' };
+      const base = state.opportunityWorkspace.bookings[0];
+      state.opportunityWorkspace.bookings = [
+        { ...base, id: 'late', customerId: 'late-person', customerName: 'Synthetic Late', date: '2026-10-04', startTime: '16:00' },
+        { ...base, id: 'past', customerId: 'past-person', customerName: 'Synthetic Past', date: '2026-10-04', startTime: '10:00' },
+        { ...base, id: 'next', customerId: 'next-person', customerName: 'Synthetic Next', date: '2026-10-04', startTime: '13:00', agreedPrice: 210 },
+      ];
+      const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      for (const question of ['What am I doing today?', 'What do I have today?', "Who's next?"]) {
+        submitComposer(question);
+        const reply = (await screen.findAllByText(/Next: Synthetic Next: Standard Cleaning, 2026-10-04 at 13:00/)).at(-1);
+        expect(reply).not.toHaveTextContent('Synthetic Past');
+        expect(reply).not.toHaveTextContent('Next: Synthetic Late');
+      }
+      expect(screen.getAllByText(/Next: Synthetic Next: Standard Cleaning, 2026-10-04 at 13:00/)).toHaveLength(3);
+      submitComposer("Who's my next customer, what service are they getting, and how much are we charging them?");
+      const compound = await screen.findByText(/Customer: Synthetic Next\. Service: Standard Cleaning\. Saved booking amount: \$210\.00/);
+      expect(compound).not.toHaveTextContent('Synthetic Past');
+      expectReadOnlyContext(); await expectCreditBalance(5);
+      expect(state.opportunityWorkspace).toEqual(original);
+    } finally { vi.useRealTimers(); }
+  });
+  it.each(['invalid', '2026-10-04T13:00:00Z'])('renders insufficient scheduling evidence for a present timestamp %s without provider guessing', async scheduledAt => {
+    contextFixtures(); state.auth.currentTenant.businessSettings = { timeZone: 'America/Chicago' };
+    const booking = state.opportunityWorkspace.bookings[0];
+    Object.assign(booking, { date: '2026-10-04', startTime: '13:00', scheduledAt });
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    for (const question of ['What am I doing today?', 'What do I have today?']) {
+      submitComposer(question);
+      expect((await screen.findAllByText(/Booking scheduling evidence is missing, invalid or conflicting/)).at(-1)).toBeInTheDocument();
+    }
+    expect(screen.getAllByText(/Booking scheduling evidence is missing, invalid or conflicting/)).toHaveLength(2);
+    expect(screen.queryByText(/No eligible upcoming bookings/)).not.toBeInTheDocument();
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('renders canonical service comparisons and contextual differences without calls, credits or mutations', async () => {
+    contextFixtures(); state.opportunityWorkspace.bookings[0].customerSnapshot = { email: 'synthetic@example.test' };
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer("Who's next?"); await screen.findByText(/Next: Synthetic Context Customer/);
+    for (const question of ['Compare deep clean and standard clean.', 'Which costs more?', 'Which is cheaper?',
+      "What's the difference between those two?", 'How much more is one than the other?']) {
+      submitComposer(question);
+      const replies = screen.getAllByText(/Canonical Deep Cleaning costs \$65.00 more than Canonical Standard Cleaning/);
+      expect(replies.at(-1)).toHaveTextContent('Canonical Deep Cleaning is $250.00');
+      expect(replies.at(-1)).toHaveTextContent('Canonical Standard Cleaning is $185.00');
+    }
+    submitComposer('Go back to that customer.'); await screen.findByText(/^Synthetic Context Customer:.*Saved booking amount/);
+    submitComposer("What's their email?"); await screen.findByText(/Email: synthetic@example.test/);
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+    submitComposer('Which is cheaper?'); await screen.findByText(/Which canonical services do you want to compare/);
+    expectReadOnlyContext();
+  });
+  it('renders bounded canonical calculations without routing, credits or mutations', async () => {
+    contextFixtures();
+    state.opportunityWorkspace.bookings.push({ id: 'context-following-booking', tenantId: 'tenant-a', customerId: 'context-following-customer', customerName: 'Following Context Customer', serviceType: 'deep', status: 'scheduled', date: '2099-01-02', startTime: '11:00', agreedPrice: 250 });
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('How much would deep clean and standard clean cost together?');
+    expect(await screen.findByText(/Total: \$435\.00 across 2 canonical records/)).toBeInTheDocument();
+    submitComposer('Compare deep clean and standard clean.'); await screen.findByText(/Canonical Deep Cleaning costs \$65\.00 more/);
+    submitComposer("What's the total together?");
+    expect((await screen.findAllByText(/Total: \$435\.00 across 2 canonical records/)).at(-1)).toBeInTheDocument();
+    submitComposer("What's the total for those two services?");
+    expect((await screen.findAllByText(/Total: \$435\.00 across 2 canonical records/)).at(-1)).toBeInTheDocument();
+    submitComposer('What are my next 2 bookings worth?');
+    expect(await screen.findByText(/Total: \$430\.00 across 2 canonical records/)).toBeInTheDocument();
+    submitComposer('What is the average amount of my next 2 bookings?');
+    expect(await screen.findByText(/Average: \$215\.00 across 2 canonical records/)).toBeInTheDocument();
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('renders only the intended named service calculation and refuses ambiguous classification without provider calls', async () => {
+    contextFixtures();
+    catalogService.listOwnerServices.mockResolvedValue([
+      { id: 'standard-service', name: 'Standard', serviceType: 'standard', active: true, priceCents: 10000, durationMinutes: 90 },
+      { id: 'deep-service', name: 'Canonical Deep', serviceType: 'deep', active: true, priceCents: 15000, durationMinutes: 120 },
+      { id: 'other-deep', name: 'Other Deep', serviceType: 'deep', active: true, priceCents: 20000, durationMinutes: 120 },
+    ]);
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('How much would Canonical Deep and Standard cost together?');
+    const total = await screen.findByText(/Total: \$250\.00 across 2 canonical records/);
+    expect(total).toHaveTextContent('Canonical Deep: $150.00'); expect(total).toHaveTextContent('Standard: $100.00');
+    expect(total).not.toHaveTextContent('Other Deep'); expect(total).not.toHaveTextContent('$450.00');
+    submitComposer('How much would deep clean and standard clean cost together?');
+    await screen.findByText(/requested service is ambiguous or repeated/);
+    submitComposer('How much would Canonical Deep Deluxe and Standard cost together?');
+    await screen.findByText(/requested canonical service is unavailable/);
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('clarifies comparison ambiguity instead of selecting a service or inventing a price', async () => {
+    contextFixtures(); render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('Compare those two'); await screen.findByText(/Which canonical services do you want to compare/);
+    submitComposer('Compare imaginary clean and standard clean'); await screen.findByText(/canonical service or its configured price is unavailable/);
+    expectReadOnlyContext(); await expectCreditBalance(5);
+  });
+  it('renders legacy and modern tomorrow replies with the same tenant-local booking and zero credits', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-04T04:00:00Z'));
+    try {
+      contextFixtures(); state.auth.currentTenant.businessSettings = { timeZone: 'America/Chicago' };
+      const canonical = state.opportunityWorkspace.bookings[0];
+      canonical.date = '2026-10-04';
+      state.opportunityWorkspace.bookings.push({ ...canonical, id: 'wrong-day', customerId: 'wrong-day-person', customerName: 'Synthetic Wrong Day', date: '2026-10-05' });
+      const original = structuredClone(state.opportunityWorkspace);
+      render(<GrowthAIPage />); await expectCreditBalance(5);
+      await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+      submitComposer('What am I doing tomorrow?');
+      const legacy = await screen.findByText(/Next: Synthetic Context Customer: Standard Cleaning, 2026-10-04/);
+      expect(legacy).not.toHaveTextContent('Synthetic Wrong Day');
+      expect(legacy).not.toHaveTextContent('2026-10-05');
+      submitComposer('What do I have tomorrow?');
+      await waitFor(() => expect(screen.getAllByText(/Next: Synthetic Context Customer: Standard Cleaning, 2026-10-04/)).toHaveLength(2));
+      expectReadOnlyContext(); await expectCreditBalance(5);
+      expect(state.opportunityWorkspace).toEqual(original);
+    } finally { vi.useRealTimers(); }
+  });
+  it('renders temporal fact, traversal and calculation plans with canonical values and zero credits', async () => {
+    contextFixtures(); state.auth.currentTenant.businessSettings = { timeZone: 'UTC' };
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    state.opportunityWorkspace.bookings[0].date = tomorrow;
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    for (const [question, expected] of [
+      ['How many bookings do I have tomorrow?', /You have 1 upcoming booking/],
+      ["What's my first booking tomorrow?", /Next: Synthetic Context Customer/],
+      ['Who is my customer tomorrow and what service are they getting?', /Customer: Synthetic Context Customer\. Service: Standard Cleaning/],
+      ['How much are my bookings tomorrow worth?', /Total: \$180\.00 across 1 canonical record/],
+      ["What's the average booking amount tomorrow?", /Average: \$180\.00 across 1 canonical record/],
+    ]) {
+      submitComposer(question);
+      await waitFor(() => expect(screen.getAllByText(expected).length).toBeGreaterThan(0));
+    }
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('does not retain deterministic plan references across a same-tenant identity switch', async () => {
+    contextFixtures(); state.opportunityWorkspace.bookings[0].customerSnapshot = { email: 'synthetic@example.test' };
+    const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer("Who's next?"); await screen.findByText(/Next: Synthetic Context Customer/);
+    submitComposer("What's their email?"); await screen.findByText(/Email: synthetic@example.test/);
+    state.auth = { ...state.auth, user: { ...state.auth.user, uid: 'another-synthetic-admin' } };
+    view.rerender(<GrowthAIPage />);
+    await waitFor(() => expect(screen.queryByText(/Email: synthetic@example.test/)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer("What's their email?"); await screen.findByText(/Establish the intended record first/);
+    expectReadOnlyContext(); await expectCreditBalance(5);
+  });
+  it('renders bounded multi-hop booking, customer, service, price and contact facts without routing', async () => {
+    contextFixtures();
+    state.opportunityWorkspace.bookings[0].customerSnapshot = { phone: '555-0110', email: 'synthetic@example.test' };
+    state.opportunityWorkspace.bookings.push({ id: 'context-following-booking', tenantId: 'tenant-a', customerId: 'context-following-customer', customerName: 'Following Context Customer', serviceType: 'deep', status: 'scheduled', date: '2099-01-02', startTime: '11:00', agreedPrice: 250, customerSnapshot: { phone: '555-0112' } });
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer("Who's my next customer, what service are they getting, and how much are we charging them?");
+    expect(await screen.findByText('Customer: Synthetic Context Customer. Service: Standard Cleaning. Saved booking amount: $180.00.')).toBeInTheDocument();
+    submitComposer("Who is the customer for my next booking and what's their phone number?");
+    expect(await screen.findByText(/Customer: Synthetic Context Customer\. Saved booking contact phone: 555-0110/)).toBeInTheDocument();
+    submitComposer('Who comes after Synthetic Context Customer and what service are they getting?');
+    expect(await screen.findByText('Customer: Following Context Customer. Service: Deep Cleaning.')).toBeInTheDocument();
+    submitComposer('What service is Synthetic Context Customer getting and how much is it?');
+    expect(await screen.findByText('Service: Standard Cleaning. Saved booking amount: $180.00.')).toBeInTheDocument();
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('renders explicit canonical contact evidence instead of the active customer contact', async () => {
+    contextFixtures();
+    state.opportunityWorkspace.bookings[0].customerSnapshot = { phone: '555-0110' };
+    state.opportunityWorkspace.bookings.push({ id: 'context-following-booking', tenantId: 'tenant-a', customerId: 'context-following-customer', customerName: 'Following Context Customer', serviceType: 'deep', status: 'scheduled', date: '2099-01-02', startTime: '11:00', agreedPrice: 250, customerSnapshot: { phone: '555-0112' } });
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer("Who's next?"); await screen.findByText(/Next: Synthetic Context Customer/);
+    submitComposer("What's Following Context Customer's phone number?");
+    expect(await screen.findByText(/Phone: 555-0112/)).toBeInTheDocument();
+    expect(screen.queryByText(/Phone: 555-0110/)).not.toBeInTheDocument();
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('withholds an incomplete compound answer instead of guessing the saved booking amount', async () => {
+    contextFixtures(); delete state.opportunityWorkspace.bookings[0].agreedPrice;
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer("Who's my next customer, what service are they getting, and how much are we charging them?");
+    expect(await screen.findByText(/canonical evidence|required canonical|saved amount.*unavailable/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Customer: Synthetic Context Customer\. Service:/)).not.toBeInTheDocument();
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('renders structured business questions before routing and preserves typed topic returns', async () => {
+    contextFixtures();
+    state.opportunityWorkspace.bookings[0].customerSnapshot = { phone: '555-0110', email: 'synthetic@example.test' };
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    for (const [question, expected] of [
+      ['How many jobs are on my schedule?', /You have 1 upcoming booking/],
+      ['Who is my next customer?', /Next: Synthetic Context Customer/],
+      ['Show their email', /Email: synthetic@example.test/],
+      ['What is their phone?', /Phone: 555-0110/],
+      ['What is the cost of that booking?', /Saved booking amount: \$180.00/],
+      ['List available services', /Canonical Standard Cleaning: \$185.00/],
+      ['What is the first one?', /Canonical Standard Cleaning: \$185.00/],
+      ['What is the price of that service?', /Canonical Standard Cleaning: \$185.00/],
+      ['Go back to that customer.', /Synthetic Context Customer: Standard Cleaning/],
+      ['What time is that booking?', /2099-01-01 at 10:00/],
+      ['Show their email', /Email: synthetic@example.test/],
+    ]) {
+      submitComposer(question);
+      await waitFor(() => expect(screen.getAllByText(expected).length).toBeGreaterThan(0));
+    }
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+    submitComposer('Show their email'); await screen.findByText(/Establish the intended record first/);
+    expectReadOnlyContext();
+  });
+  it('renders missing structured fields honestly and still opens existing guarded workflows', async () => {
+    contextFixtures(); render(<GrowthAIPage />); await expectCreditBalance(5);
+    submitComposer('Who is my next customer?'); await screen.findByText(/Next: Synthetic Context Customer/);
+    submitComposer('Show their email'); await screen.findByText(/Email: unavailable in this loaded record/);
+    submitComposer('Write a message for them.');
+    expect(await screen.findByLabelText('Booking to use')).toHaveValue('context-booking');
+    expectReadOnlyContext(); await expectCreditBalance(5);
+  });
+  it.each(['What services do we offer?', 'Create a marketing post.', 'Check my reputation.'])('returns to customer/booking after supported topic: %s', async topic => {
+    contextFixtures(); state.opportunityWorkspace.bookings[0].customerSnapshot = { name: 'Synthetic Context Customer', phone: '555-0110', email: 'synthetic@example.test' };
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('What jobs do I have coming up?'); await screen.findByText(/Next: Synthetic Context Customer/);
+    submitComposer(topic);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeDisabled());
+    submitComposer('Okay, go back to that customer.');
+    expect(await screen.findByText(/^Synthetic Context Customer:.*Saved booking amount/)).toBeInTheDocument();
+    submitComposer('What was their email?'); await screen.findByText(/Email: synthetic@example.test/);
+    submitComposer('How much were we charging them?'); await screen.findByText('Saved booking amount: $180.00.');
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+    submitComposer('Go back to that customer.'); await screen.findByText(/earlier entity is not established/);
+    expectReadOnlyContext();
+  });
+  it.each(["What's their number?", 'How do I get ahold of them?', 'Can I get their email?', 'Who do I need to talk to?'])('keeps contextual contact informational and free: %s', async question => {
+    contextFixtures();
+    state.opportunityWorkspace.bookings[0].customerSnapshot = { name: 'Synthetic Context Customer', phone: '555-0110', email: 'synthetic@example.test' };
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer('What jobs do I have coming up?'); await screen.findByText(/Next: Synthetic Context Customer/);
+    submitComposer(question);
+    expect(await screen.findByText(/(?:saved booking contact information|customer associated with the selected booking)/)).toBeInTheDocument();
+    expectReadOnlyContext(); await expectCreditBalance(5); expect(state.opportunityWorkspace).toEqual(original);
+    submitComposer('Write something for them.');
+    expect(await screen.findByLabelText('Booking to use')).toHaveValue('context-booking');
+    expectReadOnlyContext();
+  });
+  it.each([
+    ["What's going on?", false, /Do you mean today's bookings/], ['What is happening?', false, /Do you mean today's bookings/],
+    ['What should I worry about today?', false, /cannot determine urgency/], ['Is there anything urgent?', false, /cannot determine urgency/],
+    ["Who's coming up?", false, /Next: Synthetic Context Customer/], ['Who is scheduled next?', false, /Next: Synthetic Context Customer/],
+    ['Who am I working with?', true, /Synthetic Context Customer\. Canonical/], ['Who is this for?', true, /Synthetic Context Customer\. Canonical/],
+    ['What are we charging them?', true, /Saved booking amount: \$180.00/], ['How much are we getting for this?', true, /Saved booking amount: \$180.00/],
+    ['Have they worked with us before?', true, /1 completed bookings/], ['Have they hired us before?', true, /1 completed bookings/],
+    ['Who should I reach back out to?', false, /estimate-review candidates/], ['Who should I contact again?', false, /estimate-review candidates/],
+    ["What's the most important thing today?", false, /cannot determine urgency/], ['What should I handle first?', false, /cannot determine urgency/],
+    ['What about the other one?', true, /Choose its position.*will not guess/], ['Tell me about the other one.', true, /Choose its position.*will not guess/],
+    ['Go back to the first one.', true, /^Synthetic Context Customer:.*Saved booking amount/], ['Take me back to the first.', true, /^Synthetic Context Customer:.*Saved booking amount/],
+    ['How much was that?', true, /Saved booking amount: \$180.00/], ["What's the price on this one?", true, /Saved booking amount: \$180.00/],
+  ])('repairs natural conversation %s without generation or mutation', async (question, seed, expected) => {
+    contextFixtures();
+    if (/other one/.test(question)) state.opportunityWorkspace.bookings.push(
+      { id: 'context-second-booking', tenantId: 'tenant-a', customerName: 'Second Booking', customerId: 'second', serviceType: 'deep', status: 'scheduled', date: '2099-01-02', startTime: '10:00' },
+      { id: 'context-third-booking', tenantId: 'tenant-a', customerName: 'Third Booking', customerId: 'third', serviceType: 'deep', status: 'scheduled', date: '2099-01-03', startTime: '10:00' },
+    );
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    if (seed) { submitComposer('What jobs do I have coming up?'); await screen.findByText(/Next: Synthetic Context Customer/); }
+    submitComposer(question); expect(await screen.findByText(expected)).toBeInTheDocument();
+    submitComposer('Open estimates'); await screen.findByText(/^2 eligible open estimates:.*Synthetic Second Customer: Deep Cleaning, quoted\.$/);
+    submitComposer('Go back to the first.'); expect(await screen.findByText(/^Synthetic Context Customer:.*Saved estimate range: \$170.00 to \$190.00/)).toBeInTheDocument();
+    submitComposer('Write something for them.');
+    expect(await screen.findByLabelText('Estimate to use')).toHaveValue('context-estimate');
+    expectReadOnlyContext(); await expectCreditBalance(5);
+    expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it.each([
+    ["What's on my plate?", /Do you mean today's bookings, open estimates, or follow-up opportunities/, 'Open estimates', /2 eligible open estimates/],
+    ['Who is waiting on me?', /Do you mean today's bookings, open estimates, or follow-up opportunities/, 'Open estimates', /2 eligible open estimates/],
+    ["Who's coming in next?", /Next: Synthetic Context Customer/, 'Who is the first one?', /Synthetic Context Customer\. Canonical/],
+    ['Who is coming next?', /Next: Synthetic Context Customer/, 'Who is the first one?', /Synthetic Context Customer\. Canonical/],
+    ['Anybody I need to get back with?', /estimate-review candidates, not a finding/, 'Who is the first one?', /Synthetic Context Customer\. Canonical/],
+    ['Anyone I should follow up with?', /estimate-review candidates, not a finding/, 'Who is the first one?', /Synthetic Context Customer\. Canonical/],
+    ["What's still sitting out there?", /Do you mean today's bookings, open estimates, or follow-up opportunities/, 'Open estimates', /2 eligible open estimates/],
+    ['What work is outstanding?', /Do you mean today's bookings, open estimates, or follow-up opportunities/, 'Open estimates', /2 eligible open estimates/],
+    ["Who's waiting on an estimate?", /2 eligible open estimates/, 'Who is the first one?', /Synthetic Context Customer\. Canonical/],
+    ['Who is waiting for an estimate?', /2 eligible open estimates/, 'Who is the first one?', /Synthetic Context Customer\. Canonical/],
+    ['What do I need to take care of today?', /Next: Synthetic Context Customer/, 'Who is the first one?', /Synthetic Context Customer\. Canonical/],
+    ['What needs taking care of today?', /Next: Synthetic Context Customer/, 'Who is the first one?', /Synthetic Context Customer\. Canonical/],
+    ['Anything falling through the cracks?', /Do you mean today's bookings, open estimates, or follow-up opportunities/, 'Open estimates', /2 eligible open estimates/],
+    ['Anything slipping through the cracks?', /Do you mean today's bookings, open estimates, or follow-up opportunities/, 'Open estimates', /2 eligible open estimates/],
+    ['What should I work on first?', /Next: Synthetic Context Customer/, 'Who is the first one?', /Synthetic Context Customer\. Canonical/],
+    ['Who needs my attention?', /Next: Synthetic Context Customer/, 'Who is the first one?', /Synthetic Context Customer\. Canonical/],
+  ])('repairs %s with useful own-tenant facts and addressable follow-up', async (question, expected, followup, followupExpected) => {
+    contextFixtures(); const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    submitComposer(question); expect(await screen.findByText(expected)).toBeInTheDocument();
+    expect(screen.queryByText(/Foreign Context Customer/)).not.toBeInTheDocument();
+    submitComposer(followup); expect(await screen.findByText(followup === 'Open estimates' ? /^2 eligible open estimates:/ : followupExpected)).toBeInTheDocument();
+    if (followup === 'Open estimates') {
+      submitComposer('Who is the first one?'); expect(await screen.findByText(/Synthetic Context Customer\. Canonical/)).toBeInTheDocument();
+    }
+    submitComposer('Tell me about that customer.');
+    expect(await screen.findByText(/^Synthetic Context Customer: Standard Cleaning,.*Saved (?:booking amount: \$180.00|estimate range: \$170.00 to \$190.00)/)).toBeInTheDocument();
+    expectReadOnlyContext(); await expectCreditBalance(5);
+    expect(state.opportunityWorkspace).toEqual(original);
+  });
+  it('hands the count fast path to ordered context and preserves the booking through quote/history follow-ups', async () => {
+    contextFixtures();
+    state.opportunityWorkspace.bookings.push(
+      { id: 'third', tenantId: 'tenant-a', customerId: 'third-customer', customerName: 'Third Synthetic', serviceType: 'deep', status: 'scheduled', date: '2099-01-03', startTime: '10:00', agreedPrice: 250 },
+      { id: 'second', tenantId: 'tenant-a', customerId: 'second-customer', customerName: 'Second Synthetic', serviceType: 'deep', status: 'scheduled', date: '2099-01-02', startTime: '10:00', agreedPrice: 220 },
+    );
+    const original = structuredClone(state.opportunityWorkspace);
+    render(<GrowthAIPage />);
+    await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    for (const [question, expected] of [
+      ['What’s coming up?', /You have 3 upcoming bookings.*Next:/],
+      ['Who’s the first one?', /Synthetic Context Customer\. Canonical/],
+      ['What am I doing for them?', /^Standard Cleaning$/],
+      ['How much are we charging?', /Saved booking amount: \$180.00/],
+      ['Have they used us before?', /1 completed bookings/],
+      ['What did we quote them?', /\$170.00 to \$190.00/],
+      ['What do I need to know about this job?', /Synthetic Context Customer: Standard Cleaning, 2099-01-01/],
+      ['Who do I have after that?', /Second Synthetic\. Canonical/],
+      ['What about the next one?', /Third Synthetic: Deep Cleaning/],
+      ['Who is the customer?', /Third Synthetic\. Canonical/],
+      ['Show the one after that.', /Which booking, customer, estimate, or service/],
+    ]) {
+      submitComposer(question);
+      await waitFor(() => expect(screen.getAllByText(expected).length).toBeGreaterThan(0));
+    }
+    submitComposer('Can you write something for them?');
+    expect(await screen.findByRole('heading', { name: 'Customer response' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Booking to use')).toHaveValue('third');
+    expectReadOnlyContext();
+    expect(state.opportunityWorkspace).toEqual(original);
+    await expectCreditBalance(5);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+    catalogService.listOwnerServices.mockResolvedValue([]);
     state.auth = {
       currentTenant: { id: 'tenant-a', businessName: 'Tenant A Cleaning', businessSettings: {} },
       role: 'admin',
@@ -273,6 +1292,105 @@ describe('GrowthAI V1 tenant draft foundation', () => {
         item.id === id ? { ...item, status: 'dismissed' } : item
       );
     });
+  });
+
+  it('uses the actual composer for booking/customer/service/quote/history and guarded message handoff', async () => {
+    contextFixtures(); render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+    for (const [question, expected] of [
+      ['What jobs do I have coming up?', /You have 1 upcoming bookings/],
+      ['Who is the first one?', /Synthetic Context Customer\. Canonical customer relationship/],
+      ['What service am I doing for them?', /^Standard Cleaning$/],
+      ['How much did I quote them?', /Saved estimate range: \$170.00 to \$190.00/],
+      ['Have they booked with me before?', /1 completed bookings/],
+    ]) { submitComposer(question); expect(await screen.findByText(expected)).toBeInTheDocument(); }
+    submitComposer('Write them a follow-up.');
+    expect(await screen.findByRole('heading', { name: 'Customer response' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Booking to use')).toHaveValue('context-booking');
+    expectReadOnlyContext(); await expectCreditBalance(5);
+    expect(screen.queryByText(/Foreign Context Customer/)).not.toBeInTheDocument();
+  });
+
+  it('reviews open estimates rather than opportunities and preserves explicitly selected estimate context', async () => {
+    contextFixtures(); render(<GrowthAIPage />); await expectCreditBalance(5);
+    submitComposer('Which estimates are still open?');
+    expect(await screen.findByText(/2 eligible open estimates/)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Growth opportunities' })).not.toBeInTheDocument();
+    submitComposer('Who is that customer?'); expect(await screen.findByText(/Which booking, customer, estimate/)).toBeInTheDocument();
+    submitComposer('Which one has been waiting the longest?');
+    submitComposer('Who is that customer?');
+    expect(await screen.findByText(/Synthetic Context Customer\. Canonical customer relationship/)).toBeInTheDocument();
+    expectReadOnlyContext();
+  });
+
+  it('lifts existing estimate-selector selection into current conversation context', async () => {
+    contextFixtures(); render(<GrowthAIPage />); await expectCreditBalance(5);
+    submitComposer('Review this estimate');
+    fireEvent.click(await screen.findByRole('button', { name: /^Synthetic Context Customer/ }));
+    submitComposer('Who is that customer?');
+    expect(await screen.findByText(/Synthetic Context Customer\. Canonical customer relationship/)).toBeInTheDocument();
+    expectReadOnlyContext();
+  });
+
+  it('uses canonical catalog pricing and requires explicit disambiguation before marketing handoff', async () => {
+    contextFixtures(); render(<GrowthAIPage />); await expectCreditBalance(5);
+    await waitFor(() => expect(catalogService.listOwnerServices).toHaveBeenCalled());
+    submitComposer('What services do I offer?'); expect(await screen.findByText(/Canonical Standard Cleaning: \$185.00/)).toBeInTheDocument();
+    submitComposer('How much do I charge for that one?'); expect(await screen.findByText(/Which booking, customer, estimate/)).toBeInTheDocument();
+    submitComposer('What is the first one?');
+    submitComposer('Make me a post about it.');
+    expect(await screen.findByRole('heading', { name: 'Marketing draft' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Tenant service')).toHaveValue('standard');
+    expectReadOnlyContext();
+  });
+
+  it('clears references on new conversation and rejects wrong-tenant projected records', async () => {
+    contextFixtures(); render(<GrowthAIPage />); await expectCreditBalance(5);
+    submitComposer('What jobs do I have coming up?'); expect(await screen.findByText(/You have 1 upcoming bookings/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+    submitComposer('Who is that customer?'); expect(await screen.findByText(/Which booking, customer, estimate/)).toBeInTheDocument();
+    expect(screen.queryByText(/Foreign Context Customer/)).not.toBeInTheDocument(); expectReadOnlyContext();
+  });
+
+  it('opens the actual review-response form instead of estimate follow-up', async () => {
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    submitComposer('Help me respond to this review.');
+    expect(await screen.findByLabelText('Communication type')).toHaveValue('review_response');
+    expect(screen.getByRole('textbox', { name: /review/i })).toBeInTheDocument(); expectReadOnlyContext();
+  });
+
+  it('clears canonical message preselection when starting a new conversation', async () => {
+    contextFixtures(); render(<GrowthAIPage />); await expectCreditBalance(5);
+    submitComposer('Which one has been waiting the longest?');
+    submitComposer('Write them a follow-up.');
+    expect(await screen.findByLabelText('Estimate to use')).toHaveValue('context-estimate');
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Draft customer message' }));
+    expect(await screen.findByLabelText('Estimate to use')).toHaveValue('');
+    expectReadOnlyContext();
+  });
+
+  it('does not show stale catalog or references across a tenant switch with a delayed response', async () => {
+    contextFixtures(); const pending = deferred(); catalogService.listOwnerServices.mockReturnValueOnce(pending.promise);
+    const view = render(<GrowthAIPage />); await expectCreditBalance(5);
+    submitComposer('What jobs do I have coming up?'); expect(await screen.findByText(/You have 1 upcoming bookings/)).toBeInTheDocument();
+    state.auth = { ...state.auth, tenantId: 'tenant-b', currentTenant: { id: 'tenant-b', businessName: 'Tenant B Cleaning' }, user: { uid: 'admin-b' } };
+    state.opportunityWorkspace = { opportunities: [], leads: [], bookings: [] };
+    view.rerender(<GrowthAIPage />);
+    await act(async () => { pending.resolve([{ id: 'old-service', name: 'STALE TENANT A SERVICE', active: true, serviceType: 'standard', priceCents: 10000, durationMinutes: 60 }]); });
+    submitComposer('Who is that customer?'); expect(await screen.findByText(/Which booking, customer, estimate/)).toBeInTheDocument();
+    submitComposer('What services do I offer?');
+    expect(screen.queryByText(/STALE TENANT A SERVICE/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Synthetic Context Customer/)).not.toBeInTheDocument(); expectReadOnlyContext();
+  });
+  it('does not turn a pending booking load into a fabricated zero-count answer', async () => {
+    const pending = deferred(); opportunityService.refreshGrowthAIOpportunityFeed.mockReturnValueOnce(pending.promise);
+    render(<GrowthAIPage />); await expectCreditBalance(5);
+    submitComposer('do i have any upcoming jobs');
+    expect(await screen.findByText(/This tenant context is currently unavailable/)).toBeInTheDocument();
+    expect(screen.queryByText("No, you don't have any upcoming bookings.")).not.toBeInTheDocument();
+    expectReadOnlyContext();
+    await act(async () => { pending.resolve(state.opportunityWorkspace); });
   });
 
   it('renders deterministic opportunities and creates a tenant follow-up draft without sending', async () => {
@@ -1113,6 +2231,41 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     await expectCreditBalance(5);
   });
 
+  it.each([
+    ['How many bookings do I have coming up?', 'You have 2 upcoming bookings.'],
+    ['do i have any upcoming jobs', 'Yes, you have 2 upcoming bookings.'],
+    ['Are there any upcoming bookings?', 'Yes, you have 2 upcoming bookings.'],
+  ])('answers %s through the actual composer without provider routing or credits', async (question, answer) => {
+    state.auth.currentTenant.businessSettings = { timeZone: 'UTC' };
+    state.opportunityWorkspace = {
+      opportunities: [],
+      leads: [],
+      bookings: [
+        { id: 'booking-a', tenantId: 'tenant-a', date: '2099-01-01', startTime: '10:00', status: 'scheduled' },
+        { id: 'booking-b', tenantId: 'tenant-a', date: '2099-01-02', startTime: '10:00', status: 'scheduled' },
+        { id: 'booking-cancelled', tenantId: 'tenant-a', date: '2099-01-03', status: 'cancelled' },
+        { id: 'booking-archived', tenantId: 'tenant-a', date: '2099-01-04', status: 'scheduled', isArchived: true },
+      ],
+      rebookingImplemented: false,
+    };
+    render(<GrowthAIPage />);
+
+    await waitFor(() => expect(screen.queryByText("Preparing today's briefing from ServicesOS records...")).not.toBeInTheDocument());
+
+    const originalBookings = structuredClone(state.opportunityWorkspace.bookings);
+    submitComposer(question);
+
+    expect(await screen.findByText(content => content.startsWith(`${answer} Next:`))).toBeInTheDocument();
+    expect(screen.getByText(content => content.includes('1. Customer:') && content.includes('2. Customer:'))).toBeInTheDocument();
+    expect(screen.getByText(question)).toBeInTheDocument();
+    expect(screen.queryByText("Do you want help with marketing, a customer reply, or today's business?")).not.toBeInTheDocument();
+    expect(gatewayService.routeGrowthAIConversation).not.toHaveBeenCalled();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+    expect(service.createGrowthAIDraft).not.toHaveBeenCalled();
+    expect(state.opportunityWorkspace.bookings).toEqual(originalBookings);
+    await expectCreditBalance(5);
+  });
+
   it('falls back to a controlled clarification when the router result is malformed or low confidence', async () => {
     gatewayService.routeGrowthAIConversation.mockResolvedValueOnce({ skillId: 'publish_now', confidence: 1 });
     render(<GrowthAIPage />);
@@ -1123,6 +2276,50 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     expect(screen.queryByRole('heading', { name: 'Marketing draft' })).not.toBeInTheDocument();
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["What's coming up for me?", 'You have no upcoming bookings.', false],
+    ["What's my business briefing?", 'Business briefing', true],
+    ['What needs my attention?', 'Business briefing', true],
+    ['Are there customers I should follow up with?', 'Growth opportunities', true],
+    ['Who should I follow up with?', 'Growth opportunities', true],
+    ['Should I follow up with Sarah?', 'Growth opportunities', true],
+    ["Who hasn't booked again?", 'Growth opportunities', true],
+    ['How are my reviews doing?', 'Growth opportunities', true],
+    ['Write a follow-up message for Sarah.', 'Customer response', true],
+    ['Can you make a Facebook post?', 'Marketing draft', true],
+    ['Can you handle Sarah?', "Do you want help with marketing, a customer reply, or today's business?", false],
+    ["What's coming up in my personal life?", "Do you want help with marketing, a customer reply, or today's business?", false],
+    ['How many upcoming jobs do I have tomorrow?', 'You have no upcoming bookings.', false],
+    ['How many AI credits do I have?', 'You have 5 AI credits remaining.', false],
+  ])('routes owner vocabulary through the real composer: %s', async (question, expected, heading) => {
+    if (question.includes('tomorrow')) state.auth.currentTenant.businessSettings = { timeZone: 'UTC' };
+    render(<GrowthAIPage />);
+    await expectCreditBalance(5);
+    submitComposer(question);
+    if (heading) expect(await screen.findByRole('heading', { name: expected })).toBeInTheDocument();
+    else expect(await screen.findByText(expected)).toBeInTheDocument();
+    if (question.includes('should')) expect(screen.queryByRole('heading', { name: 'Customer response' })).not.toBeInTheDocument();
+    expect(gatewayService.routeGrowthAIConversation).not.toHaveBeenCalled();
+    expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+    expect(service.createGrowthAIDraft).not.toHaveBeenCalled();
+    expect(service.saveGrowthAIBrandProfile).not.toHaveBeenCalled();
+    expect(opportunityService.markGrowthAIOpportunityActed).not.toHaveBeenCalled();
+    expect(opportunityService.dismissGrowthAIOpportunity).not.toHaveBeenCalled();
+    await expectCreditBalance(5);
+  });
+
+  it.each([['Show me my drafts.', 'Drafts'], ['What have I worked on?', 'Activity']])(
+    'opens only the existing %s view without generation', async (question, view) => {
+      render(<GrowthAIPage />);
+      await expectCreditBalance(5);
+      submitComposer(question);
+      expect(screen.getByRole('tab', { name: view })).toHaveAttribute('aria-selected', 'true');
+      expect(gatewayService.routeGrowthAIConversation).not.toHaveBeenCalled();
+      expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
+      expect(service.createGrowthAIDraft).not.toHaveBeenCalled();
+    },
+  );
 
   it('keeps a bounded follow-up in the current marketing workflow without provider routing', async () => {
     render(<GrowthAIPage />);
@@ -1142,7 +2339,7 @@ describe('GrowthAI V1 tenant draft foundation', () => {
     fireEvent.click(await screen.findByRole('button', { name: "I'll explore myself" }));
 
     expect(await screen.findByRole('heading', { name: 'Business briefing' })).toBeInTheDocument();
-    expect(screen.getByText(/not much to report yet/)).toBeInTheDocument();
+    expect(screen.getByText(/No computed growth-priority signals are available/)).toBeInTheDocument();
     expect(gatewayService.generateGrowthAIContent).not.toHaveBeenCalled();
     await expectCreditBalance(5);
   });

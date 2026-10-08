@@ -7,6 +7,9 @@ import {
   normalizeGrowthAIRouterResult,
   routeGrowthAIConversation,
 } from '../growthAIConversation';
+import { isUpcomingBookingCountQuestion } from '../growthAIBookingFacts';
+import { resolveOwnerContext } from '../growthAIOwnerContext';
+import { answerBusinessQuestion, formatBusinessAnswer } from '../growthAIBusinessIntelligence';
 import {
   GROWTH_AI_ONBOARDING_LAST_STEP,
   loadGrowthAIOnboardingState,
@@ -98,7 +101,7 @@ function EstimateAssistanceResult({ recommendation }) {
   );
 }
 
-function EstimateAssistanceWorkflow({ aiGenerating, creditPresentation, estimates, onAnalyze, saving }) {
+function EstimateAssistanceWorkflow({ aiGenerating, creditPresentation, estimates, onAnalyze, onSelect, saving }) {
   const [selectedEstimateId, setSelectedEstimateId] = useState(null);
   const [recommendation, setRecommendation] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -113,6 +116,7 @@ function EstimateAssistanceWorkflow({ aiGenerating, creditPresentation, estimate
 
   const selectEstimate = estimate => {
     setSelectedEstimateId(estimate.id);
+    onSelect?.(estimate.id);
     setRecommendation(null);
   };
 
@@ -410,14 +414,16 @@ function CustomerResponseWorkflow({
   saving,
 }) {
   const scenarios = RESPONSE_SCENARIOS.auntbs;
-  const prefilledBookingId = bookings.some(booking => booking.id === customerCommunicationIntent?.bookingId && booking.completed)
+  const prefilledBookingId = bookings.some(booking => booking.id === customerCommunicationIntent?.bookingId &&
+    (!['rebooking', 'review_request'].includes(customerCommunicationIntent?.type) || booking.completed))
     ? customerCommunicationIntent.bookingId
     : '';
   const [scenarioId, setScenarioId] = useState(scenarios[0].id);
   const [channelId, setChannelId] = useState('sms');
   const [customerMessage, setCustomerMessage] = useState('');
   const [communicationTypeId, setCommunicationTypeId] = useState(customerCommunicationIntent?.type || (prefilledBookingId ? 'rebooking' : 'estimate_followup'));
-  const [selectedLeadId, setSelectedLeadId] = useState('');
+  const [selectedLeadId, setSelectedLeadId] = useState(() => leads.some(lead => lead.id === customerCommunicationIntent?.leadId)
+    ? customerCommunicationIntent.leadId : '');
   const [selectedBookingId, setSelectedBookingId] = useState(prefilledBookingId);
   const [reviewText, setReviewText] = useState('');
   const [reviewTone, setReviewTone] = useState('positive');
@@ -611,7 +617,7 @@ function OpportunitiesWorkflow({
         </GrowthAIButton>
       </div>
       {opportunitiesLoading && activeOpportunities.length === 0 ? <p className="growth-ai-empty">Checking tenant records for opportunities...</p> : null}
-      {!opportunitiesLoading && activeOpportunities.length === 0 ? <p className="growth-ai-empty">You\'re caught up. No SLAI opportunities need attention right now.</p> : null}
+      {!opportunitiesLoading && activeOpportunities.length === 0 ? <p className="growth-ai-empty">No computed SLAI opportunities are available. Open estimates may still need owner review.</p> : null}
       {!opportunitiesLoading && activeOpportunities.length > 0 && visibleOpportunities.length === 0 ? <p className="growth-ai-empty">No opportunities match this filter.</p> : null}
       <div className="growth-ai-opportunity-list">
         {visibleOpportunities.map(opportunity => (
@@ -677,7 +683,7 @@ function ConversationMessage({ children, message }) {
     <article className={`growth-ai-message growth-ai-message-${message.role}`} data-message-type={message.type}>
       <div className="growth-ai-message-identity">{message.role === 'user' ? 'You' : message.role === 'system' ? 'ServicesOS' : 'SLAI'}</div>
       <div className="growth-ai-message-content">
-        <p>{message.content}</p>
+        <p style={message.preserveLines ? { whiteSpace: 'pre-line' } : undefined}>{message.content}</p>
         {children}
       </div>
     </article>
@@ -732,7 +738,7 @@ function BusinessBriefing({ briefing, headingId, loading, onOpenCapability }) {
         </div>
       </div>
       {briefing.isEmpty ? (
-        <p className="growth-ai-empty">There\'s not much to report yet. As estimates and bookings come in, I\'ll highlight what deserves attention.</p>
+        <p className="growth-ai-empty">No computed growth-priority signals are available. This does not mean there are no bookings or open estimates.</p>
       ) : (
         <div className="growth-ai-briefing-sections">
           {sections.map(([title, items]) => (
@@ -774,6 +780,7 @@ function currentContextFor({ activeOpportunities, activeWorkflow, customerCommun
   }
 
   const labels = {
+    owner_context: 'ServicesOS owner context',
     business_briefing: 'Today\'s business briefing',
     customer_response: 'Customer message',
     estimate_assistance: 'Estimate assistance',
@@ -898,6 +905,8 @@ export default function GrowthAIHome({
   aiGenerating,
   brand,
   brandContext,
+  ownerContext,
+  onContextHandoff,
   briefing,
   briefingLoading,
   businessName,
@@ -951,6 +960,7 @@ export default function GrowthAIHome({
   onOpenDraft,
   onOpenDrafts,
   onWorkingOnChange,
+  onOpenActivity,
 }) {
   const [composerValue, setComposerValue] = useState('');
   const [conversation, setConversation] = useState([]);
@@ -962,6 +972,7 @@ export default function GrowthAIHome({
   const [guideStep, setGuideStep] = useState(() => onboardingState.step || 0);
   const messageSequence = useRef(0);
   const routerRequestSequence = useRef(0);
+  const ownerReference = useRef({});
   const mountedRef = useRef(true);
   const conversationStreamRef = useRef(null);
   const conversationNearBottomRef = useRef(true);
@@ -1046,10 +1057,11 @@ export default function GrowthAIHome({
     ];
     if (userText) messages.unshift({ id: nextMessageId('user'), role: 'user', type: 'text', content: userText });
     appendMessages(messages);
+    ownerReference.current = { ...ownerReference.current, suspended: true };
     setActiveWorkflow(null);
   };
 
-  const openCapability = (requestedCapabilityType, userText, context = {}) => {
+  const openCapability = (requestedCapabilityType, userText, context = {}, responseContent) => {
     const skill = getGrowthAISkill(requestedCapabilityType) || getGrowthAISkillForWorkflow(requestedCapabilityType);
     const capabilityType = skill?.workflowId || requestedCapabilityType;
     if (capabilityType === 'help' || capabilityType === 'unknown') {
@@ -1074,11 +1086,14 @@ export default function GrowthAIHome({
       return;
     }
 
+    const overview = capabilityType === 'business_briefing' && ownerContext
+      ? resolveOwnerContext({ domain: 'overview', input: userText || '' }, ownerContext, ownerReference.current) : null;
     const capabilityMessage = {
       id: nextMessageId('assistant'),
       role: 'assistant',
       type: 'capability',
-      content: CAPABILITY_RESPONSES[capabilityType],
+      content: responseContent || (overview ? `${CAPABILITY_RESPONSES[capabilityType]}\n${overview.content}` : CAPABILITY_RESPONSES[capabilityType]),
+      preserveLines: Boolean(responseContent || overview),
       capabilityType,
       resultRef: { type: 'growthai_capability', id: capabilityType },
     };
@@ -1086,7 +1101,9 @@ export default function GrowthAIHome({
       { id: nextMessageId('user'), role: 'user', type: 'text', content: userText },
       capabilityMessage,
     ]);
-    setActiveWorkflow({ messageId: capabilityMessage.id, capabilityType, skillId: skill.id, context });
+    const { ownerReference: incomingReference, ...workflowContext } = context;
+    ownerReference.current = overview?.context || incomingReference || { ...ownerReference.current, activeTopic: capabilityType, suspended: true };
+    setActiveWorkflow({ messageId: capabilityMessage.id, capabilityType, skillId: skill.id, context: workflowContext });
   };
 
   const firstRunGuidePending = onboardingState.status === 'not_started' || onboardingState.status === 'in_progress';
@@ -1142,11 +1159,78 @@ export default function GrowthAIHome({
     const input = composerValue.trim();
     if (!input) return;
     setComposerValue('');
+    const businessResult = answerBusinessQuestion(input, ownerContext, ownerReference.current);
+    if (businessResult.status !== 'unsupported') {
+      const messageId = nextMessageId('assistant');
+      appendMessages([
+        { id: nextMessageId('user'), role: 'user', type: 'text', content: input },
+        { id: messageId, role: 'assistant', type: 'result', content: formatBusinessAnswer(businessResult), preserveLines: true },
+      ]);
+      if (businessResult.context) {
+        ownerReference.current = businessResult.context;
+        setActiveWorkflow({ messageId, capabilityType: 'owner_context' });
+      }
+      return;
+    }
     const route = routeGrowthAIConversation(input, {
       activeSkillId: activeWorkflow?.skillId || '',
       hasVisibleOpportunity: visibleOpportunities.length > 0,
     });
+    const factualQuestion = route.kind !== 'owner_context' && isUpcomingBookingCountQuestion(input);
+    if (factualQuestion) {
+      const resolved = resolveOwnerContext({ domain: 'bookings', input, countQuestion: true }, ownerContext || { ready: false }, ownerReference.current);
+      const messageId = nextMessageId('assistant');
+      appendMessages([
+        { id: nextMessageId('user'), role: 'user', type: 'text', content: input },
+        {
+          id: messageId,
+          role: 'assistant',
+          type: 'result',
+          content: resolved.content,
+          preserveLines: true,
+          resultRef: { type: 'growthai_fact', id: 'upcoming_booking_count' },
+        },
+      ]);
+      if (resolved.context) ownerReference.current = resolved.context;
+      setActiveWorkflow(resolved.context ? { messageId, capabilityType: 'owner_context' } : null);
+      return;
+    }
+    if (route.kind === 'owner_context') {
+      const resolved = resolveOwnerContext(route.request, ownerContext || { ready: false }, ownerReference.current);
+      const message = { id: nextMessageId('assistant'), role: 'assistant', type: 'result', content: resolved.content, preserveLines: true };
+      if (resolved.kind === 'handoff') {
+        onContextHandoff?.(resolved);
+        if (resolved.workflow === 'opportunities') onOpportunityFilterChange?.('all');
+        openCapability(resolved.workflow, input, { ownerReference: resolved.context }, resolved.workflow === 'opportunities' ? resolved.content : undefined);
+      } else {
+        appendMessages([{ id: nextMessageId('user'), role: 'user', type: 'text', content: input }, message]);
+        if (resolved.context) {
+          ownerReference.current = resolved.context;
+          setActiveWorkflow({ messageId: message.id, capabilityType: 'owner_context' });
+        }
+      }
+      return;
+    }
+    if (route.kind === 'clarify') {
+      appendClarification(input);
+      return;
+    }
+    if (route.kind === 'navigate') {
+      if (route.view === 'drafts') onOpenDrafts?.();
+      else onOpenActivity?.();
+      return;
+    }
+    if (route.kind === 'information' && route.intentId === 'credits') {
+      appendMessages([
+        { id: nextMessageId('user'), role: 'user', type: 'text', content: input },
+        { id: nextMessageId('assistant'), role: 'assistant', type: 'result', content: creditPresentation?.status === 'ready'
+          ? `You have ${creditPresentation.available} AI credits remaining.` : 'Your AI credit balance is currently unavailable.' },
+      ]);
+      return;
+    }
     if (route.kind === 'route') {
+      if (route.filter) onOpportunityFilterChange?.(route.filter);
+      if (route.skillId === 'reputation') onContextHandoff?.({ communication: { type: 'review_response' } });
       openCapability(route.skillId, input);
       return;
     }
@@ -1203,6 +1287,7 @@ export default function GrowthAIHome({
           resultRef: { type: 'growthai_capability', id: resolvedRoute.skillId },
         };
         appendMessages([capabilityMessage]);
+        ownerReference.current = { ...ownerReference.current, activeTopic: resolvedRoute.workflowId, suspended: true };
         setActiveWorkflow({ messageId: capabilityMessage.id, capabilityType: resolvedRoute.workflowId, skillId: resolvedRoute.skillId });
       } else {
         appendClarification('');
@@ -1219,7 +1304,12 @@ export default function GrowthAIHome({
       return <BusinessBriefing briefing={briefing} headingId="growth-ai-business-briefing-workflow" loading={briefingLoading} onOpenCapability={openCapability} />;
     }
     if (capabilityType === 'estimate_assistance') {
-      return <EstimateAssistanceWorkflow creditPresentation={creditPresentation} aiGenerating={aiGenerating} estimates={eligibleEstimateLeads} onAnalyze={onAIEstimateAssistance} saving={saving} />;
+      return <EstimateAssistanceWorkflow creditPresentation={creditPresentation} aiGenerating={aiGenerating} estimates={eligibleEstimateLeads} onAnalyze={onAIEstimateAssistance} saving={saving}
+        onSelect={id => {
+          const selected = { ...ownerReference.current, tenantId, suspended: false, selected: { type: 'estimate', id }, list: [{ type: 'estimate', id }], index: 0 };
+          const resolved = resolveOwnerContext({ domain: 'detail', input: 'first' }, ownerContext || { ready: false }, selected);
+          if (resolved.context) ownerReference.current = resolved.context;
+        }} />;
     }
     if (capabilityType === 'marketing') {
       return <MarketingWorkflow {...{
@@ -1233,6 +1323,7 @@ export default function GrowthAIHome({
     }
     if (capabilityType === 'customer_response') {
       return <CustomerResponseWorkflow
+        key={activeWorkflow?.messageId}
         creditPresentation={creditPresentation}
         aiGenerating={aiGenerating}
         bookings={communicationBookings}
