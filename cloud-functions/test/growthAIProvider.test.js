@@ -145,6 +145,7 @@ describe('GrowthAI provider adapter', () => {
   });
 
   test('preserves the exact local emulator mock without reading provider parameters', async () => {
+    let fetchCalls = 0;
     const unavailableParam = {
       value() {
         throw new Error('Local mock must not read production provider configuration.');
@@ -158,12 +159,15 @@ describe('GrowthAI provider adapter', () => {
         FUNCTIONS_EMULATOR: 'true',
         GCLOUD_PROJECT: 'demo-servicesos-v1-smoke-local',
         GROWTHAI_PROVIDER_MODE: 'mock',
+        GROWTHAI_PROVIDER_BASE_URL: 'http://127.0.0.1:5999',
       },
+      fetchImpl: async () => { fetchCalls += 1; throw new Error('Local mock must not use the network.'); },
       modelParam: unavailableParam,
     });
 
     assert.equal(provider.configured, true);
     assert.match((await provider.generateText({ actionType: 'customer_response', userPrompt: '' })).text, /Local mock/);
+    assert.equal(fetchCalls, 0);
   });
 
   test('explicitly enabled Firebase configuration preserves the Responses API request', async () => {

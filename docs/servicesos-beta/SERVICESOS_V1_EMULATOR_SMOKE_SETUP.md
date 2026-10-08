@@ -36,6 +36,14 @@ cd C:\Users\merce\Documents\SLAI_Real\ServicesOS\cloud-functions
 # This ignored placeholder prevents any Secret Manager lookup and is not a real secret.
 Set-Content -LiteralPath .secret.local -NoNewline -Value 'GROWTHAI_PROVIDER_API_KEY=local-smoke-placeholder'
 Add-Content -LiteralPath .env.local -Value 'GROWTHAI_PROVIDER_MODE=mock'
+Add-Content -LiteralPath .env.local -Value 'GROWTHAI_PROVIDER_BASE_URL=http://127.0.0.1:5999'
+Add-Content -LiteralPath .env.local -Value 'GROWTHAI_PROVIDER_MODEL=local-growthai-mock-v1'
+Add-Content -LiteralPath .env.local -Value 'GROWTHAI_PROVIDER_ENABLED=false'
+Add-Content -LiteralPath .env.local -Value 'CUSTOMER_EMAIL_PROVIDER_ENABLED=false'
+Add-Content -LiteralPath .env.local -Value 'SERVICESOS_OWNER_SUBSCRIPTION_PRICE_ID=local-smoke-monthly-price'
+Add-Content -LiteralPath .env.local -Value 'SERVICESOS_OWNER_SUBSCRIPTION_ANNUAL_PRICE_ID=local-smoke-annual-price'
+Add-Content -LiteralPath .env.local -Value 'SERVICESOS_OWNER_BILLING_PORTAL_CONFIGURATION_ID=local-smoke-billing-portal'
+Add-Content -LiteralPath .env.local -Value 'SERVICESOS_APP_URL=http://127.0.0.1:5173'
 Add-Content -LiteralPath .env.local -Value 'FUNCTIONS_EMULATOR=true'
 Add-Content -LiteralPath .env.local -Value 'GROWTHAI_LOCAL_MOCK_PROJECT_ID=demo-servicesos-v1-smoke-local'
 
@@ -43,6 +51,10 @@ npm run emulators:v1-smoke
 ```
 
 Keep this terminal running. Confirm Auth, Firestore, Functions, and Storage appear in the Emulator UI. The smoke command plus ignored local mock mode enable the Functions-only deterministic GrowthAI mock for the exact local demo project; it cannot use a real provider. The ignored `.secret.local` placeholder is required only because the emulator resolves bound secrets before that mock path is selected; never put a real secret in it.
+
+Firebase Functions parameter discovery requires a base URL even though the local mock never reads or uses it. Supply the deliberately inert loopback value above only in ignored `.env.local`. Do not start a service on port 5999, use it as a proxy, or replace it with a real provider URL for this smoke environment. Production parameter declarations and defaults remain unchanged.
+
+Discovery requires values for all six required string parameters even when the local workflow does not use them. The model is an inert mock label; subscription Price and Portal identifiers are local placeholders that do not correspond to Stripe objects. The application URL points to the loopback Vite server. External GrowthAI and email providers stay disabled. Do not exercise Stripe actions or configure Stripe credentials in this environment. If the emulator requires either Stripe secret during startup, stop: no local placeholder for those secrets is approved.
 
 ## 2. Reset And Seed
 
@@ -123,7 +135,7 @@ That file is ignored by Git. These accounts exist only in the local Auth emulato
 - Tenant A includes one login employee and one additional non-login employee profile so assignment and reassignment can be tested without adding a sixth Auth persona.
 - Employee assignment uses `assignedEmployeeAuthUid`, which is the assigned employee's Firebase Auth UID and `users/{uid}` document ID. Legacy employee-record identifiers do not grant Field Mode access.
 - Tenant A includes employee-visible access instructions and separate owner-only notes.
-- A successful reset creates five fake Auth personas and 19 Firestore documents.
+- A successful reset creates five fake Auth personas and 22 Firestore documents.
 - Generated upload fixtures are placed in the ignored `.servicesos-smoke-fixtures.local` directory: valid JPEG/PNG/WebP, invalid text, and an oversized binary over 10 MB.
 
 ## Run The Smoke

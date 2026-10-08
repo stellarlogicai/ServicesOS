@@ -1318,6 +1318,8 @@ Staging is **not ready** for Storage initialization or real-cloud Functions/web 
 
 ### Local wife-beta emulator verification (2026-09-28)
 
+2026-10-04 setup recheck completed: the local synthetic emulator environment is documented, but emulator reset/reseed acceptance and manual browser smoke remain pending. This does not establish deployed or production acceptance.
+
 The local wife-beta environment is **ready with minor non-blocking issues** for a limited owner-web session using synthetic emulator data. This is not release-ready and is not equivalent to Blaze-backed staging acceptance. The smoke project is `demo-servicesos-v1-smoke-local`; Auth (`127.0.0.1:9099`), Firestore (`127.0.0.1:8080`), Functions (`127.0.0.1:5001`), Storage (`127.0.0.1:9199`), and Emulator UI (`http://127.0.0.1:4000/`) ran on loopback, with Vite at `http://127.0.0.1:5173/`.
 
 Functions discovery succeeded on two actual emulator starts, both reaching “All emulators ready.” The earlier discovery timeout did not reproduce; its root cause remains unknown and no code fix is currently justified. Reset/seed succeeded with five synthetic personas, 22 Firestore documents, and local upload fixtures. Tenant A admin login succeeded; Tenant A business and bookings rendered, and the Tenant B business marker was absent from the normal Tenant A dashboard/bookings views. Local non-provider reads through Functions succeeded for service catalog, add-on catalog, and owner safety alerts.

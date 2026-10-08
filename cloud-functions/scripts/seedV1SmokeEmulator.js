@@ -471,6 +471,32 @@ function buildSeedDocuments(now = new Date()) {
   return documents;
 }
 
+function buildAssistantContextDocuments(now = new Date()) {
+  const dates = smokeDates(now);
+  const documents = [];
+  for (const [tenantId, customerId, label] of [
+    [TENANT_A, 'customer-smoke-a-secondary', 'Tenant A Secondary Example'],
+    [TENANT_B, 'customer-smoke-b', 'Tenant B Example Customer'],
+  ]) {
+    const leadId = 'assistant-context-estimate';
+    documents.push({ path: `tenants/${tenantId}/leads/${leadId}`, data: {
+      tenantId, customerId, customerName: label, status: 'quoted', booking: null,
+      createdAt: dates.yesterdayIso, updatedAt: dates.todayIso,
+      formData: { fullName: label, cleaningType: 'standard' },
+      requestSnapshot: { cleaningType: 'standard' }, estimate: { priceLow: 170, priceSuggested: 180, priceHigh: 190, currency: 'USD' },
+    } });
+    documents.push({ path: `tenants/${tenantId}/bookings/assistant-context-booking`, data: {
+      tenantId, customerId, customerName: label, serviceType: 'standard', status: 'scheduled',
+      date: dates.tomorrow, startTime: '08:00', agreedPrice: 180, leadId,
+    } });
+    for (const [id, name, serviceType, priceCents, durationMinutes] of [
+      ['assistant-standard', `${tenantId === TENANT_A ? 'Tenant A' : 'Tenant B'} Standard Cleaning`, 'standard', 18000, 90],
+      ['assistant-deep', `${tenantId === TENANT_A ? 'Tenant A' : 'Tenant B'} Deep Cleaning`, 'deep', 25000, 120],
+    ]) documents.push({ path: `tenants/${tenantId}/serviceCatalog/${id}`, data: { name, serviceType, active: true, priceCents, durationMinutes } });
+  }
+  return documents;
+}
+
 async function resetAuth(auth) {
   let pageToken;
   do {
@@ -591,6 +617,7 @@ module.exports = {
   TENANT_A,
   TENANT_B,
   buildSeedDocuments,
+  buildAssistantContextDocuments,
   isLoopbackHost,
   run,
   smokeDates,

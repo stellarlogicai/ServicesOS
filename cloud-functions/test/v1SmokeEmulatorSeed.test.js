@@ -5,6 +5,7 @@ const {
   TENANT_A,
   TENANT_B,
   buildSeedDocuments,
+  buildAssistantContextDocuments,
   smokeDates,
   validateSmokeEnvironment,
 } = require('../scripts/seedV1SmokeEmulator');
@@ -18,6 +19,23 @@ const validEnvironment = {
 };
 
 describe('V1 smoke emulator seed safety', () => {
+  test('builds additive Assistant fixtures with canonical relationships and isolated catalogs', () => {
+    const now = new Date('2026-10-04T12:00:00.000Z');
+    const documents = buildAssistantContextDocuments(now);
+    assert.deepEqual(documents, buildAssistantContextDocuments(now));
+    assert.equal(documents.length, 8);
+    const baseline = buildSeedDocuments(now);
+    for (const item of documents) {
+      assert.equal(baseline.has(item.path), false);
+      assert.ok(item.path.startsWith(`tenants/${TENANT_A}/`) || item.path.startsWith(`tenants/${TENANT_B}/`));
+      if (item.path.includes('/bookings/')) {
+        assert.equal(item.data.leadId, 'assistant-context-estimate');
+        assert.equal(typeof item.data.customerId, 'string');
+        assert.equal(item.data.paymentStatus, undefined);
+        assert.equal(item.data.stripeAccountId, undefined);
+      }
+    }
+  });
   test('requires all emulator host variables', () => {
     for (const missing of [
       'FIREBASE_AUTH_EMULATOR_HOST',

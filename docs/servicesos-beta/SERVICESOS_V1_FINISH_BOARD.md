@@ -1185,6 +1185,9 @@ See `PR9_HARDENING_RECONCILIATION.md` for the detailed matrix.
 
 # 2. GrowthAI / SLAI Assistant V1 — 🟡 ACCEPTANCE / FREEZE REMAINS
 
+Local acceptance setup recheck completed (2026-10-04): synthetic/unit tests and the unavailable-emulator fail-closed probe do not establish emulator reset/reseed acceptance. Reset/reseed acceptance and manual browser smoke remain pending; no deployed or production acceptance is implied.
+
+
 The V1 foundations and existing workflows are implemented; do not add new product scope or autonomous behavior. The founder-found question “How many bookings do I have coming up?” now uses a narrowly bounded, deterministic factual fast path over the existing authorized tenant booking workspace. It responds naturally, performs no mutation, bypasses provider routing, and consumes no AI credits.
 
 Current focused factual/conversation/page validation passed `118/118`; web lint and production build passed. The earlier free-briefing assertion failure no longer reproduces after the Vitest worker storage fix. Provider-backed test-mode acceptance remains open. Deterministic tenant-scoped retrieval/calculation stays free; credits apply only to explicit provider-backed generation, analysis, interpretation, or research. Consequential actions remain human-approved.
